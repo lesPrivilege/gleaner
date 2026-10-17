@@ -168,6 +168,21 @@ import Testing
         #expect(!model.missing.contains(try artifact(model, "table.csv").path))
     }
 
+    @Test func showFolderSaysWhenTheFolderIsGoneToo() throws {
+        let folder = project.appendingPathComponent("out/charts")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try write("chart c1", to: "out/charts/chart.png", modified: delivered)
+        try deliver("out/charts/chart.png")
+        try FileManager.default.removeItem(at: folder)
+
+        // Pressed on a row that isn't selected: the file's panel opens and says why nothing showed.
+        let model = LibraryModel(indexer: indexer)
+        let chart = try artifact(model, "chart.png")
+        model.reveal(chart)
+        #expect(model.selection == chart.path)
+        #expect(model.actionFailure(chart, chart.latest) == "Its folder isn’t on disk either: \(folder.path)")
+    }
+
     // MARK: Delivered with (D6)
 
     @Test func aFileDeliveredWithAnotherOpensOnItsDeliveryFromThatReply() throws {

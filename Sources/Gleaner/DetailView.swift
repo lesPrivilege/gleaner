@@ -209,8 +209,8 @@ struct HandoffPanel: View {
     var staging: Staging { model.staging(for: plan.sha) }
 
     var body: some View {
-        let statement = Wording.handoff(plan, delivery: delivery, onDisk: onDisk, large: model.isLarge(delivery))
-        let disk = Wording.onDisk(onDisk, checked: observation.checkedAt)
+        let statement = Wording.handoff(plan, delivery: delivery, in: artifact, now: observation.state, large: model.isLarge(delivery))
+        let disk = Wording.onDisk(onDisk, in: artifact, now: observation)
         VStack(alignment: .leading, spacing: 12) {
             Text("Hand off delivery \(delivery.number)").font(.headline)
             HStack(spacing: 10) {
@@ -469,8 +469,7 @@ struct DetailsSection: View {
             let capture = delivery.capture
             let provenance = Wording.provenance(capture)
             let storage = Wording.storage(delivery, hasSaved: delivery.sha256.map(model.hasSaved) ?? false,
-                                          large: model.isLarge(delivery), current: observation?.state.sha256,
-                                          checked: observation != nil)
+                                          large: model.isLarge(delivery), now: observation?.state)
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
                 row("Path", artifact.path, mono: true)
                 if let observation {

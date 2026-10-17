@@ -253,12 +253,13 @@ final class LibraryModel {
 
     // MARK: Actions shared by buttons, menus and the right-click menu
 
-    /// The last Open or Save a Copy that failed, with the delivery it was pressed on.
-    private var actionFailure: (artifact: Artifact.ID, delivery: Delivery.ID, message: String)?
+    /// The last action that failed, with the delivery it was pressed on; nil for one that acts on
+    /// the file's location, whichever delivery is shown.
+    private var actionFailure: (artifact: Artifact.ID, delivery: Delivery.ID?, message: String)?
 
-    /// Why the last Open or Save a Copy on this delivery failed, shown where it was pressed.
+    /// Why the last Open, Save a Copy or Show Folder on this delivery failed, shown where it was pressed.
     func actionFailure(_ artifact: Artifact, _ delivery: Delivery) -> String? {
-        guard let failure = actionFailure, failure.artifact == artifact.id, failure.delivery == delivery.id else { return nil }
+        guard let failure = actionFailure, failure.artifact == artifact.id, (failure.delivery ?? delivery.id) == delivery.id else { return nil }
         return failure.message
     }
 
@@ -290,13 +291,18 @@ final class LibraryModel {
         }
     }
 
-    /// Shows the original in Finder, or the folder it was in when it is gone.
+    /// Shows the original in Finder, or the folder it was in when it is gone. When that folder is
+    /// gone too, the file's hand-off panel says so, and the file is selected to show it.
     func reveal(_ artifact: Artifact) {
-        let source = URL(fileURLWithPath: artifact.path)
-        if FileManager.default.fileExists(atPath: source.path) {
+        let source = URL(fileURLWithPath: artifact.path), folder = source.deletingLastPathComponent()
+        actionFailure = nil
+        if Locator.stat(source.path).kind != .missing {
             NSWorkspace.shared.activateFileViewerSelecting([source])
+        } else if Locator.stat(folder.path).kind != .missing {
+            NSWorkspace.shared.open(folder)
         } else {
-            NSWorkspace.shared.open(source.deletingLastPathComponent())
+            selection = artifact.id
+            actionFailure = (artifact.id, nil, Wording.folderGone(folder.path))
         }
     }
 
