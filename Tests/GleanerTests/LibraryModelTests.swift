@@ -184,6 +184,27 @@ import UniformTypeIdentifiers
         #expect(model.actionFailure(chart, chart.latest) == "Its folder isn’t on disk either: \(folder.path)")
     }
 
+    @Test func showFolderStopsSayingTheFolderIsGoneOnceACheckFindsTheFile() async throws {
+        let folder = project.appendingPathComponent("out/charts")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try write("chart c1", to: "out/charts/chart.png", modified: delivered)
+        try deliver("out/charts/chart.png")
+        try FileManager.default.removeItem(at: folder)
+
+        let model = LibraryModel(indexer: indexer)
+        let chart = try artifact(model, "chart.png")
+        model.reveal(chart)
+        // Checked while it is still gone: the panel still says so.
+        await model.observe(chart)
+        #expect(model.actionFailure(chart, chart.latest) != nil)
+
+        // Put back, as by the restore command the panel offers, and checked again.
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try write("chart c1", to: "out/charts/chart.png", modified: delivered)
+        await model.observe(chart)
+        #expect(model.actionFailure(chart, chart.latest) == nil)
+    }
+
     // MARK: Delivered with (D6)
 
     @Test func aFileDeliveredWithAnotherOpensOnItsDeliveryFromThatReply() throws {

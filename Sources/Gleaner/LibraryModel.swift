@@ -263,7 +263,7 @@ final class LibraryModel {
     // MARK: Actions shared by buttons, menus and the right-click menu
 
     /// The last action that failed, with the delivery it was pressed on; nil for one that acts on
-    /// the file's location, whichever delivery is shown.
+    /// the file's location, whichever delivery is shown, which holds until a check finds the file.
     private var actionFailure: (artifact: Artifact.ID, delivery: Delivery.ID?, message: String)?
 
     /// Why the last Open, Save a Copy or Show Folder on this delivery failed, shown where it was pressed.
@@ -464,7 +464,13 @@ final class LibraryModel {
         saved.subtract(versions)
         saved.formUnion(held)
         if completed { artifacts = (try? indexer.registry.artifacts()) ?? artifacts }
-        if state.kind == .missing { missing.insert(path) } else { missing.remove(path) }
+        if state.kind == .missing {
+            missing.insert(path)
+        } else {
+            missing.remove(path)
+            // The file is there, so its folder is too.
+            if let failure = actionFailure, failure.artifact == artifact.id, failure.delivery == nil { actionFailure = nil }
+        }
     }
 
     /// Prepares a verified, immutable copy of `sha` to drag. A copy already prepared for these
