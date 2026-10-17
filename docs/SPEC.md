@@ -60,7 +60,7 @@ Four core objects. Project is a derived, editable label (from cwd and git reposi
 | **Locator** | resolved path, worktree / repository root, git state (`committed`, `modified`, `untracked`, `ignored`, `not_in_repo`; when missing: `recoverable_from_head`, `recoverable_from_history`, `lost`), availability (`file`, `directory`, `special`, `unreadable`, `missing`), last verified time |
 | **Capture** | `observed_at`, sha256, size, optional snapshot reference (`captured_at`), the capture's provenance, and what was at the path (a file, a folder, or, without a hash, nothing, an unreadable file, or not a regular file) |
 
-Artifact identity in v0.1 is the path. A renamed or moved file appears as a separate artifact; re-linking is deferred, and Gleaner never guesses identity across paths. A project is the git repository holding the file (every worktree folds into its repository), else the one its cwd belongs to, else the folder name (rulings §2). Projects are told apart by the repository's main folder and shown by its name. Each delivery records the repository it resolved to while it could be found, and that record wins over a later resolution, so a deleted external worktree keeps its project; a delivery never resolved stays explicitly outside any repository.
+Artifact identity in v0.1 is the path. A renamed or moved file appears as a separate artifact; re-linking is deferred, and Gleaner never guesses identity across paths. A project is the git repository holding the file (every worktree folds into its repository), else the one its cwd belongs to, else the folder name (rulings §2). Projects are told apart by the repository's main folder (for a bare repository, its own folder, named without `.git`) and shown by its name. Each delivery records the repository it resolved to and the checkout it was in (the main folder or a worktree's own folder) while they could be found, and that record wins over a later resolution: a deleted worktree keeps its project and its name, and a file committed on its branch is still looked up in the repository's history at its path within that checkout. A delivery never resolved stays explicitly outside any repository.
 
 ### 5.1 Time semantics
 
@@ -122,7 +122,7 @@ Same bytes do not imply the same logical artifact.
 
 ### 6.1 Comparing versions
 
-Any two versions Gleaner holds bytes for (two deliveries, or a delivery and the file on disk) can be compared, read-only. Both ends are named with their hash and must still hash to it. Text gets a line diff in one accent: grey for what was there, the accent for new lines, a solid block only on the new words of a one-for-one replaced line, both line numbers and the ± mark always shown. Images show side by side; other kinds compare size and hash. Inputs over 64 KB or 2000 lines are reported as limited, never shown partially. See `docs/design/diff-and-references.md`.
+Any two versions Gleaner holds bytes for (two deliveries, or a delivery and the file on disk) can be compared, read-only. Both ends are named with their hash and must still hash to it. Text gets a line diff in one accent: grey for what was there, the accent for new lines, a solid block only on the new words of a one-for-one replaced line, both line numbers and the ± mark always shown. Two versions whose bytes differ never read as "No changes": when no line differs, Compare says that only line endings or the final newline differ. Images show side by side; other kinds compare size and hash. Inputs over 64 KB or 2000 lines are reported as limited, never shown partially. See `docs/design/diff-and-references.md`.
 
 ### 6.2 Claims in replies
 
@@ -132,7 +132,7 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 
 - Watch only the agents' log directories (FSEvents). New sessions are ingested near real time, so `observed_at` stays close to `delivered_at`. While a log directory does not exist yet, the nearest existing folder above it is watched only to notice it appear.
 - Do not watch the paths of indexed artifacts. Re-verify a file's hash when it is selected and again when its hand-off copy is staged; there is no background pass in v0.1.
-- Observation is read-only: only regular files are opened (a FIFO, socket, or device is reported as `special`; a file that can't be opened or read, or a path behind a folder that can't be searched, as `unreadable`), and git runs with `--no-optional-locks` so `git status` never rewrites the index.
+- Observation is read-only: only regular files are opened (a FIFO, socket, or device is reported as `special`; a file that can't be opened or read, or a path behind a folder that can't be searched, as `unreadable`), and git runs with `--no-optional-locks` so `git status` never rewrites the index, and with `core.fsmonitor` off so it starts no hook or daemon the repository configures. A clean filter (Git LFS, for one) may still run while git compares a file with the index; that is a known limit.
 
 ## 8. Adapters
 
@@ -216,12 +216,12 @@ After both gates: visual polish, incremental indexing performance, cache cleanup
 
 `swift run gleaner-spike` (see `README.md`) runs the adapters and extractor read-only over the local logs and writes, under `out/`:
 
-- `candidates.tsv` — one row per candidate with request, evidence, resolution, and empty `label` / `note` columns.
+- `candidates.tsv` — one row per candidate with request, evidence, resolution, whether the §9 rule admits it (`admitted`, yes or no), and empty `label` / `note` columns.
 - `recall-sample.md` — a random sample of final replies with the candidates found in each, for marking misses.
 - `summary.txt` — counts per provider, unknown record types, resolution stats.
 - `locators.internal.tsv` — full local paths for the owner's checks; never shared.
 
-The sheet lists every candidate, admitted or not; measuring the §9 rule after release needs an `admitted` column.
+The sheet lists every candidate, admitted or not, so the §9 rule can be measured against the labels after release.
 
 `out/` contains log excerpts and is never committed.
 

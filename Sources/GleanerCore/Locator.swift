@@ -31,27 +31,35 @@ public struct LocatorState: Sendable {
     public var repositoryRoot: String?
     public var git: GitState
     /// For a missing file git still has: a command the person can run to restore it from a commit
-    /// checked to hold it, quoted for any POSIX shell. Gleaner never runs it (SPEC §6).
+    /// checked to hold it, quoted for any POSIX shell. A removed worktree is added back at that
+    /// commit, where it was. Gleaner never runs it (SPEC §6).
     public var restoreCommand: String?
 }
 
 /// Observes a path in place. Read-only: it never writes to the file or its repository.
 public enum Locator {
-    public static func observe(_ path: String) -> LocatorState {
+    /// A file on disk is checked in the checkout holding it now. A missing one is looked for in
+    /// `checkout`, the one it was found in at delivery, which outlives a removed worktree; without
+    /// it, in the checkout its path was last found in.
+    public static func observe(_ path: String, checkout recorded: Checkout? = nil) -> LocatorState {
         let info = stat(path)
-        let root = repositoryRoot(for: path)
-
         guard info.kind != .missing else {
-            guard let root else { return LocatorState(kind: .missing, git: .notInRepo) }
-            let rel = relative(path, to: root)
-            guard let commit = commit(containing: rel, root: root) else {
-                return LocatorState(kind: .missing, repositoryRoot: root, git: .lost)
+            guard let checkout = recorded ?? Projects.checkout(path: path) else { return LocatorState(kind: .missing, git: .notInRepo) }
+            let rel = relative(path, to: checkout.folder)
+            // A removed worktree takes its HEAD with it; its branch and commits stay in the repository.
+            let removed = !FileManager.default.fileExists(atPath: checkout.folder + "/.git")
+            guard let commit = commit(containing: rel, root: removed ? checkout.repository : checkout.folder, head: !removed) else {
+                return LocatorState(kind: .missing, repositoryRoot: checkout.folder, git: .lost)
             }
             return LocatorState(
-                kind: .missing, repositoryRoot: root, git: commit.isHead ? .recoverableFromHead : .recoverableFromHistory,
-                restoreCommand: "git --literal-pathspecs -C \(quoted(root)) restore --source=\(quoted(commit.sha)) -- \(quoted(rel))")
+                kind: .missing, repositoryRoot: checkout.folder,
+                git: commit.isHead ? .recoverableFromHead : .recoverableFromHistory,
+                restoreCommand: removed
+                    ? "git -C \(quoted(checkout.repository)) worktree add --detach \(quoted(checkout.folder)) \(quoted(commit.sha))"
+                    : "git --literal-pathspecs -C \(quoted(checkout.folder)) restore --source=\(quoted(commit.sha)) -- \(quoted(rel))")
         }
 
+        let root = Projects.resolve((path as NSString).deletingLastPathComponent)?.folder
         let sha = info.kind == .file ? sha256(path) : nil
         return LocatorState(
             // A file that can't be opened or read whole is there, but its bytes are unknown.
@@ -97,18 +105,6 @@ public enum Locator {
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
-    /// The nearest ancestor holding `.git` (a directory, or a file for linked worktrees).
-    static func repositoryRoot(for path: String) -> String? {
-        var dir = (path as NSString).deletingLastPathComponent
-        while dir != "/" && !dir.isEmpty {
-            if FileManager.default.fileExists(atPath: (dir as NSString).appendingPathComponent(".git")) {
-                return dir
-            }
-            dir = (dir as NSString).deletingLastPathComponent
-        }
-        return nil
-    }
-
     static func gitState(_ path: String, root: String) -> GitState {
         let result = run(["-C", root, "status", "--porcelain=v1", "--ignored", "--", relative(path, to: root)])
         guard result.status == 0 else { return .notInRepo }
@@ -125,10 +121,12 @@ public enum Locator {
 
     /// The commit to restore `rel` from: HEAD when it has the path, else the newest commit on any
     /// ref that does. Each candidate is checked with `git cat-file`, because the commit that last
-    /// touched a path may be the one that deleted it.
-    static func commit(containing rel: String, root: String) -> (sha: String, isHead: Bool)? {
-        let head = run(["-C", root, "rev-parse", "--verify", "--quiet", "HEAD"]).output
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+    /// touched a path may be the one that deleted it. `head` is false when `root` is not the
+    /// checkout the path was in, whose HEAD is not the one that held it.
+    static func commit(containing rel: String, root: String, head useHead: Bool) -> (sha: String, isHead: Bool)? {
+        let head = useHead
+            ? run(["-C", root, "rev-parse", "--verify", "--quiet", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
+            : ""
         let touched = run(["-C", root, "log", "--all", "--full-history", "--format=%H", "--", rel]).output
             .split(separator: "\n").map(String.init)
         let sha = ([head] + touched).first { commit in
@@ -146,8 +144,9 @@ public enum Locator {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         // Without the first, `git status` refreshes and rewrites the index: not read-only. The second
-        // keeps a file name like `notes [1].md` from matching other files as a pattern.
-        process.arguments = ["--no-optional-locks", "--literal-pathspecs"] + arguments
+        // keeps a file name like `notes [1].md` from matching other files as a pattern. The third keeps
+        // reading the index from running a hook or daemon the repository configures (SPEC §7).
+        process.arguments = ["--no-optional-locks", "--literal-pathspecs", "-c", "core.fsmonitor=false"] + arguments
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice

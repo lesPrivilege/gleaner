@@ -353,10 +353,10 @@ final class LibraryModel {
     /// Checks the file now (hash and git), off the main thread. When it is Gleaner's first read of
     /// a file whose bytes a delivery never had, the library is read again with them.
     func observe(_ artifact: Artifact) async {
-        let path = artifact.path
+        let path = artifact.path, checkout = artifact.checkout
         let indexer = indexer
         let (state, completed) = await Task.detached(priority: .userInitiated) {
-            (Locator.observe(path), (try? indexer.completeCaptures(of: path, now: Date())) == true)
+            (Locator.observe(path, checkout: checkout), (try? indexer.completeCaptures(of: path, now: Date())) == true)
         }.value
         observations[path] = FileObservation(state: state, checkedAt: Date())
         if completed { artifacts = (try? indexer.registry.artifacts()) ?? artifacts }

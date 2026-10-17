@@ -99,7 +99,6 @@ import Testing
     @Test func deletedWorktreeStillHandsOverTheSavedCopy() throws {
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
         let report = try artifact("report.md")
-        #expect(report.place == "worktree ch3")
         #expect(report.project == "Praxis")
         let outside = Artifact(path: "/Users/u/Projects/Praxis/kit/a.md", deliveries: [Delivery(
             id: "x", number: 1, path: "/Users/u/Projects/Praxis/kit/a.md", deliveredAt: nil, provider: .claudeCode,

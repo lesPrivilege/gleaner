@@ -176,7 +176,7 @@ let candidatesURL = options.out.appendingPathComponent("candidates.tsv")
 let labels = previousLabels(candidatesURL)
 
 let header = [
-    "id", "label", "note", "provider", "project", "session_title", "delivered_at", "syntax", "anchors",
+    "id", "label", "note", "admitted", "provider", "project", "session_title", "delivered_at", "syntax", "anchors",
     "raw_targets", "path", "kind", "size", "sha256_12", "git", "occurrences", "replies_naming_path",
     "request", "evidence", "session_id",
 ]
@@ -188,6 +188,8 @@ for candidate in candidates {
     let previous = labels[candidate.id]
     let row: [String?] = [
         candidate.id, previous?.label, previous?.note,
+        // What the §9 rule decides, next to the label it is measured against.
+        Admission.admits(candidate.delivery) ? "yes" : "no",
         candidate.session.provider.rawValue,
         projectName(candidate.first.part.cwd ?? candidate.session.cwd),
         share(candidate.session.title),

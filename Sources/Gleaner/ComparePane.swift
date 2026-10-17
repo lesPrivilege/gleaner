@@ -33,11 +33,11 @@ struct ComparePane: View {
                 switch content {
                 case nil:
                     ProgressView().frame(maxWidth: .infinity, minHeight: 120)
-                case .text(.rows(let rows))?:
-                    Text(Comparison.Content.text(.rows(rows)).summaryText).font(.caption).foregroundStyle(.secondary)
-                    if !rows.isEmpty, rows.contains(where: { $0.kind != .context }) { DiffRows(rows: rows) }
                 case .text(.limited(let reason))?:
                     note(reason + " Read either exact version on its own.")
+                case .text(let outcome)?:
+                    Text(outcome.summary).font(.caption).foregroundStyle(.secondary)
+                    if case .rows(let rows) = outcome, rows.contains(where: { $0.kind != .context }) { DiffRows(rows: rows) }
                 case .images(let a, let b)?:
                     HStack(spacing: 12) {
                         image(a, end: from)
@@ -96,13 +96,6 @@ struct ComparePane: View {
             }
         }
         .frame(maxWidth: .infinity)
-    }
-}
-
-extension Comparison.Content {
-    var summaryText: String {
-        if case .text(let outcome) = self { return outcome.summary }
-        return ""
     }
 }
 

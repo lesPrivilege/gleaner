@@ -20,7 +20,7 @@ public final class Registry: @unchecked Sendable {
                 id TEXT PRIMARY KEY, provider TEXT NOT NULL, title TEXT, cwd TEXT, log_path TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS deliveries (
                 id TEXT PRIMARY KEY, session_id TEXT NOT NULL, path TEXT NOT NULL, delivered_at REAL,
-                cwd TEXT, request TEXT, evidence TEXT NOT NULL, log_path TEXT, repository TEXT,
+                cwd TEXT, request TEXT, evidence TEXT NOT NULL, log_path TEXT, repository TEXT, checkout TEXT,
                 reply_line INTEGER, reply_rank INTEGER);
             CREATE INDEX IF NOT EXISTS deliveries_path ON deliveries(path);
             CREATE TABLE IF NOT EXISTS captures (
@@ -38,6 +38,11 @@ public final class Registry: @unchecked Sendable {
         // nothing on disk that leads back to it.
         if try !db.rows("PRAGMA table_info(deliveries)").contains(where: { $0["name"] as? String == "repository" }) {
             try db.execute("ALTER TABLE deliveries ADD COLUMN repository TEXT;")
+        }
+        // And the checkout it was in: once a worktree is removed, the path no longer shows which
+        // one held it, or where in the repository's history the file is.
+        if try !db.rows("PRAGMA table_info(deliveries)").contains(where: { $0["name"] as? String == "checkout" }) {
+            try db.execute("ALTER TABLE deliveries ADD COLUMN checkout TEXT;")
         }
         // Each delivery keeps its place in the reply that made it, so the files one reply named are
         // found together, in its order, however many records it took.
@@ -103,21 +108,22 @@ public final class Registry: @unchecked Sendable {
         try !db.rows("SELECT 1 FROM captures WHERE delivery_id = ?", [id]).isEmpty
     }
 
-    /// `repository` is kept once recorded: a later reread may find none, or an unrelated one
-    /// around a deleted worktree. `replyLine` and `replyRank` place it in its reply (`Delivery`).
+    /// `repository` and `checkout` (its folder) are kept once recorded: a later reread may find
+    /// none, or an unrelated one around a deleted worktree. `replyLine` and `replyRank` place it in
+    /// its reply (`Delivery`).
     public func upsertDelivery(id: String, sessionID: String, logPath: String, path: String, deliveredAt: Date?,
-                               replyLine: Int, replyRank: Int, cwd: String?, repository: String?, request: String?,
-                               evidence: [Evidence]) throws {
+                               replyLine: Int, replyRank: Int, cwd: String?, repository: String?, checkout: String?,
+                               request: String?, evidence: [Evidence]) throws {
         let json = String(decoding: try JSONEncoder().encode(evidence), as: UTF8.self)
         try db.run("""
             INSERT INTO deliveries (id, session_id, log_path, path, delivered_at, reply_line, reply_rank, cwd, repository,
-                                    request, evidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    checkout, request, evidence)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET log_path = excluded.log_path, reply_line = excluded.reply_line,
                 reply_rank = excluded.reply_rank, cwd = excluded.cwd,
-                repository = COALESCE(repository, excluded.repository),
+                repository = COALESCE(repository, excluded.repository), checkout = COALESCE(checkout, excluded.checkout),
                 request = excluded.request, evidence = excluded.evidence
-            """, [id, sessionID, logPath, path, deliveredAt, replyLine, replyRank, cwd, repository,
+            """, [id, sessionID, logPath, path, deliveredAt, replyLine, replyRank, cwd, repository, checkout,
                   request.map(Redactor.redact), json])
     }
 
@@ -169,7 +175,8 @@ public final class Registry: @unchecked Sendable {
     /// Every artifact with its deliveries, newest delivery first, artifacts by latest delivery.
     public func artifacts() throws -> [Artifact] {
         let rows = try db.rows("""
-            SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.repository, d.request, d.evidence,
+            SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.repository, d.checkout, d.request,
+                   d.evidence,
                    s.provider, s.title, d.log_path,
                    c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind
             FROM deliveries d JOIN sessions s ON s.id = d.session_id
@@ -178,10 +185,14 @@ public final class Registry: @unchecked Sendable {
             """)
         var byPath: [String: [Delivery]] = [:]
         var repositories: [String: String] = [:]
+        var checkouts: [String: Checkout] = [:]
         for row in rows {
             let path = row["path"] as! String
-            // Rows run oldest first: the newest recorded repository wins.
-            if let repository = row["repository"] as? String { repositories[path] = repository }
+            // Rows run oldest first: the newest recorded repository and checkout win.
+            if let repository = row["repository"] as? String {
+                repositories[path] = repository
+                if let folder = row["checkout"] as? String { checkouts[path] = Checkout(folder: folder, repository: repository) }
+            }
             let capture = (row["observed_at"] as? Double).map { observed in
                 Capture(
                     sha256: row["sha256"] as? String, size: row["size"] as? Int64,
@@ -206,10 +217,12 @@ public final class Registry: @unchecked Sendable {
                 logPath: row["log_path"] as? String ?? "", capture: capture))
             byPath[path] = list
         }
-        return byPath.map { Artifact(path: $0.key, deliveries: $0.value.reversed(), repository: repositories[$0.key]) }
-            .sorted {
-                let (a, b) = ($0.latest.deliveredAt ?? .distantPast, $1.latest.deliveredAt ?? .distantPast)
-                return a != b ? a > b : $0.path < $1.path
-            }
+        let artifacts = byPath.map { path, deliveries in
+            Artifact(path: path, deliveries: deliveries.reversed(), repository: repositories[path], checkout: checkouts[path])
+        }
+        return artifacts.sorted {
+            let (a, b) = ($0.latest.deliveredAt ?? .distantPast, $1.latest.deliveredAt ?? .distantPast)
+            return a != b ? a > b : $0.path < $1.path
+        }
     }
 }

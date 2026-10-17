@@ -103,6 +103,30 @@ import Testing
         #expect(Locator.observe(repo + "/out/never.md").restoreCommand == nil)
     }
 
+    @Test func aRemovedWorktreesCommittedFileIsRestoredFromItsBranch() throws {
+        let worktree = root + "/.claude/worktrees/ch3", report = worktree + "/out/report.md"
+        #expect(Locator.run(["-C", root, "worktree", "add", "-q", "-b", "ch3", worktree]).status == 0)
+        try "from ch3".write(toFile: report, atomically: true, encoding: .utf8)
+        let commit = ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm"]
+        for args in [["add", "out/report.md"], commit + ["report"]] {
+            #expect(Locator.run(["-C", worktree] + args).status == 0)
+        }
+        // Found while the worktree is there, as the indexer records it at delivery.
+        let checkout = try #require(Projects.checkout(path: report))
+        #expect(checkout == Checkout(folder: worktree, repository: root))
+        #expect(Locator.run(["-C", root, "worktree", "remove", worktree]).status == 0)
+
+        let state = Locator.observe(report, checkout: checkout)
+        #expect(state.git == .recoverableFromHistory)
+        #expect(Locator.observe(worktree + "/out/never.md", checkout: checkout).git == .lost)
+        let command = try #require(state.restoreCommand)
+        #expect(try sh(["-c", command]) == 0)
+        #expect(try String(contentsOfFile: report, encoding: .utf8) == "from ch3")
+        // Back on disk, it is checked in the checkout holding it now, whatever was recorded.
+        try "edited".write(toFile: report, atomically: true, encoding: .utf8)
+        #expect(Locator.observe(report, checkout: Checkout(folder: root, repository: root)).git == .modified)
+    }
+
     @Test func specialFilesAreNeverOpened() {
         let fifo = root + "/out/pipe.mp4"
         #expect(mkfifo(fifo, 0o600) == 0)
@@ -144,6 +168,16 @@ import Testing
         let before = try Data(contentsOf: URL(fileURLWithPath: index))
         _ = Locator.observe(root + "/out/committed.md")
         #expect(try Data(contentsOf: URL(fileURLWithPath: index)) == before)
+    }
+
+    @Test func observingRunsNoCommandTheRepositoryConfigures() throws {
+        let hook = root + "/fsmonitor.sh", ran = root + "/fsmonitor-ran"
+        try "#!/bin/sh\ntouch \(Locator.quoted(ran))\n".write(toFile: hook, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hook)
+        #expect(Locator.run(["-C", root, "config", "core.fsmonitor", hook]).status == 0)
+
+        for file in ["committed.md", "untracked.md", "gone.md", "moved.md"] { _ = Locator.observe(root + "/out/" + file) }
+        #expect(!FileManager.default.fileExists(atPath: ran), "git ran the repository's fsmonitor hook")
     }
 
     @Test func directoryHasNoHash() {

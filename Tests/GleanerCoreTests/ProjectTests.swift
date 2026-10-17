@@ -69,6 +69,7 @@ import Testing
         let restarted = try #require(try Registry(path: registryPath).artifacts().first)
         #expect(restarted.project == "Atlas")
         #expect(restarted.inRepository)
+        #expect(restarted.place == "worktree atlas-feature")
 
         // Rereading the log resolves worse; what was recorded at delivery stands.
         let registry = try Registry(path: registryPath)
@@ -76,6 +77,39 @@ import Testing
         _ = try Indexer(registry: try Registry(path: registryPath), store: store, sources: sources).run()
         Projects.forgetRepositories()
         #expect(try registry.artifacts().first?.project == "Atlas")
+    }
+
+    @Test func aWorktreeIsNamedAsOneWhereverItIsKept() throws {
+        let atlas = try repository("Atlas")
+        let external = root.appendingPathComponent("atlas-feature").path, inside = atlas + "/.claude/worktrees/ch3"
+        for worktree in [external, inside] {
+            #expect(Locator.run(["-C", atlas, "worktree", "add", "-q", "--detach", worktree]).status == 0)
+        }
+        #expect(artifact(external + "/out/report.md", cwd: external).place == "worktree atlas-feature")
+        #expect(artifact(inside + "/out/report.md", cwd: inside).place == "worktree ch3")
+        #expect(!artifact(atlas + "/out/report.md", cwd: atlas).inWorktree)
+        // Outside git there is no worktree, whatever the folders are called.
+        #expect(!artifact(root.path + "/notes/.claude/worktrees/x/plan.md", cwd: root.path + "/notes").inWorktree)
+    }
+
+    @Test func worktreesOfABareRepositoryFoldIntoIt() throws {
+        let source = try repository("source")
+        let bare = root.appendingPathComponent("app.git").path
+        #expect(Locator.run(["clone", "-q", "--bare", source, bare]).status == 0)
+        let main = root.appendingPathComponent("app-main").path, feature = root.appendingPathComponent("app-feature").path
+        #expect(Locator.run(["-C", bare, "worktree", "add", "-q", main]).status == 0)
+        #expect(Locator.run(["-C", bare, "worktree", "add", "-q", "--detach", feature]).status == 0)
+        let a = artifact(main + "/out/report.md", cwd: main), b = artifact(feature + "/out/report.md", cwd: feature)
+        #expect(a.projectFolder == bare && b.projectFolder == bare)
+        #expect(a.project == "app" && Projects.names([bare]) == [bare: "app"])
+
+        // The same layout kept in one folder: the bare repository in `.bare`, its worktrees beside it.
+        let folder = root.appendingPathComponent("tool").path
+        #expect(Locator.run(["clone", "-q", "--bare", source, folder + "/.bare"]).status == 0)
+        try "gitdir: ./.bare\n".write(toFile: folder + "/.git", atomically: true, encoding: .utf8)
+        #expect(Locator.run(["-C", folder, "worktree", "add", "-q", folder + "/main"]).status == 0)
+        let c = artifact(folder + "/main/out/report.md", cwd: folder + "/main")
+        #expect(c.projectFolder == folder && c.project == "tool")
     }
 
     @Test func aFileOutsideGitIsNamedAfterItsFolder() {

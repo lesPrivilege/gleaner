@@ -88,20 +88,23 @@ public struct Artifact: Sendable, Identifiable {
     public var projectFolder: String
     /// False when no repository was found, at delivery or now: the project is only a folder.
     public var inRepository: Bool
+    /// The checkout holding the file; nil when the file is in no repository.
+    public var checkout: Checkout?
 
-    /// `repository` is the one recorded at delivery. It wins over what can be found now, which is
-    /// worse once an external worktree is gone.
-    public init(path: String, deliveries: [Delivery], repository: String? = nil) {
+    /// `repository` and `checkout` are the ones recorded at delivery. They win over what can be
+    /// found now, which is worse once a worktree is gone.
+    public init(path: String, deliveries: [Delivery], repository: String? = nil, checkout: Checkout? = nil) {
         self.path = path
         self.deliveries = deliveries
         let cwd = deliveries.first?.cwd
         let root = repository ?? Projects.repository(path: path, cwd: cwd)
         projectFolder = root ?? Projects.folder(path: path, cwd: cwd)
         inRepository = root != nil
+        self.checkout = checkout ?? Projects.checkout(path: path)
     }
 
     /// The project's name, its folder's. Two projects can share one.
-    public var project: String { (projectFolder as NSString).lastPathComponent }
+    public var project: String { Projects.name(projectFolder) }
 
     public var id: String { path }
     public var name: String { (path as NSString).lastPathComponent }
@@ -140,15 +143,11 @@ public struct Artifact: Sendable, Identifiable {
         "pkg": .build, "ipa": .build, "apk": .build, "app": .build,
     ]
 
-    /// Where the file lives: a named worktree, or the project's own folder.
+    /// Where the file lives: a worktree, named after its folder wherever it is kept, or the
+    /// repository's main folder.
     public var place: String {
-        for marker in ["/.claude/worktrees/", "/.worktrees/", "/.codex/worktrees/"] {
-            if let range = path.range(of: marker) {
-                let rest = path[range.upperBound...]
-                return "worktree " + (rest.split(separator: "/").first.map(String.init) ?? "")
-            }
-        }
-        return "main folder"
+        guard let checkout, checkout.folder != checkout.repository else { return "main folder" }
+        return "worktree " + (checkout.folder as NSString).lastPathComponent
     }
 
     /// True when the file lives in a worktree rather than the project's own folder.
