@@ -133,14 +133,15 @@ public enum ClaudeCodeAdapter {
                 let text = userText(message["content"])
                 if isHumanRequest(record, text: text) { request = RequestText.clean(text) }
             case "assistant":
-                guard record["isSidechain"] as? Bool != true,
-                      let message = record["message"] as? [String: Any],
-                      message["model"] as? String != "<synthetic>",
-                      let blocks = message["content"] as? [[String: Any]] else { continue }
+                let message = record["message"] as? [String: Any]
+                guard record["isSidechain"] as? Bool != true, message?["model"] as? String != "<synthetic>" else { continue }
+                // The assistant answered, whatever shape its message has: a reply whose text the
+                // adapter can't find shows as a turn without a final reply, not as no turn at all.
                 if !answered {
                     answeredTurns += 1
                     answered = true
                 }
+                guard let blocks = message?["content"] as? [[String: Any]] else { continue }
                 // The agent may have moved into a worktree since the request; relative paths in
                 // the reply are relative to where it is now.
                 if let cwd = record["cwd"] as? String { turnCwd = cwd }
