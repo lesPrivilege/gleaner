@@ -14,11 +14,22 @@ public final class Database: @unchecked Sendable {
     private static let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
     public init(path: String) throws {
-        let flags = SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX
+        try open(path, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_FULLMUTEX)
+        try execute("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;")
+    }
+
+    /// Opens the database at `path` to read only: SQLite refuses every write through it, and a
+    /// missing file is not created. A reader of a WAL database may still keep SQLite's shared-memory
+    /// index beside it; the database itself is never written.
+    public init(readingAt path: String) throws {
+        try open(path, SQLITE_OPEN_READONLY | SQLITE_OPEN_FULLMUTEX)
+        try execute("PRAGMA busy_timeout = 5000;")
+    }
+
+    private func open(_ path: String, _ flags: Int32) throws {
         guard sqlite3_open_v2(path, &handle, flags, nil) == SQLITE_OK else {
             throw Failure(description: "cannot open \(path): \(String(cString: sqlite3_errmsg(handle)))")
         }
-        try execute("PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;")
     }
 
     deinit { sqlite3_close(handle) }

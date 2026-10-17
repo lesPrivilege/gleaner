@@ -1,0 +1,597 @@
+import Foundation
+
+/// Read-only queries over the library, for a local agent and for anything else outside the app
+/// (docs/design/query-core.md): find the delivery a person means, select its exact version, read
+/// only what is needed, and hand those bytes on. It opens the registry to read only, never
+/// indexes, and never writes a project folder; a hand-off copy goes to Gleaner's own caches.
+/// Every answer carries the index it is evidence of (`Index`) and names each delivery by its
+/// identity fields (`Reference`).
+public struct Catalog: Sendable {
+    public let registry: Registry
+    public let store: ContentStore
+    /// Files over this size were tracked by hash only, as the app's indexer does (SPEC §6).
+    public var saveLimit: Int64 = 64 << 20
+
+    public init(registry: Registry, store: ContentStore) {
+        self.registry = registry
+        self.store = store
+    }
+
+    /// The library where the app keeps it: Application Support, and Caches for hand-off copies.
+    /// `home` stands in for the home folder, as the app's `-GleanerHome` does.
+    public init(home: URL? = nil) throws {
+        let fm = FileManager.default
+        let library = home.map { $0.appendingPathComponent("Library") }
+        let support = (library?.appendingPathComponent("Application Support")
+            ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
+        let caches = (library?.appendingPathComponent("Caches")
+            ?? fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
+        self.init(
+            registry: try Registry(readingAt: support.appendingPathComponent("registry.sqlite").path),
+            store: ContentStore(objects: support.appendingPathComponent("objects"), staging: caches.appendingPathComponent("handoff")))
+    }
+
+    /// How answers are written as JSON: snake_case keys, ISO 8601 dates, keys sorted, paths as they are.
+    public static var encoder: JSONEncoder {
+        let encoder = JSONEncoder()
+        encoder.keyEncodingStrategy = .convertToSnakeCase
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.sortedKeys, .withoutEscapingSlashes]
+        return encoder
+    }
+
+    /// Reads what `encoder` wrote.
+    public static var decoder: JSONDecoder {
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        decoder.dateDecodingStrategy = .iso8601
+        return decoder
+    }
+}
+
+// MARK: Commands
+
+extension Catalog {
+    /// The artifacts whose words match every term (SPEC §10), newest first, each by the delivery
+    /// the search matched; at most `limit` of them. `project` names a project by its folder, or by
+    /// its name as shown or plain.
+    public func find(_ terms: [String], project: String? = nil, kind: Artifact.Kind? = nil, limit: Int = 20) throws -> Found {
+        guard limit > 0 else { throw Failure.usage("The limit must be at least 1.") }
+        let tokens = terms.joined(separator: " ").lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+        let index = try registry.index()
+        let artifacts = try registry.artifacts()
+        let names = Projects.names(artifacts.map(\.projectFolder))
+        let matches = artifacts.compactMap { artifact -> (Artifact, Int)? in
+            let place = Project(artifact, names: names)
+            let inProject = project.map { wanted in
+                wanted == place.folder || [place.name, artifact.project].contains { $0.caseInsensitiveCompare(wanted) == .orderedSame }
+            } ?? true
+            guard inProject, kind == nil || artifact.kind == kind, let match = artifact.match(tokens) else { return nil }
+            return (artifact, match)
+        }
+        let results = matches.prefix(limit).map { artifact, match in
+            let delivery = artifact.deliveries[match]
+            return Hit(reference: reference(delivery, of: artifact, now: check(artifact), library: index.library),
+                       project: Project(artifact, names: names), kind: artifact.kind,
+                       deliveredAt: delivery.deliveredAt, request: Self.excerpt(delivery.request))
+        }
+        return Found(index: index, total: matches.count, truncated: matches.count > limit, results: Array(results))
+    }
+
+    /// The delivery `id` with every delivery of its file, the file on disk now, what handing it on
+    /// would give, and the request and reply that made it.
+    public func show(_ id: String) throws -> Shown {
+        let (artifacts, artifact, delivery) = try lookup(id)
+        let index = try registry.index()
+        let now = check(artifact)
+        return Shown(
+            index: index, reference: reference(delivery, of: artifact, now: now, library: index.library),
+            number: delivery.number, deliveredAt: delivery.deliveredAt, request: delivery.request,
+            reply: delivery.evidence.first?.excerpt,
+            handoff: Plan(artifact.handoff(delivery, now: now, hasSaved: store.has), in: artifact, now: now),
+            project: Project(artifact, names: Projects.names(artifacts.map(\.projectFolder))), kind: artifact.kind,
+            deliveries: artifact.deliveries.map {
+                Version(reference: reference($0, of: artifact, now: now, library: index.library),
+                        number: $0.number, deliveredAt: $0.deliveredAt)
+            },
+            onDisk: Disk(kind: now.state.kind, sha256: now.state.sha256, checkedAt: now.checkedAt))
+    }
+
+    /// The text of the delivery's exact bytes: its saved copy, or the original only while it hashes
+    /// to the capture, never what is at the path instead. `span` selects lines or bytes (all of
+    /// them when nil), and at most `max` bytes come back. A cut never splits a character.
+    public func read(_ id: String, span: Span? = nil, max: Int = 16 << 10) throws -> Text {
+        switch span {
+        case .lines(let first, let last)? where first < 1 || last < first:
+            throw Failure.usage("Lines are counted from 1, and a range of them ends where it starts or later.")
+        case .bytes(let start, let end)? where start < 0 || end < start:
+            throw Failure.usage("Bytes are counted from 0, and a range of them ends where it starts or later.")
+        default:
+            break
+        }
+        guard max > 0 else { throw Failure.usage("The most to read must be at least 1 byte.") }
+        let (_, artifact, delivery) = try lookup(id)
+        let index = try registry.index()
+        let now = check(artifact)
+        guard case .ready(let sha, let from, _) = artifact.handoff(delivery, now: now, hasSaved: store.has) else {
+            throw Failure.unavailable(reason(delivery))
+        }
+        let end = Comparison.End(title: artifact.name, source: from == .savedCopy ? "saved copy" : "file on disk", sha: sha,
+                                 url: from == .savedCopy ? store.objectURL(sha) : URL(fileURLWithPath: artifact.path))
+        // A first look settles most files that aren't text without holding them; text is held whole.
+        guard case .success(var version) = Comparison.read(end, keeping: 8 << 10) else { throw Failure.changed }
+        if !version.isWhole, Comparison.isText(version) {
+            guard case .success(let whole) = Comparison.read(end, keeping: .max) else { throw Failure.changed }
+            version = whole
+        }
+        guard Comparison.isText(version) else { throw Failure.notText }
+
+        let bytes = [UInt8](version.data)
+        var selection = 0..<bytes.count
+        switch span {
+        case .lines(let first, let last)?:
+            let starts = [0] + bytes.indices.filter { bytes[$0] == UInt8(ascii: "\n") }.map { $0 + 1 }
+            selection = (first <= starts.count ? starts[first - 1] : bytes.count)..<(last < starts.count ? starts[last] : bytes.count)
+        case .bytes(let start, let end)?:
+            selection = Swift.min(start, bytes.count)..<Swift.min(end, bytes.count)
+        case nil:
+            break
+        }
+        // Off UTF-8 continuation bytes (10xxxxxx), so each end falls between characters.
+        func boundary(_ offset: Int, forward: Bool) -> Int {
+            var offset = offset
+            while offset > 0, offset < bytes.count, bytes[offset] & 0xC0 == 0x80 { offset += forward ? 1 : -1 }
+            return offset
+        }
+        let start = boundary(selection.lowerBound, forward: true)
+        let wanted = Swift.max(start, boundary(selection.upperBound, forward: false))
+        let cut = boundary(start + Swift.min(wanted - start, max), forward: false)
+        return Text(index: index, reference: reference(delivery, of: artifact, now: now, library: index.library),
+                    text: String(decoding: bytes[start..<cut], as: UTF8.self), range: start..<cut, size: bytes.count,
+                    truncated: cut < wanted)
+    }
+
+    /// The delivery's reference, as the app's Copy Reference copies it.
+    public func resolve(_ id: String) throws -> Resolved {
+        let (_, artifact, delivery) = try lookup(id)
+        let index = try registry.index()
+        return Resolved(index: index, reference: reference(delivery, of: artifact, now: check(artifact), library: index.library))
+    }
+
+    /// Stages a verified, read-only copy of the delivery's exact bytes in Gleaner's hand-off folder
+    /// (`ContentStore.stage`): from its saved copy, or from the original while it still holds them.
+    public func handoff(_ id: String) throws -> HandedOff {
+        let (_, artifact, delivery) = try lookup(id)
+        let index = try registry.index()
+        let now = check(artifact)
+        guard case .ready(let sha, _, _) = artifact.handoff(delivery, now: now, hasSaved: store.has) else {
+            throw Failure.unavailable(reason(delivery))
+        }
+        do {
+            let copy = try store.stage(sha: sha, name: artifact.name, source: artifact.path)
+            return HandedOff(index: index, reference: reference(delivery, of: artifact, now: now, library: index.library),
+                             copy: copy.path)
+        } catch ContentStore.Failure.changed {
+            throw Failure.changed
+        }
+    }
+
+    /// Hashes the original and Gleaner's saved copy again, and says which, if either, still holds
+    /// the reference's bytes. Neither means there are no bytes for that version now (exit 1).
+    public func verify(_ reference: Reference) throws -> Verified {
+        let index = try registry.index()
+        guard let sha = reference.sha256 else { return Verified(index: index, reference: reference, original: false, savedCopy: false) }
+        return Verified(
+            index: index, reference: reference,
+            original: Locator.stat(reference.path).kind == .file && Locator.sha256(reference.path) == sha,
+            savedCopy: Locator.sha256(store.objectURL(sha).path) == sha)
+    }
+
+    /// `verify(_:)` for the delivery `id`, as `resolve` names it now.
+    public func verify(delivery id: String) throws -> Verified {
+        try verify(resolve(id).reference)
+    }
+
+    /// Every artifact, and the one holding the delivery `id`.
+    private func lookup(_ id: String) throws -> (artifacts: [Artifact], artifact: Artifact, delivery: Delivery) {
+        let artifacts = try registry.artifacts()
+        for artifact in artifacts {
+            if let delivery = artifact.deliveries.first(where: { $0.id == id }) { return (artifacts, artifact, delivery) }
+        }
+        throw Failure.notFound(id)
+    }
+
+    /// The file as it is now, checked on each call.
+    private func check(_ artifact: Artifact) -> FileObservation {
+        FileObservation(state: Locator.observe(artifact.path, checkout: artifact.checkout), checkedAt: Date())
+    }
+
+    func reference(_ delivery: Delivery, of artifact: Artifact, now: FileObservation, library: String) -> Reference {
+        let availability = switch artifact.handoff(delivery, now: now, hasSaved: store.has) {
+        case .ready(_, .original, _): Availability(state: .original)
+        case .ready(_, .savedCopy, _): Availability(state: .savedCopy)
+        default: Availability(state: .unavailable, reason: reason(delivery))
+        }
+        return Reference(
+            library: library, delivery: delivery.id, name: artifact.name, sha256: delivery.sha256, path: delivery.path,
+            evidence: LogLine(log: delivery.logPath, line: delivery.evidence.first?.line),
+            provenance: Seen(state: delivery.capture?.provenance ?? .neverObserved, observedAt: delivery.capture?.observedAt),
+            availability: availability)
+    }
+
+    /// Why Gleaner holds none of `delivery`'s bytes, from what it recorded when it first looked.
+    func reason(_ delivery: Delivery) -> Availability.Reason {
+        guard let capture = delivery.capture else { return .neverSeen }
+        switch capture.kind {
+        case .missing: return .neverSeen
+        case .special: return .notARegularFile
+        case .unreadable: return .unreadable
+        case .directory: return .folder
+        case .file:
+            if capture.savedAt != nil { return .savedCopyMissing }
+            return (capture.size ?? 0) > saveLimit ? .tooLargeToHaveBeenSaved : .saveFailed
+        }
+    }
+
+    /// The start of a request, for a list of results: cut at a space, and marked as cut.
+    static func excerpt(_ text: String?, length: Int = 200) -> String? {
+        guard let text, text.count > length else { return text }
+        let start = text.prefix(length)
+        return String(start[..<(start.lastIndex(where: \.isWhitespace) ?? start.endIndex)]) + "…"
+    }
+}
+
+// MARK: Answers
+
+extension Catalog {
+    /// Why the catalog can't answer, each with the exit code the `gleaner` command gives it.
+    public enum Failure: Error, Equatable, CustomStringConvertible {
+        /// No library at this path: Gleaner never ran with this home.
+        case noLibrary(String)
+        /// The library at this path is of another version of Gleaner. There is no compatibility mode.
+        case wrongVersion(String, found: Int)
+        /// No delivery has this id in this library.
+        case notFound(String)
+        /// Gleaner holds none of the version's bytes now.
+        case unavailable(Availability.Reason)
+        /// The version's bytes aren't text.
+        case notText
+        /// The bytes changed, or couldn't be read, while Gleaner read them.
+        case changed
+        /// What was asked can't be answered as asked: a range, a limit.
+        case usage(String)
+
+        /// 1: not found, or no bytes for that version; 2: usage; 3: no library, or the wrong version.
+        public var exitCode: Int32 {
+            switch self {
+            case .notFound, .unavailable, .notText, .changed: 1
+            case .usage: 2
+            case .noLibrary, .wrongVersion: 3
+            }
+        }
+
+        public var description: String {
+            switch self {
+            case .noLibrary(let path):
+                "There is no Gleaner library at \(path). Open Gleaner to make one."
+            case .wrongVersion(let path, let found):
+                "The Gleaner library at \(path) is version \(found); this reads version \(Registry.extractorVersion). Open Gleaner to update it."
+            case .notFound(let id):
+                "No delivery \(id) in this library."
+            case .unavailable(let reason):
+                "Gleaner holds none of this version’s bytes: \(reason.rawValue.replacingOccurrences(of: "_", with: " "))."
+            case .notText:
+                "This version isn’t text."
+            case .changed:
+                "The bytes changed, or couldn’t be read, while Gleaner read them. Try again."
+            case .usage(let message):
+                message
+            }
+        }
+    }
+
+    /// A delivery as every answer names it (query-core "Identity in every result"): its fields
+    /// kept apart, never one string. The path locates the file; it doesn't identify the version.
+    public struct Reference: Codable, Equatable, Sendable {
+        /// The library's namespace (`Index.library`).
+        public var library: String
+        /// The delivery's id, stable within the library while its log path is unchanged.
+        public var delivery: String
+        /// The file's name.
+        public var name: String
+        /// The capture's hash; nil when Gleaner never read the bytes.
+        public var sha256: String?
+        /// Where the file was delivered.
+        public var path: String
+        /// The reply record that named it.
+        public var evidence: LogLine
+        public var provenance: Seen
+        /// Where the version's bytes are now, checked on each call.
+        public var availability: Availability
+
+        // `sha256` is written as null, not left out, when Gleaner never read the bytes.
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(library, forKey: .library)
+            try container.encode(delivery, forKey: .delivery)
+            try container.encode(name, forKey: .name)
+            try container.encode(sha256, forKey: .sha256)
+            try container.encode(path, forKey: .path)
+            try container.encode(evidence, forKey: .evidence)
+            try container.encode(provenance, forKey: .provenance)
+            try container.encode(availability, forKey: .availability)
+        }
+    }
+
+    /// A line of an agent's log.
+    public struct LogLine: Codable, Equatable, Sendable {
+        public var log: String
+        /// From 1.
+        public var line: Int?
+    }
+
+    /// When Gleaner read a delivery's bytes, relative to the reply that handed them over (SPEC §5.1).
+    public struct Seen: Codable, Equatable, Sendable {
+        public var state: Provenance
+        /// When Gleaner first looked at the path.
+        public var observedAt: Date?
+    }
+
+    /// Where a version's bytes are now: the original while it hashes to the capture, else Gleaner's
+    /// saved copy, else none, with why (SPEC §6).
+    public struct Availability: Codable, Equatable, Sendable {
+        public enum State: String, Codable, Sendable {
+            case original
+            case savedCopy = "saved_copy"
+            case unavailable = "none"
+        }
+
+        /// Why Gleaner holds none of a version's bytes, from what it recorded when it first looked
+        /// (rulings A3).
+        public enum Reason: String, Codable, Sendable {
+            /// Nothing was at the path.
+            case neverSeen = "never_seen"
+            /// Something was, but not a regular file.
+            case notARegularFile = "not_a_regular_file"
+            /// A file was, but it couldn't be read.
+            case unreadable
+            /// A folder: folders aren't versioned.
+            case folder
+            /// Over the save limit, so only its hash was kept.
+            case tooLargeToHaveBeenSaved = "too_large_to_have_been_saved"
+            /// Saving a copy failed when Gleaner read it.
+            case saveFailed = "save_failed"
+            /// Gleaner saved a copy that its store no longer holds.
+            case savedCopyMissing = "saved_copy_missing"
+        }
+
+        public var state: State
+        /// Set when the state is none.
+        public var reason: Reason?
+    }
+
+    /// The project a file belongs to: the name it is shown by, with its parent folder's when two
+    /// share it, and the folder that tells it apart (SPEC §5).
+    public struct Project: Codable, Equatable, Sendable {
+        public var name: String
+        public var folder: String
+    }
+
+    /// `find`'s answer: how many artifacts matched, and the first of them.
+    public struct Found: Codable, Sendable {
+        public var index: Index
+        public var total: Int
+        /// True when more matched than were returned.
+        public var truncated: Bool
+        public var results: [Hit]
+    }
+
+    /// One artifact `find` matched, by the delivery the search matched.
+    public struct Hit: Codable, Sendable {
+        public var reference: Reference
+        public var project: Project
+        public var kind: Artifact.Kind
+        public var deliveredAt: Date?
+        /// The start of the request the delivery answered: stored, redacted text, returned as data.
+        public var request: String?
+    }
+
+    /// `show`'s answer.
+    public struct Shown: Codable, Sendable {
+        public var index: Index
+        public var reference: Reference
+        public var number: Int
+        public var deliveredAt: Date?
+        /// The request the delivery answered, and the reply passage that named the file: stored,
+        /// redacted text, returned as data, never as instructions.
+        public var request: String?
+        public var reply: String?
+        public var handoff: Plan
+        public var project: Project
+        public var kind: Artifact.Kind
+        /// Every delivery of the file, newest first.
+        public var deliveries: [Version]
+        public var onDisk: Disk
+    }
+
+    /// One delivery of a file.
+    public struct Version: Codable, Sendable {
+        public var reference: Reference
+        /// 1 is the oldest.
+        public var number: Int
+        public var deliveredAt: Date?
+    }
+
+    /// What is at a file's path now (SPEC §5.2).
+    public struct Disk: Codable, Sendable {
+        public var kind: LocatorState.Kind
+        /// Set for a file Gleaner could read.
+        public var sha256: String?
+        public var checkedAt: Date
+    }
+
+    /// What handing a delivery on would give now (SPEC §6).
+    public struct Plan: Codable, Equatable, Sendable {
+        public enum Action: String, Codable, Sendable {
+            /// The version's bytes, from where its availability says.
+            case ready
+            /// Something else is at the path, and Gleaner holds none of the version's bytes.
+            case unavailable
+            /// Nothing is at the path, but git history has a file there. Gleaner can't confirm it is
+            /// this version, and never restores it itself.
+            case restoreFromGit = "restore_from_git"
+            /// Nothing is at the path, and nothing holds the version's bytes.
+            case lost
+            /// A delivered folder, as it is now: folders aren't versioned.
+            case folder
+        }
+
+        public var action: Action
+        /// For unavailable: the delivery the file on disk now is, if it is one.
+        public var alternative: String?
+        /// For unavailable: the hash of the file on disk now. Unless `alternative` names a delivery,
+        /// it is not among the deliveries Gleaner found.
+        public var currentSha256: String?
+        /// For restore_from_git: a command the person can run.
+        public var restoreCommand: String?
+    }
+
+    /// Lines or bytes of a version, for `read`.
+    public enum Span: Sendable, Equatable {
+        /// Lines `first` through `last`, counted from 1: from the start of one to the end of the other.
+        case lines(Int, Int)
+        /// Bytes from offset `start` up to, not including, `end`.
+        case bytes(Int, Int)
+    }
+
+    /// `read`'s answer.
+    public struct Text: Codable, Sendable {
+        public var index: Index
+        public var reference: Reference
+        /// The bytes read, exactly: they are UTF-8.
+        public var text: String
+        /// Where `text`'s bytes are in the version, the end not included; a cut selection goes on from its end.
+        public var range: Range<Int>
+        /// The version's size in bytes.
+        public var size: Int
+        /// True when the selection was longer than the most asked for.
+        public var truncated: Bool
+    }
+
+    /// `resolve`'s answer, and what the app's Copy Reference copies.
+    public struct Resolved: Codable, Sendable {
+        public var index: Index
+        public var reference: Reference
+    }
+
+    /// `handoff`'s answer.
+    public struct HandedOff: Codable, Sendable {
+        public var index: Index
+        public var reference: Reference
+        /// The verified, read-only copy: its bytes hash to the reference's `sha256`.
+        public var copy: String
+    }
+
+    /// `verify`'s answer: which bytes still hash to the reference's.
+    public struct Verified: Codable, Sendable {
+        public var index: Index
+        public var reference: Reference
+        /// The file at the reference's path.
+        public var original: Bool
+        /// Gleaner's saved copy.
+        public var savedCopy: Bool
+    }
+
+    /// What an answer is evidence of (query-core "Freshness"): the library, and its last completed
+    /// run. An empty answer is not evidence of absence before the first run (generation 0), from a
+    /// stale run, or for a source that couldn't be read or was read with problems.
+    public struct Index: Codable, Equatable, Sendable {
+        /// The namespace of every delivery id.
+        public var library: String
+        /// Completed runs of the indexer; 0 before the first.
+        public var generation: Int
+        /// When the last completed run finished; nil before the first.
+        public var scannedAt: Date?
+        /// How each agent's logs read in that run, by provider (`claude-code`, `codex`).
+        public var sources: [String: Source]
+
+        // `scanned_at` is written as null, not left out, before the first run.
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(library, forKey: .library)
+            try container.encode(generation, forKey: .generation)
+            try container.encode(scannedAt, forKey: .scannedAt)
+            try container.encode(sources, forKey: .sources)
+        }
+    }
+
+    /// One agent's log folder as a run read it (SPEC §8), with what went wrong counted. What the
+    /// library holds from a source that is unreadable or read with problems may be incomplete.
+    public struct Source: Codable, Equatable, Sendable {
+        public enum State: String, Codable, Sendable {
+            /// Not on this Mac.
+            case absent
+            /// There, but it couldn't be listed (`reason`).
+            case unreadable
+            case read
+            /// Listed, but not everything in it could be read or understood.
+            case readWithProblems = "read_with_problems"
+        }
+
+        public var state: State
+        /// Why the folder couldn't be listed.
+        public var reason: String?
+        /// Record types the adapter doesn't recognize, with counts.
+        public var unknownRecordTypes: [String: Int] = [:]
+        /// Logs with malformed lines.
+        public var partialLogs = 0
+        /// Logs found shorter than when Gleaner read them: records were lost.
+        public var shortenedLogs = 0
+        /// Logs that couldn't be read or stored.
+        public var failures = 0
+        /// Folders in it that couldn't be listed.
+        public var unlistedFolders = 0
+    }
+}
+
+extension Catalog.Source {
+    init(_ source: Indexer.Report.Source) {
+        switch source.folder {
+        case .absent: state = .absent
+        case .unreadable(let why): state = .unreadable; reason = why
+        case .listed: state = source.hasProblems ? .readWithProblems : .read
+        }
+        unknownRecordTypes = source.unknownRecordTypes
+        partialLogs = source.partialLogs.count
+        shortenedLogs = source.shortenedLogs.count
+        failures = source.failures.count
+        unlistedFolders = source.unlistedFolders.count
+    }
+}
+
+extension Catalog.Project {
+    init(_ artifact: Artifact, names: [String: String]) {
+        name = names[artifact.projectFolder] ?? artifact.project
+        folder = artifact.projectFolder
+    }
+}
+
+extension Catalog.Plan {
+    init(_ handoff: Handoff, in artifact: Artifact, now: FileObservation) {
+        switch handoff {
+        case .ready: action = .ready
+        case .unavailable(let number, let current):
+            action = .unavailable
+            alternative = number.flatMap { n in artifact.deliveries.first { $0.number == n }?.id }
+            currentSha256 = current
+        case .restoreFromGit:
+            action = .restoreFromGit
+            restoreCommand = now.state.restoreCommand
+        case .lost: action = .lost
+        case .folder: action = .folder
+        }
+    }
+}
+
+extension Artifact.Kind: Codable {}
+extension LocatorState.Kind: Codable {}
