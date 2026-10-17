@@ -357,6 +357,30 @@ import Testing
         #expect(refusal.exitCode == 1)
     }
 
+    @Test func readTakesTheSavedCopyOverAnOriginalThatCanChangeWhileItIsRead() throws {
+        try index(at: delivered.addingTimeInterval(20))
+        let catalog = try catalog(), notes = try id("notes.md", in: catalog)
+        let delivered = try bytes(project.appendingPathComponent("out/notes.md").path)
+        // An agent rewrites the file again and again, each write whole: at any moment it may hold
+        // the delivered bytes, and stop holding them while they are read.
+        let stop = Date().addingTimeInterval(1)
+        let writer = Thread {
+            var again = false
+            while Date() < stop {
+                try? (again ? delivered : Data("# Notes\nrewritten\n".utf8)).write(to: project.appendingPathComponent("out/notes.md"), options: .atomic)
+                again.toggle()
+            }
+        }
+        writer.start()
+        var reads = 0, failed = 0
+        while Date() < stop {
+            reads += 1
+            do { #expect(try catalog.read(notes).text == "# Notes\nline two\nline three: café\n") }
+            catch is Catalog.Failure { failed += 1 }
+        }
+        #expect(failed == 0, "of \(reads) reads")
+    }
+
     @Test func readRefusesWhatIsNotText() throws {
         try index(at: delivered.addingTimeInterval(20))
         let catalog = try catalog()

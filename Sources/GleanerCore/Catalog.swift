@@ -113,11 +113,14 @@ extension Catalog {
         let (_, artifact, delivery) = try lookup(id)
         let index = try registry.index()
         let now = check(artifact)
-        guard case .ready(let sha, let from, _) = artifact.handoff(delivery, now: now, hasSaved: store.has) else {
+        guard case .ready(let sha, _, _) = artifact.handoff(delivery, now: now, hasSaved: store.has) else {
             throw Failure.unavailable(reason(delivery))
         }
-        let end = Comparison.End(title: artifact.name, source: from == .savedCopy ? "saved copy" : "file on disk", sha: sha,
-                                 url: from == .savedCopy ? store.objectURL(sha) : URL(fileURLWithPath: artifact.path))
+        // The saved copy whenever there is one, as a hand-off copy is made: unlike the original, no
+        // one rewrites it while it is read.
+        let saved = store.has(sha)
+        let end = Comparison.End(title: artifact.name, source: saved ? "saved copy" : "file on disk", sha: sha,
+                                 url: saved ? store.objectURL(sha) : URL(fileURLWithPath: artifact.path))
         // A first look settles most files that aren't text without holding them; text is held whole.
         guard case .success(var version) = Comparison.read(end, keeping: 8 << 10) else { throw Failure.changed }
         if !version.isWhole, Comparison.isText(version) {
