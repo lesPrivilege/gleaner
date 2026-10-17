@@ -20,20 +20,8 @@ struct LibraryView: View {
             }
         }
         .searchable(text: $model.query, placement: .sidebar, prompt: "What you asked for, file name, project…")
+        .navigationSubtitle(model.progress.map { "Reading logs… \($0.done) of \($0.total)" } ?? model.status)
         .toolbar {
-            ToolbarItem(placement: .status) {
-                HStack(spacing: 8) {
-                    if let progress = model.progress {
-                        ProgressView(value: Double(progress.done), total: Double(max(progress.total, 1)))
-                            .frame(width: 120)
-                        Text("Reading \(progress.total) logs…")
-                    } else {
-                        Text(model.status)
-                    }
-                }
-                .font(.callout)
-                .foregroundStyle(.secondary)
-            }
             ToolbarItem {
                 Button("Check for New Deliveries", systemImage: "arrow.clockwise") { model.reindex() }
                     .help("Read new agent replies now (⌘R). Gleaner also watches the log folders while it is open.")
