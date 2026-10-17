@@ -17,6 +17,11 @@ public struct ContentStore: Sendable {
         self.staging = staging
     }
 
+    /// lstat, not stat: true only for a regular file itself, never for a link to one.
+    static func isRegularFile(_ url: URL) -> Bool {
+        (try? FileManager.default.attributesOfItem(atPath: url.path)[.type] as? FileAttributeType) == .typeRegular
+    }
+
     public func objectURL(_ sha: String) -> URL {
         objects.appendingPathComponent(String(sha.prefix(2))).appendingPathComponent(sha)
     }
@@ -33,8 +38,10 @@ public struct ContentStore: Sendable {
         let fm = FileManager.default
         try fm.createDirectory(at: objects, withIntermediateDirectories: true)
         let temporary = objects.appendingPathComponent(".incoming-\(UUID().uuidString)")
-        try fm.copyItem(at: URL(fileURLWithPath: path), to: temporary)
-        guard let sha = Locator.sha256(temporary.path) else {
+        // Copy what a symlink points at, never the link: a link in the store would follow the
+        // live file, and making it read-only would change the project's own file.
+        try fm.copyItem(at: URL(fileURLWithPath: path).resolvingSymlinksInPath(), to: temporary)
+        guard Self.isRegularFile(temporary), let sha = Locator.sha256(temporary.path) else {
             try? fm.removeItem(at: temporary)
             throw Failure.unavailable
         }
@@ -67,12 +74,15 @@ public struct ContentStore: Sendable {
         } else {
             throw Failure.unavailable
         }
-        try? fm.removeItem(at: directory)
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-        try fm.copyItem(at: URL(fileURLWithPath: origin), to: target)
-        let found = Locator.sha256(target.path) ?? ""
+        if fm.fileExists(atPath: target.path) {
+            try? fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: target.path)
+            try fm.removeItem(at: target)
+        }
+        try fm.copyItem(at: URL(fileURLWithPath: origin).resolvingSymlinksInPath(), to: target)
+        let found = Self.isRegularFile(target) ? Locator.sha256(target.path) ?? "" : ""
         guard found == sha else {
-            try? fm.removeItem(at: directory)
+            try? fm.removeItem(at: target)
             throw Failure.changed(expected: sha, found: found)
         }
         try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: target.path)
