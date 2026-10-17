@@ -197,6 +197,12 @@ enum Wording {
         }
     }
 
+    /// A project as shown. When no repository was found for the file, that is said rather than
+    /// guessed (SPEC §5).
+    static func project(_ name: String, inRepository: Bool) -> String {
+        inRepository ? name : name + " · outside git"
+    }
+
     static func kindName(_ kind: Artifact.Kind) -> String {
         switch kind {
         case .document: "Documents"

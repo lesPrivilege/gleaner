@@ -31,6 +31,20 @@ public enum Projects {
         return root
     }
 
+    /// What each project folder is shown as: its name, or its parent folder's name and its own
+    /// when another folder has the same name (`client-a/app`, `client-b/app`).
+    public static func names(_ folders: some Sequence<String>) -> [String: String] {
+        let byName = Dictionary(grouping: Set(folders)) { ($0 as NSString).lastPathComponent }
+        var names: [String: String] = [:]
+        for (name, group) in byName {
+            for folder in group {
+                let parent = ((folder as NSString).deletingLastPathComponent as NSString).lastPathComponent
+                names[folder] = group.count == 1 ? name : parent + "/" + name
+            }
+        }
+        return names
+    }
+
     /// Forgets every repository found, as a fresh launch would.
     static func forgetRepositories() {
         lock.withLock { roots.removeAll() }

@@ -30,7 +30,7 @@ struct LibraryView: View {
         .onAppear {
             model.query = savedQuery
             model.kind = Artifact.Kind(rawValue: savedKind)
-            model.project = savedProject.isEmpty ? nil : savedProject
+            model.project = model.projects.contains { $0.projectFolder == savedProject } ? savedProject : nil
         }
         .onChange(of: model.query) { savedQuery = model.query }
         .onChange(of: model.kind) { savedKind = model.kind?.rawValue ?? "" }
@@ -57,7 +57,7 @@ struct ResultsList: View {
             filters
             List(selection: $model.selection) {
                 ForEach(results) { result in
-                    ResultRow(result: result, showProject: model.project == nil,
+                    ResultRow(result: result, project: model.project == nil ? model.projectName(result.artifact) : nil,
                               showFolder: repeated.contains(result.artifact.name),
                               onDisk: !model.missing.contains(result.artifact.path))
                         .tag(result.id)
@@ -74,7 +74,7 @@ struct ResultsList: View {
                     Button(model.missing.contains(artifact.path) ? "Show Folder in Finder" : "Show in Finder") { model.reveal(artifact) }
                     Button("Copy Path") { model.copyPath(artifact) }
                     Divider()
-                    Button("Show Only \(artifact.project)") { model.project = artifact.project }
+                    Button("Show Only \(model.projectName(artifact))") { model.project = artifact.projectFolder }
                 }
             }
             .onKeyPress(.space) {
@@ -96,7 +96,7 @@ struct ResultsList: View {
             Picker("Project", selection: $model.project) {
                 Text("All projects").tag(String?.none)
                 Divider()
-                ForEach(model.projects, id: \.self) { Text($0).tag(String?.some($0)) }
+                ForEach(model.projects) { Text(model.projectName($0)).tag(String?.some($0.projectFolder)) }
             }
             .pickerStyle(.menu)
             .labelsHidden()
@@ -161,14 +161,15 @@ struct TypeBadge: View {
 
 struct ResultRow: View {
     var result: SearchResult
-    var showProject: Bool
+    /// The project as shown, or nil when the list is filtered to one.
+    var project: String?
     var showFolder: Bool
     var onDisk: Bool
 
     var body: some View {
         let artifact = result.artifact
         let hit = artifact.deliveries[result.deliveryIndex]
-        let context = [showProject ? artifact.project : nil,
+        let context = [project,
                        artifact.inWorktree ? artifact.place : nil,
                        showFolder ? artifact.folder : nil].compactMap { $0 }
         VStack(alignment: .leading, spacing: 4) {

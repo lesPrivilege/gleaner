@@ -37,6 +37,11 @@ import Testing
         #expect(first.inRepository && second.inRepository)
     }
 
+    @Test func projectsWithTheSameNameAreShownWithTheirParentFolder() {
+        let names = Projects.names(["/u/client-a/app", "/u/client-b/app", "/u/Praxis", "/u/client-a/app"])
+        #expect(names == ["/u/client-a/app": "client-a/app", "/u/client-b/app": "client-b/app", "/u/Praxis": "Praxis"])
+    }
+
     @Test func aDeletedExternalWorktreeKeepsItsProjectAfterARestart() throws {
         let fm = FileManager.default
         let atlas = try repository("Atlas")

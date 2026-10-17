@@ -55,7 +55,7 @@ struct DetailView: View {
     func header(_ artifact: Artifact) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(artifact.name).font(.title2.weight(.semibold)).textSelection(.enabled)
-            Text(([artifact.project, artifact.inWorktree ? artifact.place : nil] as [String?]).compactMap { $0 }.joined(separator: " · "))
+            Text(([model.projectName(artifact), artifact.inWorktree ? artifact.place : nil] as [String?]).compactMap { $0 }.joined(separator: " · "))
                 .font(.callout).foregroundStyle(.secondary)
         }
     }

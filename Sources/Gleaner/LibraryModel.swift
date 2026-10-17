@@ -33,6 +33,7 @@ final class LibraryModel {
         didSet {
             siblings = Artifact.deliveredWith(artifacts)
             missing = Self.missing(artifacts)
+            projectNames = Projects.names(artifacts.map(\.projectFolder))
         }
     }
     /// Paths not on disk, checked once per load and refreshed when a file is observed, so list
@@ -40,13 +41,15 @@ final class LibraryModel {
     private(set) var missing: Set<String> = []
     /// The other files named in the same reply, as their deliveries from it, keyed by delivery id.
     private(set) var siblings: [Delivery.ID: [Delivery]] = [:]
+    /// What each project folder is shown as; a name two projects share carries its parent folder.
+    private(set) var projectNames: [String: String] = [:]
     /// False until the first read of the logs finishes.
     private(set) var indexed = false
     var query = "" {
         didSet { if query != oldValue { chosenDelivery = nil } }
     }
     var kind: Artifact.Kind?
-    /// nil shows every project.
+    /// The project folder shown, which tells apart projects with the same name; nil shows every project.
     var project: String?
     var selection: Artifact.ID? {
         didSet { if selection != oldValue { chosenDelivery = nil; comparison = nil } }
@@ -82,6 +85,7 @@ final class LibraryModel {
         artifacts = (try? registry.artifacts()) ?? []
         siblings = Artifact.deliveredWith(artifacts)
         missing = Self.missing(artifacts)
+        projectNames = Projects.names(artifacts.map(\.projectFolder))
     }
 
     private static func missing(_ artifacts: [Artifact]) -> Set<String> {
@@ -95,10 +99,15 @@ final class LibraryModel {
         return (found, all.filter { !found.contains($0) })
     }
 
-    /// Projects, most recently delivered to first.
-    var projects: [String] {
+    /// Each project once, by its most recently delivered file, most recent first.
+    var projects: [Artifact] {
         var seen = Set<String>()
-        return artifacts.compactMap { seen.insert($0.project).inserted ? $0.project : nil }
+        return artifacts.filter { seen.insert($0.projectFolder).inserted }
+    }
+
+    /// The project `artifact` belongs to, as shown.
+    func projectName(_ artifact: Artifact) -> String {
+        Wording.project(projectNames[artifact.projectFolder] ?? artifact.project, inRepository: artifact.inRepository)
     }
 
     func clearFilters() {
@@ -159,7 +168,7 @@ final class LibraryModel {
     var results: [SearchResult] {
         let tokens = tokens
         return artifacts.compactMap { artifact in
-            guard kind == nil || artifact.kind == kind, project == nil || artifact.project == project,
+            guard kind == nil || artifact.kind == kind, project == nil || artifact.projectFolder == project,
                   let match = artifact.match(tokens) else { return nil }
             return SearchResult(artifact: artifact, deliveryIndex: match.deliveryIndex, matchedIn: match.fields)
         }
