@@ -11,4 +11,9 @@ import Testing
         #expect(Wording.saveFailed(ContentStore.Failure.unavailable, delivery: 2)
                 == "Gleaner couldn’t read delivery 2’s bytes at this path.")
     }
+
+    @Test func aLogShorterThanWhenLastReadIsNamedAsSuch() {
+        let source = Indexer.Report.Source(folder: .listed, shortenedLogs: ["/logs/a.jsonl"])
+        #expect(Wording.sourcesLine([.claudeCode: source]) == "Claude Code: read with problems (1 log shorter than when last read)")
+    }
 }

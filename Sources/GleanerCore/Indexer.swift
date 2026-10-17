@@ -80,6 +80,10 @@ public final class Indexer: @unchecked Sendable {
             /// Logs with malformed lines. What they name was added and nothing was removed; they are
             /// read again next run.
             public var partialLogs: [String] = []
+            /// Logs shorter than when they were last read whole: records were lost. What they name
+            /// was added and nothing was removed; they are read again next run, but reading again
+            /// can't bring the records back.
+            public var shortenedLogs: [String] = []
             /// Logs that could not be read or stored, with the reason. Their deliveries stay as they were.
             public var failures: [String] = []
             /// Folders in it that could not be listed, with the reason. Their logs went unread; what
@@ -87,10 +91,10 @@ public final class Indexer: @unchecked Sendable {
             public var unlistedFolders: [String] = []
 
             /// Listed, but not everything in it could be read or understood.
-            public var hasProblems: Bool { !unknownRecordTypes.isEmpty || isIncomplete }
+            public var hasProblems: Bool { !unknownRecordTypes.isEmpty || !shortenedLogs.isEmpty || isIncomplete }
 
             /// Something reading again may fix: the folder, a folder in it, or a log couldn't be read
-            /// whole. Unknown record types stay until Gleaner learns them.
+            /// whole. Unknown record types stay until Gleaner learns them, and lost records stay lost.
             public var isIncomplete: Bool {
                 if case .unreadable = folder { return true }
                 return !partialLogs.isEmpty || !failures.isEmpty || !unlistedFolders.isEmpty
@@ -131,21 +135,22 @@ public final class Indexer: @unchecked Sendable {
         let codex = CodexAdapter(titles: CodexAdapter.loadTitles(
             index: sources.codexHome.appendingPathComponent("session_index.jsonl")))
 
-        var changed: [(Provider, URL, Int64, Date)] = []
+        var changed: [(Provider, URL, Int64, Date, shortened: Bool)] = []
         for (provider, url) in files {
             let info = Locator.stat(url.path)
             guard let size = info.size, let mtime = info.modifiedAt else { continue }
             if let unknown = try registry.unknownRecordTypes(unchangedLog: url.path, size: size, mtime: mtime) {
                 report.sources[provider]?.unknownRecordTypes.merge(unknown, uniquingKeysWith: +)
             } else {
-                changed.append((provider, url, size, mtime))
+                let shortened = try registry.readSize(logFile: url.path).map { size < $0 } ?? false
+                changed.append((provider, url, size, mtime, shortened))
             }
         }
 
         let jobs = changed
         let parsed = Slots<Result<SessionLog?, Error>>(count: jobs.count)
         DispatchQueue.concurrentPerform(iterations: jobs.count) { index in
-            let (provider, url, _, _) = jobs[index]
+            let (provider, url, _, _, _) = jobs[index]
             parsed[index] = Result { () throws -> SessionLog? in
                 switch provider {
                 case .claudeCode: try ClaudeCodeAdapter.parse(url)
@@ -154,18 +159,21 @@ public final class Indexer: @unchecked Sendable {
             }
         }
 
-        for (index, (provider, url, size, mtime)) in changed.enumerated() {
+        for (index, (provider, url, size, mtime, shortened)) in changed.enumerated() {
             progress(index, changed.count)
             switch parsed[index] {
             case .failure(let error):
                 report.sources[provider]?.failures.append("\(url.path): \(error)")
                 continue
             case .success(let log):
+                // A log shorter than when it was last read lost records, so like a malformed one it
+                // can't show that a delivery is gone.
+                let complete = log.map { $0.isComplete && !shortened } ?? true
                 do {
                     report.newDeliveries += try registry.transaction {
-                        let added = try log.map { try ingest($0, now: now()) } ?? 0
-                        // A partial log stays unread, so it is read and reported again next run.
-                        if log?.isComplete ?? true {
+                        let added = try log.map { try ingest($0, isComplete: complete, now: now()) } ?? 0
+                        // A log not read whole stays unread, so it is read and reported again next run.
+                        if complete {
                             try registry.markRead(logFile: url.path, size: size, mtime: mtime,
                                                   unknownRecordTypes: log?.unknownRecordTypes ?? [:])
                         }
@@ -179,6 +187,7 @@ public final class Indexer: @unchecked Sendable {
                 if let log {
                     report.sources[provider]?.unknownRecordTypes.merge(log.unknownRecordTypes, uniquingKeysWith: +)
                     if !log.isComplete { report.sources[provider]?.partialLogs.append(url.path) }
+                    if shortened { report.sources[provider]?.shortenedLogs.append(url.path) }
                 }
                 report.logsRead += 1
             }
@@ -187,7 +196,9 @@ public final class Indexer: @unchecked Sendable {
         return report
     }
 
-    func ingest(_ log: SessionLog, now: Date) throws -> Int {
+    /// `isComplete` says the whole log was read: only then does it show that a delivery it no
+    /// longer admits is gone.
+    func ingest(_ log: SessionLog, isComplete: Bool, now: Date) throws -> Int {
         try registry.upsert(log.session)
         var added = 0
         var admitted = Set<String>()
@@ -218,8 +229,7 @@ public final class Indexer: @unchecked Sendable {
                 added += 1
             }
         }
-        // Only a log read whole shows that a delivery is gone from it.
-        if log.isComplete { try registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
+        if isComplete { try registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
         return added
     }
 

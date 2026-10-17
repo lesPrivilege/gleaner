@@ -45,7 +45,9 @@ public final class Registry: @unchecked Sendable {
         }
         let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
         if version != Int64(Self.extractorVersion) {
-            try db.execute("DELETE FROM log_files; PRAGMA user_version = \(Self.extractorVersion);")
+            // No log has this modification time, so every log is read again; each keeps the size
+            // it was read at, so one that is shorter since still removes nothing.
+            try db.execute("UPDATE log_files SET mtime = -1; PRAGMA user_version = \(Self.extractorVersion);")
         }
     }
 
@@ -58,6 +60,11 @@ public final class Registry: @unchecked Sendable {
         guard let row = rows.first, row["size"] as? Int64 == size, row["mtime"] as? Double == mtime.timeIntervalSince1970
         else { return nil }
         return (row["unknown_types"] as? String).flatMap { try? JSONDecoder().decode([String: Int].self, from: Data($0.utf8)) } ?? [:]
+    }
+
+    /// The size a log had when it was last read whole; nil when it never was.
+    public func readSize(logFile path: String) throws -> Int64? {
+        try db.rows("SELECT size FROM log_files WHERE path = ?", [path]).first?["size"] as? Int64
     }
 
     public func markRead(logFile path: String, size: Int64, mtime: Date, unknownRecordTypes: [String: Int]) throws {

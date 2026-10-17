@@ -266,12 +266,49 @@ import Testing
         // Not marked read: the next run reads it again and says so again.
         #expect(partialLogs(try indexer.run()) == ["session-1.jsonl"])
 
-        // Once the log reads whole, what it no longer names is removed.
-        try ([String(lines[0]), assistant("Video: [demo](out/demo.mp4)", at: delivered, cwd: project.path)]
+        // Once the log reads whole, and no shorter than it was, what it no longer names is removed.
+        try ([String(lines[0]), assistant("Video: [demo](out/demo.mp4)", at: delivered, cwd: project.path),
+              user(String(repeating: "And one more thing. ", count: 20), at: delivered.addingTimeInterval(50))]
             .joined(separator: "\n") + "\n").write(to: log, atomically: true, encoding: .utf8)
         #expect(partialLogs(try indexer.run(now: { delivered.addingTimeInterval(60) })) == [])
         #expect(try indexer.registry.artifacts().map(\.name) == ["demo.mp4"])
         #expect(try artifact("demo.mp4").latest.capture == before)
+    }
+
+    @Test func aLogShorterThanWhenLastReadRemovesNothing() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        // The log is rewritten shorter: well-formed, but the reply no longer names the report or the build.
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        let lines = try String(contentsOf: log, encoding: .utf8).split(separator: "\n")
+        try ([String(lines[0]), assistant("Video: [demo](out/demo.mp4)", at: delivered, cwd: project.path)]
+            .joined(separator: "\n") + "\n").write(to: log, atomically: true, encoding: .utf8)
+
+        func shortenedLogs(_ report: Indexer.Report) -> [String]? {
+            report.sources[.claudeCode]?.shortenedLogs.map { ($0 as NSString).lastPathComponent }
+        }
+        let report = try indexer.run(now: { delivered.addingTimeInterval(40) })
+        #expect(shortenedLogs(report) == ["session-1.jsonl"])
+        #expect(report.sources[.claudeCode]?.hasProblems == true)
+        // Reading again can't bring the lost records back.
+        #expect(report.sources[.claudeCode]?.isIncomplete == false)
+        #expect(try indexer.registry.artifacts().map(\.name).sorted() == ["build.dmg", "demo.mp4", "report.md"])
+        // Still shorter than when it was read whole, next run too.
+        #expect(shortenedLogs(try indexer.run()) == ["session-1.jsonl"])
+        #expect(try indexer.registry.artifacts().count == 3)
+    }
+
+    @Test func aLogShorterSinceAnExtractorUpgradeRemovesNothing() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        let lines = try String(contentsOf: log, encoding: .utf8).split(separator: "\n")
+        try ([String(lines[0]), assistant("Video: [demo](out/demo.mp4)", at: delivered, cwd: project.path)]
+            .joined(separator: "\n") + "\n").write(to: log, atomically: true, encoding: .utf8)
+        try indexer.registry.db.execute("PRAGMA user_version = 1")
+        let upgraded = Indexer(
+            registry: try Registry(path: root.appendingPathComponent("support/registry.sqlite").path),
+            store: indexer.store, sources: indexer.sources)
+        _ = try upgraded.run(now: { delivered.addingTimeInterval(40) })
+        #expect(try upgraded.registry.artifacts().count == 3)
     }
 
     @Test func aDatabaseErrorFailsOnlyItsOwnLog() throws {
@@ -333,7 +370,7 @@ import Testing
                 ReplyPart(text: "Done: [notes](out/notes.md)", line: 5, at: delivered.addingTimeInterval(1), cwd: project.path),
             ])],
             unknownRecordTypes: [:], malformedLines: 0)
-        _ = try indexer.ingest(older, now: delivered.addingTimeInterval(20))
+        _ = try indexer.ingest(older, isComplete: true, now: delivered.addingTimeInterval(20))
         let before = try artifact("notes.md").latest
         #expect(before.capture?.provenance == .atDelivery)
 
