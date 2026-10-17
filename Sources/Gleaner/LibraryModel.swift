@@ -147,7 +147,8 @@ final class LibraryModel {
                 self.indexed = true
                 switch outcome {
                 case .success(let report):
-                    let failures = report.failures.isEmpty ? "" : " · \(report.failures.count) logs unreadable"
+                    let count = report.sources.values.reduce(0) { $0 + $1.failures.count }
+                    let failures = count == 0 ? "" : " · \(count) logs unreadable"
                     self.status = "\(artifacts.count) delivered files\(failures)"
                 case .failure(let error):
                     self.status = "Indexing failed: \(error)"

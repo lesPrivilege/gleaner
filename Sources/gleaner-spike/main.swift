@@ -78,7 +78,7 @@ enum Parsed {
 }
 
 let jobs: [(Provider, URL)] =
-    ClaudeCodeAdapter.sessionFiles(root: options.claudeRoot).map { (.claudeCode, $0) }
+    try ClaudeCodeAdapter.sessionFiles(root: options.claudeRoot).map { (.claudeCode, $0) }
     + CodexAdapter.sessionFiles(root: options.codexRoot.appendingPathComponent("sessions")).map { (.codex, $0) }
 FileHandle.standardError.write(Data("parsing \(jobs.count) session files…\n".utf8))
 

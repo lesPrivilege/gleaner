@@ -18,9 +18,15 @@ public struct LogSources: Sendable {
             codexHome: home.appendingPathComponent(".codex"))
     }
 
-    public var watchedDirectories: [String] {
-        [claudeProjects.path, codexHome.appendingPathComponent("sessions").path]
+    /// The folder holding each agent's session logs.
+    public func folder(_ provider: Provider) -> URL {
+        switch provider {
+        case .claudeCode: claudeProjects
+        case .codex: codexHome.appendingPathComponent("sessions")
+        }
     }
+
+    public var watchedDirectories: [String] { Provider.allCases.map { folder($0).path } }
 }
 
 extension DeliveryCandidate {
@@ -33,11 +39,33 @@ extension DeliveryCandidate {
 
 /// Reads changed logs into the registry and captures each new delivery's bytes once.
 public final class Indexer: @unchecked Sendable {
+    /// What a run read. Each agent's logs are reported apart, so a source that is missing,
+    /// unreadable or read with problems never looks like one that delivered nothing (SPEC §8).
     public struct Report: Sendable {
+        /// How one agent's log folder read.
+        public struct Source: Sendable, Equatable {
+            public enum Folder: Sendable, Equatable {
+                /// Not on this Mac.
+                case absent
+                /// There, but could not be listed, with the reason. What the library holds stays.
+                case unreadable(String)
+                case listed
+            }
+
+            public var folder: Folder
+            /// Record types the adapter does not recognize, with counts. Non-empty means the format moved.
+            public var unknownRecordTypes: [String: Int] = [:]
+            /// Logs that could not be read, with the reason. Their deliveries stay as they were.
+            public var failures: [String] = []
+
+            /// Listed, but not everything in it could be read or understood.
+            public var hasProblems: Bool { !unknownRecordTypes.isEmpty || !failures.isEmpty }
+        }
+
         public var logsRead = 0
         public var newDeliveries = 0
-        public var unknownRecordTypes: [String: Int] = [:]
-        public var failures: [String] = []
+        /// Every provider, whether or not its folder is there.
+        public var sources: [Provider: Source] = [:]
     }
 
     public let registry: Registry
@@ -58,11 +86,27 @@ public final class Indexer: @unchecked Sendable {
     }
 
     public func run(now: () -> Date = Date.init, progress: (Int, Int) -> Void = { _, _ in }) throws -> Report {
+        var report = Report()
+        var files: [(Provider, URL)] = []
+        for provider in Provider.allCases {
+            let folder = sources.folder(provider)
+            guard FileManager.default.fileExists(atPath: folder.path) else {
+                report.sources[provider] = Report.Source(folder: .absent)
+                continue
+            }
+            do {
+                let logs = switch provider {
+                case .claudeCode: try ClaudeCodeAdapter.sessionFiles(root: folder)
+                case .codex: try CodexAdapter.sessionFiles(root: folder)
+                }
+                files += logs.map { (provider, $0) }
+                report.sources[provider] = Report.Source(folder: .listed)
+            } catch {
+                report.sources[provider] = Report.Source(folder: .unreadable(error.localizedDescription))
+            }
+        }
         let codex = CodexAdapter(titles: CodexAdapter.loadTitles(
             index: sources.codexHome.appendingPathComponent("session_index.jsonl")))
-        let files: [(Provider, URL)] =
-            ClaudeCodeAdapter.sessionFiles(root: sources.claudeProjects).map { (.claudeCode, $0) }
-            + CodexAdapter.sessionFiles(root: sources.codexHome.appendingPathComponent("sessions")).map { (.codex, $0) }
 
         var changed: [(Provider, URL, Int64, Date)] = []
         for (provider, url) in files {
@@ -73,7 +117,6 @@ public final class Indexer: @unchecked Sendable {
             }
         }
 
-        var report = Report()
         let jobs = changed
         let parsed = Slots<Result<SessionLog?, Error>>(count: jobs.count)
         DispatchQueue.concurrentPerform(iterations: jobs.count) { index in
@@ -86,17 +129,17 @@ public final class Indexer: @unchecked Sendable {
             }
         }
 
-        for (index, (_, url, size, mtime)) in changed.enumerated() {
+        for (index, (provider, url, size, mtime)) in changed.enumerated() {
             progress(index, changed.count)
             switch parsed[index] {
             case .failure(let error):
-                report.failures.append("\(url.path): \(error)")
+                report.sources[provider]?.failures.append("\(url.path): \(error)")
                 continue
             case .success(let log):
                 try registry.transaction {
                     if let log {
                         report.newDeliveries += try ingest(log, now: now())
-                        report.unknownRecordTypes.merge(log.unknownRecordTypes, uniquingKeysWith: +)
+                        report.sources[provider]?.unknownRecordTypes.merge(log.unknownRecordTypes, uniquingKeysWith: +)
                     }
                     try registry.markRead(logFile: url.path, size: size, mtime: mtime)
                 }

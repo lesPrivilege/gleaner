@@ -225,6 +225,44 @@ import Testing
         #expect(video.onDisk(now(video.path), hasSaved: saved) == .lost)
         #expect(video.handoff(video.latest, now: now(video.path), hasSaved: saved) == .lost)
     }
+
+    // MARK: sources
+
+    @Test func eachSourceSaysWhetherItsFolderWasThere() throws {
+        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(report.sources[.claudeCode] == Indexer.Report.Source(folder: .listed))
+        #expect(report.sources[.codex] == Indexer.Report.Source(folder: .listed))
+
+        try FileManager.default.removeItem(at: root.appendingPathComponent("codex/sessions"))
+        #expect(try indexer.run().sources[.codex]?.folder == .absent)
+    }
+
+    @Test func anUnreadableFolderIsNeverTakenForAnEmptyOne() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let fm = FileManager.default
+        let codexDay = root.appendingPathComponent("codex/sessions/2026")
+        try fm.createDirectory(at: codexDay, withIntermediateDirectories: true)
+        let denied = [root.appendingPathComponent("claude"), codexDay]
+        for folder in denied { try fm.setAttributes([.posixPermissions: 0], ofItemAtPath: folder.path) }
+        defer { for folder in denied { try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) } }
+
+        let report = try indexer.run()
+        for provider in Provider.allCases {
+            guard case .unreadable = report.sources[provider]?.folder else {
+                Issue.record("\(provider) read as if its folder were listed"); continue
+            }
+        }
+        // What the library already holds stays.
+        #expect(try indexer.registry.artifacts().count == 3)
+    }
+
+    @Test func unknownRecordTypesAreReportedForTheirOwnSource() throws {
+        try appendLog([#"{"type":"brand-new-record","sessionId":"s1"}"#])
+        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(report.sources[.claudeCode]?.unknownRecordTypes == ["brand-new-record": 1])
+        #expect(report.sources[.claudeCode]?.hasProblems == true)
+        #expect(report.sources[.codex]?.hasProblems == false)
+    }
 }
 
 private extension String {
