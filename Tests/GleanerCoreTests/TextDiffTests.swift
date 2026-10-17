@@ -45,6 +45,14 @@ import Testing
         #expect(TextDiff.compare("same\n", "same\n").summary == "No changes.")
     }
 
+    @Test func differentBytesAreNeverNoChanges() {
+        let endings = "Only line endings or the final newline differ."
+        #expect(TextDiff.compare("a\r\nb\r\n", "a\nb\n").summary == endings)
+        #expect(TextDiff.compare("a\nb\n", "a\nb").summary == endings)
+        // A line that only looks the same, é composed and decomposed, is a changed line.
+        #expect(TextDiff.compare("caf\u{e9}\n", "cafe\u{301}\n").summary == "1 added, 1 removed")
+    }
+
     @Test func oversizedInputIsLimitedNotTruncated() {
         let big = String(repeating: "x\n", count: TextDiff.maxLines + 1)
         guard case .limited = TextDiff.compare(big, "x\n") else { Issue.record("expected limited"); return }
@@ -113,6 +121,12 @@ import Testing
         let content = Comparison.load(try end("Delivery 1", "a\nb\n"), try end("Delivery 2", "a\nc\n"), kind: .document)
         guard case .text(let outcome) = content else { Issue.record("expected text"); return }
         #expect(outcome.summary == "1 added, 1 removed")
+    }
+
+    @Test func endsThatDifferOnlyInLineEndingsSaySo() throws {
+        let content = Comparison.load(try end("Delivery 1", "a\r\nb\r\n"), try end("Delivery 2", "a\nb"), kind: .document)
+        guard case .text(let outcome) = content else { Issue.record("expected text"); return }
+        #expect(outcome.summary == "Only line endings or the final newline differ.")
     }
 
     @Test func bytesThatNoLongerMatchTheirHashAreRefused() throws {

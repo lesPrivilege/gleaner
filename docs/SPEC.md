@@ -120,7 +120,7 @@ Same bytes do not imply the same logical artifact.
 
 ### 6.1 Comparing versions
 
-Any two versions Gleaner holds bytes for (two deliveries, or a delivery and the file on disk) can be compared, read-only. Both ends are named with their hash and must still hash to it. Text gets a line diff in one accent: grey for what was there, the accent for new lines, a solid block only on the new words of a one-for-one replaced line, both line numbers and the ± mark always shown. Images show side by side; other kinds compare size and hash. Inputs over 64 KB or 2000 lines are reported as limited, never shown partially. See `docs/design/diff-and-references.md`.
+Any two versions Gleaner holds bytes for (two deliveries, or a delivery and the file on disk) can be compared, read-only. Both ends are named with their hash and must still hash to it. Text gets a line diff in one accent: grey for what was there, the accent for new lines, a solid block only on the new words of a one-for-one replaced line, both line numbers and the ± mark always shown. Two versions whose bytes differ never read as "No changes": when no line differs, Compare says that only line endings or the final newline differ. Images show side by side; other kinds compare size and hash. Inputs over 64 KB or 2000 lines are reported as limited, never shown partially. See `docs/design/diff-and-references.md`.
 
 ### 6.2 Claims in replies
 
