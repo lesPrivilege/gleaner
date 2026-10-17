@@ -57,6 +57,16 @@ public struct ContentStore: Sendable {
         return (sha, size)
     }
 
+    /// Removes every hand-off copy. They are disposable: saved copies live in `objects`.
+    public func clearStaging() throws {
+        let fm = FileManager.default
+        guard let items = fm.enumerator(atPath: staging.path) else { return }
+        for case let item as String in items {
+            try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: staging.appendingPathComponent(item).path)
+        }
+        if fm.fileExists(atPath: staging.path) { try fm.removeItem(at: staging) }
+    }
+
     /// An immutable copy of the version `sha`, named `name`, ready to hand to another app.
     /// It is copied from the saved copy when there is one, else from `source`, and handed out only
     /// if the copy itself hashes to `sha`.

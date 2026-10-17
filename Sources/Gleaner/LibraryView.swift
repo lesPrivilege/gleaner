@@ -1,8 +1,13 @@
 import GleanerCore
+import QuickLook
 import SwiftUI
 
 struct LibraryView: View {
     @Environment(LibraryModel.self) private var model
+    // Search and filters survive relaunch; selection does not, since results may have changed.
+    @SceneStorage("query") private var savedQuery = ""
+    @SceneStorage("kind") private var savedKind = ""
+    @SceneStorage("project") private var savedProject = ""
 
     var body: some View {
         @Bindable var model = model
@@ -20,6 +25,16 @@ struct LibraryView: View {
             }
         }
         .searchable(text: $model.query, placement: .sidebar, prompt: "What you asked for, file name, project…")
+        .quickLookPreview($model.quickLookURL)
+        .onChange(of: model.selection) { if model.quickLookURL != nil { model.quickLookURL = model.selectedHandoffURL } }
+        .onAppear {
+            model.query = savedQuery
+            model.kind = Artifact.Kind(rawValue: savedKind)
+            model.project = savedProject.isEmpty ? nil : savedProject
+        }
+        .onChange(of: model.query) { savedQuery = model.query }
+        .onChange(of: model.kind) { savedKind = model.kind?.rawValue ?? "" }
+        .onChange(of: model.project) { savedProject = model.project ?? "" }
         .navigationSubtitle(model.progress.map { "Reading logs… \($0.done) of \($0.total)" } ?? model.status)
         .toolbar {
             ToolbarItem {
@@ -46,7 +61,26 @@ struct ResultsList: View {
                               showFolder: repeated.contains(result.artifact.name),
                               onDisk: !model.missing.contains(result.artifact.path))
                         .tag(result.id)
+                        .onDrag { model.dragItem(for: result) }
                 }
+            }
+            .contextMenu(forSelectionType: Artifact.ID.self) { ids in
+                if let id = ids.first, let artifact = model.artifacts.first(where: { $0.id == id }) {
+                    if id == model.selection {
+                        Button("Open Verified Copy") { model.openSelected() }.disabled(model.selectedHandoffURL == nil)
+                        Button("Quick Look") { model.toggleQuickLook() }.disabled(model.selectedHandoffURL == nil)
+                        Divider()
+                    }
+                    Button(model.missing.contains(artifact.path) ? "Show Folder in Finder" : "Show in Finder") { model.reveal(artifact) }
+                    Button("Copy Path") { model.copyPath(artifact) }
+                    Divider()
+                    Button("Show Only \(artifact.project)") { model.project = artifact.project }
+                }
+            }
+            .onKeyPress(.space) {
+                guard model.selectedHandoffURL != nil || model.quickLookURL != nil else { return .ignored }
+                model.toggleQuickLook()
+                return .handled
             }
             .onCopyCommand {
                 guard let url = model.selectedHandoffURL, let provider = NSItemProvider(contentsOf: url) else { return [] }

@@ -216,7 +216,6 @@ struct HandoffPanel: View {
             HStack(spacing: 10) {
                 tile
                 Button("Open") { open() }
-                    .keyboardShortcut("o")
                     .disabled(openURL == nil)
                     .help("Open the verified copy in its app (⌘O). ⌘C in the list copies it as a file.")
                 if let ends = diskComparison {
@@ -241,9 +240,9 @@ struct HandoffPanel: View {
                         .font(.system(.callout, design: .monospaced)).lineLimit(1).truncationMode(.middle)
                         .textSelection(.enabled)
                     Spacer(minLength: 8)
-                    Button(sourceExists ? "Show in Finder" : "Show Folder") { reveal() }
+                    Button(sourceExists ? "Show in Finder" : "Show Folder") { model.reveal(artifact) }
                         .help(sourceExists ? "Select the original file in Finder." : "The file isn’t there; show the folder it was in.")
-                    Button("Copy Path") { copy(artifact.path) }
+                    Button("Copy Path") { model.copyPath(artifact) }
                         .help("Copies where the original lives. The file there may change; drag or ⌘C hands over the verified copy.")
                 }
             }
@@ -281,7 +280,7 @@ struct HandoffPanel: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Drag \(artifact.name), delivery \(delivery.number)")
         .accessibilityValue(tileCaption)
-        .accessibilityHint(ready == nil ? "" : "Drag into another app, or press Command-O to open it.")
+        .accessibilityHint(ready == nil ? "" : "Drag into another app, or choose File > Open Verified Copy.")
     }
 
     var tileCaption: String {
@@ -355,15 +354,6 @@ struct HandoffPanel: View {
     }
 
     func open() { if let openURL { NSWorkspace.shared.open(openURL) } }
-
-    func reveal() {
-        let source = URL(fileURLWithPath: artifact.path)
-        if sourceExists {
-            NSWorkspace.shared.activateFileViewerSelecting([source])
-        } else {
-            NSWorkspace.shared.open(source.deletingLastPathComponent())
-        }
-    }
 
     func copy(_ text: String) {
         NSPasteboard.general.clearContents()

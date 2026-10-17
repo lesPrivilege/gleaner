@@ -32,6 +32,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>CFBundleVersion</key><string>$build</string>
   <key>LSMinimumSystemVersion</key><string>15.0</string>
   <key>NSHighResolutionCapable</key><true/>
+  <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
+  <key>NSHumanReadableCopyright</key><string>© 2026 lesPrivilege</string>
 </dict>
 </plist>
 PLIST

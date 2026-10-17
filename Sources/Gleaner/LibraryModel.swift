@@ -1,6 +1,7 @@
 import AppKit
 import GleanerCore
 import Observation
+import UniformTypeIdentifiers
 
 /// One search result: the artifact, and the delivery the search matched.
 struct SearchResult: Identifiable {
@@ -213,6 +214,71 @@ final class LibraryModel {
               let sha = observation.state.sha256 else { return nil }
         return Comparison.End(title: "File on disk", source: "checked \(observation.checkedAt.formatted(date: .omitted, time: .shortened))",
                               sha: sha, url: URL(fileURLWithPath: artifact.path))
+    }
+
+    // MARK: Actions shared by buttons, menus and the right-click menu
+
+    /// The file the Quick Look panel shows; nil closes it.
+    var quickLookURL: URL?
+
+    func toggleQuickLook() {
+        quickLookURL = quickLookURL == nil ? selectedHandoffURL : nil
+    }
+
+    /// Opens the selection's verified copy (or folder) in its app.
+    func openSelected() {
+        if let url = selectedHandoffURL { NSWorkspace.shared.open(url) }
+    }
+
+    /// Shows the original in Finder, or the folder it was in when it is gone.
+    func reveal(_ artifact: Artifact) {
+        let source = URL(fileURLWithPath: artifact.path)
+        if FileManager.default.fileExists(atPath: source.path) {
+            NSWorkspace.shared.activateFileViewerSelecting([source])
+        } else {
+            NSWorkspace.shared.open(source.deletingLastPathComponent())
+        }
+    }
+
+    func copyPath(_ artifact: Artifact) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(artifact.path, forType: .string)
+    }
+
+    /// A drag from a result row: the matched delivery's bytes, staged and verified only when the
+    /// receiving app asks for them.
+    func dragItem(for result: SearchResult) -> NSItemProvider {
+        let delivery = result.artifact.deliveries[result.deliveryIndex]
+        guard let sha = delivery.sha256, result.artifact.kind != .folder else { return NSItemProvider() }
+        let store = indexer.store, name = result.artifact.name, source = result.artifact.path
+        let provider = NSItemProvider()
+        provider.suggestedName = name
+        let type = UTType(filenameExtension: (name as NSString).pathExtension) ?? .data
+        provider.registerFileRepresentation(forTypeIdentifier: type.identifier, fileOptions: [], visibility: .all) { done in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do { done(try store.stage(sha: sha, name: name, source: source), false, nil) } catch { done(nil, false, error) }
+            }
+            return nil
+        }
+        return provider
+    }
+
+    /// Bytes Gleaner keeps: saved copies, and disposable hand-off copies.
+    func storageUsage() -> (saved: Int64, handoff: Int64) {
+        (Self.size(of: indexer.store.objects), Self.size(of: indexer.store.staging))
+    }
+
+    func clearHandoffCopies() {
+        clearStaging()
+        try? indexer.store.clearStaging()
+    }
+
+    private static func size(of directory: URL) -> Int64 {
+        let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey]
+        guard let files = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: keys) else { return 0 }
+        return files.reduce(Int64(0)) { total, item in
+            total + Int64((try? (item as? URL)?.resourceValues(forKeys: Set(keys)).totalFileAllocatedSize) ?? 0)
+        }
     }
 
     /// The hand-off state for the version `sha`; idle when what is staged belongs to another one.

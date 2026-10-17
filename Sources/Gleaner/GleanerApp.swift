@@ -30,9 +30,34 @@ struct GleanerApp: App {
         }
         .defaultSize(width: 1320, height: 860)
         .commands {
+            SidebarCommands()
             CommandGroup(after: .newItem) {
                 Button("Check for New Deliveries") { model?.reindex() }
                     .keyboardShortcut("r")
+                Divider()
+                Button("Open Verified Copy") { model?.openSelected() }
+                    .keyboardShortcut("o")
+                    .disabled(model?.selectedHandoffURL == nil)
+                Button("Show in Finder") { if let a = model?.selected?.artifact { model?.reveal(a) } }
+                    .keyboardShortcut("r", modifiers: [.command, .shift])
+                    .disabled(model?.selected == nil)
+                Button("Copy Path") { if let a = model?.selected?.artifact { model?.copyPath(a) } }
+                    .keyboardShortcut("c", modifiers: [.command, .option])
+                    .disabled(model?.selected == nil)
+            }
+            CommandGroup(after: .toolbar) {
+                Button("Quick Look") { model?.toggleQuickLook() }
+                    .keyboardShortcut("y")
+                    .disabled(model?.selectedHandoffURL == nil)
+            }
+            CommandGroup(replacing: .help) {
+                Button("Gleaner Help") { NSWorkspace.shared.open(URL(string: "https://github.com/lesPrivilege/gleaner#readme")!) }
+            }
+        }
+
+        Settings {
+            if let model {
+                SettingsView().environment(model)
             }
         }
     }
