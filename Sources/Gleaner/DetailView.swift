@@ -384,6 +384,12 @@ struct ReplySection: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
             }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(Wording.logLine(delivery)).font(.caption).foregroundStyle(.secondary)
+                Button("Show in Log") { model.revealLog(delivery) }
+                    .buttonStyle(.link).font(.caption)
+                    .help("Select the session log in Finder: \((delivery.logPath as NSString).abbreviatingWithTildeInPath)")
+            }
             if !others.isEmpty {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("Delivered with:").font(.caption).foregroundStyle(.secondary)
@@ -411,6 +417,10 @@ struct DeliveriesSection: View {
                 HStack(spacing: 8) {
                     Button { model.chosenDelivery = delivery.id } label: { row(delivery) }
                         .buttonStyle(.plain)
+                        .contextMenu {
+                            Button("Show in Log") { model.revealLog(delivery) }
+                            Button("Copy Reference") { Task { await model.copyReference(delivery) } }
+                        }
                         .accessibilityLabel(spoken(delivery))
                         .accessibilityAddTraits(delivery.id == selected.id ? .isSelected : [])
                     if let ends = ends(delivery) {

@@ -157,6 +157,28 @@ final class LibraryModel {
         chosenDelivery = delivery.id
     }
 
+    /// Why the last `gleaner://` link showed nothing, until the person dismisses it.
+    var linkFailure: String?
+
+    /// The delivery id a `gleaner://delivery/<id>` link names; nil for any other URL.
+    static func deliveryID(in link: URL) -> String? {
+        guard link.scheme?.lowercased() == "gleaner", link.host()?.lowercased() == "delivery",
+              link.pathComponents.count == 2 else { return nil }
+        return link.pathComponents[1]
+    }
+
+    /// Opens a `gleaner://delivery/<id>` link, as an extension or another tool sends it: shows that
+    /// delivery as `select` does, or says why it can't.
+    func open(_ link: URL) {
+        guard let id = Self.deliveryID(in: link) else { linkFailure = Wording.notADeliveryLink(link); return }
+        guard let delivery = artifacts.lazy.flatMap(\.deliveries).first(where: { $0.id == id }) else {
+            linkFailure = Wording.noDelivery(id)
+            return
+        }
+        linkFailure = nil
+        select(delivery)
+    }
+
     func start() {
         watcher = LogWatcher(directories: indexer.sources.watchedDirectories, queue: work) { [weak self] in
             Task { @MainActor in self?.reindex() }
@@ -212,6 +234,9 @@ final class LibraryModel {
     }
 
     var selected: SearchResult? { results.first { $0.id == selection } }
+
+    /// The delivery the detail pane shows.
+    var selectedDelivery: Delivery? { selected.map(delivery(in:)) }
 
     func delivery(in result: SearchResult) -> Delivery {
         if let chosen = chosenDelivery, let d = result.artifact.deliveries.first(where: { $0.id == chosen }) { return d }
@@ -318,6 +343,44 @@ final class LibraryModel {
     func copyPath(_ artifact: Artifact) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(artifact.path, forType: .string)
+    }
+
+    /// Puts `delivery`'s reference on `pasteboard` as text, for a composer that takes only text:
+    /// the JSON `gleaner resolve` writes, its identity fields kept apart (query-core "In the app").
+    /// The file is checked off the main thread, as `resolve` checks it on each call.
+    func copyReference(_ delivery: Delivery, to pasteboard: NSPasteboard = .general) async {
+        actionFailure = nil
+        var catalog = Catalog(registry: indexer.registry, store: indexer.store)
+        catalog.saveLimit = indexer.saveLimit
+        let result = await Task.detached(priority: .userInitiated) { [catalog] in
+            Result { String(decoding: try Catalog.encoder.encode(catalog.resolve(delivery.id)), as: UTF8.self) }
+        }.value
+        switch result {
+        case .success(let reference):
+            pasteboard.clearContents()
+            pasteboard.setString(reference, forType: .string)
+        case .failure(let error):
+            fail(delivery, Wording.referenceFailed(error))
+        }
+    }
+
+    /// Shows the log of the session that delivered `delivery` in Finder, which is how "jump to the
+    /// conversation" is met: the reply that named the file is at the line the detail pane gives
+    /// (`Wording.logLine`). When the agent has removed the log, the delivery's panel says so.
+    func revealLog(_ delivery: Delivery) {
+        actionFailure = nil
+        if Locator.stat(delivery.logPath).kind != .missing {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: delivery.logPath)])
+        } else {
+            fail(delivery, Wording.logGone(delivery.logPath))
+        }
+    }
+
+    /// Says why an action on `delivery` did nothing, in its hand-off panel, and shows the delivery
+    /// so the panel is on screen.
+    private func fail(_ delivery: Delivery, _ message: String) {
+        select(delivery)
+        actionFailure = (delivery.path, delivery.id, message)
     }
 
     /// What a list row hands over: the version the detail pane would, of the delivery the row

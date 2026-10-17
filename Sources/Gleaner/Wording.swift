@@ -322,6 +322,31 @@ enum Wording {
         "Its folder isn’t on disk either: \((folder as NSString).abbreviatingWithTildeInPath)"
     }
 
+    /// Where the reply that delivered `delivery` is in its session's log: the line Show in Log leads to.
+    static func logLine(_ delivery: Delivery) -> String {
+        delivery.evidence.first.map { "Line \($0.line) of the session log" } ?? "The session log"
+    }
+
+    /// Said where Show in Log was pressed when the agent has removed the log.
+    static func logGone(_ log: String) -> String {
+        "The session log is no longer on disk: \((log as NSString).abbreviatingWithTildeInPath)"
+    }
+
+    /// Said where Copy Reference was pressed when the library couldn't name the delivery.
+    static func referenceFailed(_ error: Error) -> String {
+        "Couldn’t copy the reference: \(error)"
+    }
+
+    /// Why a `gleaner://` link showed nothing: it doesn't name a delivery.
+    static func notADeliveryLink(_ link: URL) -> String {
+        "Gleaner opens links to a delivery, gleaner://delivery/ and its id. This link isn’t one: \(link.absoluteString)"
+    }
+
+    /// Why a `gleaner://delivery/` link showed nothing: this library has no delivery `id`.
+    static func noDelivery(_ id: String) -> String {
+        "This library has no delivery \(id). The link may be from another library, or from a log Gleaner hasn’t read yet."
+    }
+
     /// A delivery as one end of a comparison, keeping "first seen later" (SPEC §6).
     static func compareTitle(_ delivery: Delivery) -> String {
         "Delivery \(number(delivery))"

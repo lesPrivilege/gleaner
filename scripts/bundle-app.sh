@@ -25,6 +25,7 @@ if [ -f Resources/AppIcon.icns ]; then
   cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
   icon="<key>CFBundleIconFile</key><string>AppIcon</string>"
 fi
+# CFBundleURLTypes: a gleaner://delivery/<id> link opens the app on that delivery.
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -41,6 +42,14 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHumanReadableCopyright</key><string>© 2026 lesPrivilege</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>app.gleaner.Gleaner.delivery</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>CFBundleURLSchemes</key><array><string>gleaner</string></array>
+    </dict>
+  </array>
   $icon
 </dict>
 </plist>

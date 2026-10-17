@@ -37,6 +37,11 @@ struct LibraryView: View {
         .onChange(of: model.query) { savedQuery = model.query }
         .onChange(of: model.kind) { savedKind = model.kind?.rawValue ?? "" }
         .onChange(of: model.project) { savedProject = model.project ?? "" }
+        .alert("Gleaner couldn’t open this link",
+               isPresented: Binding(get: { model.linkFailure != nil }, set: { if !$0 { model.linkFailure = nil } })) {
+        } message: {
+            Text(model.linkFailure ?? "")
+        }
         .navigationSubtitle(model.progress.map { "Reading logs… \($0.done) of \($0.total)" } ?? model.status)
         .toolbar {
             ToolbarItem {
@@ -72,14 +77,17 @@ struct ResultsList: View {
                 }
             }
             .contextMenu(forSelectionType: Artifact.ID.self) { ids in
-                if let id = ids.first, let artifact = model.artifacts.first(where: { $0.id == id }) {
+                if let id = ids.first, let result = results.first(where: { $0.id == id }) {
+                    let artifact = result.artifact, delivery = model.delivery(in: result)
                     if id == model.selection {
                         Button("Open Verified Copy") { model.openSelected() }.disabled(model.selectedHandoffURL == nil)
                         Button("Quick Look") { model.toggleQuickLook() }.disabled(model.selectedHandoffURL == nil)
                         Divider()
                     }
                     Button(model.missing.contains(artifact.path) ? "Show Folder in Finder" : "Show in Finder") { model.reveal(artifact) }
+                    Button("Show in Log") { model.revealLog(delivery) }
                     Button("Copy Path") { model.copyPath(artifact) }
+                    Button("Copy Reference") { Task { await model.copyReference(delivery) } }
                     Divider()
                     Button("Show Only \(model.projectName(artifact))") { model.project = artifact.projectFolder }
                 }
