@@ -103,6 +103,27 @@ import Testing
         #expect(Locator.observe(repo + "/out/never.md").restoreCommand == nil)
     }
 
+    @Test func aRemovedWorktreesCommittedFileIsRestoredFromItsBranch() throws {
+        let worktree = root + "/.claude/worktrees/ch3", report = worktree + "/out/report.md"
+        #expect(Locator.run(["-C", root, "worktree", "add", "-q", "-b", "ch3", worktree]).status == 0)
+        try "from ch3".write(toFile: report, atomically: true, encoding: .utf8)
+        let commit = ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm"]
+        for args in [["add", "out/report.md"], commit + ["report"]] {
+            #expect(Locator.run(["-C", worktree] + args).status == 0)
+        }
+        // Found while the worktree is there, as the indexer records it at delivery.
+        let checkout = try #require(Projects.checkout(path: report))
+        #expect(checkout == Checkout(folder: worktree, repository: root))
+        #expect(Locator.run(["-C", root, "worktree", "remove", worktree]).status == 0)
+
+        let state = Locator.observe(report, checkout: checkout)
+        #expect(state.git == .recoverableFromHistory)
+        #expect(Locator.observe(worktree + "/out/never.md", checkout: checkout).git == .lost)
+        let command = try #require(state.restoreCommand)
+        #expect(try sh(["-c", command]) == 0)
+        #expect(try String(contentsOfFile: report, encoding: .utf8) == "from ch3")
+    }
+
     @Test func specialFilesAreNeverOpened() {
         let fifo = root + "/out/pipe.mp4"
         #expect(mkfifo(fifo, 0o600) == 0)

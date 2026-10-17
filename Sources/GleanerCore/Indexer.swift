@@ -207,6 +207,7 @@ public final class Indexer: @unchecked Sendable {
                 try registry.upsertDelivery(
                     id: id, sessionID: log.session.id, logPath: log.session.logPath, path: candidate.path, deliveredAt: first.part.at,
                     cwd: first.part.cwd, repository: Projects.repository(path: candidate.path, cwd: first.part.cwd),
+                    checkout: Projects.checkout(path: candidate.path)?.folder,
                     request: turn.request,
                     evidence: candidate.evidence.map {
                         Evidence(line: $0.part.line, syntax: $0.mention.syntax.rawValue,

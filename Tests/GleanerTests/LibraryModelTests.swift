@@ -220,4 +220,36 @@ import Testing
         await model.stage(sha: sha, artifact: video)
         #expect(try text(model.selectedHandoffURL) == "video v2")
     }
+
+    // MARK: A deleted worktree
+
+    @Test func aFileCommittedInADeletedWorktreeIsOfferedFromGitAfterARestart() async throws {
+        let repo = root.appendingPathComponent("Atlas").path, worktree = repo + "/.claude/worktrees/ch3"
+        try FileManager.default.createDirectory(atPath: repo, withIntermediateDirectories: true)
+        try "x".write(toFile: repo + "/README.md", atomically: true, encoding: .utf8)
+        let commit = ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm"]
+        for args in [["init", "-q"], ["add", "."], commit + ["init"], ["worktree", "add", "-q", "-b", "ch3", worktree]] {
+            #expect(Locator.run(["-C", repo] + args).status == 0)
+        }
+        try FileManager.default.createDirectory(atPath: worktree + "/out", withIntermediateDirectories: true)
+        try "report r1".write(toFile: worktree + "/out/report.md", atomically: true, encoding: .utf8)
+        for args in [["add", "."], commit + ["report"]] { #expect(Locator.run(["-C", worktree] + args).status == 0) }
+        let logs = root.appendingPathComponent("claude/-Atlas")
+        try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
+        let reply = #"{"type":"assistant","message":{"model":"m","role":"assistant","content":[{"type":"text","text":"Report: [report](out/report.md)"}]},"timestamp":"\#(stamp(Date()))","cwd":"\#(worktree)","sessionId":"s2"}"#
+        try (reply + "\n").write(to: logs.appendingPathComponent("s2.jsonl"), atomically: true, encoding: .utf8)
+        indexer.saveLimit = 0 // too large to have been saved: only git can bring it back
+        _ = try indexer.run()
+
+        // The worktree is removed with its branch kept, and Gleaner starts again.
+        #expect(Locator.run(["-C", repo, "worktree", "remove", worktree]).status == 0)
+        Projects.forgetRepositories()
+        let model = LibraryModel(indexer: indexer)
+        let report = try artifact(model, "report.md")
+        await model.observe(report)
+        let observation = try #require(model.observations[report.path])
+        #expect(observation.state.git == .recoverableFromHistory)
+        #expect(report.handoff(report.latest, now: observation, hasSaved: indexer.store.has) == .restoreFromGit)
+        #expect(observation.state.restoreCommand != nil)
+    }
 }

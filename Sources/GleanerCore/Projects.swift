@@ -1,5 +1,18 @@
 import Foundation
 
+/// A folder git checks files out into, and the repository it belongs to.
+public struct Checkout: Sendable, Equatable {
+    /// The repository's main folder, or a worktree's own folder.
+    public var folder: String
+    /// The repository's main folder (see `Projects`).
+    public var repository: String
+
+    public init(folder: String, repository: String) {
+        self.folder = folder
+        self.repository = repository
+    }
+}
+
 /// The project a delivery belongs to: the git repository holding the file, else the repository
 /// the agent worked in, else the folder it worked in. Every worktree of a repository resolves to
 /// the repository's main folder, wherever the agent keeps it (rulings §2); a bare repository
@@ -8,28 +21,33 @@ import Foundation
 ///
 /// Repositories are found by reading `.git` entries, not by running git, so resolving a library
 /// costs only file reads. A deleted worktree inside its repository resolves through its nearest
-/// existing ancestor; a deleted external one leaves nothing to follow, so the indexer records
-/// each delivery's repository while it can still be found.
+/// existing ancestor, which is the main folder, not the worktree; a deleted external one leaves
+/// nothing to follow. So the indexer records each delivery's checkout and repository while they
+/// can still be found.
 public enum Projects {
     private static let lock = NSLock()
-    nonisolated(unsafe) private static var roots: [String: String?] = [:]
+    nonisolated(unsafe) private static var checkouts: [String: Checkout?] = [:]
 
     /// The main folder of the repository holding the file at `path`, else of the one the agent
     /// worked in; nil outside git.
     public static func repository(path: String, cwd: String?) -> String? {
-        repository(containing: (path as NSString).deletingLastPathComponent) ?? cwd.flatMap(repository(containing:))
+        (checkout(path: path) ?? cwd.flatMap(checkout(containing:)))?.repository
     }
 
-    /// The main folder of the repository containing `directory`, or nil outside git.
-    public static func repository(containing directory: String) -> String? {
+    /// The checkout holding the file at `path`, or nil outside git.
+    public static func checkout(path: String) -> Checkout? {
+        checkout(containing: (path as NSString).deletingLastPathComponent)
+    }
+
+    private static func checkout(containing directory: String) -> Checkout? {
         lock.lock()
-        if let cached = roots[directory] { lock.unlock(); return cached }
+        if let cached = checkouts[directory] { lock.unlock(); return cached }
         lock.unlock()
-        let root = resolve(directory)
+        let checkout = resolve(directory)
         lock.lock()
-        roots[directory] = root
+        checkouts[directory] = checkout
         lock.unlock()
-        return root
+        return checkout
     }
 
     /// A project folder's name: a bare repository's without its `.git`.
@@ -54,18 +72,20 @@ public enum Projects {
 
     /// Forgets every repository found, as a fresh launch would.
     static func forgetRepositories() {
-        lock.withLock { roots.removeAll() }
+        lock.withLock { checkouts.removeAll() }
     }
 
-    private static func resolve(_ directory: String) -> String? {
+    /// The nearest folder holding `.git`: a directory there makes it a main folder, a file a
+    /// linked worktree (or a submodule).
+    private static func resolve(_ directory: String) -> Checkout? {
         let fm = FileManager.default
         var current = directory
         while current != "/" && !current.isEmpty {
             let dotGit = current + "/.git"
             var isDirectory: ObjCBool = false
             if fm.fileExists(atPath: dotGit, isDirectory: &isDirectory) {
-                if isDirectory.boolValue { return current }
-                return mainFolder(gitFile: dotGit, worktree: current)
+                let repository = isDirectory.boolValue ? current : mainFolder(gitFile: dotGit, worktree: current)
+                return Checkout(folder: current, repository: repository)
             }
             current = (current as NSString).deletingLastPathComponent
         }

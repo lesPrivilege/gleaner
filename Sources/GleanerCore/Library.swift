@@ -76,16 +76,19 @@ public struct Artifact: Sendable, Identifiable {
     public var projectFolder: String
     /// False when no repository was found, at delivery or now: the project is only a folder.
     public var inRepository: Bool
+    /// The checkout holding the file; nil when the file is in no repository.
+    public var checkout: Checkout?
 
-    /// `repository` is the one recorded at delivery. It wins over what can be found now, which is
-    /// worse once an external worktree is gone.
-    public init(path: String, deliveries: [Delivery], repository: String? = nil) {
+    /// `repository` and `checkout` are the ones recorded at delivery. They win over what can be
+    /// found now, which is worse once a worktree is gone.
+    public init(path: String, deliveries: [Delivery], repository: String? = nil, checkout: Checkout? = nil) {
         self.path = path
         self.deliveries = deliveries
         let cwd = deliveries.first?.cwd
         let root = repository ?? Projects.repository(path: path, cwd: cwd)
         projectFolder = root ?? Projects.folder(path: path, cwd: cwd)
         inRepository = root != nil
+        self.checkout = checkout ?? Projects.checkout(path: path)
     }
 
     /// The project's name, its folder's. Two projects can share one.

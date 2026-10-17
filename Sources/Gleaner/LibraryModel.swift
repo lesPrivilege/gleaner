@@ -343,8 +343,8 @@ final class LibraryModel {
 
     /// Checks the file now (hash and git), off the main thread.
     func observe(_ artifact: Artifact) async {
-        let path = artifact.path
-        let state = await Task.detached(priority: .userInitiated) { Locator.observe(path) }.value
+        let path = artifact.path, checkout = artifact.checkout
+        let state = await Task.detached(priority: .userInitiated) { Locator.observe(path, checkout: checkout) }.value
         observations[path] = FileObservation(state: state, checkedAt: Date())
         if state.kind == .missing { missing.insert(path) } else { missing.remove(path) }
     }
