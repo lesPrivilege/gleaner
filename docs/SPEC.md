@@ -214,12 +214,12 @@ After both gates: visual polish, incremental indexing performance, cache cleanup
 
 `swift run gleaner-spike` (see `README.md`) runs the adapters and extractor read-only over the local logs and writes, under `out/`:
 
-- `candidates.tsv` — one row per candidate with request, evidence, resolution, and empty `label` / `note` columns.
+- `candidates.tsv` — one row per candidate with request, evidence, resolution, whether the §9 rule admits it (`admitted`, yes or no), and empty `label` / `note` columns.
 - `recall-sample.md` — a random sample of final replies with the candidates found in each, for marking misses.
 - `summary.txt` — counts per provider, unknown record types, resolution stats.
 - `locators.internal.tsv` — full local paths for the owner's checks; never shared.
 
-The sheet lists every candidate, admitted or not; measuring the §9 rule after release needs an `admitted` column.
+The sheet lists every candidate, admitted or not, so the §9 rule can be measured against the labels after release.
 
 `out/` contains log excerpts and is never committed.
 
