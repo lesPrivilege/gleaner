@@ -90,7 +90,7 @@ Gleaner 只读每一轮的最终回复，回复把文件交到你手上，才收
 
 ## 读取与保存
 
-- **读取** `~/.claude/projects` 下的 Claude Code 日志、`~/.codex` 下的 Codex 日志，以及回复里提到的文件。应用开着时监视日志文件夹，启动后才出现的也一样。通过读取 `.git` 条目找到文件所属的仓库，在仓库里只运行只读的 git 命令：文件在磁盘上时运行 `git status --porcelain --ignored`；文件已不在时运行 `git rev-parse`、`git log --all` 和 `git cat-file -e`，找出包含它的提交。每条命令都带 `--no-optional-locks`，git 不会改写索引；并关闭 `core.fsmonitor`，不会启动仓库配置的钩子或守护进程。git 比较文件时，clean filter（例如 Git LFS）仍可能运行。
+- **读取** `~/.claude/projects` 下的 Claude Code 日志、`~/.codex` 下的 Codex 日志，以及回复里提到的文件。应用开着时监视日志文件夹，启动后才出现的也一样。通过读取 `.git` 条目找到文件所属的仓库，在仓库里只运行只读的 git 命令：文件在磁盘上时运行 `git status --porcelain --ignored`；文件已不在时运行 `git rev-parse` 和 `git log --all`，找出包含它的提交。每条命令都带 `--no-optional-locks`，git 不会改写索引；也不会运行仓库配置的任何东西：关闭 `core.fsmonitor`，不启动钩子或守护进程；关闭签名校验，`git log` 不启动签名程序；在部分克隆（partial clone）里，不去拉取克隆缺少的内容。git 比较文件时，clean filter（例如 Git LFS）仍可能运行。
 - **保存**回复和要求的摘录，不存完整日志。摘录截短之前，先抹去形似密钥的字符串：API key 和访问令牌、bearer token、`key=value` 形式的密钥、URL 里的凭据，以及 40 个以上字母和数字组成、大小写字母和数字混杂的串。小写十六进制串（哈希、ID）保留。索引和存档副本放在 `~/Library/Application Support/Gleaner`。64 MB 以内的文件，第一次读到时就存一份；更大的文件只记哈希，磁盘上的文件仍与交付一致时，可以用 **Save a Copy** 存下。存档副本是交付时的原样字节，不做抹除。
 - **转交副本**放在 `~/Library/Caches/Gleaner`。设置（Settings）里能看到占用并清除；清除时保留剪贴板上的那份（粘贴时还要读它），也不会动存档副本。
 - **不写入**项目文件夹。Gleaner 自身不发网络请求；用 Quick Look 预览网页时，页面可能加载它引用的资源，链接只在你点击时打开。
@@ -128,7 +128,7 @@ v0.1 的设计决定见 [docs/SPEC.md](docs/SPEC.md)，设计探索与裁决见 
 swift build -c release && .build/release/gleaner-spike
 ```
 
-只读地扫描 `~/.claude/projects` 和 `~/.codex`，用与应用相同的只读 git 命令（`git status`、`git rev-parse`、`git log`、`git cat-file`）核查提到的每个文件，在 `out/` 下输出：
+只读地扫描 `~/.claude/projects` 和 `~/.codex`，用与应用相同的只读 git 命令（`git status`、`git rev-parse`、`git log`）核查提到的每个文件，在 `out/` 下输出：
 
 - `candidates.tsv`：每个候选一行，收录与否都列出，带当初的要求、证据、路径上找到了什么、交付规则是否收录（`admitted`，yes 或 no），以及留待填写的空 `label` 和 `note` 列。重新运行时保留已填的标注。路径以 `~` 开头，文字经过抹除。
 - `recall-sample.md`：随机抽取的最终回复，附上每条回复里找到的候选，用来标出漏收。

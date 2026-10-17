@@ -41,7 +41,7 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 ### Keep data local
 
 - Keeps redacted excerpts, not whole logs, and never writes to project folders. Redacts before cutting an excerpt to length, so a secret at its edge is still caught. Makes no model calls or network requests of its own.
-- Runs only read-only git commands, with `core.fsmonitor` off so that checking a file starts no hook or daemon the repository configures.
+- Runs only read-only git commands, and runs nothing the repository configures while checking a file: no fsmonitor hook or daemon, no signature program for `git log`, and no fetch in a partial clone.
 - Settings shows how each log folder read, the size of saved copies, and clears hand-off copies, except the one on the clipboard; the selected file's copy is prepared again.
 
 ### Known limits

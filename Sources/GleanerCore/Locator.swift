@@ -122,9 +122,10 @@ public enum Locator {
     }
 
     /// The commit to restore `rel` from: HEAD when it has the path, else the newest commit on any
-    /// ref that does. Each candidate is checked with `git cat-file`, because the commit that last
-    /// touched a path may be the one that deleted it. `head` is false when `root` is not the
-    /// checkout the path was in, whose HEAD is not the one that held it.
+    /// ref that does. Each candidate is checked, because the commit that last touched a path may be
+    /// the one that deleted it, by finding the path in its tree: the file's contents are never read,
+    /// so a partial clone has nothing to fetch. `head` is false when `root` is not the checkout the
+    /// path was in, whose HEAD is not the one that held it.
     static func commit(containing rel: String, root: String, head useHead: Bool) -> (sha: String, isHead: Bool)? {
         let head = useHead
             ? run(["-C", root, "rev-parse", "--verify", "--quiet", "HEAD"]).output.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -132,7 +133,7 @@ public enum Locator {
         let touched = run(["-C", root, "log", "--all", "--full-history", "--format=%H", "--", rel]).output
             .split(separator: "\n").map(String.init)
         let sha = ([head] + touched).first { commit in
-            !commit.isEmpty && run(["-C", root, "cat-file", "-e", "\(commit):\(rel)"]).status == 0
+            !commit.isEmpty && run(["-C", root, "rev-parse", "--verify", "--quiet", "\(commit):\(rel)"]).status == 0
         }
         return sha.map { ($0, $0 == head) }
     }
@@ -146,9 +147,12 @@ public enum Locator {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         // Without the first, `git status` refreshes and rewrites the index: not read-only. The second
-        // keeps a file name like `notes [1].md` from matching other files as a pattern. The third keeps
-        // reading the index from running a hook or daemon the repository configures (SPEC §7).
-        process.arguments = ["--no-optional-locks", "--literal-pathspecs", "-c", "core.fsmonitor=false"] + arguments
+        // keeps a file name like `notes [1].md` from matching other files as a pattern. The rest keep
+        // git from running a command the repository configures (SPEC §7): a hook or daemon to read the
+        // index, a signature checker for `git log`, and, in a partial clone, a fetch of what it lacks.
+        process.arguments = ["--no-optional-locks", "--literal-pathspecs", "-c", "core.fsmonitor=false",
+                             "-c", "log.showSignature=false"] + arguments
+        process.environment = ProcessInfo.processInfo.environment.merging(["GIT_NO_LAZY_FETCH": "1"]) { $1 }
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice

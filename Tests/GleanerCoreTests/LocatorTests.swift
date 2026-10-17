@@ -188,13 +188,48 @@ import Testing
     }
 
     @Test func observingRunsNoCommandTheRepositoryConfigures() throws {
-        let hook = root + "/fsmonitor.sh", ran = root + "/fsmonitor-ran"
+        let hook = root + "/hook.sh", ran = root + "/hook-ran"
         try "#!/bin/sh\ntouch \(Locator.quoted(ran))\n".write(toFile: hook, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hook)
-        #expect(Locator.run(["-C", root, "config", "core.fsmonitor", hook]).status == 0)
+        // An fsmonitor hook, and a signature checker `git log` runs for each signed commit it shows.
+        for (key, value) in [("core.fsmonitor", hook), ("log.showSignature", "true"), ("gpg.program", hook)] {
+            #expect(Locator.run(["-C", root, "config", key, value]).status == 0)
+        }
+        // A signed commit on another branch brings moved.md back.
+        func rev(_ name: String) -> String {
+            Locator.run(["-C", root, "rev-parse", name]).output.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let object = root + "/.git/signed-commit"
+        try ["tree \(rev("HEAD~1^{tree}"))", "parent \(rev("HEAD"))", "author t <t@t> 1 +0000", "committer t <t@t> 1 +0000",
+             "gpgsig -----BEGIN PGP SIGNATURE-----", " ", " abc", " -----END PGP SIGNATURE-----", "", "signed", ""]
+            .joined(separator: "\n").write(toFile: object, atomically: true, encoding: .utf8)
+        let signed = Locator.run(["-C", root, "hash-object", "-t", "commit", "-w", object]).output
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(Locator.run(["-C", root, "update-ref", "refs/heads/signed", signed]).status == 0)
 
         for file in ["committed.md", "untracked.md", "gone.md", "moved.md"] { _ = Locator.observe(root + "/out/" + file) }
-        #expect(!FileManager.default.fileExists(atPath: ran), "git ran the repository's fsmonitor hook")
+        #expect(!FileManager.default.fileExists(atPath: ran), "git ran a command the repository configures")
+    }
+
+    @Test func observingAPartialCloneNeverFetchesWhatItLacks() throws {
+        let origin = root + "/partial/origin", clone = root + "/partial/clone", ran = root + "/partial/fetched"
+        try FileManager.default.createDirectory(atPath: origin + "/out", withIntermediateDirectories: true)
+        try "r1".write(toFile: origin + "/out/report.md", atomically: true, encoding: .utf8)
+        let commit = ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm"]
+        for args in [["init", "-q"], ["add", "."], commit + ["report"], ["config", "uploadpack.allowFilter", "true"]] {
+            #expect(Locator.run(["-C", origin] + args).status == 0)
+        }
+        // A clone without file contents: each is fetched from the remote when first read.
+        #expect(Locator.run(["clone", "-q", "--filter=blob:none", "--no-checkout", "file://" + origin, clone]).status == 0)
+        let fetch = root + "/partial/upload-pack.sh"
+        try "#!/bin/sh\ntouch \(Locator.quoted(ran))\nexec git-upload-pack \"$@\"\n".write(toFile: fetch, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: fetch)
+        #expect(Locator.run(["-C", clone, "config", "remote.origin.uploadpack", fetch]).status == 0)
+
+        let state = Locator.observe(clone + "/out/report.md")
+        #expect(!FileManager.default.fileExists(atPath: ran), "git fetched from the remote")
+        #expect(state.git == .recoverableFromHead)
+        #expect(state.restoreCommand != nil)
     }
 
     @Test func directoryHasNoHash() {
