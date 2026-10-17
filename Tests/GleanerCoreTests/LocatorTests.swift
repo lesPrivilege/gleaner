@@ -56,6 +56,53 @@ import Testing
         #expect(Locator.observe(root + "/out/never.md").kind == .missing)
     }
 
+    /// Runs `/bin/sh` with `arguments`, as the person would.
+    func sh(_ arguments: [String]) throws -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sh")
+        process.arguments = arguments
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus
+    }
+
+    @Test func theRestoreCommandNamesACommitThatHasTheFile() throws {
+        let fm = FileManager.default
+        let repo = root + "/Bob's Project"
+        try fm.createDirectory(atPath: repo + "/out", withIntermediateDirectories: true)
+        try "notes".write(toFile: repo + "/notes [1].md", atomically: true, encoding: .utf8)
+        try "other".write(toFile: repo + "/notes 1.md", atomically: true, encoding: .utf8)
+        let commit = ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm"]
+        for args in [["init", "-q"], ["add", "."], commit + ["init"], ["checkout", "-q", "-b", "side"]] {
+            #expect(Locator.run(["-C", repo] + args).status == 0)
+        }
+        try "from side".write(toFile: repo + "/out/report.md", atomically: true, encoding: .utf8)
+        for args in [["add", "."], commit + ["report"], ["checkout", "-q", "-"]] {
+            #expect(Locator.run(["-C", repo] + args).status == 0)
+        }
+
+        // Only another branch has the file; the commit before the one that added it does not.
+        let report = Locator.observe(repo + "/out/report.md")
+        #expect(report.git == .recoverableFromHistory)
+        let command = try #require(report.restoreCommand)
+        #expect(try sh(["-n", "-c", command]) == 0)
+        #expect(try sh(["-c", command]) == 0)
+        #expect(try String(contentsOfFile: repo + "/out/report.md", encoding: .utf8) == "from side")
+
+        try fm.removeItem(atPath: repo + "/notes [1].md")
+        try "edited".write(toFile: repo + "/notes 1.md", atomically: true, encoding: .utf8)
+        let notes = Locator.observe(repo + "/notes [1].md")
+        #expect(notes.git == .recoverableFromHead)
+        #expect(try sh(["-c", try #require(notes.restoreCommand)]) == 0)
+        #expect(try String(contentsOfFile: repo + "/notes [1].md", encoding: .utf8) == "notes")
+        // A file name is not a pattern: the neighbour it would match keeps its edits.
+        #expect(try String(contentsOfFile: repo + "/notes 1.md", encoding: .utf8) == "edited")
+
+        #expect(Locator.observe(repo + "/out/never.md").restoreCommand == nil)
+    }
+
     @Test func specialFilesAreNeverOpened() {
         let fifo = root + "/out/pipe.mp4"
         #expect(mkfifo(fifo, 0o600) == 0)
@@ -77,5 +124,12 @@ import Testing
         let state = Locator.observe(root + "/out")
         #expect(state.kind == .directory)
         #expect(state.sha256 == nil)
+    }
+
+    @Test func aReadErrorIsNoHashNotTheHashOfWhatWasRead() {
+        // An unconnected socket opens and then fails to read: that is not an empty file.
+        let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(socket) }
+        #expect(Locator.sha256("/dev/fd/\(socket)") == nil)
     }
 }

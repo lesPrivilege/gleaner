@@ -43,4 +43,27 @@ import Testing
         let b = try store.stage(sha: saved.sha, name: "b.md", source: nil)
         #expect(fm.fileExists(atPath: a.path) && fm.fileExists(atPath: b.path))
     }
+
+    @Test func overlappingStagesOfOneVersionEachHandOverAWholeFile() async throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("demo.mp4")
+        try Data(repeating: 7, count: 1 << 20).write(to: file)
+        let sha = try #require(Locator.sha256(file.path))
+        let store = ContentStore(objects: root.appendingPathComponent("objects"), staging: root.appendingPathComponent("handoff"))
+
+        // A row drag and the detail pane can prepare the same version at once.
+        let results = await withTaskGroup(of: Result<URL, any Error>.self) { group in
+            for _ in 0..<32 {
+                group.addTask { Result { try store.stage(sha: sha, name: "demo.mp4", source: file.path) } }
+            }
+            return await group.reduce(into: []) { $0.append($1) }
+        }
+        for result in results {
+            let url = try result.get()
+            #expect(Locator.sha256(url.path) == sha)
+            #expect(permissions(url) == 0o444)
+        }
+        #expect(try fm.contentsOfDirectory(atPath: store.staging.path) == [sha])
+    }
 }

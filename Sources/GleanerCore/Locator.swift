@@ -28,6 +28,9 @@ public struct LocatorState: Sendable {
     public var sha256: String?
     public var repositoryRoot: String?
     public var git: GitState
+    /// For a missing file git still has: a command the person can run to restore it from a commit
+    /// checked to hold it, quoted for any POSIX shell. Gleaner never runs it (SPEC §6).
+    public var restoreCommand: String?
 }
 
 /// Observes a path in place. Read-only: it never writes to the file or its repository.
@@ -39,18 +42,14 @@ public enum Locator {
         let root = repositoryRoot(for: path)
 
         guard exists else {
-            var git = GitState.notInRepo
-            if let root {
-                let rel = relative(path, to: root)
-                if run(["-C", root, "cat-file", "-e", "HEAD:\(rel)"]).status == 0 {
-                    git = .recoverableFromHead
-                } else if !run(["-C", root, "log", "--all", "-1", "--format=%H", "--", rel]).output.isEmpty {
-                    git = .recoverableFromHistory
-                } else {
-                    git = .lost
-                }
+            guard let root else { return LocatorState(kind: .missing, git: .notInRepo) }
+            let rel = relative(path, to: root)
+            guard let commit = commit(containing: rel, root: root) else {
+                return LocatorState(kind: .missing, repositoryRoot: root, git: .lost)
             }
-            return LocatorState(kind: .missing, repositoryRoot: root, git: git)
+            return LocatorState(
+                kind: .missing, repositoryRoot: root, git: commit.isHead ? .recoverableFromHead : .recoverableFromHistory,
+                restoreCommand: "git --literal-pathspecs -C \(quoted(root)) restore --source=\(quoted(commit.sha)) -- \(quoted(rel))")
         }
 
         let info = stat(path)
@@ -75,12 +74,17 @@ public enum Locator {
         return (kind, kind == .file ? (attributes[.size] as? NSNumber)?.int64Value : nil, attributes[.modificationDate] as? Date)
     }
 
+    /// Nil when the file can't be opened or a read fails: the digest of a prefix is not its hash.
     public static func sha256(_ path: String) -> String? {
         guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? handle.close() }
         var hasher = SHA256()
-        while let chunk = try? handle.read(upToCount: 4 << 20), !chunk.isEmpty {
-            hasher.update(data: chunk)
+        do {
+            while let chunk = try handle.read(upToCount: 4 << 20), !chunk.isEmpty {
+                hasher.update(data: chunk)
+            }
+        } catch {
+            return nil
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
@@ -111,11 +115,31 @@ public enum Locator {
         path.hasPrefix(root + "/") ? String(path.dropFirst(root.count + 1)) : path
     }
 
+    /// The commit to restore `rel` from: HEAD when it has the path, else the newest commit on any
+    /// ref that does. Each candidate is checked with `git cat-file`, because the commit that last
+    /// touched a path may be the one that deleted it.
+    static func commit(containing rel: String, root: String) -> (sha: String, isHead: Bool)? {
+        let head = run(["-C", root, "rev-parse", "--verify", "--quiet", "HEAD"]).output
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let touched = run(["-C", root, "log", "--all", "--full-history", "--format=%H", "--", rel]).output
+            .split(separator: "\n").map(String.init)
+        let sha = ([head] + touched).first { commit in
+            !commit.isEmpty && run(["-C", root, "cat-file", "-e", "\(commit):\(rel)"]).status == 0
+        }
+        return sha.map { ($0, $0 == head) }
+    }
+
+    /// One word for any POSIX shell, whatever `value` holds.
+    static func quoted(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
+    }
+
     static func run(_ arguments: [String]) -> (status: Int32, output: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        // Without this, `git status` refreshes and rewrites the index: not read-only.
-        process.arguments = ["--no-optional-locks"] + arguments
+        // Without the first, `git status` refreshes and rewrites the index: not read-only. The second
+        // keeps a file name like `notes [1].md` from matching other files as a pattern.
+        process.arguments = ["--no-optional-locks", "--literal-pathspecs"] + arguments
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice

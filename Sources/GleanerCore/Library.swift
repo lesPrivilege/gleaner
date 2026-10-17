@@ -187,7 +187,8 @@ public enum Handoff: Equatable, Sendable {
     case unavailable(alternative: Int?, currentSha: String?)
     case restoreFromGit
     case lost
-    /// Folders are not versioned in v0.1; the current folder can be handed over as it is.
+    /// Folders are not versioned in v0.1: a delivered folder is handed over as it is now, and
+    /// only while its path is still a folder.
     case folder
 
     /// The bytes a hand-off copy must hash to: the delivery's, or the current file's when the
@@ -202,9 +203,11 @@ public enum Handoff: Equatable, Sendable {
 }
 
 extension Artifact {
+    /// The path compared by hash with every delivery. It reads as a folder only when the latest
+    /// delivery was one and the path still is; anything else at the path is matched by its bytes.
     public func onDisk(_ now: FileObservation, hasSaved: (String) -> Bool) -> OnDisk {
         switch now.state.kind {
-        case .directory: return .folder
+        case .directory where latest.capture?.isDirectory == true: return .folder
         case .special: return .special
         case .missing:
             if let saved = deliveries.first(where: { $0.sha256.map(hasSaved) == true }) {
@@ -215,11 +218,11 @@ extension Artifact {
                 return .missingInGitHistory
             }
             return .lost
-        case .file:
+        case .file, .directory:
             break
         }
-        let current = now.state.sha256
-        if current != nil, current == latest.sha256 {
+        guard let current = now.state.sha256 else { return .changed(since: latest.number) }
+        if current == latest.sha256 {
             if latest.capture?.provenance == .firstSeenAfterDelivery, let seen = latest.capture?.observedAt {
                 return .unchangedSinceFirstSeen(seen)
             }
@@ -229,28 +232,32 @@ extension Artifact {
         if let match = older.first(where: { $0.isTrusted && $0.sha256 == current }) {
             return .rolledBack(to: match.number, latest: latest.number, firstSeen: nil)
         }
-        if current != nil, let match = older.first(where: { $0.sha256 == current }) {
+        if let match = older.first(where: { $0.sha256 == current }) {
             return .rolledBack(to: match.number, latest: latest.number, firstSeen: match.capture?.observedAt)
         }
         return .changed(since: latest.number)
     }
 
+    /// Decided by how `delivery` was captured, not by what the path is today: a file delivery is
+    /// its hash (the original while it matches, else the saved copy), even when a folder now
+    /// stands at the path, and a folder delivery is the live folder only while it is still one.
     public func handoff(_ delivery: Delivery, now: FileObservation, hasSaved: (String) -> Bool) -> Handoff {
-        if now.state.kind == .directory || delivery.capture?.isDirectory == true { return .folder }
+        if delivery.capture?.isDirectory == true, now.state.kind == .directory { return .folder }
         let current = now.state.kind == .file ? now.state.sha256 : nil
-        let recoverable = now.state.git == .recoverableFromHead || now.state.git == .recoverableFromHistory
 
         if let sha = delivery.sha256 {
             let firstSeen = delivery.capture?.provenance == .firstSeenAfterDelivery ? delivery.capture?.observedAt : nil
             if current == sha { return .ready(sha: sha, from: .original, firstSeen: firstSeen) }
             if hasSaved(sha) { return .ready(sha: sha, from: .savedCopy, firstSeen: firstSeen) }
         }
-        if let current {
-            let others = deliveries.filter { $0.id != delivery.id && $0.sha256 == current }
-            let match = others.first(where: \.isTrusted) ?? others.first
-            return .unavailable(alternative: match?.number, currentSha: current)
+        if now.state.kind == .missing {
+            let recoverable = now.state.git == .recoverableFromHead || now.state.git == .recoverableFromHistory
+            return recoverable ? .restoreFromGit : .lost
         }
-        return recoverable ? .restoreFromGit : .lost
+        // Something else is at the path: a changed or unreadable file, a folder, a pipe.
+        let others = deliveries.filter { $0.id != delivery.id && current != nil && $0.sha256 == current }
+        let match = others.first(where: \.isTrusted) ?? others.first
+        return .unavailable(alternative: match?.number, currentSha: current)
     }
 
     /// For a search: nil unless every token appears in the file name, the project, or one

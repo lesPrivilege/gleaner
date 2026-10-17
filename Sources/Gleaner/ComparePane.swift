@@ -69,9 +69,9 @@ struct ComparePane: View {
             .font(.system(.callout, design: .monospaced))
     }
 
-    func image(_ url: URL, end: Comparison.End) -> some View {
+    func image(_ data: Data, end: Comparison.End) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let image = NSImage(contentsOf: url) {
+            if let image = NSImage(data: data) {
                 Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 280)
                 Text("\(end.title) · \(Int(image.size.width))×\(Int(image.size.height))").font(.caption).foregroundStyle(.secondary)
             } else {
