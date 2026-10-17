@@ -15,8 +15,9 @@ import Testing
             delivery(1, request: "Make the demo video"),
         ])
         // The file name matches every delivery; the newest one whose own words say "demo" wins.
-        #expect(video.match(["demo"])?.deliveryIndex == 1)
-        // Only the file name matched: the newest delivery.
-        #expect(video.match(["mp4"])?.deliveryIndex == 0)
+        #expect(video.match(["demo"]) == 1)
+        // Only the file name or its folder matched: the newest delivery.
+        #expect(video.match(["mp4"]) == 0)
+        #expect(video.match(["out"]) == 0)
     }
 }

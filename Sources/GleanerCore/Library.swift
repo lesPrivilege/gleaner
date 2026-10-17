@@ -299,30 +299,25 @@ extension Artifact {
     /// delivery's own words (request, session title, reply). Words from different deliveries don't
     /// combine (SPEC §10). Otherwise the index of the newest delivery whose own words matched, or
     /// 0 when the name or project alone matched.
-    public func match(_ tokens: [String]) -> (deliveryIndex: Int, fields: [String])? {
-        guard !tokens.isEmpty else { return (0, []) }
+    public func match(_ tokens: [String]) -> Int? {
+        guard !tokens.isEmpty else { return 0 }
         // The file name and its folder, not the whole path: words like "users" or "projects" in
         // every path would otherwise match everything.
         let place = folder.hasPrefix("~") || folder.hasPrefix("/")
             ? (folder as NSString).pathComponents.suffix(2).joined(separator: "/") : folder
-        let name = (self.name + " " + place).lowercased()
-        let projectName = project.lowercased()
-        func fields(_ d: Delivery) -> [(String, String)] {
-            [("file name", name), ("project", projectName),
-             ("your request", d.request?.lowercased() ?? ""),
-             ("session title", d.sessionTitle?.lowercased() ?? ""),
-             ("reply", d.evidence.map(\.excerpt).joined(separator: " ").lowercased())]
+        let shared = (name + " " + place + " " + project).lowercased()
+        func own(_ d: Delivery) -> [String] {
+            [d.request?.lowercased() ?? "", d.sessionTitle?.lowercased() ?? "",
+             d.evidence.map(\.excerpt).joined(separator: " ").lowercased()]
         }
         let matching = deliveries.indices.filter { i in
-            let all = fields(deliveries[i]).map(\.1).joined(separator: " ")
+            let all = ([shared] + own(deliveries[i])).joined(separator: " ")
             return tokens.allSatisfy { all.contains($0) }
         }
         guard let first = matching.first else { return nil }
-        let index = matching.first { i in
-            fields(deliveries[i]).dropFirst(2).contains { field in tokens.contains { field.1.contains($0) } }
+        return matching.first { i in
+            own(deliveries[i]).contains { field in tokens.contains { field.contains($0) } }
         } ?? first
-        let hit = fields(deliveries[index]).filter { field in tokens.contains { field.1.contains($0) } }.map(\.0)
-        return (index, hit)
     }
 }
 

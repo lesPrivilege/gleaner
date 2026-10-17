@@ -181,18 +181,18 @@ import Testing
         #expect(video.onDisk(now(video.path), hasSaved: saved) == .rolledBack(to: 1, latest: 2, firstSeen: nil))
 
         // Search for words from the first request opens the first delivery.
-        #expect(video.match(["harness"])?.deliveryIndex == 1)
-        #expect(video.match(["intro"])?.deliveryIndex == 0)
+        #expect(video.match(["harness"]) == 1)
+        #expect(video.match(["intro"]) == 0)
         #expect(video.match(["nothing-like-this"]) == nil)
         // Words that sit in every path (home, Projects) are not a file name.
         #expect(video.match(["users"]) == nil)
-        #expect(video.match(["out"])?.fields.contains("file name") == true)
+        #expect(video.match(["out"]) == 0)
 
         // Words from two different deliveries don't combine into one match.
         #expect(video.match(["harness", "intro"]) == nil)
         // The file name combines with either delivery's words.
-        #expect(video.match(["demo", "harness"])?.deliveryIndex == 1)
-        #expect(video.match(["demo"])?.deliveryIndex == 0)
+        #expect(video.match(["demo", "harness"]) == 1)
+        #expect(video.match(["demo"]) == 0)
     }
 
     @Test func deliveredWithNamesTheSiblingsDeliveryFromThatReply() throws {

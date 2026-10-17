@@ -7,7 +7,6 @@ import UniformTypeIdentifiers
 struct SearchResult: Identifiable {
     var artifact: Artifact
     var deliveryIndex: Int
-    var matchedIn: [String]
     var id: String { artifact.id }
 }
 
@@ -197,8 +196,8 @@ final class LibraryModel {
         let tokens = tokens
         return artifacts.compactMap { artifact in
             guard kind == nil || artifact.kind == kind, project == nil || artifact.projectFolder == project,
-                  let match = artifact.match(tokens) else { return nil }
-            return SearchResult(artifact: artifact, deliveryIndex: match.deliveryIndex, matchedIn: match.fields)
+                  let index = artifact.match(tokens) else { return nil }
+            return SearchResult(artifact: artifact, deliveryIndex: index)
         }
     }
 
