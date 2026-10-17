@@ -270,7 +270,10 @@ struct HandoffPanel: View {
             return NSItemProvider(contentsOf: ready) ?? NSItemProvider()
         }
         .help(ready == nil ? "Nothing to drag for this version" : "Drag into Finder, a chat, or an upload field")
+        .accessibilityElement(children: .ignore)
         .accessibilityLabel("Drag \(artifact.name), delivery \(delivery.number)")
+        .accessibilityValue(tileCaption)
+        .accessibilityHint(ready == nil ? "" : "Drag into another app, or press Command-O to open it.")
     }
 
     var tileCaption: String {
@@ -407,9 +410,20 @@ struct DeliveriesSection: View {
             ForEach(artifact.deliveries) { delivery in
                 Button { model.chosenDelivery = delivery.id } label: { row(delivery) }
                     .buttonStyle(.plain)
+                    .accessibilityLabel(spoken(delivery))
                     .accessibilityAddTraits(delivery.id == selected.id ? .isSelected : [])
             }
         }
+    }
+
+    func spoken(_ delivery: Delivery) -> String {
+        let sameAs = artifact.deliveries.first {
+            $0.number < delivery.number && $0.sha256 != nil && $0.sha256 == delivery.sha256
+        }
+        return ["Delivery \(delivery.number)", Wording.date(delivery.deliveredAt),
+                delivery.provider == .codex ? "Codex" : "Claude Code",
+                Wording.provenanceShort(delivery.capture).1.lowercased(),
+                sameAs.map { "same content as delivery \($0.number)" }].compactMap { $0 }.joined(separator: ", ")
     }
 
     func row(_ delivery: Delivery) -> some View {

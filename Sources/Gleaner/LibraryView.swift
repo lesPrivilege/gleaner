@@ -164,5 +164,18 @@ struct ResultRow: View {
             .font(.caption)
         }
         .padding(.vertical, 5)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(spoken(context: context, hit: hit))
+    }
+
+    /// One sentence VoiceOver reads for the row, in the order the eye reads it.
+    func spoken(context: [String], hit: Delivery) -> String {
+        let artifact = result.artifact
+        var parts = [artifact.name] + context
+        if !onDisk { parts.append("not on disk") }
+        parts.append("delivered " + (hit.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "on an unknown date"))
+        if artifact.deliveries.count > 1 { parts.append("delivery \(hit.number) of \(artifact.latest.number)") }
+        if let request = hit.request { parts.append("you asked: \(request.prefix(160))") }
+        return parts.joined(separator: ", ")
     }
 }
