@@ -1,5 +1,30 @@
 # Changelog
 
+## Unreleased (after 0.1.0)
+
+Not part of 0.1.0: these changes come after it is tagged.
+
+### The gleaner command
+
+- Adds `gleaner`, for a coding agent on your Mac to find the file you mean, select its exact version, read only what it needs, and hand those bytes on: `find`, `show`, `read`, `resolve`, `handoff` and `verify`. It is built from source (`swift build -c release --product gleaner`); the release zip holds only the app.
+- Writes one JSON object to stdout for every answer and every failure, `{"error": {"kind", "message"}}` for a failure, with the message on stderr too. Exits 0 on success; 1 when not found, when there are no bytes for that version, or on another failure; 2 on wrong usage; 3 when there is no library, or one of another version.
+- Never indexes: it opens the app's library read-only, and refuses one that is missing, of another version, or can't be opened to read, saying to open Gleaner. Every answer, and every failure once the library is open, carries the index it is evidence of (the library, its runs, when the last finished, how each agent's logs read), so an empty answer from a stale or partial index isn't taken for absence. `--home` reads the library kept for another home folder.
+- `read` gives the text of a version's exact bytes, at most 16 KB unless asked, by `--lines` or `--bytes`: from the saved copy whenever there is one, from the original only while it still holds them, in one pass however large the file. `handoff` stages a read-only copy checked by hash, in Gleaner's caches. `verify` checks a delivery, or a reference kept as `resolve` wrote it, by the delivery it names.
+- `find --project` takes a project's name or its folder, `/private` or not.
+
+### In the app
+
+- Copy Reference (⇧⌘C, in the Edit menu and in a row's or a delivery's context menu) copies a delivery's reference as `gleaner resolve` gives it.
+- Show in Log selects the delivering session's log in Finder; the detail pane gives the reply's line.
+- A `gleaner://delivery/<id>` link opens Gleaner on that delivery, and says so when it names none in this library.
+
+### The agents' logs
+
+- Counts each log's records, known records, answered turns, final replies and candidates, and reports in the source status: unknown fields in known record types, logs with assistant records but no final reply, and logs with fewer final replies than when read before. A last turn still under way, or one that ended on a tool call, doesn't count as lacking a final reply.
+- Knows Claude Code's `pr-link` record, which holds no reply, instead of reporting it as an unknown record type.
+- Keeps a delivered path, and the folder its agent worked in, in one form under `/private`: a project in `/private/tmp` is no longer named "tmp", and a path keeps its form once its file is gone.
+- CI runs `swift test` on every push and pull request. An adapter change merges only with passing fixture tests and the owner's review.
+
 ## 0.1.0 (Unreleased)
 
 The first release: a macOS 15 app that lists the files Claude Code and Codex named in their final replies to you.
