@@ -720,6 +720,23 @@ import Testing
         #expect(withoutFinalReply(try indexer.run()) == ["session-2.jsonl"])
     }
 
+    @Test func aReplyWhoseTextTheAdapterCantFindIsReportedAsNoFinalReply() throws {
+        // The format moved: the reply's text is a plain string, or under a key the adapter doesn't read.
+        let messages = [
+            #"{"model":"m","role":"assistant","content":"Built: [app](out/app.dmg)"}"#,
+            #"{"model":"m","role":"assistant","blocks":[{"type":"text","text":"Built: [app](out/app.dmg)"}]}"#,
+        ]
+        for (n, message) in messages.enumerated() {
+            let reply = #"{"type":"assistant","message":\#(message),"timestamp":"\#(stamp(delivered))","cwd":"\#(project.path)","sessionId":"s\#(n + 2)"}"#
+            try ([user("Build it", at: delivered.addingTimeInterval(-60)), reply].joined(separator: "\n") + "\n")
+                .write(to: root.appendingPathComponent("claude/-Praxis/session-\(n + 2).jsonl"), atomically: true, encoding: .utf8)
+        }
+        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(report.sources[.claudeCode]?.logsWithoutFinalReply.map { ($0 as NSString).lastPathComponent }.sorted()
+                == ["session-2.jsonl", "session-3.jsonl"])
+        #expect(report.sources[.claudeCode]?.hasProblems == true)
+    }
+
     @Test func aLogWhoseCompleteRereadFindsFewerFinalRepliesIsReported() throws {
         try appendLog([user("Anything else?", at: delivered.addingTimeInterval(30)),
                        assistant("Nothing else.", at: delivered.addingTimeInterval(40), cwd: project.path)])
