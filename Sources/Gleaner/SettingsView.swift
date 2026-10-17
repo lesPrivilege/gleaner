@@ -49,7 +49,7 @@ struct SettingsView: View {
                     HStack {
                         Text(size(usage?.handoff))
                         Button("Clear") {
-                            model.clearHandoffCopies()
+                            model.clearHandoffCopies(keeping: .general)
                             refresh()
                         }
                     }

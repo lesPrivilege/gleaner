@@ -329,9 +329,12 @@ final class LibraryModel {
         (Self.size(of: indexer.store.objects), Self.size(of: indexer.store.staging))
     }
 
-    func clearHandoffCopies() {
+    /// Removes the hand-off copies, but not one on `pasteboard`: ⌘C put it there as a file, and a
+    /// paste reads it later. The selection's copy is prepared again.
+    func clearHandoffCopies(keeping pasteboard: NSPasteboard) {
+        let copied = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
         clearStaging()
-        try? indexer.store.clearStaging()
+        try? indexer.store.clearStaging(keeping: copied)
         stagingGeneration += 1
     }
 

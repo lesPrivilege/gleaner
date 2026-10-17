@@ -105,7 +105,7 @@ Same bytes do not imply the same logical artifact.
 - Policy by size, not type: every regular file up to 64 MB gets a saved copy when it is first captured. A larger file is tracked by hash, and "Save a copy" keeps it while the file on disk still matches the delivery. Thumbnails for large video, directory snapshots and HTML dependency handling are deferred.
 - Folders are listed but not versioned: preview, Open and drag use the folder as it is now, and the UI says so.
 - A delivered symlink is captured by the file it points to; the link itself is never copied, and the target's permissions are never changed.
-- **Hand-off copies** (`~/Library/Caches/Gleaner/handoff`, read-only files) and the **version store** are separate. Hand-off copies are disposable; a saved copy that backs a version is never removed by cleaning caches.
+- **Hand-off copies** (`~/Library/Caches/Gleaner/handoff`, read-only files) and the **version store** are separate. Hand-off copies are disposable; clearing them keeps the one on the clipboard, which a paste still reads, and a saved copy that backs a version is never removed by cleaning caches.
 - A drag hands over an immutable, verified copy, never the live source path. At drop time Gleaner copies the chosen version's bytes (from the source when it still matches, else from the saved copy) to a staging file, hashes the staged file, and delivers it only if the hash equals the version's. Handing over the source path itself would only guarantee the content at the moment of the check; an agent or editor may change it before the receiver reads it.
 - Which bytes back the chosen version:
 

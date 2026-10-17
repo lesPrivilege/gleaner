@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 import Testing
 @testable import Gleaner
 @testable import GleanerCore
@@ -254,7 +254,7 @@ import Testing
         await model.stage(sha: sha, artifact: video)
         let cleared = try #require(model.selectedHandoffURL)
         let generation = model.stagingGeneration
-        model.clearHandoffCopies()
+        model.clearHandoffCopies(keeping: pasteboard())
         // The removed copy is never offered again; the new generation makes the detail view
         // prepare the selection again.
         #expect(!FileManager.default.fileExists(atPath: cleared.path))
@@ -262,6 +262,32 @@ import Testing
         #expect(model.stagingGeneration == generation + 1)
         await model.stage(sha: sha, artifact: video)
         #expect(try text(model.selectedHandoffURL) == "video v2")
+    }
+
+    /// A clipboard of the test's own, so a test never touches the person's.
+    func pasteboard() -> NSPasteboard {
+        let pasteboard = NSPasteboard(name: NSPasteboard.Name("gleaner-test-\(UUID().uuidString)"))
+        pasteboard.clearContents()
+        return pasteboard
+    }
+
+    @Test func clearingHandOffCopiesKeepsTheOneOnTheClipboard() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try await selectVideo(model)
+        model.chosenDelivery = video.deliveries[2].id
+        await model.stage(sha: try #require(video.deliveries[2].sha256), artifact: video)
+        let older = try #require(model.selectedHandoffURL)
+        model.chosenDelivery = nil
+        await model.stage(sha: try #require(video.latest.sha256), artifact: video)
+        let copied = try #require(model.selectedHandoffURL)
+
+        // ⌘C put the latest copy on the clipboard as a file; it is pasted after Clear.
+        let clipboard = pasteboard()
+        defer { clipboard.releaseGlobally() }
+        #expect(clipboard.writeObjects([copied as NSURL]))
+        model.clearHandoffCopies(keeping: clipboard)
+        #expect(try text(copied) == "video v2")
+        #expect(!FileManager.default.fileExists(atPath: older.path))
     }
 
     // MARK: A deleted worktree

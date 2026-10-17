@@ -79,12 +79,29 @@ import Testing
         let failures = await withTaskGroup(of: (any Error)?.self) { group in
             for index in 0..<64 {
                 group.addTask {
-                    if index.isMultiple(of: 2) { try? store.clearStaging(); return nil }
+                    if index.isMultiple(of: 2) { try? store.clearStaging(keeping: []); return nil }
                     do { _ = try store.stage(sha: sha, name: "demo.mp4", source: file.path); return nil } catch { return error }
                 }
             }
             return await group.reduce(into: []) { if let error = $1 { $0.append(error) } }
         }
         #expect(failures.isEmpty, "\(failures)")
+    }
+
+    @Test func clearingHandOffCopiesKeepsTheOnesStillHandedOut() throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let store = ContentStore(objects: root.appendingPathComponent("objects"), staging: root.appendingPathComponent("handoff"))
+        var copies: [URL] = []
+        for text in ["one", "two"] {
+            let file = root.appendingPathComponent("\(text).md")
+            try text.write(to: file, atomically: true, encoding: .utf8)
+            copies.append(try store.stage(sha: try #require(Locator.sha256(file.path)), name: file.lastPathComponent, source: file.path))
+        }
+
+        // The first is on the clipboard: a paste still reads it after Clear.
+        try store.clearStaging(keeping: [copies[0]])
+        #expect(try String(contentsOf: copies[0], encoding: .utf8) == "one")
+        #expect(!fm.fileExists(atPath: copies[1].path))
     }
 }

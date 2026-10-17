@@ -65,14 +65,19 @@ public struct ContentStore: Sendable {
         return (sha, size)
     }
 
-    /// Removes every hand-off copy. They are disposable: saved copies live in `objects`. A copy
-    /// still being prepared is kept, so its preparation still hands over a whole file.
-    public func clearStaging() throws {
+    /// Removes every hand-off copy but those in `kept`, which were handed out and may still be
+    /// read (the one on the clipboard, pasted later). They are disposable: saved copies live in
+    /// `objects`. A copy still being prepared is kept, so its preparation still hands over a whole file.
+    public func clearStaging(keeping kept: [URL]) throws {
         let fm = FileManager.default
+        let kept = kept.map { $0.resolvingSymlinksInPath().path }
         try preparations.lock.withLock {
             guard let items = try? fm.contentsOfDirectory(atPath: staging.path) else { return }
             for item in items where !preparations.names.contains(item) {
-                try fm.removeItem(at: staging.appendingPathComponent(item))
+                let url = staging.appendingPathComponent(item)
+                let folder = url.resolvingSymlinksInPath().path
+                if kept.contains(where: { $0 == folder || $0.hasPrefix(folder + "/") }) { continue }
+                try fm.removeItem(at: url)
             }
         }
     }
