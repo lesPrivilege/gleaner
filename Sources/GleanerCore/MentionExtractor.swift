@@ -28,7 +28,6 @@ public struct DeliveryCandidate: Sendable {
 public enum MentionExtractor {
     static let link = try! NSRegularExpression(pattern: #"(!?)\[((?:[^\[\]]|\[[^\]]*\])*)\]\(\s*(<[^>\n]+>|(?:[^()\s]|\([^()\s]*\))+)(?:\s+"[^"\n]*")?\s*\)"#)
     static let codeSpan = try! NSRegularExpression(pattern: #"`([^`\n]+)`"#)
-    static let fence = try! NSRegularExpression(pattern: #"(?m)^\s*(```|~~~)[\s\S]*?^\s*\1"#)
     static let barePath = try! NSRegularExpression(
         pattern: #"(?<![\w./~\-:])~?/(?!/)[^\s`<>"'()\[\]，。；、！？：（）「」]+/[^\s`<>"'()\[\]，。；、！？：（）「」]+"#)
     static let lineAnchor = try! NSRegularExpression(pattern: #":\d+(?::\d+)?(?:-\d+)?$"#)
@@ -63,7 +62,7 @@ public enum MentionExtractor {
         }
 
         // Code examples first: a link inside a fence, or written inside inline code, is an example.
-        let fences = fence.matches(in: text, range: all).map(\.range)
+        let fences = Self.fences(in: ns)
         let spans = codeSpan.matches(in: text, range: all).map(\.range).filter { !overlaps($0, fences) }
         for match in link.matches(in: text, range: all) where !overlaps(match.range, fences) {
             covered.append(match.range)
@@ -133,6 +132,36 @@ public enum MentionExtractor {
             last = last.substring(to: match.range.location) as NSString
         }
         return fileExtension.firstMatch(in: last as String, range: NSRange(location: 0, length: last.length)) != nil
+    }
+
+    /// Fenced code blocks as CommonMark reads them: a line of three or more backticks or tildes
+    /// opens one, and only a line of the same character at least as long, with nothing after it,
+    /// closes it. An unclosed fence runs to the end of the reply. Indentation is not limited to
+    /// three spaces, because a fence inside a list item is indented from the item, not the margin.
+    static func fences(in text: NSString) -> [NSRange] {
+        var ranges: [NSRange] = []
+        var open: (start: Int, mark: Character, length: Int)?
+        var location = 0
+        while location < text.length {
+            let line = text.lineRange(for: NSRange(location: location, length: 0))
+            location = NSMaxRange(line)
+            let trimmed = text.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let mark = trimmed.first, mark == "`" || mark == "~" else { continue }
+            let length = trimmed.prefix { $0 == mark }.count
+            guard length >= 3 else { continue }
+            let rest = trimmed.dropFirst(length)
+            if let fence = open {
+                if mark == fence.mark, length >= fence.length, rest.isEmpty {
+                    ranges.append(NSRange(location: fence.start, length: location - fence.start))
+                    open = nil
+                }
+            } else if mark == "~" || !rest.contains("`") {
+                // Backticks after a backtick run make it inline code, not a fence.
+                open = (line.location, mark, length)
+            }
+        }
+        if let fence = open { ranges.append(NSRange(location: fence.start, length: text.length - fence.start)) }
+        return ranges
     }
 
     static func contains(_ outer: NSRange, _ inner: NSRange) -> Bool {

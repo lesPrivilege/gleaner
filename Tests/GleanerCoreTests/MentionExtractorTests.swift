@@ -51,6 +51,26 @@ import Testing
 
     @Test func fencedBlocksAreIgnored() {
         #expect(paths("Run:\n```sh\nopen /work/app/out/a.html `b.md`\n```\nDone: `c.md`") == ["/work/app/c.md"])
+        #expect(paths("```sh\nopen /tmp/a/b.md\n```\nSaved /tmp/c/d.md\n~~~\nls /tmp/e/f.md\n~~~") == ["/tmp/c/d.md"])
+        // A fence inside a list item is indented from the item, not the margin.
+        #expect(paths("1. Then:\n   - run\n     ```sh\n     cat /tmp/a/b.md\n     ```\nSaved /tmp/c/d.md") == ["/tmp/c/d.md"])
+        // Backticks after a backtick run make it inline code, not a fence.
+        #expect(paths("```not a fence``` but `/tmp/c/d.md`") == ["/tmp/c/d.md"])
+    }
+
+    @Test func anUnclosedFenceRunsToTheEndOfTheReply() {
+        #expect(paths("Example:\n```sh\ncat /tmp/out/report.md\n").isEmpty)
+        #expect(paths("Example:\n~~~\ncat /tmp/out/report.md\nSaved [r](out/r.md) and `out/s.md`").isEmpty)
+    }
+
+    @Test func onlyAFenceOfTheSameCharacterAtLeastAsLongClosesIt() {
+        // A longer closing fence closes.
+        #expect(paths("```\ncat /tmp/a/b.md\n`````\nSaved /tmp/c/d.md") == ["/tmp/c/d.md"])
+        // A shorter fence, or one with an info string, is part of the block.
+        #expect(paths("````md\n```sh\ncat /tmp/a/b.md\n```\n````\nSaved /tmp/c/d.md") == ["/tmp/c/d.md"])
+        // Backticks never close a tilde fence.
+        #expect(paths("~~~md\n```\ncat /tmp/a/b.md\n```\n~~~\nSaved /tmp/c/d.md") == ["/tmp/c/d.md"])
+        #expect(paths("~~~\n```\n/tmp/a/b.md\n").isEmpty)
     }
 
     @Test func linkLabelsDoNotDoubleCount() {
