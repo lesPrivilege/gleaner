@@ -193,10 +193,14 @@ enum Wording {
     }
 
     static func saveFailed(_ error: Error, delivery n: Int) -> String {
-        if case ContentStore.Failure.changed = error {
-            return "The file changed before Gleaner could save it; it no longer holds delivery \(n)."
+        switch error {
+        case ContentStore.Failure.changed:
+            "The file changed before Gleaner could save it; it no longer holds delivery \(n)."
+        case ContentStore.Failure.unavailable:
+            "Gleaner couldn’t read delivery \(n)’s bytes at this path."
+        default:
+            "Couldn’t save a copy: \(error.localizedDescription)"
         }
-        return "Couldn’t save a copy: \(error.localizedDescription)"
     }
 
     /// A few words for a one-line delivery row; the full sentence is under Details.
