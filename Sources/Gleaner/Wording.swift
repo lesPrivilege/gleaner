@@ -152,7 +152,8 @@ enum Wording {
 
     /// Why Gleaner keeps none of `delivery`'s bytes, from what it recorded when it first looked:
     /// never seen, not a regular file, unreadable, a folder, too large to have been saved, or a
-    /// save that failed. `large` says the delivery was over the save limit.
+    /// save that failed; or a copy it saved that its store no longer holds. `large` says the
+    /// delivery was over the save limit.
     static func noCopy(_ delivery: Delivery, large: Bool) -> String {
         let n = number(delivery)
         switch delivery.capture?.kind {
@@ -166,6 +167,8 @@ enum Wording {
             return "Gleaner never read delivery \(n): it couldn’t be read when Gleaner first looked."
         case .missing?:
             return "Gleaner never saw delivery \(n): nothing was at this path when it first looked."
+        case .file? where delivery.capture?.savedAt != nil:
+            return "Gleaner saved a copy of delivery \(n), but it is no longer in Gleaner’s store."
         case .file?:
             return large
                 ? "Gleaner didn’t save a copy of delivery \(n): it was too large to have been saved, and large files are saved only when you choose to."
@@ -239,13 +242,14 @@ enum Wording {
                 ? (.hollow, "Saved copy of what Gleaner first saw (\(size))")
                 : (.solid, "Saved copy (\(size))")
         }
-        let why = large ? "too large to have been saved (\(size))" : "saving it failed (\(size))"
-        guard let now else { return (.hollow, "Not saved · \(why), checking…") }
-        if now.sha256 == sha { return (.hollow, "Not saved · \(why) · the file on disk still holds it, checked by hash") }
+        let state = capture.savedAt != nil ? "Saved copy no longer in Gleaner’s store (\(size))"
+            : large ? "Not saved · too large to have been saved (\(size))" : "Not saved · saving it failed (\(size))"
+        guard let now else { return (.hollow, "\(state), checking…") }
+        if now.sha256 == sha { return (.hollow, "\(state) · the file on disk still holds it, checked by hash") }
         switch now.kind {
-        case .missing: return (.cross, "Not saved · \(why) · not on disk")
-        case .unreadable: return (.attention, "Not saved · \(why) · the file on disk can’t be read")
-        default: return (.cross, "Not saved · \(why) · the file on disk no longer holds it")
+        case .missing: return (.cross, "\(state) · not on disk")
+        case .unreadable: return (.attention, "\(state) · the file on disk can’t be read")
+        default: return (.cross, "\(state) · the file on disk no longer holds it")
         }
     }
 

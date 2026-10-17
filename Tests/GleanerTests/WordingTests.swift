@@ -51,6 +51,18 @@ import Testing
         #expect(handoff(delivery(1, .missing), in: artifact(delivery(1, .missing)), now: changed).title == "Delivery 1 isn’t available")
     }
 
+    @Test func aSavedCopyGoneFromTheStoreIsNeverCalledAFailedSave() {
+        let saved = delivery(2, .file, sha: "a", saved: true)
+        let changed = state(.file, sha: "c")
+        for large in [false, true] {
+            let detail = handoff(saved, in: artifact(saved), now: changed, large: large).detail
+            #expect(detail.contains("Gleaner saved a copy of delivery 2, but it is no longer in Gleaner’s store."))
+            #expect(!detail.contains("failed") && !detail.contains("too large"))
+        }
+        #expect(Wording.storage(saved, hasSaved: false, large: false, now: changed).1
+                == "Saved copy no longer in Gleaner’s store (4 MB) · the file on disk no longer holds it")
+    }
+
     @Test func anUnreadablePathIsNeverCalledChangedGoneOrSeen() {
         let unreadable = state(.unreadable)
         let large = delivery(1, .file, sha: "a")
