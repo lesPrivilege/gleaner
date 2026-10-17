@@ -13,7 +13,7 @@ public struct Mention: Sendable, Hashable {
     public var path: String
     /// Line anchor or fragment stripped from the target (`:42`, `#L10`).
     public var anchor: String?
-    /// The reply line that contains the mention.
+    /// The reply line that contains the mention, redacted and cut to about 400 characters around it.
     public var excerpt: String
 }
 
@@ -172,19 +172,24 @@ public enum MentionExtractor {
         ranges.contains { NSIntersectionRange($0, range).length > 0 }
     }
 
+    /// The reply line around `range`, redacted and then cut to about `limit` characters (SPEC §11).
+    /// Redacting the whole line first recognizes a secret by what precedes it ("Bearer",
+    /// "token =") even when the cut leaves that out.
     static func excerpt(_ text: NSString, around range: NSRange, limit: Int = 400) -> String {
         let line = text.lineRange(for: range)
-        var window = line
-        if line.length > limit {
-            var start = max(line.location, range.location - limit / 2)
-            var end = min(NSMaxRange(line), start + limit)
-            // Cut only at whitespace, so a secret is never split into a fragment redaction can't
-            // recognize.
+        let redacted = Redactor.redact(text.substring(with: line)) as NSString
+        var window = NSRange(location: 0, length: redacted.length)
+        if redacted.length > limit {
+            // Where the mention starts once what precedes it on the line is redacted.
+            let before = text.substring(with: NSRange(location: line.location, length: range.location - line.location))
+            var start = max(0, (Redactor.redact(before) as NSString).length - limit / 2)
+            var end = min(redacted.length, start + limit)
+            // Cut only at whitespace, so no word is split.
             let space = CharacterSet.whitespaces
-            while start > line.location, let c = Unicode.Scalar(text.character(at: start - 1)), !space.contains(c) { start -= 1 }
-            while end < NSMaxRange(line), let c = Unicode.Scalar(text.character(at: end)), !space.contains(c) { end += 1 }
+            while start > 0, let c = Unicode.Scalar(redacted.character(at: start - 1)), !space.contains(c) { start -= 1 }
+            while end < redacted.length, let c = Unicode.Scalar(redacted.character(at: end)), !space.contains(c) { end += 1 }
             window = NSRange(location: start, length: end - start)
         }
-        return text.substring(with: window).trimmingCharacters(in: .whitespacesAndNewlines)
+        return redacted.substring(with: window).trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }

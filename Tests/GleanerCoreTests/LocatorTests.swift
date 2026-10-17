@@ -111,6 +111,32 @@ import Testing
         #expect(state.sha256 == nil)
     }
 
+    @Test func aFileThatCannotBeReadIsUnreadableNeverMissing() throws {
+        let fm = FileManager.default
+        let denied = root + "/out/denied.md"
+        try "v1".write(toFile: denied, atomically: true, encoding: .utf8)
+        try fm.setAttributes([.posixPermissions: 0], ofItemAtPath: denied)
+        defer { try? fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: denied) }
+        let file = Locator.observe(denied)
+        #expect(file.kind == .unreadable)
+        #expect(file.sha256 == nil)
+
+        // A folder that can't be searched hides its files: Gleaner can't say they are gone.
+        let locked = root + "/locked"
+        try fm.createDirectory(atPath: locked, withIntermediateDirectories: true)
+        try "v1".write(toFile: locked + "/inside.md", atomically: true, encoding: .utf8)
+        try fm.setAttributes([.posixPermissions: 0], ofItemAtPath: locked)
+        defer { try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked) }
+        #expect(Locator.stat(locked + "/inside.md").kind == .unreadable)
+        #expect(Locator.observe(locked + "/inside.md").kind == .unreadable)
+    }
+
+    @Test func aLinkToNothingIsMissing() throws {
+        try FileManager.default.createSymbolicLink(atPath: root + "/out/link.md", withDestinationPath: root + "/out/nothing.md")
+        #expect(Locator.stat(root + "/out/link.md").kind == .missing)
+        #expect(Locator.observe(root + "/out/link.md").kind == .missing)
+    }
+
     @Test func observingDoesNotWriteTheIndex() throws {
         let index = root + "/.git/index"
         try FileManager.default.setAttributes(

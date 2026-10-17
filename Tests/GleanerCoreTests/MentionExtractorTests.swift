@@ -92,6 +92,18 @@ import Testing
         #expect(paths("Example:\n```md\n[x](out/x.md)\n```\nInline `[y](out/y.md)` too. Real: [z](out/z.md)") == ["/work/app/out/z.md"])
     }
 
+    @Test func aSecretAtTheEdgeOfAnExcerptIsRedactedBeforeTheCut() throws {
+        // The 400 characters around the link start inside the token: cut first, the excerpt would
+        // leave "Bearer" behind and keep a token nothing recognizes any more.
+        let token = "abcdefghijklmnopqrstuvwxyz0123"
+        let line = "Bearer \(token) " + String(repeating: "word ", count: 33) + "Saved [r](out/r.md) "
+            + String(repeating: "more ", count: 60)
+        let excerpt = try #require(MentionExtractor.extract(from: line, cwd: "/work/app").first).excerpt
+        #expect(excerpt.contains("[r](out/r.md)"))
+        #expect(!excerpt.contains(token))
+        #expect(excerpt.count <= 410)
+    }
+
     @Test func relativeWithoutCwdIsDropped() {
         #expect(paths("`out/a.md` and /abs/path/b.md", cwd: nil) == ["/abs/path/b.md"])
     }

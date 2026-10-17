@@ -80,6 +80,10 @@ public final class Indexer: @unchecked Sendable {
             /// Logs with malformed lines. What they name was added and nothing was removed; they are
             /// read again next run.
             public var partialLogs: [String] = []
+            /// Logs shorter than when they were last read whole: records were lost. What they name
+            /// was added and nothing was removed; they are read again next run, but reading again
+            /// can't bring the records back.
+            public var shortenedLogs: [String] = []
             /// Logs that could not be read or stored, with the reason. Their deliveries stay as they were.
             public var failures: [String] = []
             /// Folders in it that could not be listed, with the reason. Their logs went unread; what
@@ -87,10 +91,10 @@ public final class Indexer: @unchecked Sendable {
             public var unlistedFolders: [String] = []
 
             /// Listed, but not everything in it could be read or understood.
-            public var hasProblems: Bool { !unknownRecordTypes.isEmpty || isIncomplete }
+            public var hasProblems: Bool { !unknownRecordTypes.isEmpty || !shortenedLogs.isEmpty || isIncomplete }
 
             /// Something reading again may fix: the folder, a folder in it, or a log couldn't be read
-            /// whole. Unknown record types stay until Gleaner learns them.
+            /// whole. Unknown record types stay until Gleaner learns them, and lost records stay lost.
             public var isIncomplete: Bool {
                 if case .unreadable = folder { return true }
                 return !partialLogs.isEmpty || !failures.isEmpty || !unlistedFolders.isEmpty
@@ -131,21 +135,22 @@ public final class Indexer: @unchecked Sendable {
         let codex = CodexAdapter(titles: CodexAdapter.loadTitles(
             index: sources.codexHome.appendingPathComponent("session_index.jsonl")))
 
-        var changed: [(Provider, URL, Int64, Date)] = []
+        var changed: [(Provider, URL, Int64, Date, shortened: Bool)] = []
         for (provider, url) in files {
             let info = Locator.stat(url.path)
             guard let size = info.size, let mtime = info.modifiedAt else { continue }
             if let unknown = try registry.unknownRecordTypes(unchangedLog: url.path, size: size, mtime: mtime) {
                 report.sources[provider]?.unknownRecordTypes.merge(unknown, uniquingKeysWith: +)
             } else {
-                changed.append((provider, url, size, mtime))
+                let shortened = try registry.readSize(logFile: url.path).map { size < $0 } ?? false
+                changed.append((provider, url, size, mtime, shortened))
             }
         }
 
         let jobs = changed
         let parsed = Slots<Result<SessionLog?, Error>>(count: jobs.count)
         DispatchQueue.concurrentPerform(iterations: jobs.count) { index in
-            let (provider, url, _, _) = jobs[index]
+            let (provider, url, _, _, _) = jobs[index]
             parsed[index] = Result { () throws -> SessionLog? in
                 switch provider {
                 case .claudeCode: try ClaudeCodeAdapter.parse(url)
@@ -154,18 +159,21 @@ public final class Indexer: @unchecked Sendable {
             }
         }
 
-        for (index, (provider, url, size, mtime)) in changed.enumerated() {
+        for (index, (provider, url, size, mtime, shortened)) in changed.enumerated() {
             progress(index, changed.count)
             switch parsed[index] {
             case .failure(let error):
                 report.sources[provider]?.failures.append("\(url.path): \(error)")
                 continue
             case .success(let log):
+                // A log shorter than when it was last read lost records, so like a malformed one it
+                // can't show that a delivery is gone.
+                let complete = log.map { $0.isComplete && !shortened } ?? true
                 do {
                     report.newDeliveries += try registry.transaction {
-                        let added = try log.map { try ingest($0, now: now()) } ?? 0
-                        // A partial log stays unread, so it is read and reported again next run.
-                        if log?.isComplete ?? true {
+                        let added = try log.map { try ingest($0, isComplete: complete, now: now()) } ?? 0
+                        // A log not read whole stays unread, so it is read and reported again next run.
+                        if complete {
                             try registry.markRead(logFile: url.path, size: size, mtime: mtime,
                                                   unknownRecordTypes: log?.unknownRecordTypes ?? [:])
                         }
@@ -179,6 +187,7 @@ public final class Indexer: @unchecked Sendable {
                 if let log {
                     report.sources[provider]?.unknownRecordTypes.merge(log.unknownRecordTypes, uniquingKeysWith: +)
                     if !log.isComplete { report.sources[provider]?.partialLogs.append(url.path) }
+                    if shortened { report.sources[provider]?.shortenedLogs.append(url.path) }
                 }
                 report.logsRead += 1
             }
@@ -187,39 +196,44 @@ public final class Indexer: @unchecked Sendable {
         return report
     }
 
-    func ingest(_ log: SessionLog, now: Date) throws -> Int {
+    /// `isComplete` says the whole log was read: only then does it show that a delivery it no
+    /// longer admits is gone.
+    func ingest(_ log: SessionLog, isComplete: Bool, now: Date) throws -> Int {
         try registry.upsert(log.session)
         var added = 0
         var admitted = Set<String>()
         for turn in log.turns {
-            for candidate in MentionExtractor.candidates(in: turn) where Admission.admits(candidate) {
-                // A delivery keeps the id it was first given. A later extractor may find the reply's
-                // first mention of the path in another of its records; a new id would drop the
-                // delivery and capture its bytes again, as they are now.
+            for (rank, candidate) in MentionExtractor.candidates(in: turn).enumerated() where Admission.admits(candidate) {
+                // A delivery keeps the id, and the capture, it was first given. A later extractor may
+                // find the reply's first mention of the path in another of its records, or admit it
+                // again after a reread dropped it; a new capture would record the bytes as they are now.
                 let fresh = candidate.id(logPath: log.session.logPath)
                 let known = try ([fresh] + turn.parts.map {
                     DeliveryCandidate.id(logPath: log.session.logPath, line: $0.line, path: candidate.path)
-                }).first(where: registry.hasDelivery)
+                }).first(where: registry.hasCapture)
                 let id = known ?? fresh
                 admitted.insert(id)
                 let isNew = known == nil
                 let first = candidate.evidence[0]
                 try registry.upsertDelivery(
                     id: id, sessionID: log.session.id, logPath: log.session.logPath, path: candidate.path, deliveredAt: first.part.at,
+                    replyLine: turn.parts[0].line, replyRank: rank,
                     cwd: first.part.cwd, repository: Projects.repository(path: candidate.path, cwd: first.part.cwd),
                     request: turn.request,
                     evidence: candidate.evidence.map {
                         Evidence(line: $0.part.line, syntax: $0.mention.syntax.rawValue,
                                  rawTarget: Redactor.redact($0.mention.rawTarget),
-                                 anchor: $0.mention.anchor.map(Redactor.redact), excerpt: Redactor.redact($0.mention.excerpt))
+                                 anchor: $0.mention.anchor.map(Redactor.redact), excerpt: $0.mention.excerpt)
                     })
                 guard isNew else { continue }
-                try registry.setCapture(capture(candidate.path, deliveredAt: first.part.at, now: now), for: id)
+                let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
+                try registry.addCapture(captured, for: id)
+                // Gleaner's first read of the file for an earlier delivery whose bytes it never had.
+                if captured.sha256 != nil { try registry.complete(capturesOf: candidate.path, with: captured) }
                 added += 1
             }
         }
-        // Only a log read whole shows that a delivery is gone from it.
-        if log.isComplete { try registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
+        if isComplete { try registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
         return added
     }
 
@@ -240,7 +254,8 @@ public final class Indexer: @unchecked Sendable {
     }
 
     /// Reads the delivery's bytes once, saves small files, and records when that happened relative
-    /// to the delivery (SPEC §5.1).
+    /// to the delivery (SPEC §5.1). A path whose bytes it can't read (nothing there, a file it
+    /// can't open, a pipe) is recorded as never observed, with what it found instead.
     public func capture(_ path: String, deliveredAt: Date?, now: Date) -> Capture {
         let info = Locator.stat(path)
         let live = deliveredAt.map { delivered in
@@ -248,21 +263,36 @@ public final class Indexer: @unchecked Sendable {
                 && (info.modifiedAt.map { $0 <= delivered.addingTimeInterval(clockTolerance) } ?? false)
         } ?? false
         let provenance: Provenance = live ? .atDelivery : .firstSeenAfterDelivery
+        func unread(_ kind: LocatorState.Kind) -> Capture {
+            Capture(sha256: nil, size: nil, modifiedAt: nil, observedAt: now, savedAt: nil, provenance: .neverObserved, kind: kind)
+        }
         switch info.kind {
-        case .missing, .special:
-            return Capture(sha256: nil, size: nil, modifiedAt: nil, observedAt: now, savedAt: nil,
-                           provenance: .neverObserved, isDirectory: false)
+        case .missing, .special, .unreadable:
+            return unread(info.kind)
         case .directory:
             return Capture(sha256: nil, size: nil, modifiedAt: info.modifiedAt, observedAt: now, savedAt: nil,
-                           provenance: provenance, isDirectory: true)
+                           provenance: provenance, kind: .directory)
         case .file:
             if let size = info.size, size <= saveLimit, let saved = try? store.save(path) {
                 return Capture(sha256: saved.sha, size: saved.size, modifiedAt: info.modifiedAt, observedAt: now,
-                               savedAt: now, provenance: provenance, isDirectory: false)
+                               savedAt: now, provenance: provenance, kind: .file)
             }
-            return Capture(sha256: Locator.sha256(path), size: info.size, modifiedAt: info.modifiedAt, observedAt: now,
-                           savedAt: nil, provenance: provenance, isDirectory: false)
+            guard let sha = Locator.sha256(path) else { return unread(.unreadable) }
+            return Capture(sha256: sha, size: info.size, modifiedAt: info.modifiedAt, observedAt: now,
+                           savedAt: nil, provenance: provenance, kind: .file)
         }
+    }
+
+    /// Reads the file at `path` for deliveries of it whose bytes Gleaner never had, because the
+    /// path was missing, unreadable or not a regular file when it first looked. This first read
+    /// completes their captures, once, as first seen after delivery (SPEC §5.1), and saves a small
+    /// file as a capture does. Returns whether it completed any.
+    public func completeCaptures(of path: String, now: Date) throws -> Bool {
+        guard try registry.hasIncompleteCapture(path: path) else { return false }
+        let read = capture(path, deliveredAt: nil, now: now)
+        guard read.sha256 != nil else { return false }
+        try registry.complete(capturesOf: path, with: read)
+        return true
     }
 }
 

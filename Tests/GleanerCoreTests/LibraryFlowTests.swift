@@ -208,13 +208,36 @@ import Testing
         let library = Artifact.deliveredWith(try indexer.registry.artifacts())
         let report = try artifact("report.md"), video = try artifact("demo.mp4"), build = try artifact("build.dmg")
 
-        // The report's reply also named the video and the build: their deliveries from that reply,
-        // not the video's later one.
+        // The report's reply also named the video and the build, in that order: their deliveries
+        // from that reply, not the video's later one.
         let siblings = try #require(library[report.latest.id])
-        #expect(siblings.map(\.path) == [build.path, video.path])
-        #expect(siblings.map(\.id) == [build.latest.id, video.deliveries[1].id])
+        #expect(siblings.map(\.path) == [video.path, build.path])
+        #expect(siblings.map(\.id) == [video.deliveries[1].id, build.latest.id])
         // The second reply named the video alone.
         #expect(library[video.latest.id] == nil)
+    }
+
+    @Test func deliveredWithKeepsAReplyTogetherAcrossItsRecords() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let later = delivered.addingTimeInterval(600)
+        for name in ["summary.md", "notes.md", "chart.png"] {
+            try write("\(name) v1", to: "out/\(name)", modified: later.addingTimeInterval(-30))
+        }
+        // One reply written as two records, seconds apart.
+        try appendLog([
+            user("Write it up", at: later.addingTimeInterval(-60)),
+            assistant("Summary: [summary](out/summary.md)", at: later, cwd: project.path),
+            assistant("Notes: [notes](out/notes.md), and the chart: [chart](out/chart.png)",
+                      at: later.addingTimeInterval(5), cwd: project.path),
+        ])
+        _ = try indexer.run(now: { later.addingTimeInterval(20) })
+        let library = Artifact.deliveredWith(try indexer.registry.artifacts())
+        let summary = try artifact("summary.md"), notes = try artifact("notes.md"), chart = try artifact("chart.png")
+
+        // Every file the reply named, in the order it named them, and nothing from the first reply.
+        #expect(library[notes.latest.id]?.map(\.path) == [summary.path, chart.path])
+        #expect(library[summary.latest.id]?.map(\.path) == [notes.path, chart.path])
+        #expect(library[chart.latest.id]?.map(\.path) == [summary.path, notes.path])
     }
 
     @Test func backfillIsNeverCalledTheDeliveredVersion() throws {
@@ -266,12 +289,49 @@ import Testing
         // Not marked read: the next run reads it again and says so again.
         #expect(partialLogs(try indexer.run()) == ["session-1.jsonl"])
 
-        // Once the log reads whole, what it no longer names is removed.
-        try ([String(lines[0]), assistant("Video: [demo](out/demo.mp4)", at: delivered, cwd: project.path)]
+        // Once the log reads whole, and no shorter than it was, what it no longer names is removed.
+        try ([String(lines[0]), assistant("Video: [demo](out/demo.mp4)", at: delivered, cwd: project.path),
+              user(String(repeating: "And one more thing. ", count: 20), at: delivered.addingTimeInterval(50))]
             .joined(separator: "\n") + "\n").write(to: log, atomically: true, encoding: .utf8)
         #expect(partialLogs(try indexer.run(now: { delivered.addingTimeInterval(60) })) == [])
         #expect(try indexer.registry.artifacts().map(\.name) == ["demo.mp4"])
         #expect(try artifact("demo.mp4").latest.capture == before)
+    }
+
+    @Test func aLogShorterThanWhenLastReadRemovesNothing() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        // The log is rewritten shorter: well-formed, but the reply no longer names the report or the build.
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        let lines = try String(contentsOf: log, encoding: .utf8).split(separator: "\n")
+        try ([String(lines[0]), assistant("Video: [demo](out/demo.mp4)", at: delivered, cwd: project.path)]
+            .joined(separator: "\n") + "\n").write(to: log, atomically: true, encoding: .utf8)
+
+        func shortenedLogs(_ report: Indexer.Report) -> [String]? {
+            report.sources[.claudeCode]?.shortenedLogs.map { ($0 as NSString).lastPathComponent }
+        }
+        let report = try indexer.run(now: { delivered.addingTimeInterval(40) })
+        #expect(shortenedLogs(report) == ["session-1.jsonl"])
+        #expect(report.sources[.claudeCode]?.hasProblems == true)
+        // Reading again can't bring the lost records back.
+        #expect(report.sources[.claudeCode]?.isIncomplete == false)
+        #expect(try indexer.registry.artifacts().map(\.name).sorted() == ["build.dmg", "demo.mp4", "report.md"])
+        // Still shorter than when it was read whole, next run too.
+        #expect(shortenedLogs(try indexer.run()) == ["session-1.jsonl"])
+        #expect(try indexer.registry.artifacts().count == 3)
+    }
+
+    @Test func aLogShorterSinceAnExtractorUpgradeRemovesNothing() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        let lines = try String(contentsOf: log, encoding: .utf8).split(separator: "\n")
+        try ([String(lines[0]), assistant("Video: [demo](out/demo.mp4)", at: delivered, cwd: project.path)]
+            .joined(separator: "\n") + "\n").write(to: log, atomically: true, encoding: .utf8)
+        try indexer.registry.db.execute("PRAGMA user_version = 1")
+        let upgraded = Indexer(
+            registry: try Registry(path: root.appendingPathComponent("support/registry.sqlite").path),
+            store: indexer.store, sources: indexer.sources)
+        _ = try upgraded.run(now: { delivered.addingTimeInterval(40) })
+        #expect(try upgraded.registry.artifacts().count == 3)
     }
 
     @Test func aDatabaseErrorFailsOnlyItsOwnLog() throws {
@@ -333,7 +393,7 @@ import Testing
                 ReplyPart(text: "Done: [notes](out/notes.md)", line: 5, at: delivered.addingTimeInterval(1), cwd: project.path),
             ])],
             unknownRecordTypes: [:], malformedLines: 0)
-        _ = try indexer.ingest(older, now: delivered.addingTimeInterval(20))
+        _ = try indexer.ingest(older, isComplete: true, now: delivered.addingTimeInterval(20))
         let before = try artifact("notes.md").latest
         #expect(before.capture?.provenance == .atDelivery)
 
@@ -345,6 +405,30 @@ import Testing
         #expect(after.deliveries.map(\.id) == [before.id])
         #expect(after.latest.capture == before.capture)
         #expect(after.latest.evidence.map(\.line) == [5])
+    }
+
+    @Test func aDeliveryAdmittedAgainGetsItsOriginalCaptureBack() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let before = try artifact("demo.mp4").latest
+        #expect(before.capture?.provenance == .atDelivery)
+
+        // The reply is reread under a rule that no longer admits the video (a link written inside
+        // inline code), and the file is edited meanwhile.
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        let original = try String(contentsOf: log, encoding: .utf8)
+        try original.replacingOccurrences(of: "[demo](out/demo.mp4)", with: "`[demo](out/demo.mp4)`")
+            .write(to: log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { delivered.addingTimeInterval(60) })
+        #expect(try indexer.registry.artifacts().map(\.name).sorted() == ["build.dmg", "report.md"])
+        try write("video v2, edited after delivery", to: "out/demo.mp4", modified: Date())
+
+        // Admitted again: the same delivery, with what Gleaner saw at delivery, not what is there now.
+        try (original + user("Anything else?", at: delivered.addingTimeInterval(90)) + "\n")
+            .write(to: log, atomically: true, encoding: .utf8)
+        #expect(try indexer.run(now: { delivered.addingTimeInterval(9999) }).newDeliveries == 0)
+        let after = try artifact("demo.mp4")
+        #expect(after.deliveries.map(\.id) == [before.id])
+        #expect(after.latest.capture == before.capture)
     }
 
     @Test func aFolderInPlaceOfADeliveredFileNeverStandsInForIt() throws {
@@ -415,8 +499,88 @@ import Testing
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
         let video = try artifact("demo.mp4")
         #expect(video.latest.capture?.provenance == .neverObserved)
+        #expect(video.latest.capture?.kind == .missing)
         #expect(video.onDisk(now(video.path), hasSaved: saved) == .lost)
         #expect(video.handoff(video.latest, now: now(video.path), hasSaved: saved) == .lost)
+    }
+
+    @Test func aFileGleanerCannotReadIsUnreadableUntilItFirstReadsIt() throws {
+        let fm = FileManager.default
+        let path = project.appendingPathComponent("out/demo.mp4").path
+        try fm.setAttributes([.posixPermissions: 0], ofItemAtPath: path)
+        defer { try? fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: path) }
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+
+        // There, but never read: no hash, and nothing says it was seen, gone or changed.
+        let video = try artifact("demo.mp4")
+        let unread = try #require(video.latest.capture)
+        #expect(unread.sha256 == nil && unread.savedAt == nil)
+        #expect(unread.kind == .unreadable)
+        #expect(unread.provenance == .neverObserved)
+        let observation = now(path)
+        #expect(observation.state.kind == .unreadable)
+        #expect(video.onDisk(observation, hasSaved: saved) == .unreadable)
+        #expect(video.handoff(video.latest, now: observation, hasSaved: saved) == .unavailable(alternative: nil, currentSha: nil))
+        #expect(try !indexer.completeCaptures(of: path, now: delivered.addingTimeInterval(60)))
+
+        // Access is granted: Gleaner's first read completes the capture, as first seen later.
+        try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: path)
+        let read = delivered.addingTimeInterval(3600)
+        #expect(try indexer.completeCaptures(of: path, now: read))
+        let completed = try #require(try artifact("demo.mp4").latest.capture)
+        #expect(completed.kind == .file)
+        #expect(completed.provenance == .firstSeenAfterDelivery)
+        #expect(completed.observedAt == read)
+        #expect(saved(try #require(completed.sha256)))
+        #expect(try artifact("demo.mp4").onDisk(now(path), hasSaved: saved) == .unchangedSinceFirstSeen(read))
+
+        // Once: a capture with a hash is never rewritten.
+        try write("video v2", to: "out/demo.mp4", modified: Date())
+        #expect(try !indexer.completeCaptures(of: path, now: Date()))
+        #expect(try artifact("demo.mp4").latest.capture == completed)
+    }
+
+    @Test func aFileThatAppearsLaterIsFirstSeenLater() throws {
+        let path = project.appendingPathComponent("out/demo.mp4").path
+        try FileManager.default.removeItem(atPath: path)
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(try artifact("demo.mp4").latest.capture?.kind == .missing)
+
+        try write("video v1", to: "out/demo.mp4", modified: Date())
+        let read = delivered.addingTimeInterval(3600)
+        #expect(try indexer.completeCaptures(of: path, now: read))
+        let video = try artifact("demo.mp4")
+        #expect(video.latest.capture?.provenance == .firstSeenAfterDelivery)
+        #expect(video.handoff(video.latest, now: now(path), hasSaved: saved)
+                == .ready(sha: try #require(video.latest.sha256), from: .original, firstSeen: read))
+    }
+
+    @Test func aPipeAtFirstLookIsNotARegularFile() throws {
+        let path = project.appendingPathComponent("out/demo.mp4").path
+        try FileManager.default.removeItem(atPath: path)
+        #expect(mkfifo(path, 0o600) == 0)
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let capture = try #require(try artifact("demo.mp4").latest.capture)
+        #expect(capture.kind == .special && capture.sha256 == nil && capture.provenance == .neverObserved)
+    }
+
+    @Test func aLaterDeliveryThatReadsTheFileCompletesAnEarlierOneNeverSeen() throws {
+        try FileManager.default.removeItem(at: project.appendingPathComponent("out/demo.mp4"))
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let second = delivered.addingTimeInterval(3600)
+        try write("video v2", to: "out/demo.mp4", modified: second.addingTimeInterval(-30))
+        try appendLog([
+            user("Render it again", at: second.addingTimeInterval(-300)),
+            assistant("Rendered again: [demo](out/demo.mp4)", at: second, cwd: project.path),
+        ])
+        _ = try indexer.run(now: { second.addingTimeInterval(20) })
+
+        // Gleaner first read the file for delivery 2: for delivery 1 that is what it first saw, later.
+        let video = try artifact("demo.mp4")
+        #expect(video.latest.capture?.provenance == .atDelivery)
+        let first = try #require(video.deliveries[1].capture)
+        #expect(first.provenance == .firstSeenAfterDelivery)
+        #expect(first.sha256 == video.latest.sha256)
     }
 
     // MARK: sources

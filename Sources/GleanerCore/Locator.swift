@@ -18,8 +18,10 @@ public enum GitState: String, Sendable {
 public struct LocatorState: Sendable {
     public enum Kind: String, Sendable {
         /// `special` is anything that is neither a regular file nor a directory (FIFO, socket,
-        /// device). It is never opened: reading a FIFO blocks forever.
-        case file, directory, special, missing
+        /// device). It is never opened: reading a FIFO blocks forever. `unreadable` is a path
+        /// Gleaner can't open, read, or reach for want of permission: not shown to be gone, but
+        /// its bytes are unknown.
+        case file, directory, special, unreadable, missing
     }
 
     public var kind: Kind
@@ -36,12 +38,10 @@ public struct LocatorState: Sendable {
 /// Observes a path in place. Read-only: it never writes to the file or its repository.
 public enum Locator {
     public static func observe(_ path: String) -> LocatorState {
-        let fm = FileManager.default
-        var isDirectory: ObjCBool = false
-        let exists = fm.fileExists(atPath: path, isDirectory: &isDirectory)
+        let info = stat(path)
         let root = repositoryRoot(for: path)
 
-        guard exists else {
+        guard info.kind != .missing else {
             guard let root else { return LocatorState(kind: .missing, git: .notInRepo) }
             let rel = relative(path, to: root)
             guard let commit = commit(containing: rel, root: root) else {
@@ -52,29 +52,37 @@ public enum Locator {
                 restoreCommand: "git --literal-pathspecs -C \(quoted(root)) restore --source=\(quoted(commit.sha)) -- \(quoted(rel))")
         }
 
-        let info = stat(path)
+        let sha = info.kind == .file ? sha256(path) : nil
         return LocatorState(
-            kind: info.kind,
+            // A file that can't be opened or read whole is there, but its bytes are unknown.
+            kind: info.kind == .file && sha == nil ? .unreadable : info.kind,
             size: info.size,
             modifiedAt: info.modifiedAt,
-            sha256: info.kind == .file ? sha256(path) : nil,
+            sha256: sha,
             repositoryRoot: root,
             git: root.map { gitState(path, root: $0) } ?? .notInRepo)
     }
 
-    /// Kind, size, and modification time without reading contents or asking git.
+    /// Kind, size, and modification time of what `path` leads to, without reading contents or
+    /// asking git. Missing only when nothing is there (a link to nothing included); any other
+    /// failure, such as a folder on the way that can't be searched, is unreadable.
     public static func stat(_ path: String) -> (kind: LocatorState.Kind, size: Int64?, modifiedAt: Date?) {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: (path as NSString).resolvingSymlinksInPath)
-        else { return (.missing, nil, nil) }
-        let kind: LocatorState.Kind = switch attributes[.type] as? FileAttributeType {
-        case .typeRegular: .file
-        case .typeDirectory: .directory
+        var info = Darwin.stat()
+        // stat(2), by another name because this function's hides it. It follows links.
+        guard fstatat(AT_FDCWD, path, &info, 0) == 0 else {
+            return (errno == ENOENT || errno == ENOTDIR ? .missing : .unreadable, nil, nil)
+        }
+        let kind: LocatorState.Kind = switch info.st_mode & S_IFMT {
+        case S_IFREG: .file
+        case S_IFDIR: .directory
         default: .special
         }
-        return (kind, kind == .file ? (attributes[.size] as? NSNumber)?.int64Value : nil, attributes[.modificationDate] as? Date)
+        let modified = Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec) + TimeInterval(info.st_mtimespec.tv_nsec) / 1e9)
+        return (kind, kind == .file ? Int64(info.st_size) : nil, modified)
     }
 
-    /// Nil when the file can't be opened or a read fails: the digest of a prefix is not its hash.
+    /// Nil when the file can't be opened or a read fails, which makes it unreadable: the digest of a
+    /// prefix is not its hash.
     public static func sha256(_ path: String) -> String? {
         guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
         defer { try? handle.close() }

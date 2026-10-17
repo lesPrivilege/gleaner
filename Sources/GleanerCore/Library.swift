@@ -8,7 +8,9 @@ public enum Provenance: String, Sendable, Codable {
     case neverObserved = "never_observed"
 }
 
-/// What Gleaner recorded about a delivery's bytes when it first looked.
+/// What Gleaner recorded about a delivery's bytes when it first looked. One without a hash, other
+/// than a folder's, is completed once, the first time Gleaner reads the file; one with a hash is
+/// never rewritten (SPEC §5.1).
 public struct Capture: Sendable, Equatable {
     public var sha256: String?
     public var size: Int64?
@@ -17,17 +19,21 @@ public struct Capture: Sendable, Equatable {
     /// Set when the bytes are kept in the content store.
     public var savedAt: Date?
     public var provenance: Provenance
-    public var isDirectory: Bool
+    /// What was at the path: a file Gleaner read (it has a hash) or a folder; or, with no hash and
+    /// never observed, nothing, a file Gleaner couldn't read, or one that isn't a regular file.
+    public var kind: LocatorState.Kind
+
+    public var isDirectory: Bool { kind == .directory }
 
     public init(sha256: String?, size: Int64?, modifiedAt: Date?, observedAt: Date, savedAt: Date?,
-                provenance: Provenance, isDirectory: Bool) {
+                provenance: Provenance, kind: LocatorState.Kind) {
         self.sha256 = sha256
         self.size = size
         self.modifiedAt = modifiedAt
         self.observedAt = observedAt
         self.savedAt = savedAt
         self.provenance = provenance
-        self.isDirectory = isDirectory
+        self.kind = kind
     }
 }
 
@@ -47,6 +53,12 @@ public struct Delivery: Sendable, Identifiable {
     public var number: Int
     public var path: String
     public var deliveredAt: Date?
+    /// The log line of the reply's first record, which every file that reply named shares with its
+    /// log: one reply however many records it took. Nil until a log read before Gleaner recorded it
+    /// is read again, and for good once that log is gone.
+    public var replyLine: Int?
+    /// Where the reply names this file among the files it names, from 0.
+    public var replyRank = 0
     public var provider: Provider
     public var sessionTitle: String?
     public var request: String?
@@ -175,6 +187,8 @@ public enum OnDisk: Equatable, Sendable {
     case lost
     case folder
     case special
+    /// Something is at the path, but Gleaner can't read it, so it can't say which version it is.
+    case unreadable
 }
 
 /// What a drag would hand over for one delivery (SPEC §6).
@@ -209,6 +223,7 @@ extension Artifact {
         switch now.state.kind {
         case .directory where latest.capture?.isDirectory == true: return .folder
         case .special: return .special
+        case .unreadable: return .unreadable
         case .missing:
             if let saved = deliveries.first(where: { $0.sha256.map(hasSaved) == true }) {
                 let firstSeen = saved.capture?.provenance == .firstSeenAfterDelivery ? saved.capture?.observedAt : nil
@@ -260,21 +275,22 @@ extension Artifact {
         return .unavailable(alternative: match?.number, currentSha: current)
     }
 
-    /// The other files each reply named, keyed by delivery id, as their deliveries from that reply:
-    /// a sibling delivered again later is still offered as the occurrence that came with this one.
-    /// One reply is one log and one delivery time; every file it named shares both.
+    /// The other files each reply named, keyed by delivery id, as their deliveries from that reply
+    /// in the order it names them: a sibling delivered again later is still offered as the
+    /// occurrence that came with this one.
     public static func deliveredWith(_ artifacts: [Artifact]) -> [Delivery.ID: [Delivery]] {
         var byReply: [String: [Delivery]] = [:]
         for artifact in artifacts {
             for d in artifact.deliveries {
-                guard let at = d.deliveredAt else { continue }
-                byReply["\(d.logPath)|\(at.timeIntervalSince1970)", default: []].append(d)
+                guard let line = d.replyLine else { continue }
+                byReply["\(d.logPath)|\(line)", default: []].append(d)
             }
         }
         var result: [Delivery.ID: [Delivery]] = [:]
         for group in byReply.values where group.count > 1 {
-            for delivery in group {
-                result[delivery.id] = group.filter { $0.id != delivery.id }.sorted { $0.path < $1.path }
+            let ordered = group.sorted { $0.replyRank < $1.replyRank }
+            for delivery in ordered {
+                result[delivery.id] = ordered.filter { $0.id != delivery.id }
             }
         }
         return result
