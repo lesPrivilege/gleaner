@@ -8,6 +8,10 @@ Work items for the v0.1 release, highest impact first. Each one is finished when
 4. ~~**Row cost.** `ResultRow` calls `FileManager.fileExists` on every render. Compute existence once per load or reindex.~~ Landed; observing a file refreshes its entry.
 5. ~~**Accessibility labels.** Give result rows, delivery rows and the drag tile one spoken summary each (name, project, date, status). Check: Accessibility Inspector.~~ Landed; what VoiceOver actually reads is still to be heard by the owner.
 6. ~~**Version and About.** Take the version from the latest git tag in `scripts/bundle-app.sh`, and show it in the About panel.~~ Landed: a tagged HEAD builds as its tag; otherwise `0.1.0-dev+<commit>`, build number = commit count. The app has no icon yet; that is a design choice for the owner.
-7. **Release package.** `scripts/release.sh` builds, ad-hoc signs and zips `Gleaner.app` into `build/`, and the README says how to install and what is read. Notarization needs the owner's Developer ID and stays with them.
+7. ~~**Release package.** `scripts/release.sh` builds, ad-hoc signs and zips `Gleaner.app` into `build/`, and the README says how to install and what is read. Notarization needs the owner's Developer ID and stays with them.~~ Landed: the zip's signature verifies after unzipping.
 
-Open gates that stay with the owner: Gate 1 labeling (`out/candidates.tsv`, `out/recall-sample.md`).
+Left with the owner:
+
+- Gate 1 labeling (`out/candidates.tsv`, `out/recall-sample.md`), which decides the admission rule.
+- Listening to VoiceOver and looking at dark appearance; neither could be checked from here.
+- An app icon, a `v0.1.0` tag, and notarization with a Developer ID.
