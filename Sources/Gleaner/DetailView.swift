@@ -43,7 +43,7 @@ struct DetailView: View {
             model.clearStaging()
             await model.observe(artifact)
         }
-        .task(id: "\(artifact.id)|\(delivery.id)|\(observation?.checkedAt.timeIntervalSince1970 ?? 0)") {
+        .task(id: "\(artifact.id)|\(delivery.id)|\(observation?.checkedAt.timeIntervalSince1970 ?? 0)|\(model.stagingGeneration)") {
             if case .ready(let sha, _, _) = plan {
                 await model.stage(sha: sha, artifact: artifact)
             } else {

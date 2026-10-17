@@ -11,10 +11,18 @@ public struct ContentStore: Sendable {
 
     public let objects: URL
     public let staging: URL
+    private let preparations = Preparations()
 
     public init(objects: URL, staging: URL) {
         self.objects = objects
         self.staging = staging
+    }
+
+    /// Hand-off copies being prepared, by the temporary name each is written under. Clearing
+    /// leaves these alone, and never runs while one is being moved into place.
+    private final class Preparations: @unchecked Sendable {
+        let lock = NSLock()
+        var names: Set<String> = []
     }
 
     /// lstat, not stat: true only for a regular file itself, never for a link to one.
@@ -57,21 +65,23 @@ public struct ContentStore: Sendable {
         return (sha, size)
     }
 
-    /// Removes every hand-off copy. They are disposable: saved copies live in `objects`.
+    /// Removes every hand-off copy. They are disposable: saved copies live in `objects`. A copy
+    /// still being prepared is kept, so its preparation still hands over a whole file.
     public func clearStaging() throws {
         let fm = FileManager.default
-        guard let items = fm.enumerator(atPath: staging.path) else { return }
-        for case let item as String in items {
-            try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: staging.appendingPathComponent(item).path)
+        try preparations.lock.withLock {
+            guard let items = try? fm.contentsOfDirectory(atPath: staging.path) else { return }
+            for item in items where !preparations.names.contains(item) {
+                try fm.removeItem(at: staging.appendingPathComponent(item))
+            }
         }
-        if fm.fileExists(atPath: staging.path) { try fm.removeItem(at: staging) }
     }
 
     /// An immutable copy of the version `sha`, named `name`, ready to hand to another app.
     /// It is copied from the saved copy when there is one, else from `source`, and handed out only
     /// if the copy itself hashes to `sha`. The copy is made under a name of its own and published
     /// whole by one rename, so overlapping stages of a version never remove or truncate each
-    /// other's file.
+    /// other's file, and clearing hand-off copies meanwhile never removes it.
     public func stage(sha: String, name: String, source: String?) throws -> URL {
         let fm = FileManager.default
         let directory = staging.appendingPathComponent(sha)
@@ -86,14 +96,22 @@ public struct ContentStore: Sendable {
         } else {
             throw Failure.unavailable
         }
-        try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-        let temporary = staging.appendingPathComponent(".incoming-\(UUID().uuidString)")
-        defer { try? fm.removeItem(at: temporary) }
+        try fm.createDirectory(at: staging, withIntermediateDirectories: true)
+        let incoming = ".incoming-\(UUID().uuidString)"
+        let temporary = staging.appendingPathComponent(incoming)
+        preparations.lock.withLock { _ = preparations.names.insert(incoming) }
+        defer {
+            try? fm.removeItem(at: temporary)
+            preparations.lock.withLock { _ = preparations.names.remove(incoming) }
+        }
         try fm.copyItem(at: URL(fileURLWithPath: origin).resolvingSymlinksInPath(), to: temporary)
         let found = Self.isRegularFile(temporary) ? Locator.sha256(temporary.path) ?? "" : ""
         guard found == sha else { throw Failure.changed(expected: sha, found: found) }
         try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: temporary.path)
-        guard rename(temporary.path, target.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        try preparations.lock.withLock {
+            try fm.createDirectory(at: directory, withIntermediateDirectories: true)
+            guard rename(temporary.path, target.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        }
         return target
     }
 }

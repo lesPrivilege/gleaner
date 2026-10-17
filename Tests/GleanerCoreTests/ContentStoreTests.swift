@@ -66,4 +66,25 @@ import Testing
         }
         #expect(try fm.contentsOfDirectory(atPath: store.staging.path) == [sha])
     }
+
+    @Test func clearingHandOffCopiesNeverRemovesOneBeingPrepared() async throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("demo.mp4")
+        try Data(repeating: 7, count: 4 << 20).write(to: file)
+        let sha = try #require(Locator.sha256(file.path))
+        let store = ContentStore(objects: root.appendingPathComponent("objects"), staging: root.appendingPathComponent("handoff"))
+
+        // Settings clears hand-off copies while the library prepares the selection's.
+        let failures = await withTaskGroup(of: (any Error)?.self) { group in
+            for index in 0..<64 {
+                group.addTask {
+                    if index.isMultiple(of: 2) { try? store.clearStaging(); return nil }
+                    do { _ = try store.stage(sha: sha, name: "demo.mp4", source: file.path); return nil } catch { return error }
+                }
+            }
+            return await group.reduce(into: []) { if let error = $1 { $0.append(error) } }
+        }
+        #expect(failures.isEmpty, "\(failures)")
+    }
 }

@@ -59,6 +59,9 @@ final class LibraryModel {
     var status = "Starting…"
     var observations: [String: FileObservation] = [:]
     private(set) var staging: Staging = .idle
+    /// Bumped when hand-off copies are cleared: the selection's copy is prepared again, and a
+    /// preparation started before the clear is never shown after it.
+    private(set) var stagingGeneration = 0
 
     let indexer: Indexer
     private let work = DispatchQueue(label: "gleaner.index", qos: .utility)
@@ -274,6 +277,7 @@ final class LibraryModel {
     func clearHandoffCopies() {
         clearStaging()
         try? indexer.store.clearStaging()
+        stagingGeneration += 1
     }
 
     private static func size(of directory: URL) -> Int64 {
@@ -301,6 +305,7 @@ final class LibraryModel {
 
     /// Prepares a verified, immutable copy of `sha` to drag.
     func stage(sha: String, artifact: Artifact) async {
+        let generation = stagingGeneration
         staging = .preparing(sha: sha)
         let store = indexer.store
         let name = artifact.name
@@ -308,8 +313,9 @@ final class LibraryModel {
         let result = await Task.detached(priority: .userInitiated) {
             Swift.Result { try store.stage(sha: sha, name: name, source: source) }
         }.value
-        // The selection moved on, or another version is being prepared: this result is stale.
-        guard !Task.isCancelled, staging == .preparing(sha: sha) else { return }
+        // The selection moved on, another version is being prepared, or the copies were cleared:
+        // this result is stale.
+        guard !Task.isCancelled, generation == stagingGeneration, staging == .preparing(sha: sha) else { return }
         switch result {
         case .success(let url): staging = .ready(url, sha: sha)
         case .failure(ContentStore.Failure.changed):
