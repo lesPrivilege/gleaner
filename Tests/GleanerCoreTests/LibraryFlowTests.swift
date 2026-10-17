@@ -408,7 +408,7 @@ import Testing
                 ReplyPart(text: "Check it with: cat \(notes.path)", line: 4, at: delivered, cwd: project.path),
                 ReplyPart(text: "Done: [notes](out/notes.md)", line: 5, at: delivered.addingTimeInterval(1), cwd: project.path),
             ])],
-            unknownRecordTypes: [:], malformedLines: 0)
+            records: 5, answeredTurns: 2, unknownRecordTypes: [:], unknownFields: [:], malformedLines: 0)
         _ = try indexer.ingest(older, isComplete: true, now: delivered.addingTimeInterval(20))
         let before = try artifact("notes.md").latest
         #expect(before.capture?.provenance == .atDelivery)
