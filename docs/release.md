@@ -41,7 +41,7 @@ GLEANER_SIGN_IDENTITY="Developer ID Application: <Name> (<TEAMID>)" GLEANER_NOTA
 
 The script refuses a dirty tree, refuses to notarize an untagged build, runs the tests, and ends with a Gatekeeper assessment of the stapled app. It writes `build/Gleaner-0.1.0.zip` and its `.sha256`.
 
-Without the two variables it produces an ad-hoc signed zip for local testing; on another Mac that zip opens only through Control-click → Open.
+Without the two variables it produces an ad-hoc signed zip for local testing. On another Mac, macOS 15 refuses it the first time; it opens after System Settings → Privacy & Security → Open Anyway.
 
 ## 4. Publish (**owner**)
 
