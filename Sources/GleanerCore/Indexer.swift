@@ -225,7 +225,10 @@ public final class Indexer: @unchecked Sendable {
                                  anchor: $0.mention.anchor.map(Redactor.redact), excerpt: $0.mention.excerpt)
                     })
                 guard isNew else { continue }
-                try registry.setCapture(capture(candidate.path, deliveredAt: first.part.at, now: now), for: id)
+                let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
+                try registry.addCapture(captured, for: id)
+                // Gleaner's first read of the file for an earlier delivery whose bytes it never had.
+                if captured.sha256 != nil { try registry.complete(capturesOf: candidate.path, with: captured) }
                 added += 1
             }
         }
@@ -250,7 +253,8 @@ public final class Indexer: @unchecked Sendable {
     }
 
     /// Reads the delivery's bytes once, saves small files, and records when that happened relative
-    /// to the delivery (SPEC §5.1).
+    /// to the delivery (SPEC §5.1). A path whose bytes it can't read (nothing there, a file it
+    /// can't open, a pipe) is recorded as never observed, with what it found instead.
     public func capture(_ path: String, deliveredAt: Date?, now: Date) -> Capture {
         let info = Locator.stat(path)
         let live = deliveredAt.map { delivered in
@@ -258,21 +262,36 @@ public final class Indexer: @unchecked Sendable {
                 && (info.modifiedAt.map { $0 <= delivered.addingTimeInterval(clockTolerance) } ?? false)
         } ?? false
         let provenance: Provenance = live ? .atDelivery : .firstSeenAfterDelivery
+        func unread(_ kind: LocatorState.Kind) -> Capture {
+            Capture(sha256: nil, size: nil, modifiedAt: nil, observedAt: now, savedAt: nil, provenance: .neverObserved, kind: kind)
+        }
         switch info.kind {
-        case .missing, .special:
-            return Capture(sha256: nil, size: nil, modifiedAt: nil, observedAt: now, savedAt: nil,
-                           provenance: .neverObserved, isDirectory: false)
+        case .missing, .special, .unreadable:
+            return unread(info.kind)
         case .directory:
             return Capture(sha256: nil, size: nil, modifiedAt: info.modifiedAt, observedAt: now, savedAt: nil,
-                           provenance: provenance, isDirectory: true)
+                           provenance: provenance, kind: .directory)
         case .file:
             if let size = info.size, size <= saveLimit, let saved = try? store.save(path) {
                 return Capture(sha256: saved.sha, size: saved.size, modifiedAt: info.modifiedAt, observedAt: now,
-                               savedAt: now, provenance: provenance, isDirectory: false)
+                               savedAt: now, provenance: provenance, kind: .file)
             }
-            return Capture(sha256: Locator.sha256(path), size: info.size, modifiedAt: info.modifiedAt, observedAt: now,
-                           savedAt: nil, provenance: provenance, isDirectory: false)
+            guard let sha = Locator.sha256(path) else { return unread(.unreadable) }
+            return Capture(sha256: sha, size: info.size, modifiedAt: info.modifiedAt, observedAt: now,
+                           savedAt: nil, provenance: provenance, kind: .file)
         }
+    }
+
+    /// Reads the file at `path` for deliveries of it whose bytes Gleaner never had, because the
+    /// path was missing, unreadable or not a regular file when it first looked. This first read
+    /// completes their captures, once, as first seen after delivery (SPEC §5.1), and saves a small
+    /// file as a capture does. Returns whether it completed any.
+    public func completeCaptures(of path: String, now: Date) throws -> Bool {
+        guard try registry.hasIncompleteCapture(path: path) else { return false }
+        let read = capture(path, deliveredAt: nil, now: now)
+        guard read.sha256 != nil else { return false }
+        try registry.complete(capturesOf: path, with: read)
+        return true
     }
 }
 

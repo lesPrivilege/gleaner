@@ -114,6 +114,9 @@ enum Wording {
         case .special:
             return Statement(mark: .cross, title: "Not a regular file",
                              detail: "Gleaner doesn’t open pipes, sockets, or devices. \(when)")
+        case .unreadable:
+            return Statement(mark: .attention, title: "Can’t be read",
+                             detail: "Something is at this path, but Gleaner can’t open or read it, so it can’t tell which version it is. \(when)")
         }
     }
 

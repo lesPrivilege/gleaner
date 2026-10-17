@@ -24,7 +24,7 @@ public final class Registry: @unchecked Sendable {
             CREATE INDEX IF NOT EXISTS deliveries_path ON deliveries(path);
             CREATE TABLE IF NOT EXISTS captures (
                 delivery_id TEXT PRIMARY KEY, sha256 TEXT, size INTEGER, mtime REAL, observed_at REAL NOT NULL,
-                saved_at REAL, provenance TEXT NOT NULL, is_directory INTEGER NOT NULL);
+                saved_at REAL, provenance TEXT NOT NULL, kind TEXT NOT NULL);
             """)
         // Each delivery names the log it came from: two logs can share a session id.
         if try !db.rows("PRAGMA table_info(deliveries)").contains(where: { $0["name"] as? String == "log_path" }) {
@@ -42,6 +42,18 @@ public final class Registry: @unchecked Sendable {
         // is reported on every run, not only by the run that read the log.
         if try !db.rows("PRAGMA table_info(log_files)").contains(where: { $0["name"] as? String == "unknown_types" }) {
             try db.execute("ALTER TABLE log_files ADD COLUMN unknown_types TEXT;")
+        }
+        // Each capture keeps what was at the path, so one without a hash says why. Before, it kept
+        // only whether that was a folder, and a file it couldn't read was recorded as seen.
+        if try !db.rows("PRAGMA table_info(captures)").contains(where: { $0["name"] as? String == "kind" }) {
+            try db.execute("""
+                ALTER TABLE captures ADD COLUMN kind TEXT;
+                UPDATE captures SET
+                    kind = CASE WHEN is_directory = 1 THEN 'directory' WHEN sha256 IS NOT NULL THEN 'file'
+                                WHEN provenance = 'never_observed' THEN 'missing' ELSE 'unreadable' END,
+                    provenance = CASE WHEN is_directory = 0 AND sha256 IS NULL THEN 'never_observed' ELSE provenance END;
+                ALTER TABLE captures DROP COLUMN is_directory;
+                """)
         }
         let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
         if version != Int64(Self.extractorVersion) {
@@ -109,12 +121,35 @@ public final class Registry: @unchecked Sendable {
             """, [logPath, keep])
     }
 
-    public func setCapture(_ capture: Capture, for deliveryID: String) throws {
+    /// Records what Gleaner first saw of a delivery's bytes. A delivery has one capture; it is
+    /// never replaced, only completed once when it has no hash (`complete(capturesOf:with:)`).
+    public func addCapture(_ capture: Capture, for deliveryID: String) throws {
         try db.run("""
-            INSERT OR REPLACE INTO captures (delivery_id, sha256, size, mtime, observed_at, saved_at, provenance, is_directory)
+            INSERT INTO captures (delivery_id, sha256, size, mtime, observed_at, saved_at, provenance, kind)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """, [deliveryID, capture.sha256, capture.size, capture.modifiedAt, capture.observedAt, capture.savedAt,
-                  capture.provenance.rawValue, capture.isDirectory ? 1 : 0])
+                  capture.provenance.rawValue, capture.kind.rawValue])
+    }
+
+    /// True when a delivery of `path` has a capture without a hash that a read could complete:
+    /// Gleaner found nothing there, a file it couldn't read, or one that isn't a regular file.
+    public func hasIncompleteCapture(path: String) throws -> Bool {
+        try !db.rows("""
+            SELECT 1 FROM captures JOIN deliveries ON deliveries.id = captures.delivery_id
+            WHERE deliveries.path = ? AND captures.sha256 IS NULL AND captures.kind != 'directory'
+            """, [path]).isEmpty
+    }
+
+    /// Completes those captures with `capture`, the bytes of a later read: once, and as first seen
+    /// after delivery (SPEC §5.1). A capture with a hash, or of a folder, is never rewritten.
+    public func complete(capturesOf path: String, with capture: Capture) throws {
+        try db.run("""
+            UPDATE captures SET sha256 = ?, size = ?, mtime = ?, observed_at = ?, saved_at = ?,
+                provenance = ?, kind = ?
+            WHERE sha256 IS NULL AND kind != 'directory'
+                AND delivery_id IN (SELECT id FROM deliveries WHERE path = ?)
+            """, [capture.sha256, capture.size, capture.modifiedAt, capture.observedAt, capture.savedAt,
+                  Provenance.firstSeenAfterDelivery.rawValue, capture.kind.rawValue, path])
     }
 
     public func markSaved(deliveryID: String, at date: Date) throws {
@@ -126,7 +161,7 @@ public final class Registry: @unchecked Sendable {
         let rows = try db.rows("""
             SELECT d.id, d.path, d.delivered_at, d.cwd, d.repository, d.request, d.evidence,
                    s.provider, s.title, d.log_path,
-                   c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.is_directory
+                   c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind
             FROM deliveries d JOIN sessions s ON s.id = d.session_id
             LEFT JOIN captures c ON c.delivery_id = d.id
             ORDER BY d.path, d.delivered_at
@@ -144,7 +179,7 @@ public final class Registry: @unchecked Sendable {
                     observedAt: Date(timeIntervalSince1970: observed),
                     savedAt: (row["saved_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
                     provenance: Provenance(rawValue: row["provenance"] as? String ?? "") ?? .firstSeenAfterDelivery,
-                    isDirectory: row["is_directory"] as? Int64 == 1)
+                    kind: LocatorState.Kind(rawValue: row["kind"] as? String ?? "") ?? .missing)
             }
             let evidence = (row["evidence"] as? String).flatMap {
                 try? JSONDecoder().decode([Evidence].self, from: Data($0.utf8))

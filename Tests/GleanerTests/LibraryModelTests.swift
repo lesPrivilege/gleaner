@@ -125,6 +125,49 @@ import Testing
         #expect(model.canReadAgain)
     }
 
+    // MARK: Files Gleaner couldn't read (A2)
+
+    /// A file delivered after the others, by itself, then indexed.
+    func deliver(_ relative: String) throws {
+        let fourth = delivered.addingTimeInterval(9000)
+        try appendLog([
+            user("One more file", at: fourth.addingTimeInterval(-60)),
+            assistant("Here: [file](\(relative))", at: fourth),
+        ])
+        _ = try indexer.run(now: { fourth.addingTimeInterval(20) })
+    }
+
+    @Test func checkingAFileGleanerNeverReadCompletesItsCapture() async throws {
+        let chart = project.appendingPathComponent("out/chart.png").path
+        try write("chart c1", to: "out/chart.png", modified: delivered)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: chart)
+        try deliver("out/chart.png")
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: chart)
+
+        let model = LibraryModel(indexer: indexer)
+        let unread = try artifact(model, "chart.png")
+        #expect(unread.latest.sha256 == nil)
+        model.selection = unread.path
+        await model.observe(unread)
+        // The check was Gleaner's first read of it: the library now holds those bytes, first seen later.
+        let read = try artifact(model, "chart.png")
+        #expect(read.latest.capture?.provenance == .firstSeenAfterDelivery)
+        #expect(read.latest.sha256 != nil)
+        #expect(read.latest.sha256 == model.observations[chart]?.state.sha256)
+    }
+
+    @Test func aFileGleanerCannotReachIsNeverListedAsMissing() throws {
+        let locked = project.appendingPathComponent("out/locked")
+        try FileManager.default.createDirectory(at: locked, withIntermediateDirectories: true)
+        try write("table t1", to: "out/locked/table.csv", modified: delivered)
+        try deliver("out/locked/table.csv")
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: locked.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: locked.path) }
+
+        let model = LibraryModel(indexer: indexer)
+        #expect(!model.missing.contains(try artifact(model, "table.csv").path))
+    }
+
     // MARK: Delivered with (D6)
 
     @Test func aFileDeliveredWithAnotherOpensOnItsDeliveryFromThatReply() throws {

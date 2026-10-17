@@ -8,7 +8,9 @@ public enum Provenance: String, Sendable, Codable {
     case neverObserved = "never_observed"
 }
 
-/// What Gleaner recorded about a delivery's bytes when it first looked.
+/// What Gleaner recorded about a delivery's bytes when it first looked. One without a hash, other
+/// than a folder's, is completed once, the first time Gleaner reads the file; one with a hash is
+/// never rewritten (SPEC §5.1).
 public struct Capture: Sendable, Equatable {
     public var sha256: String?
     public var size: Int64?
@@ -17,17 +19,21 @@ public struct Capture: Sendable, Equatable {
     /// Set when the bytes are kept in the content store.
     public var savedAt: Date?
     public var provenance: Provenance
-    public var isDirectory: Bool
+    /// What was at the path: a file Gleaner read (it has a hash) or a folder; or, with no hash and
+    /// never observed, nothing, a file Gleaner couldn't read, or one that isn't a regular file.
+    public var kind: LocatorState.Kind
+
+    public var isDirectory: Bool { kind == .directory }
 
     public init(sha256: String?, size: Int64?, modifiedAt: Date?, observedAt: Date, savedAt: Date?,
-                provenance: Provenance, isDirectory: Bool) {
+                provenance: Provenance, kind: LocatorState.Kind) {
         self.sha256 = sha256
         self.size = size
         self.modifiedAt = modifiedAt
         self.observedAt = observedAt
         self.savedAt = savedAt
         self.provenance = provenance
-        self.isDirectory = isDirectory
+        self.kind = kind
     }
 }
 
@@ -175,6 +181,8 @@ public enum OnDisk: Equatable, Sendable {
     case lost
     case folder
     case special
+    /// Something is at the path, but Gleaner can't read it, so it can't say which version it is.
+    case unreadable
 }
 
 /// What a drag would hand over for one delivery (SPEC §6).
@@ -209,6 +217,7 @@ extension Artifact {
         switch now.state.kind {
         case .directory where latest.capture?.isDirectory == true: return .folder
         case .special: return .special
+        case .unreadable: return .unreadable
         case .missing:
             if let saved = deliveries.first(where: { $0.sha256.map(hasSaved) == true }) {
                 let firstSeen = saved.capture?.provenance == .firstSeenAfterDelivery ? saved.capture?.observedAt : nil

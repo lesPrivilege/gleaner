@@ -41,4 +41,26 @@ import Testing
                                     cwd: nil, repository: "/r", request: nil, evidence: [])
         #expect(try registry.artifacts().first?.projectFolder == "/r")
     }
+
+    @Test func aLibraryFromBeforeCapturesSaidWhatTheyFoundGainsIt() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString).sqlite").path
+        try Database(path: path).execute("""
+            CREATE TABLE captures (
+                delivery_id TEXT PRIMARY KEY, sha256 TEXT, size INTEGER, mtime REAL, observed_at REAL NOT NULL,
+                saved_at REAL, provenance TEXT NOT NULL, is_directory INTEGER NOT NULL);
+            INSERT INTO captures VALUES ('file', 'abc', 1, 0, 0, 0, 'at_delivery', 0);
+            INSERT INTO captures VALUES ('folder', NULL, NULL, 0, 0, NULL, 'at_delivery', 1);
+            INSERT INTO captures VALUES ('gone', NULL, NULL, NULL, 0, NULL, 'never_observed', 0);
+            INSERT INTO captures VALUES ('unread', NULL, 3, 0, 0, NULL, 'first_seen_after_delivery', 0);
+            """)
+        let registry = try Registry(path: path)
+        let rows = try registry.db.rows("SELECT delivery_id, kind, provenance FROM captures ORDER BY delivery_id")
+        #expect(rows.map { "\($0["delivery_id"]!) \($0["kind"]!) \($0["provenance"]!)" } == [
+            "file file at_delivery", "folder directory at_delivery",
+            "gone missing never_observed",
+            // A file Gleaner couldn't read was recorded as seen; it never was.
+            "unread unreadable never_observed",
+        ])
+        #expect(try !registry.db.rows("PRAGMA table_info(captures)").contains { $0["name"] as? String == "is_directory" })
+    }
 }

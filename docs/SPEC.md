@@ -57,8 +57,8 @@ Four core objects. Project is a derived, editable label (from cwd and git reposi
 |---|---|
 | **Session** | provider, provider session ID, title, cwd, log file location |
 | **Delivery Mention** | the reply excerpt that names the artifact, the raw target as written, the user request that started the turn, position in the log (its own log file and line), `delivered_at` |
-| **Locator** | resolved path, worktree / repository root, git state (`committed`, `modified`, `untracked`, `ignored`, `not_in_repo`; when missing: `recoverable_from_head`, `recoverable_from_history`, `lost`), availability (`file`, `directory`, `missing`), last verified time |
-| **Capture** | `observed_at`, sha256, size, optional snapshot reference (`captured_at`), and the capture's provenance |
+| **Locator** | resolved path, worktree / repository root, git state (`committed`, `modified`, `untracked`, `ignored`, `not_in_repo`; when missing: `recoverable_from_head`, `recoverable_from_history`, `lost`), availability (`file`, `directory`, `special`, `unreadable`, `missing`), last verified time |
+| **Capture** | `observed_at`, sha256, size, optional snapshot reference (`captured_at`), the capture's provenance, and what was at the path (a file, a folder, or, without a hash, nothing, an unreadable file, or not a regular file) |
 
 Artifact identity in v0.1 is the path. A renamed or moved file appears as a separate artifact; re-linking is deferred, and Gleaner never guesses identity across paths. A project is the git repository holding the file (every worktree folds into its repository), else the one its cwd belongs to, else the folder name (rulings §2). Projects are told apart by the repository's main folder and shown by its name. Each delivery records the repository it resolved to while it could be found, and that record wins over a later resolution, so a deleted external worktree keeps its project; a delivery never resolved stays explicitly outside any repository.
 
@@ -74,7 +74,9 @@ When history is backfilled, these can be months apart. A capture records its pro
 
 - `at_delivery` — observed within 10 minutes of `delivered_at`, and the file's mtime is no later than `delivered_at` plus 2 seconds of clock granularity.
 - `first_seen_after_delivery` — observed during backfill or after the file's mtime moved past the delivery. The UI must say plainly that this may not be the delivered version.
-- `never_observed` — the file was already gone when Gleaner first looked. Only the delivery mention is on record, and the delivery has no capture or hash.
+- `never_observed` — Gleaner never read the file's bytes: when it first looked, the path was missing, unreadable, or not a regular file. The capture has no hash and records which. It is completed once, the first time Gleaner reads the file (checking it, or capturing a later delivery of it), as `first_seen_after_delivery`.
+
+A capture with a hash is never rewritten. A file that is there but cannot be opened or read is `unreadable`, with its own wording: it is never described as missing, gone, changed, or seen.
 
 Gleaner never labels a file "latest" unconditionally. It shows the time of the last verification.
 
@@ -130,7 +132,7 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 
 - Watch only the agents' log directories (FSEvents). New sessions are ingested near real time, so `observed_at` stays close to `delivered_at`. While a log directory does not exist yet, the nearest existing folder above it is watched only to notice it appear.
 - Do not watch the paths of indexed artifacts. Re-verify a file's hash when it is selected and again when its hand-off copy is staged; there is no background pass in v0.1.
-- Observation is read-only: only regular files are opened (a FIFO, socket, or device is reported as `special`), and git runs with `--no-optional-locks` so `git status` never rewrites the index.
+- Observation is read-only: only regular files are opened (a FIFO, socket, or device is reported as `special`; a file that can't be opened or read, or a path behind a folder that can't be searched, as `unreadable`), and git runs with `--no-optional-locks` so `git status` never rewrites the index.
 
 ## 8. Adapters
 

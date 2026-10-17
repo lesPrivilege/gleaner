@@ -476,8 +476,88 @@ import Testing
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
         let video = try artifact("demo.mp4")
         #expect(video.latest.capture?.provenance == .neverObserved)
+        #expect(video.latest.capture?.kind == .missing)
         #expect(video.onDisk(now(video.path), hasSaved: saved) == .lost)
         #expect(video.handoff(video.latest, now: now(video.path), hasSaved: saved) == .lost)
+    }
+
+    @Test func aFileGleanerCannotReadIsUnreadableUntilItFirstReadsIt() throws {
+        let fm = FileManager.default
+        let path = project.appendingPathComponent("out/demo.mp4").path
+        try fm.setAttributes([.posixPermissions: 0], ofItemAtPath: path)
+        defer { try? fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: path) }
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+
+        // There, but never read: no hash, and nothing says it was seen, gone or changed.
+        let video = try artifact("demo.mp4")
+        let unread = try #require(video.latest.capture)
+        #expect(unread.sha256 == nil && unread.savedAt == nil)
+        #expect(unread.kind == .unreadable)
+        #expect(unread.provenance == .neverObserved)
+        let observation = now(path)
+        #expect(observation.state.kind == .unreadable)
+        #expect(video.onDisk(observation, hasSaved: saved) == .unreadable)
+        #expect(video.handoff(video.latest, now: observation, hasSaved: saved) == .unavailable(alternative: nil, currentSha: nil))
+        #expect(try !indexer.completeCaptures(of: path, now: delivered.addingTimeInterval(60)))
+
+        // Access is granted: Gleaner's first read completes the capture, as first seen later.
+        try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: path)
+        let read = delivered.addingTimeInterval(3600)
+        #expect(try indexer.completeCaptures(of: path, now: read))
+        let completed = try #require(try artifact("demo.mp4").latest.capture)
+        #expect(completed.kind == .file)
+        #expect(completed.provenance == .firstSeenAfterDelivery)
+        #expect(completed.observedAt == read)
+        #expect(saved(try #require(completed.sha256)))
+        #expect(try artifact("demo.mp4").onDisk(now(path), hasSaved: saved) == .unchangedSinceFirstSeen(read))
+
+        // Once: a capture with a hash is never rewritten.
+        try write("video v2", to: "out/demo.mp4", modified: Date())
+        #expect(try !indexer.completeCaptures(of: path, now: Date()))
+        #expect(try artifact("demo.mp4").latest.capture == completed)
+    }
+
+    @Test func aFileThatAppearsLaterIsFirstSeenLater() throws {
+        let path = project.appendingPathComponent("out/demo.mp4").path
+        try FileManager.default.removeItem(atPath: path)
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(try artifact("demo.mp4").latest.capture?.kind == .missing)
+
+        try write("video v1", to: "out/demo.mp4", modified: Date())
+        let read = delivered.addingTimeInterval(3600)
+        #expect(try indexer.completeCaptures(of: path, now: read))
+        let video = try artifact("demo.mp4")
+        #expect(video.latest.capture?.provenance == .firstSeenAfterDelivery)
+        #expect(video.handoff(video.latest, now: now(path), hasSaved: saved)
+                == .ready(sha: try #require(video.latest.sha256), from: .original, firstSeen: read))
+    }
+
+    @Test func aPipeAtFirstLookIsNotARegularFile() throws {
+        let path = project.appendingPathComponent("out/demo.mp4").path
+        try FileManager.default.removeItem(atPath: path)
+        #expect(mkfifo(path, 0o600) == 0)
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let capture = try #require(try artifact("demo.mp4").latest.capture)
+        #expect(capture.kind == .special && capture.sha256 == nil && capture.provenance == .neverObserved)
+    }
+
+    @Test func aLaterDeliveryThatReadsTheFileCompletesAnEarlierOneNeverSeen() throws {
+        try FileManager.default.removeItem(at: project.appendingPathComponent("out/demo.mp4"))
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let second = delivered.addingTimeInterval(3600)
+        try write("video v2", to: "out/demo.mp4", modified: second.addingTimeInterval(-30))
+        try appendLog([
+            user("Render it again", at: second.addingTimeInterval(-300)),
+            assistant("Rendered again: [demo](out/demo.mp4)", at: second, cwd: project.path),
+        ])
+        _ = try indexer.run(now: { second.addingTimeInterval(20) })
+
+        // Gleaner first read the file for delivery 2: for delivery 1 that is what it first saw, later.
+        let video = try artifact("demo.mp4")
+        #expect(video.latest.capture?.provenance == .atDelivery)
+        let first = try #require(video.deliveries[1].capture)
+        #expect(first.provenance == .firstSeenAfterDelivery)
+        #expect(first.sha256 == video.latest.sha256)
     }
 
     // MARK: sources

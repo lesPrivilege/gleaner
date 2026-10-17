@@ -98,8 +98,9 @@ final class LibraryModel {
         projectNames = Projects.names(artifacts.map(\.projectFolder))
     }
 
+    /// Only what is shown to be gone: a file Gleaner can't reach is unreadable, not missing.
     private static func missing(_ artifacts: [Artifact]) -> Set<String> {
-        Set(artifacts.lazy.map(\.path).filter { !FileManager.default.fileExists(atPath: $0) })
+        Set(artifacts.lazy.map(\.path).filter { Locator.stat($0).kind == .missing })
     }
 
     /// One line about the agents' logs when something needs a look: a run that failed, or a
@@ -341,11 +342,16 @@ final class LibraryModel {
 
     func clearStaging() { staging = .idle }
 
-    /// Checks the file now (hash and git), off the main thread.
+    /// Checks the file now (hash and git), off the main thread. When it is Gleaner's first read of
+    /// a file whose bytes a delivery never had, the library is read again with them.
     func observe(_ artifact: Artifact) async {
         let path = artifact.path
-        let state = await Task.detached(priority: .userInitiated) { Locator.observe(path) }.value
+        let indexer = indexer
+        let (state, completed) = await Task.detached(priority: .userInitiated) {
+            (Locator.observe(path), (try? indexer.completeCaptures(of: path, now: Date())) == true)
+        }.value
         observations[path] = FileObservation(state: state, checkedAt: Date())
+        if completed { artifacts = (try? indexer.registry.artifacts()) ?? artifacts }
         if state.kind == .missing { missing.insert(path) } else { missing.remove(path) }
     }
 
