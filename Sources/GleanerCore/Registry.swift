@@ -160,12 +160,19 @@ public final class Registry: @unchecked Sendable {
     }
 
     /// Opens the library at `path` to read only, as the query core does: no schema change, and no
-    /// reread scheduled. A library that isn't there, or that another version of Gleaner wrote, is
-    /// refused (`Catalog.Failure`); opening Gleaner makes or updates it.
+    /// reread scheduled. A library that isn't there, that can't be read as it is, or that another
+    /// version of Gleaner wrote, is refused (`Catalog.Failure`); opening Gleaner makes, restores or
+    /// updates it. One that lost its write-ahead log, say to another SQLite client that removed it
+    /// on closing, can't be read until Gleaner opens it to write and makes the log again.
     public init(readingAt path: String) throws {
         guard FileManager.default.fileExists(atPath: path) else { throw Catalog.Failure.noLibrary(path) }
-        db = try Database(readingAt: path)
-        let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
+        let version: Int64
+        do {
+            db = try Database(readingAt: path)
+            version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
+        } catch {
+            throw Catalog.Failure.unreadableLibrary(path, reason: "\(error)")
+        }
         guard version == Int64(Self.extractorVersion) else { throw Catalog.Failure.wrongVersion(path, found: Int(version)) }
     }
 

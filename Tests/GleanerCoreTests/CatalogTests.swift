@@ -129,6 +129,24 @@ import Testing
         #expect(try bytes(library) == before)
     }
 
+    @Test func aLibraryThatCantBeOpenedToReadSaysToOpenGleaner() throws {
+        try index(at: delivered.addingTimeInterval(20))
+        // Another SQLite client, closing it last, folded the write-ahead log into the library and
+        // removed it; or the library was copied without the files beside it.
+        try Database(path: library).execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        for sidecar in ["-wal", "-shm"] { try FileManager.default.removeItem(atPath: library + sidecar) }
+        let before = try bytes(library)
+
+        #expect { try Catalog(home: home) } throws: { error in
+            let failure = error as? Catalog.Failure
+            return failure?.exitCode == 3 && failure?.description.contains("Open Gleaner") == true
+        }
+        #expect(try bytes(library) == before)
+        // Opening it as Gleaner does makes the log again, and it reads once more.
+        _ = try Registry(path: library)
+        #expect(try Catalog(home: home).registry.artifacts().count == 3)
+    }
+
     // MARK: freshness
 
     @Test func eachCompletedRunIsRecordedUnderOneLibrary() throws {

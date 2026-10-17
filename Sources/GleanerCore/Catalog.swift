@@ -254,6 +254,8 @@ extension Catalog {
     public enum Failure: Error, Equatable, CustomStringConvertible, Encodable {
         /// No library at this path: Gleaner never ran with this home.
         case noLibrary(String)
+        /// A library is at this path, but it can't be opened to read as it is.
+        case unreadableLibrary(String, reason: String)
         /// The library at this path is of another version of Gleaner. There is no compatibility mode.
         case wrongVersion(String, found: Int)
         /// No delivery has this id in this library.
@@ -274,7 +276,7 @@ extension Catalog {
             switch self {
             case .notFound, .otherLibrary, .unavailable, .notText, .changed: 1
             case .usage: 2
-            case .noLibrary, .wrongVersion: 3
+            case .noLibrary, .unreadableLibrary, .wrongVersion: 3
             }
         }
 
@@ -282,6 +284,8 @@ extension Catalog {
             switch self {
             case .noLibrary(let path):
                 "There is no Gleaner library at \(path). Open Gleaner to make one."
+            case .unreadableLibrary(let path, let reason):
+                "The Gleaner library at \(path) can’t be opened to read (\(reason)). Open Gleaner, then try again."
             case .wrongVersion(let path, let found):
                 "The Gleaner library at \(path) is version \(found); this reads version \(Registry.extractorVersion). Open Gleaner to update it."
             case .notFound(let id):
@@ -303,6 +307,7 @@ extension Catalog {
         public var code: String {
             switch self {
             case .noLibrary: "no_library"
+            case .unreadableLibrary: "unreadable_library"
             case .wrongVersion: "wrong_version"
             case .notFound: "not_found"
             case .otherLibrary: "other_library"
