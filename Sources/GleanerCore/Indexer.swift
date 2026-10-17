@@ -108,7 +108,6 @@ public final class Indexer: @unchecked Sendable {
         try registry.upsert(log.session)
         var added = 0
         var admitted = Set<String>()
-        defer { try? registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
         for turn in log.turns {
             for candidate in MentionExtractor.candidates(in: turn) where Admission.admits(candidate) {
                 let id = candidate.id(logPath: log.session.logPath)
@@ -116,7 +115,7 @@ public final class Indexer: @unchecked Sendable {
                 let isNew = try !registry.hasDelivery(id)
                 let first = candidate.evidence[0]
                 try registry.upsertDelivery(
-                    id: id, sessionID: log.session.id, path: candidate.path, deliveredAt: first.part.at,
+                    id: id, sessionID: log.session.id, logPath: log.session.logPath, path: candidate.path, deliveredAt: first.part.at,
                     cwd: first.part.cwd, request: turn.request,
                     evidence: candidate.evidence.map {
                         Evidence(line: $0.part.line, syntax: $0.mention.syntax.rawValue,
@@ -128,6 +127,7 @@ public final class Indexer: @unchecked Sendable {
                 added += 1
             }
         }
+        try registry.removeDeliveries(logPath: log.session.logPath, except: admitted)
         return added
     }
 

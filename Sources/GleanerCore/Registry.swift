@@ -19,12 +19,19 @@ public final class Registry: @unchecked Sendable {
                 id TEXT PRIMARY KEY, provider TEXT NOT NULL, title TEXT, cwd TEXT, log_path TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS deliveries (
                 id TEXT PRIMARY KEY, session_id TEXT NOT NULL, path TEXT NOT NULL, delivered_at REAL,
-                cwd TEXT, request TEXT, evidence TEXT NOT NULL);
+                cwd TEXT, request TEXT, evidence TEXT NOT NULL, log_path TEXT);
             CREATE INDEX IF NOT EXISTS deliveries_path ON deliveries(path);
             CREATE TABLE IF NOT EXISTS captures (
                 delivery_id TEXT PRIMARY KEY, sha256 TEXT, size INTEGER, mtime REAL, observed_at REAL NOT NULL,
                 saved_at REAL, provenance TEXT NOT NULL, is_directory INTEGER NOT NULL);
             """)
+        // Each delivery names the log it came from: two logs can share a session id.
+        if try !db.rows("PRAGMA table_info(deliveries)").contains(where: { $0["name"] as? String == "log_path" }) {
+            try db.execute("""
+                ALTER TABLE deliveries ADD COLUMN log_path TEXT;
+                UPDATE deliveries SET log_path = (SELECT log_path FROM sessions WHERE sessions.id = deliveries.session_id);
+                """)
+        }
         let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
         if version != Int64(Self.extractorVersion) {
             try db.execute("DELETE FROM log_files; PRAGMA user_version = \(Self.extractorVersion);")
@@ -54,14 +61,15 @@ public final class Registry: @unchecked Sendable {
         try !db.rows("SELECT 1 FROM deliveries WHERE id = ?", [id]).isEmpty
     }
 
-    public func upsertDelivery(id: String, sessionID: String, path: String, deliveredAt: Date?, cwd: String?,
-                               request: String?, evidence: [Evidence]) throws {
+    public func upsertDelivery(id: String, sessionID: String, logPath: String, path: String, deliveredAt: Date?,
+                               cwd: String?, request: String?, evidence: [Evidence]) throws {
         let json = String(decoding: try JSONEncoder().encode(evidence), as: UTF8.self)
         try db.run("""
-            INSERT INTO deliveries (id, session_id, path, delivered_at, cwd, request, evidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET cwd = excluded.cwd, request = excluded.request, evidence = excluded.evidence
-            """, [id, sessionID, path, deliveredAt, cwd, request.map(Redactor.redact), json])
+            INSERT INTO deliveries (id, session_id, log_path, path, delivered_at, cwd, request, evidence)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET log_path = excluded.log_path, cwd = excluded.cwd,
+                request = excluded.request, evidence = excluded.evidence
+            """, [id, sessionID, logPath, path, deliveredAt, cwd, request.map(Redactor.redact), json])
     }
 
     /// Removes deliveries a reread log no longer admits, with their captures. They are derived
@@ -69,8 +77,7 @@ public final class Registry: @unchecked Sendable {
     public func removeDeliveries(logPath: String, except kept: Set<String>) throws {
         let keep = String(decoding: try JSONEncoder().encode(Array(kept)), as: UTF8.self)
         let stale = """
-            SELECT d.id FROM deliveries d JOIN sessions s ON s.id = d.session_id
-            WHERE s.log_path = ? AND d.id NOT IN (SELECT value FROM json_each(?))
+            SELECT id FROM deliveries WHERE log_path = ? AND id NOT IN (SELECT value FROM json_each(?))
             """
         try db.run("DELETE FROM captures WHERE delivery_id IN (\(stale))", [logPath, keep])
         try db.run("DELETE FROM deliveries WHERE id IN (\(stale))", [logPath, keep])
@@ -92,7 +99,7 @@ public final class Registry: @unchecked Sendable {
     public func artifacts() throws -> [Artifact] {
         let rows = try db.rows("""
             SELECT d.id, d.path, d.delivered_at, d.cwd, d.request, d.evidence,
-                   s.provider, s.title, s.log_path,
+                   s.provider, s.title, d.log_path,
                    c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.is_directory
             FROM deliveries d JOIN sessions s ON s.id = d.session_id
             LEFT JOIN captures c ON c.delivery_id = d.id

@@ -155,7 +155,8 @@ public struct FileObservation: Sendable {
 public enum OnDisk: Equatable, Sendable {
     case same(as: Int)
     case unchangedSinceFirstSeen(Date)
-    case rolledBack(to: Int, latest: Int)
+    /// `firstSeen` is set when delivery k's bytes were first seen after it was delivered.
+    case rolledBack(to: Int, latest: Int, firstSeen: Date?)
     case changed(since: Int)
     /// `firstSeen` is set when the saved bytes were captured after that delivery.
     case missingWithSavedCopy(of: Int, firstSeen: Date?)
@@ -213,8 +214,12 @@ extension Artifact {
             }
             return .same(as: latest.number)
         }
-        if let older = deliveries.dropFirst().first(where: { $0.isTrusted && $0.sha256 == current }) {
-            return .rolledBack(to: older.number, latest: latest.number)
+        let older = deliveries.dropFirst()
+        if let match = older.first(where: { $0.isTrusted && $0.sha256 == current }) {
+            return .rolledBack(to: match.number, latest: latest.number, firstSeen: nil)
+        }
+        if current != nil, let match = older.first(where: { $0.sha256 == current }) {
+            return .rolledBack(to: match.number, latest: latest.number, firstSeen: match.capture?.observedAt)
         }
         return .changed(since: latest.number)
     }
@@ -230,7 +235,8 @@ extension Artifact {
             if hasSaved(sha) { return .ready(sha: sha, from: .savedCopy, firstSeen: firstSeen) }
         }
         if let current {
-            let match = deliveries.first { $0.id != delivery.id && $0.isTrusted && $0.sha256 == current }
+            let others = deliveries.filter { $0.id != delivery.id && $0.sha256 == current }
+            let match = others.first(where: \.isTrusted) ?? others.first
             return .unavailable(alternative: match?.number, currentSha: current)
         }
         return recoverable ? .restoreFromGit : .lost

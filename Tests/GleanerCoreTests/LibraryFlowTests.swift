@@ -147,7 +147,7 @@ import Testing
 
         // Someone restores the first render.
         try write("video v1", to: "out/demo.mp4", modified: Date())
-        #expect(video.onDisk(now(video.path), hasSaved: saved) == .rolledBack(to: 1, latest: 2))
+        #expect(video.onDisk(now(video.path), hasSaved: saved) == .rolledBack(to: 1, latest: 2, firstSeen: nil))
 
         // Search for words from the first request opens the first delivery.
         #expect(video.match(["harness"])?.deliveryIndex == 1)
@@ -170,6 +170,27 @@ import Testing
         #expect(video.onDisk(observation, hasSaved: saved) == .unchangedSinceFirstSeen(later))
         #expect(video.handoff(video.latest, now: observation, hasSaved: saved)
                 == .ready(sha: video.latest.sha256!, from: .original, firstSeen: later))
+    }
+
+    @Test func rollbackToBytesFirstSeenLaterIsStillRecognized() throws {
+        let later = delivered.addingTimeInterval(30 * 86400)
+        _ = try indexer.run(now: { later })
+        let second = delivered.addingTimeInterval(3600)
+        try write("video v2", to: "out/demo.mp4", modified: second.addingTimeInterval(-30))
+        try appendLog([
+            user("Tighten the intro and render again", at: second.addingTimeInterval(-300)),
+            assistant("Rendered again: [demo](out/demo.mp4)", at: second, cwd: project.path),
+        ])
+        _ = try indexer.run(now: { later.addingTimeInterval(60) })
+        let video = try artifact("demo.mp4")
+        #expect(video.deliveries.allSatisfy { $0.capture?.provenance == .firstSeenAfterDelivery })
+
+        try write("video v1", to: "out/demo.mp4", modified: Date())
+        let observation = now(video.path)
+        #expect(video.onDisk(observation, hasSaved: saved) == .rolledBack(to: 1, latest: 2, firstSeen: later))
+        guard case .ready(_, .savedCopy, _) = video.handoff(video.latest, now: observation, hasSaved: saved) else {
+            Issue.record("expected delivery 2's saved copy"); return
+        }
     }
 
     @Test func unchangedLogsAreNotReread() throws {

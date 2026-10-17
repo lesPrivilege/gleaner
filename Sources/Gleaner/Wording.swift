@@ -89,9 +89,12 @@ enum Wording {
         case .unchangedSinceFirstSeen(let seen):
             return Statement(mark: .hollow, title: "Unchanged since Gleaner first saw it",
                              detail: "First seen \(date(seen)), after the delivery. It may not be what was delivered. \(when)")
-        case .rolledBack(let k, let latest):
+        case .rolledBack(let k, let latest, nil):
             return Statement(mark: .attention, title: "Rolled back to delivery \(k)",
                              detail: "The file on disk is delivery \(k) again, not the latest delivery \(latest). \(when)")
+        case .rolledBack(let k, let latest, let seen?):
+            return Statement(mark: .attention, title: "Back to what Gleaner first saw for delivery \(k)",
+                             detail: "The file on disk matches the bytes Gleaner first saw for delivery \(k) on \(date(seen)), after that delivery; it is not the latest delivery \(latest). \(when)")
         case .changed(let n):
             return Statement(mark: .attention, title: "Changed since delivery \(n)",
                              detail: "Edited after the last delivery. Not among the deliveries Gleaner found. \(when)")
@@ -127,8 +130,9 @@ enum Wording {
             return Statement(mark: .hollow, title: "Ready, with a caveat",
                              detail: "Gleaner first saw these bytes on \(date(seen)), after the delivery. They may not be exactly what was delivered.")
         case .unavailable(let k?, _):
+            let again = if case .rolledBack(_, _, _?) = onDisk { "matches what Gleaner first saw for delivery \(k)" } else { "is delivery \(k) again" }
             return Statement(mark: .attention, title: "Delivery \(n) is no longer available",
-                             detail: "The file on disk is delivery \(k) again, and Gleaner didn’t save a copy of delivery \(n).")
+                             detail: "The file on disk \(again), and Gleaner didn’t save a copy of delivery \(n).")
         case .unavailable(nil, _):
             return Statement(mark: .attention, title: "Delivery \(n) is no longer available",
                              detail: "The file has changed and Gleaner didn’t save a copy: large files are saved only when you choose to. You can hand off the current file, but it isn’t among the deliveries Gleaner found.")
