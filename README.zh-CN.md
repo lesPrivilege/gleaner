@@ -55,6 +55,34 @@ Gleaner 没见过或没读到的交付，会在 Gleaner 第一次读到该文件
 | Not on disk | 文件已不在磁盘上；有存档副本时提供副本，git 历史里该路径还有文件时注明 |
 | Lost | 文件不在，没有存档副本，git 里这个路径也查不到；交付记录保留 |
 
+**转交**（Hand-off），见转交区顶部，针对你选的那次交付：
+
+| 状态 | 含义 |
+|---|---|
+| Ready: the file on disk is delivery N | 磁盘上的文件与这次交付哈希一致；拖出的是 Gleaner 复制后核对过的副本 |
+| Ready: Gleaner's saved copy of delivery N | 磁盘上的文件已不是这次交付；拖出的是 Gleaner 的存档副本，按哈希核对过 |
+| Ready, with a caveat | 这些字节是交付之后才第一次读到的，可能与交付时不同 |
+| Delivery N is no longer available | 磁盘上的文件和存档副本现在都没有这次交付的字节，或交付的文件夹已不再是文件夹。Gleaner 说明为什么没有副本；磁盘上的文件是另一次交付时提供那一次，否则在“Not among the deliveries Gleaner found”的标注下提供当前文件 |
+| Delivery N isn't available | Gleaner 从没见过或没读到这次交付的字节 |
+| Delivery N isn't available now | 路径上有东西，但 Gleaner 读不了 |
+| Restore it from git first | 文件已不在，git 历史里这个路径还有文件；Gleaner 给出一条由你执行的命令 |
+| Delivery N is lost | 文件已不在，没有存档副本，git 里这个路径也查不到；交付记录保留 |
+| Folder | 交付的文件夹，按它现在的样子交出 |
+
+**存储**（Storage），见 Details，说明这次交付的字节存在哪里：
+
+| 状态 | 含义 |
+|---|---|
+| Saved copy | Gleaner 存有这次交付的字节 |
+| Saved copy of what Gleaner first saw | Gleaner 存有它在交付之后第一次读到的字节 |
+| Not saved · too large to have been saved | 超过 64 MB，且没有用 Save a Copy 存档 |
+| Not saved · saving it failed | Gleaner 读到了文件，但没能存下副本 |
+| Saved copy no longer in Gleaner's store | Gleaner 存过副本，但它的存储里已经没有了 |
+| Not saved · Gleaner never read it | Gleaner 从没见过或没读到这次交付的字节 |
+| Folder · not versioned | 交付的文件夹；Gleaner 不存副本 |
+
+没有存档副本的三种情况，后面接着最近一次核查的结果：磁盘上的文件仍是它（按哈希核对）、不在磁盘上、磁盘上的文件读不了，或磁盘上的文件已不是它。
+
 **列表中**，每行最多一个标记，只在需要留意时出现：*Not available* 并说明原因（never seen、never read、not on disk、can't be read、not a regular file、a folder is there now、changed），*Not on disk*，*Changed*，或 *First seen later*。绘制列表时从不读取磁盘，所以只有在应用打开后核查过的文件才会标 *Changed*。交付过不止一次的文件显示“Delivery N of M”。
 
 **agent 日志**，见设置（Settings），需要留意时也会在列表下方用一行显示：*Read*；*Read with problems*（有未知的记录类型、有格式错误的行或曾被发现比之前读时短的日志、读不了的日志或文件夹）；*Can't be read*；*Not on this Mac*。重读可能有用时会出现 Try Again，已经找到的内容照常显示。

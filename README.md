@@ -55,6 +55,34 @@ A delivery Gleaner never saw or never read becomes *first seen later*, once, the
 | Not on disk | The file is gone; Gleaner offers its saved copy, or notes that git history still has a file at the path |
 | Lost | The file is gone, with no saved copy and nothing in git at that path; the delivery record stays |
 
+**Hand-off**, at the top of the hand-off panel, for the delivery you picked:
+
+| Status | Meaning |
+|---|---|
+| Ready: the file on disk is delivery N | The file on disk has the delivery's hash; a drag hands over a copy Gleaner checked after copying |
+| Ready: Gleaner's saved copy of delivery N | The file on disk no longer holds the delivery; a drag hands over Gleaner's saved copy, checked by hash |
+| Ready, with a caveat | Gleaner first saw these bytes after the delivery, so they may differ from what was delivered |
+| Delivery N is no longer available | Neither the file on disk nor a saved copy holds the delivery's bytes now, or the delivered folder is no longer a folder. Gleaner says why it has no copy, and offers another delivery the file matches, or the current file as "Not among the deliveries Gleaner found" |
+| Delivery N isn't available | Gleaner never saw or never read the delivery's bytes |
+| Delivery N isn't available now | Something is at the path, but Gleaner can't read it |
+| Restore it from git first | The file is gone, and git history has a file at the path; Gleaner shows a command for you to run |
+| Delivery N is lost | The file is gone, with no saved copy and nothing in git at that path; the delivery record stays |
+| Folder | A delivered folder, handed over as it is now |
+
+**Storage**, under Details, where the delivery's bytes are kept:
+
+| Status | Meaning |
+|---|---|
+| Saved copy | Gleaner keeps the delivery's bytes |
+| Saved copy of what Gleaner first saw | Gleaner keeps the bytes it first saw, after the delivery |
+| Not saved · too large to have been saved | Over 64 MB, and not kept with Save a Copy |
+| Not saved · saving it failed | Gleaner read the file but couldn't save a copy |
+| Saved copy no longer in Gleaner's store | Gleaner saved a copy, but its store no longer holds it |
+| Not saved · Gleaner never read it | Gleaner never saw or never read the delivery's bytes |
+| Folder · not versioned | A delivered folder; Gleaner keeps no copy |
+
+The three without a saved copy go on with what the latest check found: the file on disk still holds it (checked by hash), not on disk, the file on disk can't be read, or the file on disk no longer holds it.
+
 **In the list**, a row carries at most one mark, and only when something needs a look: *Not available* with why (never seen, never read, not on disk, can't be read, not a regular file, a folder is there now, changed), *Not on disk*, *Changed*, or *First seen later*. Drawing the list never reads the disk, so *Changed* appears only for a file Gleaner has checked since it opened. A file delivered more than once shows "Delivery N of M".
 
 **The agents' logs**, in Settings and, when one needs a look, in a line under the list: *Read*; *Read with problems* (unknown record types, logs with malformed lines or found shorter than when read before, logs or folders that couldn't be read); *Can't be read*; *Not on this Mac*. Try Again appears when reading again can help, and what Gleaner already found stays shown.
