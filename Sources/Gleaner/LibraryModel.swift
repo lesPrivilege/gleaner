@@ -79,15 +79,23 @@ final class LibraryModel {
     private var pending = false
 
     /// The library in its standard places: Application Support, and Caches for hand-off copies.
+    /// Launched with `-GleanerHome <folder>`, the app takes that folder for the home directory, so an
+    /// acceptance run on synthetic logs never touches the person's own library or agent history.
     convenience init() throws {
         let fm = FileManager.default
-        let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Gleaner")
-        let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Gleaner")
+        let home = UserDefaults.standard.string(forKey: "GleanerHome").map { URL(fileURLWithPath: $0, isDirectory: true) }
+        let library = home.map { $0.appendingPathComponent("Library") }
+        let support = (library?.appendingPathComponent("Application Support")
+            ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
+        let caches = (library?.appendingPathComponent("Caches")
+            ?? fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
         try fm.createDirectory(at: support, withIntermediateDirectories: true)
         self.init(indexer: Indexer(
             registry: try Registry(path: support.appendingPathComponent("registry.sqlite").path),
             store: ContentStore(objects: support.appendingPathComponent("objects"), staging: caches.appendingPathComponent("handoff")),
-            sources: .standard))
+            sources: home.map {
+                LogSources(claudeProjects: $0.appendingPathComponent(".claude/projects"), codexHome: $0.appendingPathComponent(".codex"))
+            } ?? .standard))
     }
 
     init(indexer: Indexer) {
