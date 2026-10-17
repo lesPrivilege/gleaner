@@ -185,7 +185,7 @@ Derived fields (request, evidence) are versioned: when extraction changes, logs 
 
 ## 10. Search
 
-A result matches when every search term is found in one delivery's own words (request, session, reply), together with the file name and project; terms from different deliveries do not combine. The result opens on the newest delivery that matched, not the newest delivery, and shows that delivery's date. Changing the query resets a manually chosen delivery to the matched one.
+A result matches when every search term is found in one delivery's own words (request, session, reply), together with the file name and project; terms from different deliveries do not combine. The result opens on the newest delivery whose own words matched, falling back to the newest delivery when only the file name or project matched, and shows that delivery's date. Changing the query resets a manually chosen delivery to the matched one.
 
 The index covers, per delivery: the reply excerpt, the user request that started the turn, the session title, the project, and the file name with its folder (not the whole path, whose home and `Projects` components would match everything). The delivery sentence alone usually lacks the topic words the user remembers.
 
