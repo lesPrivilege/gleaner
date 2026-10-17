@@ -13,15 +13,26 @@ public struct SessionInfo: Sendable {
     public var logPath: String
 }
 
+/// One record's worth of reply text. A reply can span several records; each keeps its own
+/// position, time, and working directory so a mention is attributed to the record that made it.
+public struct ReplyPart: Sendable {
+    public var text: String
+    /// 1-based line in the log file.
+    public var line: Int
+    public var at: Date?
+    public var cwd: String?
+}
+
 /// One user-facing reply and the request it answers.
 public struct Turn: Sendable {
     /// The most recent human request in the session when this reply was written.
     public var request: String?
-    public var reply: String
-    public var deliveredAt: Date?
-    public var cwd: String?
-    /// 1-based line of the reply in the log file.
-    public var logLine: Int
+    public var parts: [ReplyPart]
+
+    public var reply: String { parts.map(\.text).joined(separator: "\n\n") }
+    public var deliveredAt: Date? { parts.last?.at }
+    public var logLine: Int { parts.last?.line ?? 0 }
+    public var cwd: String? { parts.last?.cwd }
 }
 
 public struct SessionLog: Sendable {

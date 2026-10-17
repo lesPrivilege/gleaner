@@ -38,6 +38,15 @@ func fixture(_ name: String) throws -> URL {
         #expect(log.turns[1].cwd == "/work/Praxis")
     }
 
+    @Test func mentionKeepsItsOwnRecord() throws {
+        let split = try ClaudeCodeAdapter.parse(try fixture("claude-split-reply"))
+        let found = MentionExtractor.candidates(in: split.turns[0])
+        #expect(found.count == 1)
+        #expect(found[0].evidence[0].part.line == 2)
+        #expect(found[0].evidence[0].part.at == Timestamp.parse("2026-07-12T10:05:00.000Z"))
+        #expect(split.turns[0].logLine == 3)
+    }
+
     @Test func unknownRecordsAreReported() {
         #expect(log.unknownRecordTypes == ["brand-new-record": 1, "<malformed>": 1])
     }

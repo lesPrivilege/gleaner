@@ -17,7 +17,9 @@ public enum GitState: String, Sendable {
 
 public struct LocatorState: Sendable {
     public enum Kind: String, Sendable {
-        case file, directory, missing
+        /// `special` is anything that is neither a regular file nor a directory (FIFO, socket,
+        /// device). It is never opened: reading a FIFO blocks forever.
+        case file, directory, special, missing
     }
 
     public var kind: Kind
@@ -51,13 +53,17 @@ public enum Locator {
             return LocatorState(kind: .missing, repositoryRoot: root, git: git)
         }
 
-        let attributes = try? fm.attributesOfItem(atPath: path)
-        let kind: LocatorState.Kind = isDirectory.boolValue ? .directory : .file
+        let attributes = try? fm.attributesOfItem(atPath: (path as NSString).resolvingSymlinksInPath)
+        let kind: LocatorState.Kind = switch attributes?[.type] as? FileAttributeType {
+        case .typeRegular: .file
+        case .typeDirectory: .directory
+        default: .special
+        }
         return LocatorState(
             kind: kind,
-            size: isDirectory.boolValue ? nil : (attributes?[.size] as? NSNumber)?.int64Value,
+            size: kind == .file ? (attributes?[.size] as? NSNumber)?.int64Value : nil,
             modifiedAt: attributes?[.modificationDate] as? Date,
-            sha256: isDirectory.boolValue ? nil : sha256(path),
+            sha256: kind == .file ? sha256(path) : nil,
             repositoryRoot: root,
             git: root.map { gitState(path, root: $0) } ?? .notInRepo)
     }
@@ -101,7 +107,8 @@ public enum Locator {
     static func run(_ arguments: [String]) -> (status: Int32, output: String) {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
-        process.arguments = arguments
+        // Without this, `git status` refreshes and rewrites the index: not read-only.
+        process.arguments = ["--no-optional-locks"] + arguments
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice

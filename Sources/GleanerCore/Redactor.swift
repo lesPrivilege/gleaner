@@ -11,7 +11,8 @@ public enum Redactor {
         #"AIza[0-9A-Za-z_\-]{30,}"#,
         #"(?i)bearer\s+[A-Za-z0-9._\-+/=]{16,}"#,
         #"eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}"#,
-        #"(?i)(?:api[_-]?key|token|secret|password)\s*[=:]\s*["']?[^\s"']{8,}"#,
+        #"(?i)["']?\b(?:api[_-]?key|access[_-]?token|auth[_-]?token|token|secret|client[_-]?secret|password|passwd|pwd)\b["']?\s*[=:]\s*(?:"[^"\n]*"|'[^'\n]*'|[^\s,;}\]]+)"#,
+        #"://[^/\s:@]+:[^/\s@]+@"#,
     ].map { try! NSRegularExpression(pattern: $0) }
 
     /// Long base64-like runs mixing cases and digits. Lowercase hex (hashes, ids) is left alone.

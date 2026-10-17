@@ -70,7 +70,7 @@ a{color:#2F5FD0}a:hover{color:#1F44A0}
 <span class="{{r.toneCls}}" style="display: inline-flex; align-items: center; gap: 6px"><dc-import name="Mark" kind="{{r.mark}}" hint-size="14px,14px"></dc-import>{{r.statusShort}}</span>
 <span style="color: #55555A">Delivered {{r.lastWhen}}</span>
 </span>
-<span style="font-size: 11px; color: #6A6A6F">Matched in {{r.matched}}</span>
+<span style="font-size: 11px; color: #6A6A6F">Matched in {{r.matched}}<sc-if value="{{r.hasHitLabel}}" hint-placeholder-val="{{ false }}"> · {{r.hitLabel}}</sc-if></span>
 </button>
 </sc-for>
 <sc-if value="{{noResults}}" hint-placeholder-val="{{ false }}">
@@ -131,7 +131,7 @@ a{color:#2F5FD0}a:hover{color:#1F44A0}
 <button class="btn">Save a copy of delivery {{ver.n}} ({{sel.size}})</button>
 </sc-if>
 </div>
-<div id="drag-note" style="font-size: 12px; color: #55555A">Drag the tile into Finder, a chat or an upload field. Gleaner checks the hash as the drag starts, and dragging never moves the original. In this prototype, click the tile to see the check.</div>
+<div id="drag-note" style="font-size: 12px; color: #55555A">Drag the tile into Finder, a chat or an upload field. The receiver gets a copy whose hash Gleaner verifies after copying, so later edits to the original can’t slip in. The original never moves. In this prototype, click the tile to see the check.</div>
 <sc-if value="{{dragShown}}" hint-placeholder-val="{{ false }}">
 <div class="{{drag.panelCls}}" role="status" style="display: flex; flex-direction: column; gap: 8px">
 <div class="{{drag.toneCls}}" style="display: flex; align-items: center; gap: 8px; font-weight: 650"><dc-import name="Mark" kind="{{drag.mark}}" hint-size="14px,14px"></dc-import>{{drag.title}}</div>
@@ -180,7 +180,7 @@ a{color:#2F5FD0}a:hover{color:#1F44A0}
 class Component extends DCLogic {
   constructor(props) {
     super(props);
-    this.state = { query: 'harness', filter: 'all', selected: 'a1', version: 0, dragShown: false };
+    this.state = { query: 'harness', filter: 'all', selected: 'a1', version: null, dragShown: false };
   }
 
   artifacts() {
@@ -264,6 +264,19 @@ class Component extends DCLogic {
             excerpt: 'Onboarding notes: docs/onboarding-notes.md (setup, data model, first tasks).',
             sha: '2f6b0d71…98ce', store: 'snapshot', prov: 'after', seen: '17 Oct 2026' }
         ] },
+      { id: 'a10', name: 'launch-trailer.mp4', kind: 'MP4', group: 'video', project: 'Praxis', place: 'main checkout',
+        path: '~/Projects/Praxis/trailer/launch-trailer.mp4', size: '186 MB', git: 'untracked',
+        checked: '2 min ago', nowSha: '44c0e9a1…b2d7',
+        deliveries: [
+          { n: 2, when: '8 Oct 2026, 17:30', provider: 'Claude Code', session: 'Trailer recut',
+            request: 'Recut the launch trailer with the new voice-over',
+            excerpt: 'Recut with the new voice-over: trailer/launch-trailer.mp4.',
+            sha: 'f19d2c07…6a83', store: 'reference', prov: 'at' },
+          { n: 1, when: '1 Oct 2026, 12:10', provider: 'Codex', session: 'Launch trailer',
+            request: 'Cut a 30-second launch trailer from the chapter clips',
+            excerpt: 'Trailer: trailer/launch-trailer.mp4 (0:30).',
+            sha: '44c0e9a1…b2d7', store: 'reference', prov: 'at' }
+        ] },
       { id: 'a9', name: 'release-notes.md', kind: 'MD', group: 'docs', project: 'Mnemos', place: 'worktree notes-v3 (deleted)',
         path: '~/Projects/Mnemos/.worktrees/notes-v3/release-notes.md', size: '4 KB', git: 'not in a repository',
         checked: '2 min ago', nowSha: null,
@@ -289,6 +302,9 @@ class Component extends DCLogic {
       return { mark: 'cross', tone: 'tone-lost', short: 'Lost',
         text: 'Lost', detail: 'Not on disk, no saved copy, not in git. The delivery record stays. Checked ' + a.checked + '.' };
     }
+    const older = a.deliveries.find((d) => d !== latest && d.sha === a.nowSha && d.prov !== 'after');
+    if (a.nowSha !== latest.sha && older) return { mark: 'attention', tone: 'tone-attention', short: 'Rolled back to delivery ' + older.n,
+      text: 'Rolled back to delivery ' + older.n, detail: 'The file on disk is delivery ' + older.n + ' again, not the latest delivery ' + latest.n + '. Checked ' + a.checked + '.' };
     if (a.nowSha === latest.sha && latest.prov === 'after') return { mark: 'hollow', tone: 'tone-ok', short: 'Unchanged since first seen',
       text: 'Unchanged since Gleaner first saw it', detail: 'First seen ' + latest.seen + ', after the delivery. It may not be what was delivered. Checked ' + a.checked + '.' };
     if (a.nowSha === latest.sha) return { mark: 'solid', tone: 'tone-ok', short: 'Same as delivery ' + latest.n,
@@ -299,6 +315,7 @@ class Component extends DCLogic {
 
   store(d, a) {
     if (d.store === 'pinned') return { mark: 'solid', tone: 'tone-ok', text: 'Saved copy (you chose to save it, ' + a.size + ')' };
+    if (d.store === 'snapshot' && d.prov === 'after') return { mark: 'hollow', tone: 'tone-muted', text: 'Saved copy of what Gleaner first saw on ' + d.seen };
     if (d.store === 'snapshot') return { mark: 'solid', tone: 'tone-ok', text: 'Saved copy' };
     if (d.store === 'bundle') return { mark: 'solid', tone: 'tone-ok', text: 'Saved copy of the folder (' + a.size + ')' };
     if (d.store === 'reference' && a.nowSha === d.sha) return { mark: 'hollow', tone: 'tone-muted', text: 'Not saved · large file, checked by hash' };
@@ -320,10 +337,19 @@ class Component extends DCLogic {
     if (a.nowSha && a.nowSha === d.sha) return { mark: 'hollow', tone: 'tone-ok', panel: 'panel',
       title: 'Ready, with a caveat',
       body: 'The file matches what Gleaner first saw on ' + d.seen + ', after the delivery. It may not be exactly what was delivered.', primary: 'Drag file' };
+    if (this.kept(d) && d.prov === 'after') return { mark: 'hollow', tone: 'tone-ok', panel: 'panel',
+      title: 'Handing off what Gleaner first saw on ' + d.seen,
+      body: (a.nowSha ? 'The file on disk has changed since.' : 'The file is no longer on disk.') + ' Gleaner saved this copy after the delivery, so it may not be exactly what was delivered.',
+      primary: 'Drag saved copy' };
     if (this.kept(d)) return { mark: 'solid', tone: 'tone-ok', panel: 'panel',
       title: 'Handing off the saved copy of delivery ' + n,
       body: (a.nowSha ? 'The file on disk has changed since delivery ' + n + '.' : 'The file is no longer on disk.') + ' Gleaner hands over the copy it saved, hash-checked.',
       primary: 'Drag saved copy' };
+    const same = a.deliveries.find((x) => x.sha === a.nowSha && x.prov !== 'after');
+    if (a.nowSha && same) return { mark: 'attention', tone: 'tone-attention', panel: 'panel attention',
+      title: 'Delivery ' + n + ' is no longer available',
+      body: 'The file on disk is delivery ' + same.n + ' again, and Gleaner didn’t save a copy of delivery ' + n + '. You can hand off delivery ' + same.n + ' instead.',
+      primary: 'Drag delivery ' + same.n + ' instead' };
     if (a.nowSha) return { mark: 'attention', tone: 'tone-attention', panel: 'panel attention',
       title: 'Delivery ' + n + ' is no longer available',
       body: 'The file has changed since, and Gleaner didn’t save a copy: large files are saved only when you choose to. You can drag the current file instead, but no agent handed you that version.',
@@ -351,6 +377,15 @@ class Component extends DCLogic {
     return hit.length ? hit.join(', ') : 'all fields';
   }
 
+  bestVersion(a, tokens) {
+    if (!tokens.length) return 0;
+    const i = a.deliveries.findIndex((d) => {
+      const text = (d.request + ' ' + d.session + ' ' + d.excerpt).toLowerCase();
+      return tokens.some((t) => text.includes(t));
+    });
+    return i < 0 ? 0 : i;
+  }
+
   renderVals() {
     const S = this.state;
     const data = this.artifacts();
@@ -367,14 +402,18 @@ class Component extends DCLogic {
     const selItem = shown.find((x) => x.a.id === S.selected) || shown[0];
     const results = shown.map(({ a, m }) => {
       const st = this.nowStatus(a);
+      const hitIndex = this.bestVersion(a, tokens);
+      const hit = a.deliveries[hitIndex];
       const latest = a.deliveries[0];
       return {
         kind: a.kind, name: a.name, project: a.project, place: a.place,
-        request: latest.request, lastWhen: latest.when.split(',')[0],
+        request: hit.request, lastWhen: latest.when.split(',')[0],
+        hitLabel: hitIndex > 0 ? 'Matched delivery ' + hit.n + ' of ' + latest.n : '',
+        hasHitLabel: hitIndex > 0,
         mark: st.mark, toneCls: st.tone, statusShort: st.short,
         matched: m || 'listing all',
         cls: selItem && selItem.a.id === a.id ? 'card sel' : 'card',
-        pick: () => this.setState({ selected: a.id, version: 0, dragShown: false })
+        pick: () => this.setState({ selected: a.id, version: hitIndex, dragShown: false })
       };
     });
     const resultLine = tokens.length
@@ -384,7 +423,8 @@ class Component extends DCLogic {
     let sel = {}, now = {}, versions = [], ver = {}, drag = {}, preview = {}, handoffRef = '';
     if (selItem) {
       const a = selItem.a;
-      const vi = Math.min(S.version, a.deliveries.length - 1);
+      const vi = Math.min(S.version ?? this.bestVersion(a, tokens), a.deliveries.length - 1);
+      // The result card carries the delivery that matched; selecting it opens that delivery.
       const d = a.deliveries[vi];
       const st = this.nowStatus(a);
       sel = { name: a.name, kind: a.kind, path: a.path, project: a.project, place: a.place, size: a.size, git: a.git,
@@ -405,14 +445,14 @@ class Component extends DCLogic {
       const available = g.mark === 'solid' || g.mark === 'hollow';
       preview = available
         ? { bg: a.kind === 'MP4' ? '#1C1C1E' : '#F1F0EC', fg: a.kind === 'MP4' ? '#FFFFFF' : '#3A3A3E',
-            caption: g.primary === 'Drag saved copy' ? 'Showing the saved copy of delivery ' + d.n : 'Showing the file on disk' }
+            caption: g.primary === 'Drag saved copy' ? (d.prov === 'after' ? 'Showing the copy Gleaner first saw on ' + d.seen : 'Showing the saved copy of delivery ' + d.n) : 'Showing the file on disk' }
         : { bg: '#F7F7F5', fg: '#55555A', caption: 'No preview: the bytes of delivery ' + d.n + ' aren’t available' };
     }
 
     return {
       query: S.query, filters, results, resultLine, noResults: shown.length === 0, hasSel: !!selItem,
       sel, now, versions, ver, drag, preview, handoffRef, dragShown: S.dragShown,
-      onQuery: (e) => this.setState({ query: e.target.value, dragShown: false }),
+      onQuery: (e) => this.setState({ query: e.target.value, version: null, dragShown: false }),
       onDrag: () => this.setState({ dragShown: true }),
       onDragCancel: () => this.setState({ dragShown: false })
     };

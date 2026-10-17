@@ -24,6 +24,14 @@ import Testing
         #expect(mentions.map(\.anchor) == [nil, nil, "#L12", ":40"])
     }
 
+    @Test func targetsWithParensEncodedHashAndLocalhost() {
+        let mentions = MentionExtractor.extract(
+            from: "[a](out/report(1).pdf) [b](out/issue%2342.md#L3) [c](file://localhost/tmp/x.md) [d](file://server/share/y.md)",
+            cwd: "/work/app")
+        #expect(mentions.map(\.path) == ["/work/app/out/report(1).pdf", "/work/app/out/issue#42.md", "/tmp/x.md"])
+        #expect(mentions[1].anchor == "#L3")
+    }
+
     @Test func nonLocalTargetsAreSkipped() {
         #expect(paths("[a](#section) [b](mailto:x@y.z) [c](sandbox:/mnt/data/f.md) [d](http://localhost:3000)").isEmpty)
     }
@@ -49,8 +57,19 @@ import Testing
         #expect(paths("[`out/a.md`](/work/app/out/a.md)") == ["/work/app/out/a.md"])
     }
 
-    @Test func samePathOncePerReply() {
-        #expect(paths("[a](out/a.md) and again `out/a.md`") == ["/work/app/out/a.md"])
+    @Test func samePathKeepsEveryOccurrence() {
+        let turn = Turn(request: nil, parts: [
+            ReplyPart(text: "Draft: [a](out/a.md)", line: 4, at: nil, cwd: "/work/app"),
+            ReplyPart(text: "Final is still `out/a.md`; also [b](out/b.md)", line: 9, at: nil, cwd: "/work/app"),
+        ])
+        let found = MentionExtractor.candidates(in: turn)
+        #expect(found.map(\.path) == ["/work/app/out/a.md", "/work/app/out/b.md"])
+        #expect(found[0].evidence.map(\.part.line) == [4, 9])
+        #expect(found[0].evidence.map(\.mention.syntax) == [.link, .code])
+    }
+
+    @Test func linksInCodeExamplesAreIgnored() {
+        #expect(paths("Example:\n```md\n[x](out/x.md)\n```\nInline `[y](out/y.md)` too. Real: [z](out/z.md)") == ["/work/app/out/z.md"])
     }
 
     @Test func relativeWithoutCwdIsDropped() {
@@ -66,6 +85,13 @@ import Testing
         #expect(!redacted.contains("sk-ant"))
         #expect(!redacted.contains("abcdefghijklmnopqrstu"))
         #expect(redacted.contains(hash))
+    }
+
+    @Test func masksQuotedKeysAndURLCredentials() {
+        let redacted = Redactor.redact(#"{"password": "hunter2", 'api_key': 'abc'} https://bob:s3cret@host/x"#)
+        #expect(!redacted.contains("hunter2"))
+        #expect(!redacted.contains("abc'"))
+        #expect(!redacted.contains("s3cret"))
     }
 
     @Test func masksOpaqueMixedRuns() {

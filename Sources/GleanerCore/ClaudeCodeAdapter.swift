@@ -34,16 +34,10 @@ public enum ClaudeCodeAdapter {
 
         var request: String?
         var turnCwd: String?
-        var reply: [String] = []
-        var replyAt: Date?
-        var replyLine = 0
+        var reply: [ReplyPart] = []
 
         func closeTurn() {
-            if !reply.isEmpty {
-                turns.append(Turn(
-                    request: request, reply: reply.joined(separator: "\n\n"),
-                    deliveredAt: replyAt, cwd: turnCwd ?? sessionCwd, logLine: replyLine))
-            }
+            if !reply.isEmpty { turns.append(Turn(request: request, parts: reply)) }
             reply = []
         }
 
@@ -88,9 +82,9 @@ public enum ClaudeCodeAdapter {
                     case "text":
                         if let text = block["text"] as? String,
                            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                            reply.append(text)
-                            replyAt = Timestamp.parse(record["timestamp"])
-                            replyLine = line
+                            reply.append(ReplyPart(
+                                text: text, line: line, at: Timestamp.parse(record["timestamp"]),
+                                cwd: turnCwd ?? sessionCwd))
                         }
                     default:
                         break

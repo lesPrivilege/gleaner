@@ -1,6 +1,7 @@
 // Spike A: read-only delivery extraction over local agent logs.
 // Writes a labeling sheet, a recall sample, and a summary. See docs/SPEC.md §12–13.
 
+import CryptoKit
 import Foundation
 import GleanerCore
 
@@ -33,10 +34,20 @@ struct Options {
     }
 }
 
+/// One labeling row: a path named in one reply, with every place the reply names it.
 struct Candidate {
     var session: SessionInfo
     var turn: Turn
-    var mention: Mention
+    var delivery: DeliveryCandidate
+
+    var first: (part: ReplyPart, mention: Mention) { delivery.evidence[0] }
+    var path: String { delivery.path }
+
+    /// Stable across reruns, so labels survive regeneration.
+    var id: String {
+        let key = "\(session.logPath)\n\(first.part.line)\n\(path)"
+        return SHA256.hash(data: Data(key.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
+    }
 }
 
 /// Deterministic sampling so a labeled sheet can be regenerated.
@@ -88,18 +99,18 @@ let logs = parsed.items.compactMap { if case .log(let log) = $0 { log } else { n
     .sorted { $0.session.logPath < $1.session.logPath }
 let candidates = logs.flatMap { log in
     log.turns.flatMap { turn in
-        MentionExtractor.extract(from: turn.reply, cwd: turn.cwd).map { Candidate(session: log.session, turn: turn, mention: $0) }
+        MentionExtractor.candidates(in: turn).map { Candidate(session: log.session, turn: turn, delivery: $0) }
     }
 }
 
-let paths = Array(Set(candidates.map(\.mention.path)))
+let paths = Array(Set(candidates.map(\.path)))
 FileHandle.standardError.write(Data("observing \(paths.count) paths…\n".utf8))
 let observed = Collector<(String, LocatorState)>()
 DispatchQueue.concurrentPerform(iterations: paths.count) { index in
     observed.append((paths[index], Locator.observe(paths[index])))
 }
 let states = Dictionary(uniqueKeysWithValues: observed.items)
-let mentionCounts = Dictionary(grouping: candidates, by: \.mention.path).mapValues(\.count)
+let repliesNamingPath = Dictionary(grouping: candidates, by: \.path).mapValues(\.count)
 
 // MARK: Output
 
@@ -129,37 +140,65 @@ func projectName(_ cwd: String?) -> String {
 
 try FileManager.default.createDirectory(at: options.out, withIntermediateDirectories: true)
 
+let home = NSHomeDirectory()
+
+/// Shareable form: home directory shortened and secret-shaped strings masked.
+func share(_ text: String?) -> String {
+    guard let text else { return "" }
+    return Redactor.redact(text.replacingOccurrences(of: home, with: "~"))
+}
+
+/// Labels already entered in a previous candidates.tsv, by row id.
+func previousLabels(_ url: URL) -> [String: (label: String, note: String)] {
+    guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [:] }
+    var labels: [String: (String, String)] = [:]
+    for line in text.split(separator: "\n").dropFirst() {
+        let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
+        if fields.count > 2, !(fields[1].isEmpty && fields[2].isEmpty) { labels[fields[0]] = (fields[1], fields[2]) }
+    }
+    return labels
+}
+
+let candidatesURL = options.out.appendingPathComponent("candidates.tsv")
+let labels = previousLabels(candidatesURL)
+
 let header = [
-    "id", "label", "note", "provider", "project", "session_title", "delivered_at", "syntax", "anchor",
-    "raw_target", "resolved_path", "kind", "size", "sha256_12", "git", "mentions_of_path",
-    "request", "evidence", "log", "session_id",
+    "id", "label", "note", "provider", "project", "session_title", "delivered_at", "syntax", "anchors",
+    "raw_targets", "path", "kind", "size", "sha256_12", "git", "occurrences", "replies_naming_path",
+    "request", "evidence", "session_id",
 ]
 var tsv = header.joined(separator: "\t") + "\n"
-for (index, candidate) in candidates.enumerated() {
-    let state = states[candidate.mention.path]
+var locatorRows = ["id", "log", "lines", "path"].joined(separator: "\t") + "\n"
+for candidate in candidates {
+    let state = states[candidate.path]
+    let evidence = candidate.delivery.evidence
+    let previous = labels[candidate.id]
     let row: [String?] = [
-        String(index + 1), "", "",
+        candidate.id, previous?.label, previous?.note,
         candidate.session.provider.rawValue,
-        projectName(candidate.turn.cwd ?? candidate.session.cwd),
-        candidate.session.title.map(Redactor.redact),
-        candidate.turn.deliveredAt.map { $0.formatted(dateFormat) },
-        candidate.mention.syntax.rawValue,
-        candidate.mention.anchor,
-        candidate.mention.rawTarget,
-        candidate.mention.path,
+        projectName(candidate.first.part.cwd ?? candidate.session.cwd),
+        share(candidate.session.title),
+        candidate.first.part.at.map { $0.formatted(dateFormat) },
+        Array(Set(evidence.map(\.mention.syntax.rawValue))).sorted().joined(separator: ","),
+        share(evidence.compactMap(\.mention.anchor).joined(separator: " ")),
+        share(evidence.map(\.mention.rawTarget).joined(separator: " ‖ ")),
+        share(candidate.path),
         state?.kind.rawValue,
         state?.size.map(String.init),
         state?.sha256.map { String($0.prefix(12)) },
         state?.git.rawValue,
-        String(mentionCounts[candidate.mention.path] ?? 0),
-        Redactor.redact(clip(candidate.turn.request, 300)),
-        Redactor.redact(candidate.mention.excerpt),
-        "\(candidate.session.logPath):\(candidate.turn.logLine)",
+        String(evidence.count),
+        String(repliesNamingPath[candidate.path] ?? 0),
+        share(clip(candidate.turn.request, 300)),
+        share(evidence.map(\.mention.excerpt).joined(separator: " ‖ ")),
         candidate.session.id,
     ]
     tsv += row.map(cell).joined(separator: "\t") + "\n"
+    locatorRows += [candidate.id, candidate.session.logPath, evidence.map { String($0.part.line) }.joined(separator: ","), candidate.path]
+        .map(cell).joined(separator: "\t") + "\n"
 }
-try tsv.write(to: options.out.appendingPathComponent("candidates.tsv"), atomically: true, encoding: .utf8)
+try tsv.write(to: candidatesURL, atomically: true, encoding: .utf8)
+try locatorRows.write(to: options.out.appendingPathComponent("locators.internal.tsv"), atomically: true, encoding: .utf8)
 
 var rng = SplitMix64(state: options.seed)
 let allTurns = logs.flatMap { log in log.turns.map { (log.session, $0) } }
@@ -175,24 +214,24 @@ var recall = """
 
     """
 for (index, (session, turn)) in sample.enumerated() {
-    let extracted = MentionExtractor.extract(from: turn.reply, cwd: turn.cwd)
+    let extracted = MentionExtractor.candidates(in: turn)
     recall += """
         ---
 
-        ## \(index + 1). \(Redactor.redact(session.title ?? "(untitled)"))
+        ## \(index + 1). \(share(session.title ?? "(untitled)"))
 
         - provider: \(session.provider.rawValue) · project: \(projectName(turn.cwd ?? session.cwd)) · \(turn.deliveredAt.map { $0.formatted(dateFormat) } ?? "?")
-        - log: `\(session.logPath):\(turn.logLine)`
-        - request: \(Redactor.redact(clip(turn.request, 400)).replacingOccurrences(of: "\n", with: " "))
+        - log: `\(share(session.logPath)):\(turn.parts.map { String($0.line) }.joined(separator: ","))`
+        - request: \(share(turn.request).replacingOccurrences(of: "\n", with: " "))
 
         <details><summary>Reply (\(turn.reply.count) chars)</summary>
 
-        \(Redactor.redact(clip(turn.reply, 4000)))
+        \(share(turn.reply))
 
         </details>
 
         Extracted:
-        \(extracted.isEmpty ? "- (none)" : extracted.map { "- [\($0.syntax.rawValue)] `\($0.path)`\($0.anchor.map { " \($0)" } ?? "") — \(states[$0.path]?.kind.rawValue ?? "?")" }.joined(separator: "\n"))
+        \(extracted.isEmpty ? "- (none)" : extracted.map { c in "- `\(share(c.path))` × \(c.evidence.count) [\(Set(c.evidence.map(\.mention.syntax.rawValue)).sorted().joined(separator: ","))] — \(states[c.path]?.kind.rawValue ?? "?")" }.joined(separator: "\n"))
 
         Missed:
 
@@ -208,7 +247,7 @@ for provider in Provider.allCases {
     let providerCandidates = candidates.filter { $0.session.provider == provider }
     let skipped = parsed.items.filter { if case .skipped(provider, _) = $0 { true } else { false } }.count
     let failed = parsed.items.compactMap { if case .failed(provider, let path, let error) = $0 { "\(path): \(error)" } else { nil } }
-    let unique = Set(providerCandidates.map(\.mention.path))
+    let unique = Set(providerCandidates.map(\.path))
     func tally<K: Hashable>(_ key: (LocatorState) -> K) -> [K: Int] {
         unique.compactMap { states[$0] }.reduce(into: [:]) { $0[key($1), default: 0] += 1 }
     }
@@ -217,10 +256,10 @@ for provider in Provider.allCases {
         session files parsed: \(providerLogs.count)  skipped (sub-agent): \(skipped)  failed: \(failed.count)
         sessions with replies: \(providerLogs.filter { !$0.turns.isEmpty }.count)
         final replies: \(turns.count)  without request context: \(turns.filter { $0.request == nil }.count)
-        replies with candidates: \(turns.filter { !MentionExtractor.extract(from: $0.reply, cwd: $0.cwd).isEmpty }.count)
+        replies with candidates: \(turns.filter { !MentionExtractor.candidates(in: $0).isEmpty }.count)
         candidates: \(providerCandidates.count)  unique paths: \(unique.count)
-        by syntax: \(Dictionary(grouping: providerCandidates, by: \.mention.syntax.rawValue).mapValues(\.count).sorted { $0.key < $1.key })
-        with line anchor: \(providerCandidates.filter { $0.mention.anchor != nil }.count)
+        by syntax: \(Dictionary(grouping: providerCandidates.flatMap(\.delivery.evidence), by: \.mention.syntax.rawValue).mapValues(\.count).sorted { $0.key < $1.key })
+        with line anchor: \(providerCandidates.filter { $0.delivery.evidence.contains { $0.mention.anchor != nil } }.count)
         unique paths by kind: \(tally { $0.kind.rawValue }.sorted { $0.key < $1.key })
         unique paths by git: \(tally { $0.git.rawValue }.sorted { $0.key < $1.key })
         unknown record types: \(providerLogs.reduce(into: [String: Int]()) { acc, log in acc.merge(log.unknownRecordTypes, uniquingKeysWith: +) }.sorted { $0.key < $1.key })

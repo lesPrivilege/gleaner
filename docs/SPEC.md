@@ -89,6 +89,7 @@ Versions follow **delivery events**, not file saves. Twenty-five rebuilds betwee
 | Same path delivered again, same bytes | Append a mention; no new capture |
 | Same path delivered again, new bytes | New capture → new version node |
 | Source changed silently since last capture | Mark "changed since delivery"; no version node until the next delivery or an explicit pin |
+| Source matches an older delivery, not the latest | Mark "rolled back to delivery k". It is a delivered version, never labeled "not delivered" |
 | Identical bytes at two paths | One content hash, two locators; review context stays per locator |
 | Source missing, snapshot exists | Offer the snapshot, label the source unavailable |
 | Source missing, no snapshot | Keep the entry and its history; say it cannot be recovered |
@@ -111,16 +112,18 @@ Same bytes do not imply the same logical artifact.
 | Single HTML with external relative dependencies | In-place preview; flagged "not self-contained" |
 
 - **Preview cache** and **version store** are separate. Cache is disposable; a snapshot that backs a version is never evicted by cache cleanup.
-- Before a drag, re-hash the source. Then:
+- A drag hands over an immutable, verified copy, never the live source path. At drop time Gleaner copies the chosen version's bytes (from the source when it still matches, else from the saved copy) to a staging file, hashes the staged file, and delivers it only if the hash equals the version's. Handing over the source path itself would only guarantee the content at the moment of the check; an agent or editor may change it before the receiver reads it.
+- Which bytes back the chosen version:
 
 | Situation | Drag behavior |
 |---|---|
 | Source matches the chosen version | Drag the source (zero copy) |
 | Source differs or is missing, and a snapshot of the chosen version exists | Drag the snapshot |
-| Source differs, and the chosen version has no snapshot | Say the version is no longer available. Offer the current file only under an explicit "no agent handed you this version" label |
+| Source differs, and the chosen version has no snapshot | Say the version is no longer available. If the current file matches another delivery k, offer delivery k by name; otherwise offer the current file only under an explicit "no agent handed you this version" label |
 | Source missing, no snapshot, but git history has the path | Offer a restore command for the user to run. Gleaner never restores it itself (Invariant 2), and says it cannot confirm that the git version is the delivered one when the delivery was `never_observed` |
 | Source missing, no snapshot, not in git | Lost: keep the record, offer no drag |
 
+- A saved copy inherits its capture's provenance. A snapshot taken during backfill is "what Gleaner first saw on <date>", never "the saved copy of delivery N", in storage labels, previews, and drag confirmations.
 - **UI vocabulary.** "Snapshot" and "pin" are internal terms. The user sees "saved copy" for a snapshot and "Save a copy" for pinning. Plain "copy" is never used for Gleaner's storage, because every drag copies.
 
 ### 6.1 Claims in replies
@@ -131,6 +134,7 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 
 - Watch only the agents' log directories (FSEvents). New sessions are ingested near real time, so `observed_at` stays close to `delivered_at`.
 - Do not watch the paths of indexed artifacts. Re-verify their hash on open, on drag, and in a low-frequency background pass.
+- Observation is read-only: only regular files are opened (a FIFO, socket, or device is reported as `special`), and git runs with `--no-optional-locks` so `git status` never rewrites the index.
 
 ## 8. Adapters
 
@@ -161,13 +165,16 @@ Candidates come from the final reply only:
 
 - Markdown links and images whose target is a local path (absolute, `~`, relative, or `file://`).
 - Inline code spans and bare absolute paths that look like files.
-- Relative targets resolve against the session cwd. Line anchors (`:42`, `#L42`) are stripped and recorded.
+- Relative targets resolve against the cwd of the record that names them. Line anchors (`:42`, `#L42`) are stripped and recorded. The fragment is split off before percent-decoding, so an encoded `%23` stays part of the file name. Balanced parentheses in link targets belong to the path. `file://localhost/` is a local path; `file://<other host>/` is not.
+- Each mention keeps the record it came from (line, time, cwd). A reply spanning several records never attributes a mention to a later record.
 
 Features recorded per candidate, for later ranking: syntax (link / image / code / bare), line anchor present, target kind (file / directory), extension, exists now.
 
 A line-anchored code reference (`src/foo.swift:42`) is usually a pointer, not a delivery. v0.1 does not decide this by rule until labeled data says how.
 
 ## 10. Search
+
+When a search term matches the request, session, or reply of an older delivery, the result opens on that delivery, not the newest one.
 
 The index covers, per mention: the delivery excerpt, the user request that started the turn, the session title, the project name and cwd, and the file name. The delivery sentence alone usually lacks the topic words the user remembers.
 

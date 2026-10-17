@@ -45,6 +45,23 @@ import Testing
         #expect(Locator.observe(root + "/out/never.md").kind == .missing)
     }
 
+    @Test func specialFilesAreNeverOpened() {
+        let fifo = root + "/out/pipe.mp4"
+        #expect(mkfifo(fifo, 0o600) == 0)
+        let state = Locator.observe(fifo)
+        #expect(state.kind == .special)
+        #expect(state.sha256 == nil)
+    }
+
+    @Test func observingDoesNotWriteTheIndex() throws {
+        let index = root + "/.git/index"
+        try FileManager.default.setAttributes(
+            [.modificationDate: Date(timeIntervalSince1970: 0)], ofItemAtPath: root + "/out/committed.md")
+        let before = try Data(contentsOf: URL(fileURLWithPath: index))
+        _ = Locator.observe(root + "/out/committed.md")
+        #expect(try Data(contentsOf: URL(fileURLWithPath: index)) == before)
+    }
+
     @Test func directoryHasNoHash() {
         let state = Locator.observe(root + "/out")
         #expect(state.kind == .directory)

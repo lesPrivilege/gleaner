@@ -66,9 +66,8 @@ public struct CodexAdapter: Sendable {
                 case "assistant" where payload["phase"] as? String == "final_answer":
                     let text = content.compactMap { $0["text"] as? String }.joined(separator: "\n\n")
                     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                    turns.append(Turn(
-                        request: request, reply: text, deliveredAt: Timestamp.parse(record["timestamp"]),
-                        cwd: cwd, logLine: line))
+                    turns.append(Turn(request: request, parts: [ReplyPart(
+                        text: text, line: line, at: Timestamp.parse(record["timestamp"]), cwd: cwd)]))
                 default:
                     break
                 }
