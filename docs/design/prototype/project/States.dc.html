@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gleaner — status vocabulary</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#FFFFFF}
+.row{display:grid;grid-template-columns:28px minmax(0,2fr) minmax(0,3fr);gap:12px;align-items:start;padding:10px 0;border-top:1px solid #ECEBE7}
+.k{font-weight:600}
+.w{font-size:13px;color:#3A3A3E}
+.h{margin:0 0 4px;font-size:16px;font-weight:650}
+.q{font-size:13px;color:#55555A;margin:0 0 6px}
+</style>
+</helmet>
+<div style="width: 1100px; box-sizing: border-box; padding: 48px 56px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; font-size: 14px; line-height: 1.45; color: #1C1C1E; background: #FFFFFF; display: flex; flex-direction: column; gap: 28px">
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<h1 style="margin: 0; font-size: 26px; font-weight: 650; letter-spacing: -0.01em">Status vocabulary</h1>
+<p style="margin: 0; max-width: 760px; color: #3A3A3E">Every status is written as words next to the thing it describes. The mark repeats the words and never carries meaning alone. Each mark answers one question: what Gleaner can vouch for.</p>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px">
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid #E2E1DE; border-radius: 10px"><dc-import name="Mark" kind="solid" hint-size="14px,14px"></dc-import><div class="k">Solid</div><div class="w">Gleaner checked it: the hash matches, or a copy is saved.</div></div>
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid #E2E1DE; border-radius: 10px"><dc-import name="Mark" kind="hollow" hint-size="14px,14px"></dc-import><div class="k">Hollow</div><div class="w">Known, but not confirmed as the delivered bytes.</div></div>
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid #E2E1DE; border-radius: 10px"><dc-import name="Mark" kind="dashed" hint-size="14px,14px"></dc-import><div class="k">Dashed</div><div class="w">Not here, but may exist somewhere else.</div></div>
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid #E7B877; background: #FFF6EA; border-radius: 10px"><dc-import name="Mark" kind="attention" hint-size="14px,14px"></dc-import><div class="k">Triangle</div><div class="w">Needs your look. The only state shown in the accent colour.</div></div>
+<div style="display: flex; flex-direction: column; gap: 6px; padding: 14px; border: 1px solid #E2E1DE; border-radius: 10px"><dc-import name="Mark" kind="cross" hint-size="14px,14px"></dc-import><div class="k">Cross</div><div class="w">Gone. The record stays so you know it existed.</div></div>
+</div>
+
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 40px">
+
+<div>
+<h2 class="h">On disk now</h2>
+<p class="q">Where is the file, and does it still match? Checked on open, on drag, and in the background.</p>
+<div class="row"><dc-import name="Mark" kind="solid" hint-size="14px,14px"></dc-import><div class="k">Same as delivery N</div><div class="w">Hash matches the latest delivery.</div></div>
+<div class="row"><dc-import name="Mark" kind="attention" hint-size="14px,14px"></dc-import><div class="k" style="color: #8A4B00">Changed since delivery N</div><div class="w">Edited after the last delivery. Nobody has handed you this version.</div></div>
+<div class="row"><dc-import name="Mark" kind="hollow" hint-size="14px,14px"></dc-import><div class="k">Unchanged since first seen</div><div class="w">Matches what Gleaner first saw, but that was after the delivery.</div></div>
+<div class="row"><dc-import name="Mark" kind="dashed" hint-size="14px,14px"></dc-import><div class="k">Not on disk · saved copy available</div><div class="w">Gleaner can still hand over the copy it saved.</div></div>
+<div class="row"><dc-import name="Mark" kind="dashed" hint-size="14px,14px"></dc-import><div class="k">Not on disk · in git history</div><div class="w">A commit has a file at this path. Restore it in the repository; Gleaner doesn’t write there.</div></div>
+<div class="row"><dc-import name="Mark" kind="cross" hint-size="14px,14px"></dc-import><div class="k" style="color: #A12B2B">Lost</div><div class="w">Not on disk, no saved copy, not in git.</div></div>
+</div>
+
+<div>
+<h2 class="h">Is this what was delivered?</h2>
+<p class="q">When Gleaner read the bytes, relative to the reply that handed them over.</p>
+<div class="row"><dc-import name="Mark" kind="solid" hint-size="14px,14px"></dc-import><div class="k">Seen at delivery</div><div class="w">Read by the live watcher right after the reply; the file wasn’t touched in between.</div></div>
+<div class="row"><dc-import name="Mark" kind="hollow" hint-size="14px,14px"></dc-import><div class="k">First seen after delivery</div><div class="w">Found while reading old sessions. May differ from what was delivered.</div></div>
+<div class="row"><dc-import name="Mark" kind="dashed" hint-size="14px,14px"></dc-import><div class="k">Never seen</div><div class="w">The file was gone before Gleaner first looked. Only the reply is on record.</div></div>
+
+<h2 class="h" style="margin-top: 24px">Is a copy saved?</h2>
+<p class="q">Gleaner’s own storage. Your project folders are never written to.</p>
+<div class="row"><dc-import name="Mark" kind="solid" hint-size="14px,14px"></dc-import><div class="k">Saved copy</div><div class="w">Documents, pages, images: saved by default.</div></div>
+<div class="row"><dc-import name="Mark" kind="solid" hint-size="14px,14px"></dc-import><div class="k">Saved copy (you chose to save it)</div><div class="w">A large file you asked Gleaner to save.</div></div>
+<div class="row"><dc-import name="Mark" kind="hollow" hint-size="14px,14px"></dc-import><div class="k">Not saved · checked by hash</div><div class="w">Large video or build. Fine while the original is unchanged; offers “Save a copy”.</div></div>
+<div class="row"><dc-import name="Mark" kind="cross" hint-size="14px,14px"></dc-import><div class="k" style="color: #A12B2B">Not saved · version no longer exists</div><div class="w">The original changed or vanished; this delivery can’t be handed off.</div></div>
+</div>
+
+<div>
+<h2 class="h">Hands off cleanly?</h2>
+<p class="q">Whether the file works once it leaves its folder.</p>
+<div class="row"><dc-import name="Mark" kind="solid" hint-size="14px,14px"></dc-import><div class="k">Folder delivered</div><div class="w">The agent named a folder; it travels as one unit.</div></div>
+<div class="row"><dc-import name="Mark" kind="attention" hint-size="14px,14px"></dc-import><div class="k" style="color: #8A4B00">Not self-contained</div><div class="w">A single page that loads files beside it. Dragged alone, it breaks.</div></div>
+</div>
+
+<div>
+<h2 class="h">Who says so</h2>
+<p class="q">Every claim names its source. Only Gleaner’s own checks become solid marks.</p>
+<div class="row"><span></span><div class="k">The reply says</div><div class="w">Quoted excerpt. “Notarized” in a reply is a claim, shown as text, never as a status.</div></div>
+<div class="row"><span></span><div class="k">Gleaner checked</div><div class="w">Hash, existence, time of the check.</div></div>
+<div class="row"><span></span><div class="k">Git says</div><div class="w">Tracked, modified, ignored, or in history at a named commit.</div></div>
+</div>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1100,"height":1100}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>

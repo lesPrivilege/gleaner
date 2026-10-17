@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Status mark</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0}
+</style>
+</helmet>
+<span style="display: inline-flex; width: 14px; height: 14px; flex: 0 0 14px; align-items: center; justify-content: center">
+<sc-if value="{{isSolid}}" hint-placeholder-val="{{ true }}">
+<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="#2B2B2E"></circle></svg>
+</sc-if>
+<sc-if value="{{isHollow}}" hint-placeholder-val="{{ false }}">
+<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="4" fill="none" stroke="#2B2B2E" stroke-width="1.6"></circle></svg>
+</sc-if>
+<sc-if value="{{isDashed}}" hint-placeholder-val="{{ false }}">
+<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="7" cy="7" r="4.5" fill="none" stroke="#5E5E63" stroke-width="1.6" stroke-dasharray="2.2 2"></circle></svg>
+</sc-if>
+<sc-if value="{{isAttention}}" hint-placeholder-val="{{ false }}">
+<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 2.2 L12.2 11.4 L1.8 11.4 Z" fill="none" stroke="#9A5300" stroke-width="1.6" stroke-linejoin="round"></path></svg>
+</sc-if>
+<sc-if value="{{isCross}}" hint-placeholder-val="{{ false }}">
+<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3.5 3.5 L10.5 10.5 M10.5 3.5 L3.5 10.5" stroke="#A12B2B" stroke-width="1.8" stroke-linecap="round"></path></svg>
+</sc-if>
+</span>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"kind":{"editor":"enum","options":["solid","hollow","dashed","attention","cross"],"default":"solid"},"$preview":{"width":40,"height":40}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const k = this.props.kind ?? 'solid';
+    return {
+      isSolid: k === 'solid',
+      isHollow: k === 'hollow',
+      isDashed: k === 'dashed',
+      isAttention: k === 'attention',
+      isCross: k === 'cross'
+    };
+  }
+}
+</script>
+</body>
+</html>

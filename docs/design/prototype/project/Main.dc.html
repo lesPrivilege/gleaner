@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gleaner — Library</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+body{margin:0;background:#FFFFFF}
+a{color:#2F5FD0}a:hover{color:#1F44A0}
+.chip{display:inline-flex;align-items:center;gap:6px;min-height:40px;padding:0 14px;border-radius:20px;border:1px solid #D9D8D4;background:#FFFFFF;color:#1C1C1E;font:inherit;font-size:13px;cursor:pointer}
+.chip:hover{border-color:#A9A8A4}
+.chip.on{background:#1C1C1E;border-color:#1C1C1E;color:#FFFFFF}
+.chip .n{font-variant-numeric:tabular-nums;opacity:.75}
+.card{display:flex;flex-direction:column;gap:6px;width:100%;box-sizing:border-box;text-align:left;padding:12px 14px;border:1px solid #E2E1DE;border-radius:10px;background:#FFFFFF;color:#1C1C1E;font:inherit;cursor:pointer}
+.card:hover{border-color:#B9B8B4}
+.card.sel{border-color:#2F5FD0;box-shadow:0 0 0 1px #2F5FD0}
+.node{display:flex;flex-direction:column;gap:8px;width:100%;box-sizing:border-box;text-align:left;padding:14px 16px;border:1px solid #E2E1DE;border-radius:10px;background:#FFFFFF;color:#1C1C1E;font:inherit;cursor:pointer}
+.node:hover{border-color:#B9B8B4}
+.node.sel{border-color:#2F5FD0;box-shadow:0 0 0 1px #2F5FD0}
+.btn{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 16px;border-radius:8px;border:1px solid #D9D8D4;background:#FFFFFF;color:#1C1C1E;font:inherit;font-size:13px;cursor:pointer}
+.btn:hover{border-color:#A9A8A4}
+.btn.primary{background:#1C1C1E;border-color:#1C1C1E;color:#FFFFFF}
+.tile{display:inline-flex;align-items:center;gap:10px;min-height:52px;max-width:100%;padding:6px 14px 6px 10px;border-radius:10px;border:1px solid #C9C8C4;background:#FAFAF8;color:#1C1C1E;font:inherit;cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.06)}
+.tile:hover{border-color:#8E8D89}
+.tone-ok{color:#1C1C1E}
+.tone-muted{color:#55555A}
+.tone-attention{color:#8A4B00}
+.tone-lost{color:#A12B2B}
+.panel{border-radius:10px;padding:14px 16px;border:1px solid #E2E1DE;background:#FAFAF8}
+.panel.attention{border-color:#E7B877;background:#FFF6EA}
+.panel.lost{border-color:#E3B4B4;background:#FFF5F5}
+.mono{font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12px}
+.type{display:inline-flex;align-items:center;justify-content:center;min-width:44px;height:20px;padding:0 6px;border-radius:4px;background:#EFEEEA;color:#3A3A3E;font-size:10px;font-weight:600;letter-spacing:.04em}
+</style>
+</helmet>
+<div style="font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', sans-serif; font-size: 14px; line-height: 1.45; color: #1C1C1E; background: #FFFFFF; display: flex; flex-direction: column; min-height: 100vh">
+
+<header style="display: flex; flex-wrap: wrap; align-items: center; gap: 12px 16px; padding: 14px 20px; border-bottom: 1px solid #E2E1DE; background: #F7F7F5">
+<div style="font-weight: 600; font-size: 15px; letter-spacing: -0.01em">Gleaner</div>
+<div style="display: flex; align-items: center; gap: 8px; flex: 1 1 320px; max-width: 520px; min-height: 40px; padding: 0 12px; border: 1px solid #D9D8D4; border-radius: 8px; background: #FFFFFF">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.6" fill="none" stroke="#55555A" stroke-width="1.5"></circle><path d="M10.4 10.4 L14 14" stroke="#55555A" stroke-width="1.5" stroke-linecap="round"></path></svg>
+<label for="q" style="position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0)">Search deliveries</label>
+<input id="q" type="search" value="{{query}}" onChange="{{onQuery}}" placeholder="Search by what you asked for, file name, project…" style="flex: 1; min-width: 0; border: 0; outline: none; font: inherit; font-size: 14px; background: transparent; color: #1C1C1E">
+</div>
+<div role="group" aria-label="Kind" style="display: flex; flex-wrap: wrap; gap: 6px">
+<sc-for list="{{filters}}" as="f" hint-placeholder-count="5">
+<button class="{{f.cls}}" onClick="{{f.pick}}" aria-pressed="{{f.on}}">{{f.label}} <span class="n">{{f.count}}</span></button>
+</sc-for>
+</div>
+<div style="margin-left: auto; font-size: 12px; color: #55555A">Indexed from Claude Code and Codex logs · read-only</div>
+</header>
+
+<div style="display: flex; flex-wrap: wrap; align-items: stretch; flex: 1">
+
+<section aria-label="Results" style="flex: 1 1 360px; max-width: 480px; min-width: 0; box-sizing: border-box; padding: 16px; border-right: 1px solid #E2E1DE; background: #FBFBFA; display: flex; flex-direction: column; gap: 10px">
+<div style="font-size: 12px; color: #55555A">{{resultLine}}</div>
+<sc-for list="{{results}}" as="r" hint-placeholder-count="3">
+<button class="{{r.cls}}" onClick="{{r.pick}}">
+<span style="display: flex; align-items: center; gap: 8px; min-width: 0">
+<span class="type">{{r.kind}}</span>
+<span style="font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{r.name}}</span>
+</span>
+<span style="font-size: 12px; color: #55555A">{{r.project}} · {{r.place}}</span>
+<span style="font-size: 13px; color: #3A3A3E">“{{r.request}}”</span>
+<span style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 12px; font-size: 12px">
+<span class="{{r.toneCls}}" style="display: inline-flex; align-items: center; gap: 6px"><dc-import name="Mark" kind="{{r.mark}}" hint-size="14px,14px"></dc-import>{{r.statusShort}}</span>
+<span style="color: #55555A">Delivered {{r.lastWhen}}</span>
+</span>
+<span style="font-size: 11px; color: #6A6A6F">Matched in {{r.matched}}</span>
+</button>
+</sc-for>
+<sc-if value="{{noResults}}" hint-placeholder-val="{{ false }}">
+<div style="padding: 24px 8px; color: #3A3A3E">
+<div style="font-weight: 600; margin-bottom: 6px">No deliveries match “{{query}}”.</div>
+<div style="font-size: 13px; color: #55555A">Gleaner searches file names, what you asked for, session titles and project names, and lists only files an agent named in a reply to you. Try a word from your original request.</div>
+</div>
+</sc-if>
+</section>
+
+<section aria-label="Details" style="flex: 999 1 560px; min-width: 0; box-sizing: border-box; padding: 20px 24px 32px; display: flex; flex-direction: column; gap: 20px">
+<sc-if value="{{hasSel}}" hint-placeholder-val="{{ true }}">
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="aspect-ratio: 16 / 7; max-height: 240px; width: 100%; border-radius: 10px; background: {{preview.bg}}; color: {{preview.fg}}; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center; padding: 16px; box-sizing: border-box">
+<div style="font-size: 13px; font-weight: 600">Quick Look preview · {{sel.kind}}</div>
+<div style="font-size: 12px; opacity: .85">{{preview.caption}}</div>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 6px">
+<h1 style="margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.01em; word-break: break-all">{{sel.name}}</h1>
+<div class="mono" style="color: #55555A; word-break: break-all">{{sel.path}}</div>
+<div style="font-size: 13px; color: #3A3A3E">{{sel.project}} · {{sel.place}} · {{sel.size}} · Git: {{sel.git}}</div>
+</div>
+
+<div class="{{now.panelCls}}" style="display: flex; flex-direction: column; gap: 4px">
+<div style="font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: #55555A">On disk now</div>
+<div class="{{now.toneCls}}" style="display: flex; align-items: center; gap: 8px; font-weight: 600"><dc-import name="Mark" kind="{{now.mark}}" hint-size="14px,14px"></dc-import>{{now.text}}</div>
+<div style="font-size: 12px; color: #55555A">{{now.detail}}</div>
+</div>
+
+<sc-if value="{{sel.hasWarning}}" hint-placeholder-val="{{ false }}">
+<div class="panel attention" style="display: flex; align-items: flex-start; gap: 8px; font-size: 13px">
+<dc-import name="Mark" kind="attention" hint-size="14px,14px"></dc-import>
+<div><span style="font-weight: 600">Not self-contained.</span> {{sel.warning}}</div>
+</div>
+</sc-if>
+
+<div class="panel" style="display: flex; flex-direction: column; gap: 12px; background: #FFFFFF">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px">
+<h2 style="margin: 0; font-size: 15px; font-weight: 650">Hand off delivery {{ver.n}}</h2>
+<div style="font-size: 12px; color: #55555A">To hand off another version, pick it under Deliveries.</div>
+</div>
+<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px">
+<button class="tile" onClick="{{onDrag}}" aria-describedby="drag-note">
+<svg width="14" height="20" viewBox="0 0 14 20" aria-hidden="true"><g fill="#55555A"><circle cx="5" cy="5" r="1.3"></circle><circle cx="9" cy="5" r="1.3"></circle><circle cx="5" cy="10" r="1.3"></circle><circle cx="9" cy="10" r="1.3"></circle><circle cx="5" cy="15" r="1.3"></circle><circle cx="9" cy="15" r="1.3"></circle></g></svg>
+<span class="type">{{sel.kind}}</span>
+<span style="display: flex; flex-direction: column; min-width: 0; text-align: left">
+<span style="font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{sel.name}}</span>
+<span class="mono" style="color: #55555A">delivery {{ver.n}} · sha256 {{ver.sha}}</span>
+</span>
+</button>
+<button class="btn">Open</button>
+<button class="btn">Show in Finder</button>
+<button class="btn">Copy path</button>
+<sc-if value="{{ver.canPin}}" hint-placeholder-val="{{ false }}">
+<button class="btn">Save a copy of delivery {{ver.n}} ({{sel.size}})</button>
+</sc-if>
+</div>
+<div id="drag-note" style="font-size: 12px; color: #55555A">Drag the tile into Finder, a chat or an upload field. Gleaner checks the hash as the drag starts, and dragging never moves the original. In this prototype, click the tile to see the check.</div>
+<sc-if value="{{dragShown}}" hint-placeholder-val="{{ false }}">
+<div class="{{drag.panelCls}}" role="status" style="display: flex; flex-direction: column; gap: 8px">
+<div class="{{drag.toneCls}}" style="display: flex; align-items: center; gap: 8px; font-weight: 650"><dc-import name="Mark" kind="{{drag.mark}}" hint-size="14px,14px"></dc-import>{{drag.title}}</div>
+<div style="font-size: 13px; color: #3A3A3E">{{drag.body}}</div>
+<div style="display: flex; flex-wrap: wrap; gap: 8px">
+<sc-if value="{{drag.hasPrimary}}" hint-placeholder-val="{{ true }}">
+<button class="btn primary">{{drag.primary}}</button>
+</sc-if>
+<button class="btn" onClick="{{onDragCancel}}">Cancel</button>
+</div>
+</div>
+</sc-if>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<div style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px">
+<h2 style="margin: 0; font-size: 15px; font-weight: 650">Deliveries</h2>
+<div style="font-size: 12px; color: #55555A">Newest first, one entry per reply that handed you this file. Spacing doesn’t show time.</div>
+</div>
+<sc-for list="{{versions}}" as="d" hint-placeholder-count="2">
+<button class="{{d.cls}}" onClick="{{d.pick}}" aria-pressed="{{d.on}}">
+<span style="display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 12px; width: 100%">
+<span style="font-weight: 650">Delivery {{d.n}} · {{d.when}}</span>
+<span style="font-size: 12px; color: #55555A">{{d.provider}} · “{{d.session}}”</span>
+</span>
+<span style="font-size: 13px; color: #3A3A3E"><span style="color: #55555A">You asked:</span> “{{d.request}}”</span>
+<span style="font-size: 13px; padding: 8px 10px; border-radius: 6px; background: #F4F4F1; color: #1C1C1E">{{d.excerpt}}</span>
+<span style="display: flex; flex-wrap: wrap; gap: 4px 16px; font-size: 12px">
+<span class="{{d.provTone}}" style="display: inline-flex; align-items: center; gap: 6px"><dc-import name="Mark" kind="{{d.provMark}}" hint-size="14px,14px"></dc-import>{{d.provText}}</span>
+<span class="{{d.storeTone}}" style="display: inline-flex; align-items: center; gap: 6px"><dc-import name="Mark" kind="{{d.storeMark}}" hint-size="14px,14px"></dc-import>{{d.storeText}}</span>
+</span>
+<sc-if value="{{d.hasClaim}}" hint-placeholder-val="{{ false }}">
+<span style="font-size: 12px; color: #55555A">{{d.claim}}</span>
+</sc-if>
+<span class="mono" style="color: #55555A">sha256 {{d.sha}}</span>
+</button>
+</sc-for>
+</div>
+
+</sc-if>
+</section>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1360,"height":1180}}'>
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { query: 'harness', filter: 'all', selected: 'a1', version: 0, dragShown: false };
+  }
+
+  artifacts() {
+    return [
+      { id: 'a1', name: 'ch3-agent-harness.mp4', kind: 'MP4', group: 'video', project: 'Praxis', place: 'worktree ch3-render',
+        path: '~/Projects/Praxis/.claude/worktrees/ch3-render/out/ch3-agent-harness.mp4', size: '412 MB', git: 'untracked',
+        checked: '2 min ago', nowSha: 'b7e051c2…13aa',
+        deliveries: [
+          { n: 2, when: '2 Oct 2026, 11:05', provider: 'Codex', session: 'Ch3 pacing fixes',
+            request: 'Tighten the intro of the chapter 3 harness video and render it again',
+            excerpt: 'Rendered again with the shorter intro: out/ch3-agent-harness.mp4 is ready to review.',
+            sha: '9f2c0a7e…41d0', store: 'pinned', prov: 'at' },
+          { n: 1, when: '24 Sep 2026, 16:42', provider: 'Claude Code', session: 'Praxis ch3 video',
+            request: 'Make the chapter 3 explainer video about the agent harness loop, 90 seconds, captions on',
+            excerpt: 'Rendered. Video: out/ch3-agent-harness.mp4 (1:34, captions burned in).',
+            sha: '3c1e88d4…a907', store: 'reference', prov: 'at' }
+        ] },
+      { id: 'a2', name: 'ch3-storyboard/', kind: 'FOLDER', group: 'web', project: 'Praxis', place: 'main checkout',
+        path: '~/Projects/Praxis/storyboards/ch3-storyboard/', size: '14 files, 6.1 MB', git: 'committed',
+        checked: '2 min ago', nowSha: '51aa90c3…7e21',
+        deliveries: [
+          { n: 1, when: '20 Sep 2026, 21:12', provider: 'Codex', session: 'Ch3 storyboard',
+            request: 'Storyboard the chapter 3 harness explainer as a page I can click through',
+            excerpt: 'Storyboard is in storyboards/ch3-storyboard/ (open index.html). 9 scenes; arrow keys step through.',
+            sha: '51aa90c3…7e21', store: 'bundle', prov: 'at' }
+        ] },
+      { id: 'a3', name: 'codebase-review.md', kind: 'MD', group: 'docs', project: 'Sealwright', place: 'main checkout',
+        path: '~/Projects/Sealwright/docs/reviews/codebase-review.md', size: '18 KB', git: 'committed',
+        checked: '2 min ago', nowSha: 'e4d1f209…c3b8',
+        deliveries: [
+          { n: 1, when: '5 Oct 2026, 13:30', provider: 'Codex', session: 'Seal codebase review',
+            request: 'Review the seal codebase and tell me what we can cut',
+            excerpt: 'The dependency map and the cut list are in the review report: docs/reviews/codebase-review.md.',
+            sha: 'e4d1f209…c3b8', store: 'snapshot', prov: 'at' }
+        ] },
+      { id: 'a4', name: 'ux-review.html', kind: 'HTML', group: 'web', project: 'Sealwright', place: 'main checkout',
+        path: '~/Projects/Sealwright/docs/reviews/ux-review.html', size: '96 KB', git: 'committed',
+        checked: '2 min ago', nowSha: '0b77a1e5…55f2',
+        warning: 'It loads 25 images from ./figures/. Dragged on its own, the page will show broken images.',
+        deliveries: [
+          { n: 1, when: '9 Oct 2026, 22:18', provider: 'Codex', session: 'Phone UX review',
+            request: 'Walk the phone UI and write me a UX review with screenshots',
+            excerpt: 'Review with 25 screenshots: docs/reviews/ux-review.html.',
+            sha: '0b77a1e5…55f2', store: 'snapshot', prov: 'at' }
+        ] },
+      { id: 'a5', name: 'Gleaner-0.1.0-rc.2.dmg', kind: 'DMG', group: 'builds', project: 'Gleaner', place: 'worktree release-rc2 (deleted)',
+        path: '~/Projects/gleaner/.worktrees/release-rc2/dist/Gleaner-0.1.0-rc.2.dmg', size: '41 MB', git: 'not in a repository',
+        checked: '2 min ago', nowSha: null,
+        deliveries: [
+          { n: 1, when: '11 Oct 2026, 23:40', provider: 'Claude Code', session: 'Release rc.2',
+            request: 'Build rc.2 and notarize it so I can install it',
+            excerpt: 'rc.2 is built and notarized: dist/Gleaner-0.1.0-rc.2.dmg',
+            sha: '7a90c4e2…0d19', store: 'reference', prov: 'at',
+            claim: 'The reply says it was notarized. Gleaner hasn’t checked that.' }
+        ] },
+      { id: 'a6', name: 'Gleaner-0.1.0-rc.3.dmg', kind: 'DMG', group: 'builds', project: 'Gleaner', place: 'main checkout',
+        path: '~/Projects/gleaner/dist/Gleaner-0.1.0-rc.3.dmg', size: '41 MB', git: 'ignored (dist/)',
+        checked: '2 min ago', nowSha: 'c81f33b0…a6e4',
+        deliveries: [
+          { n: 1, when: '15 Oct 2026, 19:05', provider: 'Claude Code', session: 'Release rc.3',
+            request: 'Fix the drag crash, then build rc.3',
+            excerpt: 'rc.3 DMG: dist/Gleaner-0.1.0-rc.3.dmg. Signed, and the notarization ticket is stapled.',
+            sha: 'c81f33b0…a6e4', store: 'reference', prov: 'at',
+            claim: 'The reply says it was signed and notarized. Gleaner hasn’t checked that.' }
+        ] },
+      { id: 'a7', name: 'contract-redline.pdf', kind: 'PDF', group: 'docs', project: 'Courtwork', place: 'main checkout',
+        path: '~/Projects/Courtwork/out/contract-redline.pdf', size: 'size unknown', git: 'deleted; still in history',
+        checked: '2 min ago', nowSha: null, recover: 'commit a41c9e2 (12 Sep)',
+        deliveries: [
+          { n: 1, when: '11 Sep 2026, 15:20', provider: 'Claude Code', session: 'Supply contract redline',
+            request: 'Redline the equipment supply contract against our playbook',
+            excerpt: 'Redline exported to out/contract-redline.pdf, 14 changes marked.',
+            sha: 'not recorded', store: 'none', prov: 'never' }
+        ] },
+      { id: 'a8', name: 'onboarding-notes.md', kind: 'MD', group: 'docs', project: 'Mnemos', place: 'main checkout',
+        path: '~/Projects/Mnemos/docs/onboarding-notes.md', size: '9 KB', git: 'modified',
+        checked: '2 min ago', nowSha: '2f6b0d71…98ce',
+        deliveries: [
+          { n: 1, when: '2 Aug 2026, 10:02', provider: 'Claude Code', session: 'Onboarding notes',
+            request: 'Write onboarding notes for a new contributor to the memory store',
+            excerpt: 'Onboarding notes: docs/onboarding-notes.md (setup, data model, first tasks).',
+            sha: '2f6b0d71…98ce', store: 'snapshot', prov: 'after', seen: '17 Oct 2026' }
+        ] },
+      { id: 'a9', name: 'release-notes.md', kind: 'MD', group: 'docs', project: 'Mnemos', place: 'worktree notes-v3 (deleted)',
+        path: '~/Projects/Mnemos/.worktrees/notes-v3/release-notes.md', size: '4 KB', git: 'not in a repository',
+        checked: '2 min ago', nowSha: null,
+        deliveries: [
+          { n: 1, when: '28 Sep 2026, 09:47', provider: 'Codex', session: 'v3 release notes',
+            request: 'Draft the v3 release notes from the merged changes',
+            excerpt: 'Draft: release-notes.md, grouped by area, breaking changes first.',
+            sha: 'd03e6a5b…1f40', store: 'snapshot', prov: 'at' }
+        ] }
+    ];
+  }
+
+  kept(d) { return d.store === 'pinned' || d.store === 'snapshot' || d.store === 'bundle'; }
+
+  nowStatus(a) {
+    const latest = a.deliveries[0];
+    const kept = a.deliveries.find((d) => this.kept(d));
+    if (!a.nowSha) {
+      if (kept) return { mark: 'dashed', tone: 'tone-muted', short: 'Not on disk · saved copy available',
+        text: 'Not on disk', detail: 'Gleaner saved a copy of delivery ' + kept.n + '. Checked ' + a.checked + '.' };
+      if (a.recover) return { mark: 'dashed', tone: 'tone-muted', short: 'Not on disk · in git history',
+        text: 'Not on disk', detail: 'Git history still has a file at this path: ' + a.recover + '. Checked ' + a.checked + '.' };
+      return { mark: 'cross', tone: 'tone-lost', short: 'Lost',
+        text: 'Lost', detail: 'Not on disk, no saved copy, not in git. The delivery record stays. Checked ' + a.checked + '.' };
+    }
+    if (a.nowSha === latest.sha && latest.prov === 'after') return { mark: 'hollow', tone: 'tone-ok', short: 'Unchanged since first seen',
+      text: 'Unchanged since Gleaner first saw it', detail: 'First seen ' + latest.seen + ', after the delivery. It may not be what was delivered. Checked ' + a.checked + '.' };
+    if (a.nowSha === latest.sha) return { mark: 'solid', tone: 'tone-ok', short: 'Same as delivery ' + latest.n,
+      text: 'Same as delivery ' + latest.n, detail: 'Hash matches. Checked ' + a.checked + '.' };
+    return { mark: 'attention', tone: 'tone-attention', short: 'Changed since delivery ' + latest.n,
+      text: 'Changed since delivery ' + latest.n, detail: 'The file on disk was edited after the last delivery. Nobody has handed you this version. Checked ' + a.checked + '.' };
+  }
+
+  store(d, a) {
+    if (d.store === 'pinned') return { mark: 'solid', tone: 'tone-ok', text: 'Saved copy (you chose to save it, ' + a.size + ')' };
+    if (d.store === 'snapshot') return { mark: 'solid', tone: 'tone-ok', text: 'Saved copy' };
+    if (d.store === 'bundle') return { mark: 'solid', tone: 'tone-ok', text: 'Saved copy of the folder (' + a.size + ')' };
+    if (d.store === 'reference' && a.nowSha === d.sha) return { mark: 'hollow', tone: 'tone-muted', text: 'Not saved · large file, checked by hash' };
+    if (d.store === 'reference') return { mark: 'cross', tone: 'tone-lost', text: 'Not saved · this version no longer exists' };
+    return { mark: 'cross', tone: 'tone-lost', text: 'Not saved' };
+  }
+
+  prov(d) {
+    if (d.prov === 'at') return { mark: 'solid', tone: 'tone-ok', text: 'Seen at delivery' };
+    if (d.prov === 'after') return { mark: 'hollow', tone: 'tone-muted', text: 'First seen ' + d.seen + ', after delivery · may differ from what was delivered' };
+    return { mark: 'dashed', tone: 'tone-muted', text: 'Never seen · the file was gone before Gleaner looked' };
+  }
+
+  drag(a, d) {
+    const n = d.n;
+    if (a.nowSha && a.nowSha === d.sha && d.prov !== 'after') return { mark: 'solid', tone: 'tone-ok', panel: 'panel',
+      title: 'Ready: the file on disk is delivery ' + n,
+      body: 'Hash checked just now. The receiving app gets the file itself; the original stays where it is.', primary: 'Drag file' };
+    if (a.nowSha && a.nowSha === d.sha) return { mark: 'hollow', tone: 'tone-ok', panel: 'panel',
+      title: 'Ready, with a caveat',
+      body: 'The file matches what Gleaner first saw on ' + d.seen + ', after the delivery. It may not be exactly what was delivered.', primary: 'Drag file' };
+    if (this.kept(d)) return { mark: 'solid', tone: 'tone-ok', panel: 'panel',
+      title: 'Handing off the saved copy of delivery ' + n,
+      body: (a.nowSha ? 'The file on disk has changed since delivery ' + n + '.' : 'The file is no longer on disk.') + ' Gleaner hands over the copy it saved, hash-checked.',
+      primary: 'Drag saved copy' };
+    if (a.nowSha) return { mark: 'attention', tone: 'tone-attention', panel: 'panel attention',
+      title: 'Delivery ' + n + ' is no longer available',
+      body: 'The file has changed since, and Gleaner didn’t save a copy: large files are saved only when you choose to. You can drag the current file instead, but no agent handed you that version.',
+      primary: 'Drag current file instead' };
+    if (a.recover) return { mark: 'dashed', tone: 'tone-muted', panel: 'panel',
+      title: 'Restore it from git first',
+      body: 'Git history has a file at this path (' + a.recover + '). Gleaner never saw delivery ' + n + ', so it can’t confirm that version is the one delivered. Gleaner doesn’t write to your repository.',
+      primary: 'Copy restore command' };
+    return { mark: 'cross', tone: 'tone-lost', panel: 'panel lost',
+      title: 'Delivery ' + n + ' is lost',
+      body: 'It isn’t on disk, Gleaner didn’t save a copy, and git has no record of it. The delivery record stays so you can see it existed.', primary: null };
+  }
+
+  matches(a, tokens) {
+    const fields = [
+      ['file name', a.name],
+      ['your request', a.deliveries.map((d) => d.request).join(' ')],
+      ['session title', a.deliveries.map((d) => d.session).join(' ')],
+      ['project', a.project + ' ' + a.place],
+      ['reply', a.deliveries.map((d) => d.excerpt).join(' ')]
+    ];
+    const all = fields.map((f) => f[1]).join(' ').toLowerCase();
+    if (!tokens.every((t) => all.includes(t))) return null;
+    const hit = fields.filter((f) => tokens.some((t) => f[1].toLowerCase().includes(t))).map((f) => f[0]);
+    return hit.length ? hit.join(', ') : 'all fields';
+  }
+
+  renderVals() {
+    const S = this.state;
+    const data = this.artifacts();
+    const tokens = S.query.toLowerCase().split(/\s+/).filter(Boolean);
+    const matched = data.map((a) => ({ a, m: tokens.length ? this.matches(a, tokens) : null }))
+      .filter((x) => !tokens.length || x.m);
+    const groups = [['all', 'All'], ['video', 'Video'], ['web', 'Web'], ['docs', 'Docs'], ['builds', 'Builds']];
+    const filters = groups.map(([key, label]) => ({
+      label, on: S.filter === key, cls: S.filter === key ? 'chip on' : 'chip',
+      count: matched.filter((x) => key === 'all' || x.a.group === key).length,
+      pick: () => this.setState({ filter: key })
+    }));
+    const shown = matched.filter((x) => S.filter === 'all' || x.a.group === S.filter);
+    const selItem = shown.find((x) => x.a.id === S.selected) || shown[0];
+    const results = shown.map(({ a, m }) => {
+      const st = this.nowStatus(a);
+      const latest = a.deliveries[0];
+      return {
+        kind: a.kind, name: a.name, project: a.project, place: a.place,
+        request: latest.request, lastWhen: latest.when.split(',')[0],
+        mark: st.mark, toneCls: st.tone, statusShort: st.short,
+        matched: m || 'listing all',
+        cls: selItem && selItem.a.id === a.id ? 'card sel' : 'card',
+        pick: () => this.setState({ selected: a.id, version: 0, dragShown: false })
+      };
+    });
+    const resultLine = tokens.length
+      ? shown.length + (shown.length === 1 ? ' delivery matches' : ' deliveries match') + ' “' + S.query + '”'
+      : shown.length + ' delivered files';
+
+    let sel = {}, now = {}, versions = [], ver = {}, drag = {}, preview = {}, handoffRef = '';
+    if (selItem) {
+      const a = selItem.a;
+      const vi = Math.min(S.version, a.deliveries.length - 1);
+      const d = a.deliveries[vi];
+      const st = this.nowStatus(a);
+      sel = { name: a.name, kind: a.kind, path: a.path, project: a.project, place: a.place, size: a.size, git: a.git,
+        hasWarning: !!a.warning, warning: a.warning || '' };
+      now = { mark: st.mark, toneCls: st.tone, text: st.text, detail: st.detail,
+        panelCls: st.mark === 'attention' ? 'panel attention' : st.mark === 'cross' ? 'panel lost' : 'panel' };
+      versions = a.deliveries.map((x, i) => {
+        const p = this.prov(x), s = this.store(x, a);
+        return { n: x.n, when: x.when, provider: x.provider, session: x.session, request: x.request, excerpt: x.excerpt,
+          sha: x.sha, provMark: p.mark, provTone: p.tone, provText: p.text, storeMark: s.mark, storeTone: s.tone, storeText: s.text,
+          hasClaim: !!x.claim, claim: x.claim || '', on: i === vi, cls: i === vi ? 'node sel' : 'node',
+          pick: () => this.setState({ version: i, dragShown: false }) };
+      });
+      ver = { n: d.n, sha: d.sha, canPin: d.store === 'reference' && a.nowSha === d.sha };
+      const g = this.drag(a, d);
+      drag = { mark: g.mark, toneCls: g.tone, panelCls: g.panel, title: g.title, body: g.body, hasPrimary: !!g.primary, primary: g.primary || '' };
+      handoffRef = a.name + ' · delivery ' + d.n + ' · sha256 ' + d.sha;
+      const available = g.mark === 'solid' || g.mark === 'hollow';
+      preview = available
+        ? { bg: a.kind === 'MP4' ? '#1C1C1E' : '#F1F0EC', fg: a.kind === 'MP4' ? '#FFFFFF' : '#3A3A3E',
+            caption: g.primary === 'Drag saved copy' ? 'Showing the saved copy of delivery ' + d.n : 'Showing the file on disk' }
+        : { bg: '#F7F7F5', fg: '#55555A', caption: 'No preview: the bytes of delivery ' + d.n + ' aren’t available' };
+    }
+
+    return {
+      query: S.query, filters, results, resultLine, noResults: shown.length === 0, hasSel: !!selItem,
+      sel, now, versions, ver, drag, preview, handoffRef, dragShown: S.dragShown,
+      onQuery: (e) => this.setState({ query: e.target.value, dragShown: false }),
+      onDrag: () => this.setState({ dragShown: true }),
+      onDragCancel: () => this.setState({ dragShown: false })
+    };
+  }
+}
+</script>
+</body>
+</html>

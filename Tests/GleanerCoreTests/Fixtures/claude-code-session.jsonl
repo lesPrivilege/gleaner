@@ -1,0 +1,16 @@
+{"type":"queue-operation","operation":"enqueue","timestamp":"2026-07-12T10:17:01.684Z","sessionId":"s-claude","content":"ignored"}
+{"type":"user","isSidechain":false,"message":{"role":"user","content":"Make the Praxis chapter 3 explainer video about Agent Harness"},"origin":{"kind":"human"},"uuid":"u1","timestamp":"2026-07-12T10:17:04.524Z","cwd":"/work/Praxis","sessionId":"s-claude","gitBranch":"main"}
+{"type":"assistant","isSidechain":false,"message":{"model":"claude-fable-5","role":"assistant","content":[{"type":"thinking","thinking":"","signature":"x"}]},"timestamp":"2026-07-12T10:17:10.000Z","sessionId":"s-claude"}
+{"type":"assistant","isSidechain":false,"message":{"model":"claude-fable-5","role":"assistant","content":[{"type":"text","text":"Starting the render."}]},"timestamp":"2026-07-12T10:17:11.000Z","sessionId":"s-claude"}
+{"type":"assistant","isSidechain":false,"message":{"model":"claude-fable-5","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"make video"}}]},"timestamp":"2026-07-12T10:17:12.000Z","sessionId":"s-claude"}
+{"type":"user","isSidechain":false,"message":{"role":"user","content":[{"tool_use_id":"t1","type":"tool_result","content":"ok"}]},"timestamp":"2026-07-12T10:18:00.000Z","cwd":"/work/Praxis","sessionId":"s-claude"}
+{"type":"assistant","isSidechain":true,"message":{"model":"claude-fable-5","role":"assistant","content":[{"type":"text","text":"sidechain chatter about [x](side.md)"}]},"timestamp":"2026-07-12T10:18:01.000Z","sessionId":"s-claude"}
+{"type":"assistant","isSidechain":false,"message":{"model":"claude-fable-5","role":"assistant","content":[{"type":"text","text":"Done. Video: [demo.mp4](output/final.mp4)"}]},"timestamp":"2026-07-12T10:19:00.000Z","cwd":"/work/Praxis/.claude/worktrees/w1","sessionId":"s-claude"}
+{"type":"ai-title","aiTitle":"Chapter 3 video","sessionId":"s-claude"}
+{"type":"user","isMeta":true,"message":{"role":"user","content":"Base directory for this skill: /x"},"timestamp":"2026-07-12T10:20:00.000Z","sessionId":"s-claude"}
+{"type":"user","isSidechain":false,"message":{"role":"user","content":"<task-notification>agent finished</task-notification>"},"origin":{"kind":"task-notification"},"timestamp":"2026-07-12T10:30:00.000Z","cwd":"/work/Praxis","sessionId":"s-claude"}
+{"type":"assistant","isSidechain":false,"message":{"model":"claude-fable-5","role":"assistant","content":[{"type":"text","text":"The subtitle pass is in `output/subs.srt`."}]},"timestamp":"2026-07-12T10:31:00.000Z","sessionId":"s-claude"}
+{"type":"assistant","isSidechain":false,"message":{"model":"<synthetic>","role":"assistant","content":[{"type":"text","text":"API Error"}]},"timestamp":"2026-07-12T10:31:30.000Z","sessionId":"s-claude"}
+{"type":"custom-title","customTitle":"Praxis ch3 video","sessionId":"s-claude"}
+{"type":"brand-new-record","sessionId":"s-claude"}
+not json
