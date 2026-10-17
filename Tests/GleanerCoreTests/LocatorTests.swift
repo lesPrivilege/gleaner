@@ -79,4 +79,11 @@ import Testing
         #expect(state.kind == .directory)
         #expect(state.sha256 == nil)
     }
+
+    @Test func aReadErrorIsNoHashNotTheHashOfWhatWasRead() {
+        // An unconnected socket opens and then fails to read: that is not an empty file.
+        let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        defer { close(socket) }
+        #expect(Locator.sha256("/dev/fd/\(socket)") == nil)
+    }
 }
