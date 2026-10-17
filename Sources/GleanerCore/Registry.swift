@@ -46,7 +46,7 @@ public final class Registry: @unchecked Sendable {
     public func upsert(_ session: SessionInfo) throws {
         try db.run("""
             INSERT INTO sessions (id, provider, title, cwd, log_path) VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET title = excluded.title, cwd = excluded.cwd, log_path = excluded.log_path
+            ON CONFLICT(id) DO UPDATE SET title = COALESCE(excluded.title, title), cwd = COALESCE(excluded.cwd, cwd), log_path = excluded.log_path
             """, [session.id, session.provider.rawValue, session.title.map(Redactor.redact), session.cwd, session.logPath])
     }
 
