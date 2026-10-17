@@ -310,8 +310,10 @@ enum Wording {
         }
     }
 
+    /// The badge keeps the exact extension (rulings §7a): the kind groups formats, the badge tells
+    /// them apart.
     static func kindLabel(_ kind: Artifact.Kind, path: String) -> String {
         let ext = (path as NSString).pathExtension.uppercased()
-        return kind == .folder ? "FOLDER" : (ext.isEmpty ? "FILE" : String(ext.prefix(5)))
+        return kind == .folder ? "FOLDER" : (ext.isEmpty ? "FILE" : ext)
     }
 }

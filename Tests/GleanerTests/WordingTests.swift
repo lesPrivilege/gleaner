@@ -16,4 +16,12 @@ import Testing
         let source = Indexer.Report.Source(folder: .listed, shortenedLogs: ["/logs/a.jsonl"])
         #expect(Wording.sourcesLine([.claudeCode: source]) == "Claude Code: read with problems (1 log shorter than when last read)")
     }
+
+    // MARK: The type badge (A17)
+
+    @Test func theTypeBadgeKeepsTheExactExtension() {
+        #expect(Wording.kindLabel(.model, path: "/p/out/bracket.SLDPRT") == "SLDPRT")
+        #expect(Wording.kindLabel(.document, path: "/p/out/notes.markdown") == "MARKDOWN")
+        #expect(Wording.kindLabel(.folder, path: "/p/out/site") == "FOLDER")
+    }
 }

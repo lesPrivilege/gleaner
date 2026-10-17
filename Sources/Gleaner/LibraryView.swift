@@ -174,10 +174,12 @@ struct TypeBadge: View {
     var artifact: Artifact
 
     var body: some View {
+        // Widens for a long extension rather than cutting it.
         Text(Wording.kindLabel(artifact.kind, path: artifact.path))
             .font(.system(size: 10, weight: .semibold))
             .tracking(0.4)
             .foregroundStyle(.secondary)
+            .fixedSize()
             .frame(minWidth: 40, minHeight: 18)
             .padding(.horizontal, 4)
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
