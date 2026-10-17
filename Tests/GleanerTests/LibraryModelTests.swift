@@ -117,6 +117,26 @@ import Testing
         #expect(try text(model.quickLookURL) == "video v1")
     }
 
+    @Test func quickLookStaysOnTheSameBytesWhileTheyArePreparedAgain() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try await selectVideo(model)
+        let (second, first) = (video.deliveries[1], video.deliveries[2])
+        model.chosenDelivery = second.id
+        let sha = try #require(second.sha256)
+        await model.stage(sha: sha, artifact: video)
+        model.toggleQuickLook()
+        let shown = try #require(model.quickLookURL)
+
+        // Delivery 1 is the same bytes: the detail view prepares them again (as it does after a
+        // check or Save a Copy), and Quick Look stays on them throughout.
+        model.chosenDelivery = first.id
+        let preparing = Task { await model.stage(sha: sha, artifact: video) }
+        await Task.yield()
+        #expect(model.quickLookURL == shown)
+        await preparing.value
+        #expect(model.quickLookURL == shown)
+    }
+
     // MARK: Compare (D3)
 
     @Test func aComparisonIsShownOnlyForThePairItWasAskedFor() {

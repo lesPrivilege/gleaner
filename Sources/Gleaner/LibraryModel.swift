@@ -251,7 +251,8 @@ final class LibraryModel {
     var isQuickLookOpen = false
 
     /// What the Quick Look panel shows: always the selected delivery's prepared copy (or delivered
-    /// folder), so it follows a change of delivery or query.
+    /// folder). It stays on a delivery with the same bytes, and is nil while other bytes are being
+    /// prepared, which closes the panel.
     var quickLookURL: URL? { isQuickLookOpen ? selectedHandoffURL : nil }
 
     func toggleQuickLook() {
@@ -341,10 +342,14 @@ final class LibraryModel {
         if state.kind == .missing { missing.insert(path) } else { missing.remove(path) }
     }
 
-    /// Prepares a verified, immutable copy of `sha` to drag.
+    /// Prepares a verified, immutable copy of `sha` to drag. A copy already prepared for these
+    /// bytes stays shown while it is checked again, so Quick Look stays on it.
     func stage(sha: String, artifact: Artifact) async {
         let generation = stagingGeneration
-        staging = .preparing(sha: sha)
+        switch staging {
+        case .ready(_, sha: sha): break
+        default: staging = .preparing(sha: sha)
+        }
         let store = indexer.store
         let name = artifact.name
         let source = artifact.path
@@ -353,7 +358,7 @@ final class LibraryModel {
         }.value
         // The selection moved on, another version is being prepared, or the copies were cleared:
         // this result is stale.
-        guard !Task.isCancelled, generation == stagingGeneration, staging == .preparing(sha: sha) else { return }
+        guard !Task.isCancelled, generation == stagingGeneration, staging.sha == sha else { return }
         switch result {
         case .success(let url): staging = .ready(url, sha: sha)
         case .failure(ContentStore.Failure.changed):
