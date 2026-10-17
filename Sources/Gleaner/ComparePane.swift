@@ -19,8 +19,7 @@ struct ComparePane: View {
 
     var body: some View {
         let request = Request(from: from, to: to, kind: artifact.kind)
-        // Only a result loaded for this very pair is shown; until then it is loading.
-        let content = loaded?.request == request ? loaded?.content : nil
+        let content = Self.content(loaded, for: request)
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("\(from.title) → \(to.title)").font(.headline)
@@ -69,6 +68,11 @@ struct ComparePane: View {
             guard !Task.isCancelled else { return }
             loaded = (request, result)
         }
+    }
+
+    /// Only a result loaded for this very pair is shown; until then it is loading.
+    static func content(_ loaded: (request: Request, content: Comparison.Content)?, for request: Request) -> Comparison.Content? {
+        loaded?.request == request ? loaded?.content : nil
     }
 
     func label(_ end: Comparison.End) -> String { "\(end.source) · \(end.sha.prefix(8))" }

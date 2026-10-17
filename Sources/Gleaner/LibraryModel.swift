@@ -77,17 +77,21 @@ final class LibraryModel {
     private var indexing = false
     private var pending = false
 
-    init() throws {
+    /// The library in its standard places: Application Support, and Caches for hand-off copies.
+    convenience init() throws {
         let fm = FileManager.default
         let support = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Gleaner")
         let caches = fm.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("Gleaner")
         try fm.createDirectory(at: support, withIntermediateDirectories: true)
-        let registry = try Registry(path: support.appendingPathComponent("registry.sqlite").path)
-        indexer = Indexer(
-            registry: registry,
+        self.init(indexer: Indexer(
+            registry: try Registry(path: support.appendingPathComponent("registry.sqlite").path),
             store: ContentStore(objects: support.appendingPathComponent("objects"), staging: caches.appendingPathComponent("handoff")),
-            sources: .standard)
-        artifacts = (try? registry.artifacts()) ?? []
+            sources: .standard))
+    }
+
+    init(indexer: Indexer) {
+        self.indexer = indexer
+        artifacts = (try? indexer.registry.artifacts()) ?? []
         siblings = Artifact.deliveredWith(artifacts)
         missing = Self.missing(artifacts)
         projectNames = Projects.names(artifacts.map(\.projectFolder))
