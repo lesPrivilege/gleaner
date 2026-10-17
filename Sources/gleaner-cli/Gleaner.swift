@@ -12,8 +12,9 @@ struct Gleaner: ParsableCommand {
         commandName: "gleaner",
         abstract: "Find what coding agents delivered, select its exact version, and hand those bytes on.",
         discussion: """
-            Each command writes one JSON object to stdout. Exit codes: 0 success; 1 not found, or no \
-            bytes for that version; 2 usage; 3 no library, or the wrong version (open Gleaner).
+            Each command writes one JSON object to stdout, with the index it is evidence of; so does a \
+            refusal about a delivery, with why. Exit codes: 0 success; 1 not found, or no bytes for \
+            that version; 2 usage; 3 no library, or the wrong version (open Gleaner).
             """,
         subcommands: [Find.self, Show.self, Read.self, Resolve.self, Handoff.self, Verify.self])
 
@@ -54,7 +55,7 @@ extension Gleaner {
         @OptionGroup var library: Library
 
         func run() throws {
-            try write(library.catalog().find(terms, project: project, kind: kind, limit: limit))
+            try library.answer { try $0.find(terms, project: project, kind: kind, limit: limit) }
         }
     }
 
@@ -67,7 +68,7 @@ extension Gleaner {
         @OptionGroup var library: Library
 
         func run() throws {
-            try write(library.catalog().show(delivery))
+            try library.answer { try $0.show(delivery) }
         }
     }
 
@@ -91,7 +92,7 @@ extension Gleaner {
 
         func run() throws {
             let span = lines.map { Catalog.Span.lines($0.start, $0.end) } ?? bytes.map { .bytes($0.start, $0.end) }
-            try write(library.catalog().read(delivery, span: span, max: max))
+            try library.answer { try $0.read(delivery, span: span, max: max) }
         }
     }
 
@@ -104,7 +105,7 @@ extension Gleaner {
         @OptionGroup var library: Library
 
         func run() throws {
-            try write(library.catalog().resolve(delivery))
+            try library.answer { try $0.resolve(delivery) }
         }
     }
 
@@ -117,7 +118,7 @@ extension Gleaner {
         @OptionGroup var library: Library
 
         func run() throws {
-            try write(library.catalog().handoff(delivery))
+            try library.answer { try $0.handoff(delivery) }
         }
     }
 
@@ -131,19 +132,18 @@ extension Gleaner {
         @OptionGroup var library: Library
 
         func run() throws {
-            let catalog = try library.catalog()
-            let verified: Catalog.Verified
-            if FileManager.default.fileExists(atPath: reference) {
-                guard let kept = try? Catalog.decoder.decode(Catalog.Kept.self, from: Data(contentsOf: URL(fileURLWithPath: reference))) else {
-                    throw ValidationError("\(reference) holds no reference as resolve writes it.")
-                }
-                verified = try catalog.verify(kept)
-            } else {
-                verified = try catalog.verify(reference)
-            }
-            try write(verified)
+            let kept = FileManager.default.fileExists(atPath: reference) ? try keptReference() : nil
+            let verified = try library.answer { catalog in try kept.map(catalog.verify) ?? catalog.verify(reference) }
             // Neither: there are no bytes for that version now.
             if !verified.original, !verified.savedCopy { throw ExitCode.failure }
+        }
+
+        /// The reference the file `reference` holds.
+        private func keptReference() throws -> Catalog.Kept {
+            guard let kept = try? Catalog.decoder.decode(Catalog.Kept.self, from: Data(contentsOf: URL(fileURLWithPath: reference))) else {
+                throw ValidationError("\(reference) holds no reference as resolve writes it.")
+            }
+            return kept
         }
     }
 }
@@ -155,6 +155,21 @@ struct Library: ParsableArguments {
 
     func catalog() throws -> Catalog {
         try Catalog(home: home.map { URL(fileURLWithPath: $0, isDirectory: true) })
+    }
+
+    /// Writes the catalog's answer. When there is none about a delivery (exit 1), writes why, with
+    /// the index that is evidence of, then fails as the catalog did.
+    @discardableResult
+    func answer<Answer: Encodable>(_ body: (Catalog) throws -> Answer) throws -> Answer {
+        let catalog = try catalog()
+        do {
+            let answer = try body(catalog)
+            try write(answer)
+            return answer
+        } catch let failure as Catalog.Failure where failure.exitCode == 1 {
+            try write(Catalog.Refused(index: catalog.registry.index(), error: failure))
+            throw failure
+        }
     }
 }
 

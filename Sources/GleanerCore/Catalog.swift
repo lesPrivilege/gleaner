@@ -251,7 +251,7 @@ extension Catalog {
 
 extension Catalog {
     /// Why the catalog can't answer, each with the exit code the `gleaner` command gives it.
-    public enum Failure: Error, Equatable, CustomStringConvertible {
+    public enum Failure: Error, Equatable, CustomStringConvertible, Encodable {
         /// No library at this path: Gleaner never ran with this home.
         case noLibrary(String)
         /// The library at this path is of another version of Gleaner. There is no compatibility mode.
@@ -297,6 +297,30 @@ extension Catalog {
             case .usage(let message):
                 message
             }
+        }
+
+        /// Which failure it is, as an answer names it.
+        public var code: String {
+            switch self {
+            case .noLibrary: "no_library"
+            case .wrongVersion: "wrong_version"
+            case .notFound: "not_found"
+            case .otherLibrary: "other_library"
+            case .unavailable: "unavailable"
+            case .notText: "not_text"
+            case .changed: "changed"
+            case .usage: "usage"
+            }
+        }
+
+        private enum CodingKeys: CodingKey { case code, message, reason }
+
+        /// As an answer writes it: its code, what it says, and for unavailable, why.
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(code, forKey: .code)
+            try container.encode(description, forKey: .message)
+            if case .unavailable(let reason) = self { try container.encode(reason, forKey: .reason) }
         }
     }
 
@@ -532,6 +556,19 @@ extension Catalog {
         public var original: Bool
         /// Gleaner's saved copy.
         public var savedCopy: Bool
+    }
+
+    /// The answer when there is none about a delivery (exit 1): why, beside the index the refusal is
+    /// evidence of. A delivery not found in a stale or partial index, or by an id from another
+    /// library, may yet be found where it is.
+    public struct Refused: Encodable, Sendable {
+        public var index: Index
+        public var error: Failure
+
+        public init(index: Index, error: Failure) {
+            self.index = index
+            self.error = error
+        }
     }
 
     /// What an answer is evidence of (query-core "Freshness"): the library, and its last completed

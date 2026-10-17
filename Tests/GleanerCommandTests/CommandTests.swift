@@ -228,17 +228,27 @@ import Testing
     @Test func noDeliveryOrNoBytesExitsOne() throws {
         try index()
         let summary = try id("summary.md")
-        let refusals: [([String], Catalog.Failure)] = [
-            (["show", "0123456789"], .notFound("0123456789")),
-            (["read", summary], .unavailable(.neverSeen)),
-            (["handoff", summary], .unavailable(.neverSeen)),
-            (["read", try id("frame.png")], .notText),
+        let index = try Catalog(home: home).registry.index()
+        let refusals: [([String], Catalog.Failure, code: String)] = [
+            (["show", "0123456789"], .notFound("0123456789"), "not_found"),
+            (["read", summary], .unavailable(.neverSeen), "unavailable"),
+            (["handoff", summary], .unavailable(.neverSeen), "unavailable"),
+            (["read", try id("frame.png")], .notText, "not_text"),
         ]
-        for (arguments, failure) in refusals {
+        for (arguments, failure, code) in refusals {
             let run = try gleaner(arguments)
             #expect(run.status == 1, "\(arguments)")
-            #expect(run.output.isEmpty, "\(arguments)")
             #expect(run.error.contains(failure.description), "\(arguments): \(run.error)")
+            // Still one JSON object: why, beside the index the refusal is evidence of. An id from
+            // another library, or one this index hasn't read yet, is not found in it.
+            let json = try #require(try JSONSerialization.jsonObject(with: run.output) as? [String: Any], "\(arguments)")
+            #expect(Set(json.keys) == ["index", "error"], "\(arguments)")
+            let given = json["index"] as? [String: Any]
+            #expect(given?["library"] as? String == index.library && given?["generation"] as? Int == 1, "\(arguments)")
+            #expect(Set(given?.keys ?? [:].keys) == ["library", "generation", "scanned_at", "sources"], "\(arguments)")
+            let error = json["error"] as? [String: Any]
+            #expect(error?["code"] as? String == code && error?["message"] as? String == failure.description, "\(arguments)")
+            #expect(error?["reason"] as? String == (code == "unavailable" ? "never_seen" : nil), "\(arguments)")
         }
 
         // verify answers, and exits 1 when neither the original nor a saved copy holds the bytes.
