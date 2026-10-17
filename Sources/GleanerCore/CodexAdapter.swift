@@ -94,6 +94,15 @@ public struct CodexAdapter: Sendable {
         var turns: [Turn] = []
         var answeredTurns = 0
         var answered = false
+        var replied = false
+
+        /// The log's last turn is answered only once it has a final answer: until then the thread
+        /// may still be running, or it ended on a tool call.
+        func closeTurn(last: Bool = false) {
+            if answered, !last || replied { answeredTurns += 1 }
+            answered = false
+            replied = false
+        }
 
         for (line, record) in file.records {
             let type = record["type"] as? String ?? "<none>"
@@ -114,7 +123,7 @@ public struct CodexAdapter: Sendable {
                 cwd = payload["cwd"] as? String ?? cwd
                 // The model the turn asked for; through a gateway, as the gateway's catalog names it.
                 model = payload["model"] as? String ?? model
-                answered = false
+                closeTurn()
             case "response_item" where payload["type"] as? String == "message":
                 if (record["metadata"] as? [String: Any])?["inherited_user_message"] as? Bool == true { continue }
                 let content = payload["content"] as? [[String: Any]] ?? []
@@ -125,15 +134,13 @@ public struct CodexAdapter: Sendable {
                         requestAt = Timestamp.parse(record["timestamp"])
                     }
                 case "assistant":
-                    if !answered {
-                        answeredTurns += 1
-                        answered = true
-                    }
+                    answered = true
                     guard payload["phase"] as? String == "final_answer" else { continue }
                     let text = content.compactMap { $0["text"] as? String }.joined(separator: "\n\n")
                     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                     turns.append(Turn(request: request, requestAt: requestAt, parts: [ReplyPart(
                         text: text, line: line, at: Timestamp.parse(record["timestamp"]), cwd: cwd)], model: model))
+                    replied = true
                 default:
                     break
                 }
@@ -141,6 +148,7 @@ public struct CodexAdapter: Sendable {
                 break
             }
         }
+        closeTurn(last: true)
 
         let id = meta?["id"] as? String ?? url.deletingPathExtension().lastPathComponent
         return SessionLog(

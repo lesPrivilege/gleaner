@@ -6,6 +6,15 @@ func fixture(_ name: String) throws -> URL {
     try #require(Bundle.module.url(forResource: name, withExtension: "jsonl", subdirectory: "Fixtures"))
 }
 
+/// The fixture `name` with `record` written after it, as a log in a folder of its own.
+func fixture(_ name: String, then record: String) throws -> URL {
+    let folder = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-fixture-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    let log = folder.appendingPathComponent(name + ".jsonl")
+    try (String(contentsOf: try fixture(name), encoding: .utf8) + record + "\n").write(to: log, atomically: true, encoding: .utf8)
+    return log
+}
+
 @Suite struct ClaudeCodeAdapterTests {
     let log: SessionLog
 
@@ -79,6 +88,21 @@ func fixture(_ name: String) throws -> URL {
         #expect(log.answeredTurns == 2)
         #expect(log.turns.count == 2)
     }
+
+    @Test func aLastTurnThatEndsOnAToolCallIsNotYetCountedAsAnswered() throws {
+        // The session may still be running, or it ended on a tool call: the text before the call
+        // is no final reply, and the turn isn't over.
+        let open = try ClaudeCodeAdapter.parse(try fixture("claude-open-turn"))
+        #expect(open.turns.isEmpty)
+        #expect(open.answeredTurns == 0)
+        #expect(open.unknownRecordTypes.isEmpty && open.unknownFields.isEmpty)
+
+        // The next request closes it: answered, without a final reply.
+        let next = #"{"type":"user","isSidechain":false,"message":{"role":"user","content":"Is it uploaded?"},"origin":{"kind":"human"},"timestamp":"2026-07-12T11:20:00.000Z","cwd":"/work/Praxis","sessionId":"s-open"}"#
+        let closed = try ClaudeCodeAdapter.parse(try fixture("claude-open-turn", then: next))
+        #expect(closed.turns.isEmpty)
+        #expect(closed.answeredTurns == 1)
+    }
 }
 
 @Suite struct CodexAdapterTests {
@@ -122,6 +146,20 @@ func fixture(_ name: String) throws -> URL {
         // One turn, with commentary and then the final answer; the inherited answer isn't this thread's.
         #expect(log.answeredTurns == 1)
         #expect(log.turns.count == 1)
+    }
+
+    @Test func aLastTurnWithoutAFinalAnswerIsNotYetCountedAsAnswered() throws {
+        // Commentary, then a tool call: the thread may still be running, or it ended there.
+        let open = try #require(try adapter.parse(try fixture("codex-open-turn")))
+        #expect(open.turns.isEmpty)
+        #expect(open.answeredTurns == 0)
+        #expect(open.unknownRecordTypes.isEmpty && open.unknownFields.isEmpty)
+
+        // Codex starts the next turn: that one was answered, without a final answer.
+        let next = #"{"timestamp":"2026-10-05T06:20:00.000Z","type":"turn_context","payload":{"turn_id":"t2","cwd":"/work/Sealwright"}}"#
+        let closed = try #require(try adapter.parse(try fixture("codex-open-turn", then: next)))
+        #expect(closed.turns.isEmpty)
+        #expect(closed.answeredTurns == 1)
     }
 
     @Test func structuredAnswersAreNotRequests() {

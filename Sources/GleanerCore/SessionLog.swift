@@ -51,7 +51,9 @@ public struct SessionLog: Sendable {
     public var turns: [Turn]
     /// Records read, of any type.
     public var records: Int
-    /// Turns the assistant answered in, whether or not the answer ended in a final reply.
+    /// Turns the assistant answered in, whether or not the answer ended in a final reply. The last
+    /// turn counts only once it has one: until then the session may still be running, or it ended
+    /// on a tool call.
     public var answeredTurns: Int
     /// Record types the adapter does not recognize, with counts. Non-empty means the format moved.
     public var unknownRecordTypes: [String: Int]

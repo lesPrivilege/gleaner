@@ -1,8 +1,9 @@
 import Foundation
 
 /// What one read of a log counted: its records, those of a type its adapter knows, the turns the
-/// assistant answered in, the final replies among them, and the candidates those replies name,
-/// admitted or not (SPEC §9). Kept per log, so a format change shows as a count that moves.
+/// assistant answered in (the last only once it has a final reply), the final replies among them,
+/// and the candidates those replies name, admitted or not (SPEC §9). Kept per log, so a format
+/// change shows as a count that moves.
 public struct LogCounts: Sendable, Equatable {
     public var records: Int
     public var knownRecords: Int
@@ -41,7 +42,9 @@ public struct LogFindings: Sendable, Equatable {
         self.shortened = shortened
     }
 
-    /// The assistant answered, but the adapter found no final reply.
+    /// The assistant answered in a turn other than the log's last, but the adapter found no final
+    /// reply. A last turn without one is still open: the session may be running, or it ended on a
+    /// tool call.
     public var lacksFinalReply: Bool { counts.map { $0.turns > 0 && $0.finalReplies == 0 } ?? false }
 }
 
