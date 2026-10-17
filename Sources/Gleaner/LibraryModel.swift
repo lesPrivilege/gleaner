@@ -27,6 +27,29 @@ enum Staging: Equatable {
     }
 }
 
+/// How the sidebar lists the library: files in one of three orders, or the timeline of handovers.
+enum Listing: Hashable {
+    case files(LibraryOrder)
+    case timeline
+
+    init(_ raw: String) {
+        self = raw == "timeline" ? .timeline : .files(LibraryOrder(rawValue: raw) ?? .latest)
+    }
+
+    var raw: String {
+        switch self {
+        case .files(let order): order.rawValue
+        case .timeline: "timeline"
+        }
+    }
+}
+
+/// A conversation shown as a page: its log, and the delivery it was opened from.
+struct ThreadPage: Equatable {
+    var logPath: String
+    var focus: Delivery.ID?
+}
+
 @MainActor @Observable
 final class LibraryModel {
     var artifacts: [Artifact] = [] {
@@ -48,9 +71,12 @@ final class LibraryModel {
     var kind: Artifact.Kind?
     /// nil shows every project.
     var project: String?
+    var listing: Listing = .files(.latest)
     var selection: Artifact.ID? {
-        didSet { if selection != oldValue { chosenDelivery = nil; comparison = nil } }
+        didSet { if selection != oldValue { chosenDelivery = nil; comparison = nil; thread = nil } }
     }
+    /// Shown in place of the selected file while set.
+    var thread: ThreadPage?
     /// Set when the person picks a delivery; otherwise the delivery the search matched.
     var chosenDelivery: Delivery.ID?
     /// Two exact versions shown in place of the preview, older first.
@@ -104,23 +130,27 @@ final class LibraryModel {
         project = nil
     }
 
-    /// One reply is one log and one delivery time; every file it named shares both.
+    /// The other files each delivery's reply named.
     private static func siblings(of artifacts: [Artifact]) -> [Delivery.ID: [Artifact.ID]] {
-        var byReply: [String: [(Delivery.ID, Artifact.ID)]] = [:]
-        for artifact in artifacts {
-            for d in artifact.deliveries {
-                guard let at = d.deliveredAt else { continue }
-                byReply["\(d.logPath)|\(at.timeIntervalSince1970)", default: []].append((d.id, artifact.id))
-            }
-        }
         var result: [Delivery.ID: [Artifact.ID]] = [:]
-        for group in byReply.values where group.count > 1 {
-            for (delivery, artifact) in group {
-                result[delivery] = group.map(\.1).filter { $0 != artifact }.sorted()
+        for handover in Handovers.all(artifacts) where handover.items.count > 1 {
+            for item in handover.items {
+                result[item.delivery.id] = handover.items.map(\.artifact.id).filter { $0 != item.artifact.id }
             }
         }
         return result
     }
+
+    /// Shows a file as one handover delivered it, keeping the search when it already lists the file.
+    func show(_ item: Handover.Item) {
+        if !results.contains(where: { $0.id == item.artifact.id }) { clearFilters() }
+        selection = item.artifact.id
+        chosenDelivery = item.delivery.id
+        thread = nil
+    }
+
+    /// The handovers of the files the search and filters list, newest first, by day.
+    var timeline: [HandoverDay] { Handovers.timeline(results.map(\.artifact)) }
 
     func start() {
         watcher = LogWatcher(directories: indexer.sources.watchedDirectories, queue: work) { [weak self] in
@@ -162,7 +192,8 @@ final class LibraryModel {
 
     var results: [SearchResult] {
         let tokens = tokens
-        return artifacts.compactMap { artifact in
+        let order = if case .files(let order) = listing { order } else { LibraryOrder.latest }
+        return order.sorted(artifacts, now: Date()).compactMap { artifact in
             guard kind == nil || artifact.kind == kind, project == nil || artifact.project == project,
                   let match = artifact.match(tokens) else { return nil }
             return SearchResult(artifact: artifact, deliveryIndex: match.deliveryIndex, matchedIn: match.fields)

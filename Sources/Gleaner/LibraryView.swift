@@ -8,6 +8,7 @@ struct LibraryView: View {
     @SceneStorage("query") private var savedQuery = ""
     @SceneStorage("kind") private var savedKind = ""
     @SceneStorage("project") private var savedProject = ""
+    @SceneStorage("listing") private var savedListing = ""
 
     var body: some View {
         @Bindable var model = model
@@ -15,7 +16,9 @@ struct LibraryView: View {
             ResultsList()
                 .navigationSplitViewColumnWidth(min: 340, ideal: 380, max: 460)
         } detail: {
-            if let result = model.selected {
+            if let thread = model.thread {
+                ThreadView(page: thread)
+            } else if let result = model.selected {
                 DetailView(result: result)
             } else if !model.artifacts.isEmpty {
                 ContentUnavailableView(
@@ -31,7 +34,9 @@ struct LibraryView: View {
             model.query = savedQuery
             model.kind = Artifact.Kind(rawValue: savedKind)
             model.project = savedProject.isEmpty ? nil : savedProject
+            model.listing = Listing(savedListing)
         }
+        .onChange(of: model.listing) { savedListing = model.listing.raw }
         .onChange(of: model.query) { savedQuery = model.query }
         .onChange(of: model.kind) { savedKind = model.kind?.rawValue ?? "" }
         .onChange(of: model.project) { savedProject = model.project ?? "" }
@@ -55,11 +60,24 @@ struct ResultsList: View {
         // Filters sit above the list, not over it: rows never scroll under the glass controls.
         VStack(spacing: 0) {
             filters
-            List(selection: $model.selection) {
+            if model.listing == .timeline {
+                TimelineList()
+                    .overlay { emptyState(results) }
+            } else {
+                files(results, repeated: repeated)
+            }
+        }
+    }
+
+    func files(_ results: [SearchResult], repeated: Set<String>) -> some View {
+        @Bindable var model = model
+        let now = Date()
+        return List(selection: $model.selection) {
                 ForEach(results) { result in
                     ResultRow(result: result, showProject: model.project == nil,
                               showFolder: repeated.contains(result.artifact.name),
-                              onDisk: !model.missing.contains(result.artifact.path))
+                              onDisk: !model.missing.contains(result.artifact.path),
+                              recent: model.listing == .files(.activity) ? LibraryOrder.recentDeliveries(result.artifact, now: now) : nil)
                         .tag(result.id)
                         .onDrag { model.dragItem(for: result) }
                 }
@@ -87,7 +105,6 @@ struct ResultsList: View {
                 return [provider]
             }
             .overlay { emptyState(results) }
-        }
     }
 
     var filters: some View {
@@ -110,6 +127,16 @@ struct ResultsList: View {
             .pickerStyle(.menu)
             .labelsHidden()
             .fixedSize()
+            Picker("List", selection: $model.listing) {
+                Text("Latest").tag(Listing.files(.latest))
+                Text("Active, 14 Days").tag(Listing.files(.activity))
+                Text("Name").tag(Listing.files(.name))
+                Divider()
+                Text("Timeline").tag(Listing.timeline)
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .help("Order the files: latest delivery, most deliveries in the last 14 days, or name; or list what each reply handed over, or list what each reply handed over, newest first")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -164,6 +191,8 @@ struct ResultRow: View {
     var showProject: Bool
     var showFolder: Bool
     var onDisk: Bool
+    /// Deliveries in the activity window, shown when the list is in that order.
+    var recent: Int?
 
     var body: some View {
         let artifact = result.artifact
@@ -192,6 +221,9 @@ struct ResultRow: View {
                 if artifact.deliveries.count > 1 {
                     Text("Delivery \(hit.number) of \(artifact.latest.number)").foregroundStyle(.secondary)
                 }
+                if let recent {
+                    Text(recent == 0 ? "none in 14 days" : "\(recent) in 14 days").foregroundStyle(.secondary)
+                }
             }
             .font(.caption)
         }
@@ -207,7 +239,59 @@ struct ResultRow: View {
         if !onDisk { parts.append("not on disk") }
         parts.append("delivered " + (hit.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "on an unknown date"))
         if artifact.deliveries.count > 1 { parts.append("delivery \(hit.number) of \(artifact.latest.number)") }
+        if let recent { parts.append("\(recent) deliveries in the last 14 days") }
         if let request = hit.request { parts.append("you asked: \(request.prefix(160))") }
         return parts.joined(separator: ", ")
+    }
+}
+
+/// The listed files' handovers, newest first and grouped by day. Rows keep the order of events,
+/// never their spacing: an empty stretch of time takes no room.
+struct TimelineList: View {
+    @Environment(LibraryModel.self) private var model
+
+    var body: some View {
+        List {
+            ForEach(model.timeline) { day in
+                Section(day.day?.formatted(date: .complete, time: .omitted) ?? "Unknown date") {
+                    ForEach(day.handovers) { handover in
+                        TimelineRow(handover: handover, showProject: model.project == nil)
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// One handover: when, which agent and conversation, the request (which opens its thread), and
+/// the files it named (each goes to that delivery in the library).
+struct TimelineRow: View {
+    @Environment(LibraryModel.self) private var model
+    var handover: Handover
+    var showProject: Bool
+
+    var body: some View {
+        let projects = Array(Set(handover.items.map(\.artifact.project))).sorted()
+        let context: [String?] = [handover.deliveredAt?.formatted(date: .omitted, time: .shortened), Wording.agent(handover.provider),
+                       handover.sessionTitle.map { "“\($0)”" }, showProject ? projects.joined(separator: ", ") : nil]
+        VStack(alignment: .leading, spacing: 5) {
+            Text(context.compactMap { $0 }.joined(separator: " · "))
+                .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            Button { model.thread = ThreadPage(logPath: handover.logPath, focus: handover.first.id) } label: {
+                Text(handover.request.map { "“\($0)”" } ?? "No request recorded")
+                    .font(.callout).lineLimit(2)
+                    .foregroundStyle(handover.request == nil ? .secondary : .primary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Open this conversation’s thread")
+            ForEach(handover.items) { item in
+                FileButton(item: item)
+                    .font(.callout)
+                    .fontWeight(model.selection == item.artifact.id && model.chosenDelivery == item.delivery.id ? .semibold : .regular)
+            }
+        }
+        .padding(.vertical, 5)
     }
 }

@@ -77,6 +77,10 @@ struct StatusLabel: View {
 }
 
 enum Wording {
+    static func agent(_ provider: Provider) -> String {
+        provider == .codex ? "Codex" : "Claude Code"
+    }
+
     static func date(_ date: Date?) -> String {
         date?.formatted(date: .abbreviated, time: .shortened) ?? "unknown time"
     }

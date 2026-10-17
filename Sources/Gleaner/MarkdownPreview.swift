@@ -1,25 +1,68 @@
 import GleanerCore
 import SwiftUI
 
-/// Renders `MarkdownBlock`s. Links open only when clicked.
+/// Renders `MarkdownBlock`s, with an outline of the document's own headings beside them when it
+/// has more than one. Links open only when clicked.
 struct MarkdownPreview: View {
     let blocks: [MarkdownBlock]
+    let headings: [MarkdownHeading]
 
     init(_ source: String) {
         blocks = MarkdownBlock.parse(source)
+        headings = MarkdownBlock.headings(blocks)
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                    view(block)
+        ScrollViewReader { proxy in
+            HStack(spacing: 0) {
+                if headings.count > 1 {
+                    outline { block in withAnimation { proxy.scrollTo(Self.anchor(block), anchor: .top) } }
+                        .frame(width: 200)
+                    Divider()
+                }
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                            view(block).id(Self.anchor(index))
+                        }
+                    }
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(16)
                 }
             }
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
         }
+    }
+
+    /// A block's scroll target, apart from the outline rows' own identities.
+    static func anchor(_ block: Int) -> String { "block-\(block)" }
+
+    /// The headings as written, indented by level; choosing one scrolls the preview to it.
+    func outline(_ scroll: @escaping (Int) -> Void) -> some View {
+        let top = headings.map(\.level).min() ?? 1
+        return ScrollView {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("OUTLINE").font(.caption2.weight(.semibold)).tracking(0.8).foregroundStyle(.secondary)
+                    .padding(.bottom, 4)
+                ForEach(headings) { heading in
+                    Button { scroll(heading.block) } label: {
+                        Text(heading.title)
+                            .font(heading.level == top ? .callout.weight(.medium) : .callout)
+                            .foregroundStyle(heading.level == top ? .primary : .secondary)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, CGFloat(min(heading.level - top, 3)) * 10)
+                    .padding(.vertical, 2)
+                    .help(heading.title)
+                }
+            }
+            .padding(12)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Outline")
     }
 
     @ViewBuilder

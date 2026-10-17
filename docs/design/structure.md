@@ -62,3 +62,7 @@ v0.1 ships with the library, versions and Compare; the release work comes first.
 3. **Project timeline** with the activity order, as the project menu's second mode.
 
 Cross-path lineage waits for evidence-backed links (a reply that names both files) or a person's explicit link, and is designed then.
+
+## Built
+
+All three, from existing records only. Grouping lives in `Sources/GleanerCore/Handovers.swift` (handovers, threads, day groups, library orders) and `MarkdownBlock.headings`, with tests. The session title in a delivery's reply line opens its thread; the sidebar's List menu holds Latest, Active (14 days), Name and Timeline. The timeline follows the project, kind and search filters and keeps only the listed files in each handover.

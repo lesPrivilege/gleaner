@@ -43,4 +43,13 @@ import Testing
         #expect(String(text.characters) == "See a diagram here.")
         #expect(text.runs.allSatisfy { $0.imageURL == nil })
     }
+
+    @Test func headingsPointAtTheirBlocks() {
+        let blocks = MarkdownBlock.parse("# Plan\n\nIntro.\n\n## Retry *policy*\n\n```\n# not a heading\n```\n\n### Limits")
+        #expect(MarkdownBlock.headings(blocks) == [
+            MarkdownHeading(block: 0, level: 1, title: "Plan"),
+            MarkdownHeading(block: 2, level: 2, title: "Retry policy"),
+            MarkdownHeading(block: 4, level: 3, title: "Limits"),
+        ])
+    }
 }
