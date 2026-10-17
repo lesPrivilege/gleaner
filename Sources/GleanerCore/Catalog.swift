@@ -47,18 +47,19 @@ public struct Catalog: Sendable {
 
 extension Catalog {
     /// The artifacts whose words match every term (SPEC §10), newest first, each by the delivery
-    /// the search matched; at most `limit` of them. `project` names a project by its folder, or by
-    /// its name as shown or plain.
+    /// the search matched; at most `limit` of them. `project` names a project by its folder, in any
+    /// form an agent may have it (`/private/tmp/app/` is `/tmp/app`), or by its name as shown or plain.
     public func find(_ terms: [String], project: String? = nil, kind: Artifact.Kind? = nil, limit: Int = 20) throws -> Found {
         guard limit > 0 else { throw Failure.usage("The limit must be at least 1.") }
         let tokens = terms.joined(separator: " ").lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+        let folder = project.flatMap { $0.hasPrefix("/") ? Paths.standard($0) : nil }
         let index = try registry.index()
         let artifacts = try registry.artifacts()
         let names = Projects.names(artifacts.map(\.projectFolder))
         let matches = artifacts.compactMap { artifact -> (Artifact, Int)? in
             let place = Project(artifact, names: names)
             let inProject = project.map { wanted in
-                wanted == place.folder || [place.name, artifact.project].contains { $0.caseInsensitiveCompare(wanted) == .orderedSame }
+                folder == place.folder || [place.name, artifact.project].contains { $0.caseInsensitiveCompare(wanted) == .orderedSame }
             } ?? true
             guard inProject, kind == nil || artifact.kind == kind, let match = artifact.match(tokens) else { return nil }
             return (artifact, match)

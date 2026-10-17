@@ -293,6 +293,8 @@ import Testing
         #expect(try catalog.find([], kind: .image).results.map(\.reference.name) == ["poster.svg", "frame.png"])
         #expect(try catalog.find([], project: "praxis").total == 4)
         #expect(try catalog.find([], project: project.path).total == 4)
+        // The folder as an agent working in it records it: under /private, with a slash at the end.
+        #expect(try catalog.find([], project: LogWatcher.resolved(project.path) + "/").total == 4)
         #expect(try catalog.find([], project: "Courtwork").total == 0)
         #expect(throws: Catalog.Failure.self) { try catalog.find([], limit: 0) }
     }

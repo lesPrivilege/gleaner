@@ -107,6 +107,23 @@ import Testing
     @Test func relativeWithoutCwdIsDropped() {
         #expect(paths("`out/a.md` and /abs/path/b.md", cwd: nil) == ["/abs/path/b.md"])
     }
+
+    @Test func aPathTakesOneFormByItsTextAlone() {
+        // /tmp, /var and /etc lead into /private, where an agent records the folder it works in. A
+        // path takes the shorter form whether or not its file is there: the disk is never asked.
+        let gone = "/private/tmp/gleaner-\(UUID().uuidString)"
+        let short = String(gone.dropFirst("/private".count))
+        #expect(paths("[a](out/a.md) [b](../b.md) `./c/./d.md`", cwd: gone + "/app")
+                == [short + "/app/out/a.md", short + "/b.md", short + "/app/c/d.md"])
+        #expect(paths("Saved /private/var/db/y.md and /private/other/z.md") == ["/var/db/y.md", "/private/other/z.md"])
+    }
+
+    @Test func aCandidateKeepsTheFolderItWasResolvedAgainstInThePathsForm() {
+        let turn = Turn(request: nil, parts: [ReplyPart(text: "Report: [r](out/r.md)", line: 3, at: nil, cwd: "/private/tmp/w/app/")])
+        let found = MentionExtractor.candidates(in: turn)
+        #expect(found.map(\.path) == ["/tmp/w/app/out/r.md"])
+        #expect(found.first?.evidence.map(\.part.cwd) == ["/tmp/w/app"])
+    }
 }
 
 @Suite struct RedactorTests {
