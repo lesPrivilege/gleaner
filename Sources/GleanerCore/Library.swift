@@ -1,4 +1,5 @@
 import Foundation
+import UniformTypeIdentifiers
 
 /// When Gleaner read a delivery's bytes, relative to the reply that handed them over (SPEC §5.1).
 public enum Provenance: String, Sendable, Codable {
@@ -60,8 +61,11 @@ public struct Delivery: Sendable, Identifiable {
 }
 
 public struct Artifact: Sendable, Identifiable {
+    /// What a person does with the file, not which field made it: a fixed set that unknown
+    /// formats fall into through the system's type tree (rulings §7). The badge keeps the exact
+    /// extension, so merging video and audio into media loses nothing.
     public enum Kind: String, Sendable, CaseIterable {
-        case video, web, document, image, build, folder, other
+        case document, image, media, web, code, data, model, build, folder, other
     }
 
     public var path: String
@@ -82,15 +86,36 @@ public struct Artifact: Sendable, Identifiable {
 
     public var kind: Kind {
         if deliveries.contains(where: { $0.capture?.isDirectory == true }) { return .folder }
-        switch (path as NSString).pathExtension.lowercased() {
-        case "mp4", "mov", "m4v", "webm", "gif": return .video
-        case "html", "htm": return .web
-        case "md", "markdown", "pdf", "txt", "rtf", "docx", "pages", "key", "pptx", "xlsx", "csv", "tsv", "json": return .document
-        case "png", "jpg", "jpeg", "svg", "webp", "heic", "tiff": return .image
-        case "dmg", "pkg", "zip", "app", "ipa", "tar", "gz": return .build
-        default: return .other
-        }
+        return Self.kind(ofExtension: (path as NSString).pathExtension)
     }
+
+    /// Checks run from specific to general: source code and JSON are also text, so they are
+    /// matched before documents.
+    public static func kind(ofExtension ext: String) -> Kind {
+        let ext = ext.lowercased()
+        if let kind = byExtension[ext] { return kind }
+        guard !ext.isEmpty, let type = UTType(filenameExtension: ext) else { return .other }
+        let checks: [(UTType, Kind)] = [
+            (.html, .web), (.audiovisualContent, .media), (.image, .image), (.threeDContent, .model),
+            (.sourceCode, .code), (.script, .code), (.json, .data), (.commaSeparatedText, .data),
+            (.tabSeparatedText, .data), (.spreadsheet, .data), (.database, .data), (.xml, .data),
+            (.diskImage, .build), (.archive, .build), (.application, .build), (.executable, .build),
+            (.pdf, .document), (.presentation, .document), (.text, .document), (.compositeContent, .document),
+        ]
+        return checks.first { type.conforms(to: $0.0) }?.1 ?? .other
+    }
+
+    /// Formats the system doesn't type, or types too generally to place.
+    static let byExtension: [String: Kind] = [
+        "md": .document, "markdown": .document, "pages": .document, "key": .document, "numbers": .data,
+        "ts": .code, "tsx": .code, "jsx": .code, "mjs": .code, "vue": .code, "svelte": .code, "rs": .code,
+        "go": .code, "kt": .code, "css": .code, "scss": .code, "less": .code, "patch": .code, "diff": .code, "ipynb": .code,
+        "yaml": .data, "yml": .data, "toml": .data, "parquet": .data, "sqlite": .data, "jsonl": .data, "ndjson": .data,
+        "stl": .model, "obj": .model, "step": .model, "stp": .model, "iges": .model, "igs": .model, "dwg": .model,
+        "dxf": .model, "fbx": .model, "glb": .model, "gltf": .model, "blend": .model, "3mf": .model, "skp": .model,
+        "f3d": .model, "sldprt": .model, "usdz": .model, "usd": .model,
+        "pkg": .build, "ipa": .build, "apk": .build, "app": .build,
+    ]
 
     /// Where the file lives: a named worktree, or the project's own folder.
     public var place: String {
@@ -243,7 +268,9 @@ extension Artifact {
 /// line anchor, which filters out most code references like `App.tsx` or `src/a.ts:42`.
 public enum Admission {
     public static func admits(_ candidate: DeliveryCandidate) -> Bool {
-        candidate.evidence.contains { item in
+        // A placeholder (`build/<name>.zip`, `out/{id}.md`) names a pattern, not a file.
+        if candidate.path.contains(where: { "<>{}".contains($0) }) { return false }
+        return candidate.evidence.contains { item in
             switch item.mention.syntax {
             case .link, .image: return !isLineAnchor(item.mention.anchor)
             case .code, .bare: return item.mention.anchor == nil && item.mention.rawTarget.dropFirst().contains("/")

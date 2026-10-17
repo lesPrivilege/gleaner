@@ -178,6 +178,7 @@ Admission for v0.1 is a synthetic rule derived from what a delivery is: a file t
 - A line anchor (`:42`, `#L42`) points into code instead of handing a file over, so a mention with one never admits a file, even as a link. A heading anchor (`#usage`) points at a section of a document that may itself be the delivery, so it does not block admission.
 - Inline code or a bare path admits a file only when it names a place (a directory component) and has no anchor. A bare file name (`App.tsx`) names a topic, not a place.
 - Anything inside a fenced code block, or a link written inside inline code, is an example or an instruction, not a hand-off.
+- A path with a placeholder (`build/<name>.zip`, `out/{id}.md`) names a pattern, not a file.
 
 When a log is reread, deliveries it no longer admits are removed from the index with their captures; saved copies stay in the store.
 

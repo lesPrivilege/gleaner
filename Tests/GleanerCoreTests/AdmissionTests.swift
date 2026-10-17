@@ -32,6 +32,10 @@ import Testing
         #expect(admitted("Records: [review packet](docs/review.md#fixes).") == ["/p/docs/review.md"])
     }
 
+    @Test func aPlaceholderNamesAPatternNotAFile() {
+        #expect(admitted("Writes `build/Gleaner-<version>.zip` and `out/{id}.md`.") == [])
+    }
+
     @Test func examplesInsideCodeBlocksAreInstructionsNotHandOffs() {
         #expect(admitted("Run this:\n\n```sh\nopen out/report.md\n```\n") == [])
         #expect(admitted("Write links like `[x](out/x.md)`.") == [])

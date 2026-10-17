@@ -188,6 +188,21 @@ enum Wording {
         }
     }
 
+    static func kindName(_ kind: Artifact.Kind) -> String {
+        switch kind {
+        case .document: "Documents"
+        case .image: "Images"
+        case .media: "Video & Audio"
+        case .web: "Web Pages"
+        case .code: "Code"
+        case .data: "Data"
+        case .model: "3D & CAD"
+        case .build: "Builds & Archives"
+        case .folder: "Folders"
+        case .other: "Other"
+        }
+    }
+
     static func kindLabel(_ kind: Artifact.Kind, path: String) -> String {
         let ext = (path as NSString).pathExtension.uppercased()
         return kind == .folder ? "FOLDER" : (ext.isEmpty ? "FILE" : String(ext.prefix(5)))

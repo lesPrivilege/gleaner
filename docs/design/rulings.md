@@ -90,6 +90,17 @@ The three reset meanings in [evidence and lifecycle](evidence-and-lifecycle.md#p
 
 **Action targets:** each action states which file it acts on. Open and drag use the verified copy of the selected delivery. Show in Finder and Copy Path act on the original location, and they are grouped under the original's path so the difference is visible.
 
+## 7a. Kinds: a fixed set by what you do with the file
+
+**Adopted:** ten kinds, chosen by what a person does with a file rather than which field produced it: Documents, Images, Video & Audio, Web Pages, Code, Data, 3D & CAD, Builds & Archives, Folders, Other.
+- A file's kind comes from the system's type tree (`UTType` conformance), checked from specific to general. Unknown formats fall into the nearest kind, or Other, without code changes.
+- A short extension table covers formats the system doesn't type: CAD and 3D (STEP, DWG, STL, glTF…), and TS/JSX, YAML, Parquet.
+- The badge keeps the exact extension, so merging video and audio loses nothing.
+- Other is permanent: an unrecognized file still gets a row, a hash and the drag tile.
+- The kind filter is a menu beside the project menu; a segmented control does not fit ten kinds.
+
+**Not adopted:** a kind per domain (engineering drawing, simulation, notebooks…). New fields map onto these ten; a new kind needs a new action, not a new format.
+
 ## 8. Native interaction
 
 **Adopted:**

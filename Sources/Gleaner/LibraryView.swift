@@ -58,7 +58,7 @@ struct ResultsList: View {
 
     var filters: some View {
         @Bindable var model = model
-        return VStack(spacing: 8) {
+        return HStack(spacing: 8) {
             Picker("Project", selection: $model.project) {
                 Text("All projects").tag(String?.none)
                 Divider()
@@ -66,18 +66,16 @@ struct ResultsList: View {
             }
             .pickerStyle(.menu)
             .labelsHidden()
-            .frame(maxWidth: .infinity, alignment: .leading)
             Picker("Kind", selection: $model.kind) {
-                Text("All").tag(Artifact.Kind?.none)
-                Text("Video").tag(Artifact.Kind?.some(.video))
-                Text("Web").tag(Artifact.Kind?.some(.web))
-                Text("Docs").tag(Artifact.Kind?.some(.document))
-                Text("Images").tag(Artifact.Kind?.some(.image))
-                Text("Builds").tag(Artifact.Kind?.some(.build))
-                Text("Folders").tag(Artifact.Kind?.some(.folder))
+                Text("All kinds").tag(Artifact.Kind?.none)
+                Divider()
+                ForEach(Artifact.Kind.allCases, id: \.self) { kind in
+                    Text(Wording.kindName(kind)).tag(Artifact.Kind?.some(kind))
+                }
             }
-            .pickerStyle(.segmented)
+            .pickerStyle(.menu)
             .labelsHidden()
+            .fixedSize()
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
