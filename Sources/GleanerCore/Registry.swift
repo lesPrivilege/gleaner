@@ -1,5 +1,50 @@
 import Foundation
 
+/// What one read of a log counted: its records, those of a type its adapter knows, the turns the
+/// assistant answered in, the final replies among them, and the candidates those replies name,
+/// admitted or not (SPEC §9). Kept per log, so a format change shows as a count that moves.
+public struct LogCounts: Sendable, Equatable {
+    public var records: Int
+    public var knownRecords: Int
+    public var turns: Int
+    public var finalReplies: Int
+    public var candidates: Int
+
+    public init(records: Int, knownRecords: Int, turns: Int, finalReplies: Int, candidates: Int) {
+        self.records = records
+        self.knownRecords = knownRecords
+        self.turns = turns
+        self.finalReplies = finalReplies
+        self.candidates = candidates
+    }
+}
+
+/// What reading a log found, kept with the log so every run reports it, not only the run that read it.
+public struct LogFindings: Sendable, Equatable {
+    /// Record types its adapter didn't recognize, with counts.
+    public var unknownRecordTypes: [String: Int] = [:]
+    /// Keys its adapter didn't know inside the record types it did, as "type.key", with counts.
+    public var unknownFields: [String: Int] = [:]
+    /// Nil when it holds no session (a Codex sub-agent thread), or was read before Gleaner counted.
+    public var counts: LogCounts?
+    /// The read found fewer final replies than the complete read before it.
+    public var fewerReplies = false
+    /// Found shorter than when Gleaner read it, now or on an earlier run (`markShortened`).
+    public var shortened = false
+
+    public init(unknownRecordTypes: [String: Int] = [:], unknownFields: [String: Int] = [:], counts: LogCounts? = nil,
+                fewerReplies: Bool = false, shortened: Bool = false) {
+        self.unknownRecordTypes = unknownRecordTypes
+        self.unknownFields = unknownFields
+        self.counts = counts
+        self.fewerReplies = fewerReplies
+        self.shortened = shortened
+    }
+
+    /// The assistant answered, but the adapter found no final reply.
+    public var lacksFinalReply: Bool { counts.map { $0.turns > 0 && $0.finalReplies == 0 } ?? false }
+}
+
 /// Gleaner's index: sessions, deliveries (one per reply that names a path), and what Gleaner
 /// captured of each delivery's bytes, and where. Excerpts are stored redacted; whole logs never are.
 public final class Registry: @unchecked Sendable {
@@ -36,11 +81,11 @@ public final class Registry: @unchecked Sendable {
     }
 
     /// Bump when extraction changes what is derived from logs (requests, evidence, admission, the
-    /// record types a log holds that Gleaner doesn't know, each session's span and workspaces;
-    /// a session whose span or workspaces moved is walked again).
+    /// record types and fields a log holds that Gleaner doesn't know, what a read counts, each
+    /// session's span and workspaces; a session whose span or workspaces moved is walked again).
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
     /// at a moment in time, are never rewritten.
-    public static let extractorVersion = 15
+    public static let extractorVersion = 16
 
     public init(path: String) throws {
         self.path = path
@@ -48,7 +93,9 @@ public final class Registry: @unchecked Sendable {
         db = try Database(path: path)
         try db.execute("""
             CREATE TABLE IF NOT EXISTS log_files (
-                path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL, unknown_types TEXT, shortened INTEGER);
+                path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL, unknown_types TEXT, shortened INTEGER,
+                unknown_fields TEXT, records INTEGER, known_records INTEGER, turns INTEGER, final_replies INTEGER,
+                candidates INTEGER, fewer_replies INTEGER);
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY, provider TEXT NOT NULL, title TEXT, cwd TEXT, log_path TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS deliveries (
@@ -117,6 +164,22 @@ public final class Registry: @unchecked Sendable {
         // lost, however it grows again.
         if try !has("log_files", "shortened") {
             try db.execute("ALTER TABLE log_files ADD COLUMN shortened INTEGER;")
+        }
+        // And the keys it held that Gleaner doesn't know, what its read counted, and whether that read
+        // found fewer final replies than the one before: an adapter that stops understanding a format
+        // shows in its counts.
+        if try !has("log_files", "records") {
+            try db.transaction {
+                try db.execute("""
+                    ALTER TABLE log_files ADD COLUMN unknown_fields TEXT;
+                    ALTER TABLE log_files ADD COLUMN records INTEGER;
+                    ALTER TABLE log_files ADD COLUMN known_records INTEGER;
+                    ALTER TABLE log_files ADD COLUMN turns INTEGER;
+                    ALTER TABLE log_files ADD COLUMN final_replies INTEGER;
+                    ALTER TABLE log_files ADD COLUMN candidates INTEGER;
+                    ALTER TABLE log_files ADD COLUMN fewer_replies INTEGER;
+                    """)
+            }
         }
         // Each capture keeps what was at the path, so one without a hash says why. Before, it kept
         // only whether that was a folder, and a file it couldn't read was recorded as seen.
@@ -200,33 +263,45 @@ public final class Registry: @unchecked Sendable {
     @discardableResult
     public func transaction<T>(_ body: () throws -> T) throws -> T { try writing { try db.transaction(body) } }
 
-    /// What reading a log found, when it is unchanged since it was read whole: the record types its
-    /// adapter didn't recognize, with counts, and whether it had lost records (`markShortened`).
-    /// Nil when it must be read.
-    public func findings(unchangedLog path: String, size: Int64, mtime: Date) throws
-        -> (unknownRecordTypes: [String: Int], shortened: Bool)? {
-        let rows = try db.rows("SELECT size, mtime, unknown_types, shortened FROM log_files WHERE path = ?", [path])
+    /// What reading a log found, when it is unchanged since it was read whole. Nil when it must be read.
+    public func findings(unchangedLog path: String, size: Int64, mtime: Date) throws -> LogFindings? {
+        let rows = try db.rows("SELECT * FROM log_files WHERE path = ?", [path])
         guard let row = rows.first, row["size"] as? Int64 == size, row["mtime"] as? Double == mtime.timeIntervalSince1970
         else { return nil }
-        let unknown = (row["unknown_types"] as? String).flatMap { try? JSONDecoder().decode([String: Int].self, from: Data($0.utf8)) }
-        return (unknown ?? [:], row["shortened"] as? Int64 == 1)
+        func decoded(_ column: String) -> [String: Int] {
+            (row[column] as? String).flatMap { try? JSONDecoder().decode([String: Int].self, from: Data($0.utf8)) } ?? [:]
+        }
+        let n = ["records", "known_records", "turns", "final_replies", "candidates"].compactMap { (row[$0] as? Int64).map(Int.init) }
+        return LogFindings(
+            unknownRecordTypes: decoded("unknown_types"), unknownFields: decoded("unknown_fields"),
+            counts: n.count == 5 ? LogCounts(records: n[0], knownRecords: n[1], turns: n[2], finalReplies: n[3], candidates: n[4]) : nil,
+            fewerReplies: row["fewer_replies"] as? Int64 == 1, shortened: row["shortened"] as? Int64 == 1)
     }
 
-    /// The size a log had when it was last read whole, and whether it lost records since Gleaner
-    /// first read it; nil when it never was read whole.
-    public func lastRead(logFile path: String) throws -> (size: Int64, shortened: Bool)? {
-        try db.rows("SELECT size, shortened FROM log_files WHERE path = ?", [path]).first.flatMap { row in
-            (row["size"] as? Int64).map { ($0, row["shortened"] as? Int64 == 1) }
+    /// The size a log had when it was last read whole, whether it lost records since Gleaner first
+    /// read it, and the final replies that read found (nil when it didn't count them); nil when it
+    /// never was read whole.
+    public func lastRead(logFile path: String) throws -> (size: Int64, shortened: Bool, finalReplies: Int?)? {
+        try db.rows("SELECT size, shortened, final_replies FROM log_files WHERE path = ?", [path]).first.flatMap { row in
+            (row["size"] as? Int64).map { ($0, row["shortened"] as? Int64 == 1, (row["final_replies"] as? Int64).map(Int.init)) }
         }
     }
 
-    /// A read log keeps whether it lost records (`markShortened`).
-    public func markRead(logFile path: String, size: Int64, mtime: Date, unknownRecordTypes: [String: Int]) throws {
-        let json = String(decoding: try JSONEncoder().encode(unknownRecordTypes), as: UTF8.self)
+    /// Keeps what reading a log whole found. Whether it lost records is kept by `markShortened`.
+    public func markRead(logFile path: String, size: Int64, mtime: Date, findings: LogFindings) throws {
+        func json(_ counts: [String: Int]) throws -> String { String(decoding: try JSONEncoder().encode(counts), as: UTF8.self) }
+        let counts = findings.counts
         try db.run("""
-            INSERT INTO log_files (path, size, mtime, unknown_types) VALUES (?, ?, ?, ?)
-            ON CONFLICT(path) DO UPDATE SET size = excluded.size, mtime = excluded.mtime, unknown_types = excluded.unknown_types
-            """, [path, size, mtime, json])
+            INSERT INTO log_files (path, size, mtime, unknown_types, unknown_fields, records, known_records, turns,
+                                   final_replies, candidates, fewer_replies)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(path) DO UPDATE SET size = excluded.size, mtime = excluded.mtime,
+                unknown_types = excluded.unknown_types, unknown_fields = excluded.unknown_fields,
+                records = excluded.records, known_records = excluded.known_records, turns = excluded.turns,
+                final_replies = excluded.final_replies, candidates = excluded.candidates, fewer_replies = excluded.fewer_replies
+            """, [path, size, mtime, try json(findings.unknownRecordTypes), try json(findings.unknownFields),
+                  counts?.records, counts?.knownRecords, counts?.turns, counts?.finalReplies, counts?.candidates,
+                  findings.fewerReplies ? 1 : 0])
     }
 
     /// Records that a log Gleaner has read was found shorter than then: it lost records, for good.
