@@ -58,6 +58,14 @@ extension DeliveryCandidate {
     }
 }
 
+extension Delivery {
+    /// True for text shaped as `DeliveryCandidate.id` makes an id: 20 lowercase hex digits. Any
+    /// other text names no delivery.
+    public static func isID(_ text: String) -> Bool {
+        text.utf8.count == 20 && text.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
+    }
+}
+
 /// Reads changed logs into the registry and captures each new delivery's bytes once.
 public final class Indexer: @unchecked Sendable {
     /// What a run read. Each agent's logs are reported apart, so a source that is missing,

