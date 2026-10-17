@@ -306,7 +306,7 @@ struct HandoffPanel: View {
         case .unavailable(nil, let current?):
             Button("Hand Off the Current File") { Task { await model.stage(sha: current, artifact: artifact) } }
         case .restoreFromGit:
-            if let command = restoreCommand {
+            if let command = observation.state.restoreCommand {
                 HStack {
                     Text(command).font(.system(.caption, design: .monospaced)).textSelection(.enabled).lineLimit(2)
                     Button("Copy Command") { copy(command) }
@@ -345,15 +345,6 @@ struct HandoffPanel: View {
         if plan == .folder { return URL(fileURLWithPath: artifact.path) }
         if case .ready(let url, _) = staging { return url }
         return nil
-    }
-
-    var restoreCommand: String? {
-        guard let root = observation.state.repositoryRoot else { return nil }
-        let rel = artifact.path.hasPrefix(root + "/") ? String(artifact.path.dropFirst(root.count + 1)) : artifact.path
-        if observation.state.git == .recoverableFromHead {
-            return "git -C '\(root)' restore --source=HEAD -- '\(rel)'"
-        }
-        return "git -C '\(root)' checkout \"$(git -C '\(root)' rev-list -n 1 --all -- '\(rel)')^\" -- '\(rel)'"
     }
 
     func copy(_ text: String) {
