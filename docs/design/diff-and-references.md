@@ -1,6 +1,6 @@
 # Comparing deliveries, and what the reference projects teach
 
-Opus, 2026-10-17. Two read-only surveys: Courtwork's diff (with live captures) and the reference projects registered at the start (SPEC §1). This is a proposal; nothing here is built yet.
+Opus, 2026-10-17. Two read-only surveys: Courtwork's diff (with live captures) and the reference projects registered at the start (SPEC §1). Compare is built as proposed below (`TextDiff`, `Comparison`, `ComparePane`).
 
 ## Courtwork's change language
 
@@ -34,7 +34,9 @@ The owner's own reference screenshots are in Courtwork at `engineering/research/
 
 **Language.** Adopt Courtwork's grammar as written above, including its limits and its rule that the accent means changed text only. Gleaner's palette already gives amber to "needs your look", red to "lost" and blue to selection, so the change accent becomes a fourth role with its own token. It can keep Courtwork's red because Lost never appears inside a comparison and always carries its ✕ mark and its word.
 
-**Mechanics.** Line diff with Swift's `CollectionDifference` over lines, word diff over tokens for 1:1 line pairs, both on a background task with Courtwork's caps. Comparison is read-only and keeps no state.
+**Mechanics.** Line diff with Swift's `CollectionDifference` over lines, word diff over tokens for 1:1 line pairs, both on a background task with Courtwork's caps. Each end's bytes must still hash to its recorded sha256, or the comparison is refused. Comparison is read-only and keeps no state.
+
+**Two departures from Courtwork.** Chinese, Japanese and Korean are tokenized per character, so a changed word is marked by its characters rather than its whole sentence. Unchanged runs longer than three lines on each side of a change fold into an expandable "⋯ N unchanged lines" row, because Gleaner compares whole files where Courtwork received git hunks.
 
 **Not proposed:** semantic or Markdown block-aligned diff (a Courtwork research note, never shipped), three-way merge, accepting or reverting from the comparison.
 

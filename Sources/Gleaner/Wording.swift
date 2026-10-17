@@ -34,6 +34,11 @@ enum Palette {
     static let attentionFill = dynamic(light: (1.0, 0.96, 0.92), dark: (0.24, 0.16, 0.07), contrast: (1.0, 0.93, 0.85))
     static let lost = dynamic(light: (0.63, 0.17, 0.17), dark: (1.0, 0.52, 0.5), contrast: (0.5, 0.08, 0.08))
     static let lostFill = dynamic(light: (1.0, 0.96, 0.96), dark: (0.26, 0.1, 0.1), contrast: (1.0, 0.92, 0.92))
+    /// Changed text, and only that (Courtwork's change language): the line colour, the solid block
+    /// on new words, and the dark ink inside that block.
+    static let change = dynamic(light: (0.63, 0.24, 0.21), dark: (0.89, 0.55, 0.51), contrast: (0.5, 0.14, 0.12))
+    static let changeBlock = dynamic(light: (0.87, 0.44, 0.41), dark: (0.83, 0.41, 0.37), contrast: (0.75, 0.3, 0.27))
+    static let changeInk = dynamic(light: (0.09, 0.13, 0.15), dark: (0.07, 0.09, 0.11), contrast: (0.0, 0.0, 0.0))
     static let selection = dynamic(light: (0.18, 0.37, 0.82), dark: (0.45, 0.63, 1.0), contrast: (0.1, 0.27, 0.7))
 
     private typealias RGB = (Double, Double, Double)

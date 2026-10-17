@@ -20,7 +20,11 @@ struct DetailView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header(artifact)
-                PreviewPane(artifact: artifact, delivery: delivery, plan: plan, staging: staging)
+                if let comparison = model.comparison {
+                    ComparePane(artifact: artifact, from: comparison.from, to: comparison.to)
+                } else {
+                    PreviewPane(artifact: artifact, delivery: delivery, plan: plan, staging: staging)
+                }
                 if let plan, let onDisk, let observation {
                     HandoffPanel(artifact: artifact, delivery: delivery, plan: plan, onDisk: onDisk, observation: observation)
                 } else {
@@ -215,6 +219,10 @@ struct HandoffPanel: View {
                     .keyboardShortcut("o")
                     .disabled(openURL == nil)
                     .help("Open the verified copy in its app (⌘O). ⌘C in the list copies it as a file.")
+                if let ends = diskComparison {
+                    Button("Compare with File on Disk") { model.comparison = ends }
+                        .help("Show what changed between delivery \(delivery.number) and the file on disk now.")
+                }
                 if canSave {
                     Button("Save a Copy (\(sizeText))") { Task { await model.saveCopy(of: delivery, artifact: artifact) } }
                         .help("Keep these bytes in Gleaner, so this version survives later edits.")
@@ -315,6 +323,13 @@ struct HandoffPanel: View {
 
     var sourceExists: Bool { observation.state.kind != .missing }
 
+    /// Offered when the file on disk is no longer this delivery and both versions can be read.
+    var diskComparison: (from: Comparison.End, to: Comparison.End)? {
+        guard plan != .folder, let current = model.currentEnd(artifact), current.sha != delivery.sha256,
+              let delivered = model.compareEnd(delivery, artifact: artifact) else { return nil }
+        return (delivered, current)
+    }
+
     var canSave: Bool {
         guard let sha = delivery.sha256, !model.hasSaved(sha) else { return false }
         return observation.state.sha256 == sha
@@ -408,12 +423,27 @@ struct DeliveriesSection: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Deliveries").font(.headline)
             ForEach(artifact.deliveries) { delivery in
-                Button { model.chosenDelivery = delivery.id } label: { row(delivery) }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(spoken(delivery))
-                    .accessibilityAddTraits(delivery.id == selected.id ? .isSelected : [])
+                HStack(spacing: 8) {
+                    Button { model.chosenDelivery = delivery.id } label: { row(delivery) }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(spoken(delivery))
+                        .accessibilityAddTraits(delivery.id == selected.id ? .isSelected : [])
+                    if let ends = ends(delivery) {
+                        Button("Compare") { model.comparison = ends }
+                            .controlSize(.small)
+                            .help("Show what changed between this delivery and the selected one.")
+                    }
+                }
             }
         }
+    }
+
+    /// This delivery against the selected one, older first, when both versions can be read and differ.
+    func ends(_ delivery: Delivery) -> (from: Comparison.End, to: Comparison.End)? {
+        guard delivery.id != selected.id, delivery.sha256 != selected.sha256,
+              let a = model.compareEnd(delivery, artifact: artifact),
+              let b = model.compareEnd(selected, artifact: artifact) else { return nil }
+        return delivery.number < selected.number ? (a, b) : (b, a)
     }
 
     func spoken(_ delivery: Delivery) -> String {

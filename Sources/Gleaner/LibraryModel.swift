@@ -48,10 +48,12 @@ final class LibraryModel {
     /// nil shows every project.
     var project: String?
     var selection: Artifact.ID? {
-        didSet { if selection != oldValue { chosenDelivery = nil } }
+        didSet { if selection != oldValue { chosenDelivery = nil; comparison = nil } }
     }
     /// Set when the person picks a delivery; otherwise the delivery the search matched.
     var chosenDelivery: Delivery.ID?
+    /// Two exact versions shown in place of the preview, older first.
+    var comparison: (from: Comparison.End, to: Comparison.End)?
     var progress: (done: Int, total: Int)?
     var status = "Starting…"
     var observations: [String: FileObservation] = [:]
@@ -188,6 +190,29 @@ final class LibraryModel {
         if plan == .folder { return URL(fileURLWithPath: artifact.path) }
         if case .ready(let url, _) = staging(for: plan.sha) { return url }
         return nil
+    }
+
+    /// A delivery's bytes as a comparison end: its saved copy, or the file on disk while that still
+    /// hashes to the delivery.
+    func compareEnd(_ delivery: Delivery, artifact: Artifact) -> Comparison.End? {
+        guard let sha = delivery.sha256 else { return nil }
+        if hasSaved(sha) {
+            return Comparison.End(title: "Delivery \(delivery.number)", source: "saved copy", sha: sha,
+                                  url: indexer.store.objectURL(sha))
+        }
+        if observations[artifact.path]?.state.sha256 == sha {
+            return Comparison.End(title: "Delivery \(delivery.number)", source: "file on disk", sha: sha,
+                                  url: URL(fileURLWithPath: artifact.path))
+        }
+        return nil
+    }
+
+    /// The file on disk now, as checked.
+    func currentEnd(_ artifact: Artifact) -> Comparison.End? {
+        guard let observation = observations[artifact.path], observation.state.kind == .file,
+              let sha = observation.state.sha256 else { return nil }
+        return Comparison.End(title: "File on disk", source: "checked \(observation.checkedAt.formatted(date: .omitted, time: .shortened))",
+                              sha: sha, url: URL(fileURLWithPath: artifact.path))
     }
 
     /// The hand-off state for the version `sha`; idle when what is staged belongs to another one.
