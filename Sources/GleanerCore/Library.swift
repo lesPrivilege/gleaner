@@ -214,10 +214,9 @@ extension Artifact {
                 let firstSeen = saved.capture?.provenance == .firstSeenAfterDelivery ? saved.capture?.observedAt : nil
                 return .missingWithSavedCopy(of: saved.number, firstSeen: firstSeen)
             }
-            if now.state.git == .recoverableFromHead || now.state.git == .recoverableFromHistory {
-                return .missingInGitHistory
-            }
-            return .lost
+            // Folders aren't versioned: what git holds at a delivered folder's path is not shown to be it.
+            let recoverable = now.state.git == .recoverableFromHead || now.state.git == .recoverableFromHistory
+            return recoverable && latest.capture?.isDirectory != true ? .missingInGitHistory : .lost
         case .file, .directory:
             break
         }
@@ -240,7 +239,8 @@ extension Artifact {
 
     /// Decided by how `delivery` was captured, not by what the path is today: a file delivery is
     /// its hash (the original while it matches, else the saved copy), even when a folder now
-    /// stands at the path, and a folder delivery is the live folder only while it is still one.
+    /// stands at the path, and a folder delivery is the live folder only while it is still one,
+    /// never what git holds at its path.
     public func handoff(_ delivery: Delivery, now: FileObservation, hasSaved: (String) -> Bool) -> Handoff {
         if delivery.capture?.isDirectory == true, now.state.kind == .directory { return .folder }
         let current = now.state.kind == .file ? now.state.sha256 : nil
@@ -252,7 +252,7 @@ extension Artifact {
         }
         if now.state.kind == .missing {
             let recoverable = now.state.git == .recoverableFromHead || now.state.git == .recoverableFromHistory
-            return recoverable ? .restoreFromGit : .lost
+            return recoverable && delivery.capture?.isDirectory != true ? .restoreFromGit : .lost
         }
         // Something else is at the path: a changed or unreadable file, a folder, a pipe.
         let others = deliveries.filter { $0.id != delivery.id && current != nil && $0.sha256 == current }

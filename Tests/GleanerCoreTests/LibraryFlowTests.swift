@@ -353,6 +353,27 @@ import Testing
         #expect(folder.onDisk(observation, hasSaved: saved) == .changed(since: 1))
     }
 
+    @Test func aDeliveredFolderGoneFromDiskIsNeverOfferedFromGit() throws {
+        let site = project.appendingPathComponent("out/site")
+        try FileManager.default.createDirectory(at: site, withIntermediateDirectories: true)
+        try "home".write(to: site.appendingPathComponent("index.html"), atomically: true, encoding: .utf8)
+        let commit = ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "site"]
+        for args in [["init", "-q"], ["add", "out/site"], commit] {
+            #expect(Locator.run(["-C", project.path] + args).status == 0)
+        }
+        try appendLog([assistant("Site: [site](out/site)", at: delivered.addingTimeInterval(1), cwd: project.path)])
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let folder = try artifact("site")
+        try FileManager.default.removeItem(at: site)
+
+        // Git still has a tree at the path, but folders aren't versioned: nothing shows it is the
+        // folder that was delivered.
+        let observation = now(site.path)
+        #expect(observation.state.git == .recoverableFromHead)
+        #expect(folder.handoff(folder.latest, now: observation, hasSaved: saved) == .lost)
+        #expect(folder.onDisk(observation, hasSaved: saved) == .lost)
+    }
+
     @Test func fileGoneBeforeFirstLookIsNeverObserved() throws {
         try FileManager.default.removeItem(at: project.appendingPathComponent("out/demo.mp4"))
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })

@@ -152,8 +152,11 @@ enum Wording {
             return Statement(mark: .dashed, title: "Restore it from git first",
                              detail: "Git history has a file at this path. Gleaner can’t confirm it is the delivered version, and doesn’t write to your repository.")
         case .lost:
+            let why = delivery.capture?.isDirectory == true
+                ? "It was a folder and it isn’t on disk. Folders aren’t versioned, so Gleaner has no copy of it."
+                : "It isn’t on disk, Gleaner didn’t save a copy, and git has nothing at this path."
             return Statement(mark: .cross, title: "Delivery \(n) is lost",
-                             detail: "It isn’t on disk, Gleaner didn’t save a copy, and git has nothing at this path. The delivery record stays so you can see it existed.")
+                             detail: why + " The delivery record stays so you can see it existed.")
         case .folder:
             return Statement(mark: .hollow, title: "Folder",
                              detail: "Dragging hands over the folder as it is now. Folders aren’t verified by hash yet.")
