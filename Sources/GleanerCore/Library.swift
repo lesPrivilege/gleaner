@@ -248,7 +248,11 @@ extension Artifact {
     /// 0 when the name or project alone matched.
     public func match(_ tokens: [String]) -> (deliveryIndex: Int, fields: [String])? {
         guard !tokens.isEmpty else { return (0, []) }
-        let name = path.lowercased()
+        // The file name and its folder, not the whole path: words like "users" or "projects" in
+        // every path would otherwise match everything.
+        let place = folder.hasPrefix("~") || folder.hasPrefix("/")
+            ? (folder as NSString).pathComponents.suffix(2).joined(separator: "/") : folder
+        let name = (self.name + " " + place).lowercased()
         let projectName = project.lowercased()
         func fields(_ d: Delivery) -> [(String, String)] {
             [("file name", name), ("project", projectName),

@@ -89,7 +89,8 @@ enum RequestText {
         }
         t = t.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
-        return String(t.prefix(maxLength))
+        // Redact the whole request before cutting it, so a secret at the edge is still recognized.
+        return String(Redactor.redact(t).prefix(maxLength))
     }
 
     /// Codex prefixes attached files as "# Files mentioned by the user: ## name: path … ## My

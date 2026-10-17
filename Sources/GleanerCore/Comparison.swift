@@ -37,6 +37,9 @@ public enum Comparison {
         if from.sha == to.sha, kind != .image {
             return .text(.rows([]))
         }
+        for end in [from, to] where Locator.sha256(end.url.path) != end.sha {
+            return .failed("\(end.title) changed since Gleaner checked it. Check again.")
+        }
         switch kind {
         case .image:
             return .images(from.url, to.url)

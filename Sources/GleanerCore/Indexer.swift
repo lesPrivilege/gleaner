@@ -45,8 +45,11 @@ public final class Indexer: @unchecked Sendable {
     public let sources: LogSources
     /// Files up to this size get a saved copy at capture; larger ones are tracked by hash (SPEC §6).
     public var saveLimit: Int64 = 64 << 20
-    /// A capture within this window of the reply, of a file not modified after it, counts as at delivery.
+    /// A capture within this window of the reply, of a file not modified after it, counts as at
+    /// delivery (SPEC §5.1). The window bounds how long an unchanged modification time is trusted.
     public var liveWindow: TimeInterval = 600
+    /// Log and file timestamps come from different writers; this absorbs their granularity only.
+    public var clockTolerance: TimeInterval = 2
 
     public init(registry: Registry, store: ContentStore, sources: LogSources) {
         self.registry = registry
@@ -120,7 +123,7 @@ public final class Indexer: @unchecked Sendable {
                     evidence: candidate.evidence.map {
                         Evidence(line: $0.part.line, syntax: $0.mention.syntax.rawValue,
                                  rawTarget: Redactor.redact($0.mention.rawTarget),
-                                 anchor: $0.mention.anchor, excerpt: Redactor.redact($0.mention.excerpt))
+                                 anchor: $0.mention.anchor.map(Redactor.redact), excerpt: Redactor.redact($0.mention.excerpt))
                     })
                 guard isNew else { continue }
                 try registry.setCapture(capture(candidate.path, deliveredAt: first.part.at, now: now), for: id)
@@ -137,7 +140,7 @@ public final class Indexer: @unchecked Sendable {
         let info = Locator.stat(path)
         let live = deliveredAt.map { delivered in
             now.timeIntervalSince(delivered) <= liveWindow
-                && (info.modifiedAt.map { $0 <= delivered.addingTimeInterval(60) } ?? false)
+                && (info.modifiedAt.map { $0 <= delivered.addingTimeInterval(clockTolerance) } ?? false)
         } ?? false
         let provenance: Provenance = live ? .atDelivery : .firstSeenAfterDelivery
         switch info.kind {

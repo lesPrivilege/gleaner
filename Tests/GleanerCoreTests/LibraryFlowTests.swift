@@ -153,6 +153,9 @@ import Testing
         #expect(video.match(["harness"])?.deliveryIndex == 1)
         #expect(video.match(["intro"])?.deliveryIndex == 0)
         #expect(video.match(["nothing-like-this"]) == nil)
+        // Words that sit in every path (home, Projects) are not a file name.
+        #expect(video.match(["users"]) == nil)
+        #expect(video.match(["out"])?.fields.contains("file name") == true)
 
         // Words from two different deliveries don't combine into one match.
         #expect(video.match(["harness", "intro"]) == nil)

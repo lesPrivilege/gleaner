@@ -107,7 +107,7 @@ enum Wording {
             return Statement(mark: .dashed, title: "Not on disk", detail: "Git history still has a file at this path. \(when)")
         case .lost:
             return Statement(mark: .cross, title: "Lost",
-                             detail: "Not on disk, no saved copy, not in git. The delivery record stays. \(when)")
+                             detail: "Not on disk, no saved copy, and not found in git at this path. The delivery record stays. \(when)")
         case .folder:
             return Statement(mark: .hollow, title: "Folder on disk",
                              detail: "Folders aren’t versioned yet; Gleaner shows the folder as it is now. \(when)")
@@ -141,7 +141,7 @@ enum Wording {
                              detail: "Git history has a file at this path. Gleaner can’t confirm it is the delivered version, and doesn’t write to your repository.")
         case .lost:
             return Statement(mark: .cross, title: "Delivery \(n) is lost",
-                             detail: "It isn’t on disk, Gleaner didn’t save a copy, and git has no record of it. The delivery record stays so you can see it existed.")
+                             detail: "It isn’t on disk, Gleaner didn’t save a copy, and git has nothing at this path. The delivery record stays so you can see it existed.")
         case .folder:
             return Statement(mark: .hollow, title: "Folder",
                              detail: "Dragging hands over the folder as it is now. Folders aren’t verified by hash yet.")

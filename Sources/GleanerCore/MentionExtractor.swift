@@ -147,8 +147,13 @@ public enum MentionExtractor {
         let line = text.lineRange(for: range)
         var window = line
         if line.length > limit {
-            let start = max(line.location, range.location - limit / 2)
-            let end = min(NSMaxRange(line), start + limit)
+            var start = max(line.location, range.location - limit / 2)
+            var end = min(NSMaxRange(line), start + limit)
+            // Cut only at whitespace, so a secret is never split into a fragment redaction can't
+            // recognize.
+            let space = CharacterSet.whitespaces
+            while start > line.location, let c = Unicode.Scalar(text.character(at: start - 1)), !space.contains(c) { start -= 1 }
+            while end < NSMaxRange(line), let c = Unicode.Scalar(text.character(at: end)), !space.contains(c) { end += 1 }
             window = NSRange(location: start, length: end - start)
         }
         return text.substring(with: window).trimmingCharacters(in: .whitespacesAndNewlines)
