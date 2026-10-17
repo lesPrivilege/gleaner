@@ -1,3 +1,4 @@
+import AppKit
 import GleanerCore
 import SwiftUI
 
@@ -26,12 +27,28 @@ enum Mark {
     }
 }
 
+/// Amber means "needs your look", red means gone, blue is selection (Praxis kit). Each color has
+/// a light and a dark value, and a stronger one under Increase Contrast.
 enum Palette {
-    static let attention = Color(red: 0.54, green: 0.29, blue: 0.0)
-    static let attentionFill = Color(red: 1.0, green: 0.96, blue: 0.92)
-    static let lost = Color(red: 0.63, green: 0.17, blue: 0.17)
-    static let lostFill = Color(red: 1.0, green: 0.96, blue: 0.96)
-    static let selection = Color(red: 0.18, green: 0.37, blue: 0.82)
+    static let attention = dynamic(light: (0.54, 0.29, 0.0), dark: (1.0, 0.72, 0.36), contrast: (0.42, 0.21, 0.0))
+    static let attentionFill = dynamic(light: (1.0, 0.96, 0.92), dark: (0.24, 0.16, 0.07), contrast: (1.0, 0.93, 0.85))
+    static let lost = dynamic(light: (0.63, 0.17, 0.17), dark: (1.0, 0.52, 0.5), contrast: (0.5, 0.08, 0.08))
+    static let lostFill = dynamic(light: (1.0, 0.96, 0.96), dark: (0.26, 0.1, 0.1), contrast: (1.0, 0.92, 0.92))
+    static let selection = dynamic(light: (0.18, 0.37, 0.82), dark: (0.45, 0.63, 1.0), contrast: (0.1, 0.27, 0.7))
+
+    private typealias RGB = (Double, Double, Double)
+
+    private static func dynamic(light: RGB, dark: RGB, contrast: RGB) -> Color {
+        Color(nsColor: NSColor(name: nil) { appearance in
+            let match = appearance.bestMatch(from: [.aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua])
+            let rgb = switch match {
+            case .darkAqua?, .accessibilityHighContrastDarkAqua?: dark
+            case .accessibilityHighContrastAqua?: contrast
+            default: light
+            }
+            return NSColor(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
+        })
+    }
 }
 
 struct Statement {
