@@ -488,7 +488,7 @@ import Testing
         let catalog = try catalog()
         let notes = try id("notes.md", in: catalog)
         let both = try catalog.verify(notes)
-        #expect(both.original && both.savedCopy)
+        #expect(both.original && both.savedCopy && both.error == nil)
         #expect(both.reference.availability == Catalog.Availability(state: .original))
 
         // A reference kept as JSON, as `resolve` writes it and Copy Reference copies it, or its
@@ -512,6 +512,8 @@ import Testing
         let neither = try catalog.verify(try id("build.dmg", in: catalog))
         #expect(!neither.original && !neither.savedCopy)
         #expect(neither.reference.availability == Catalog.Availability(state: .unavailable, reason: .tooLargeToHaveBeenSaved))
+        // There are no bytes for that version now: the answer says why, as a refusal would.
+        #expect(neither.error == .unavailable(.tooLargeToHaveBeenSaved))
     }
 
     @Test func verifySaysWhereTheBytesAreAsItsHashesFoundThem() throws {

@@ -12,23 +12,28 @@ struct Gleaner: ParsableCommand {
         commandName: "gleaner",
         abstract: "Find what coding agents delivered, select its exact version, and hand those bytes on.",
         discussion: """
-            Each command writes one JSON object to stdout, with the index it is evidence of; so does a \
-            refusal about a delivery, with why. Exit codes: 0 success; 1 not found, or no bytes for \
-            that version; 2 usage; 3 no library, or the wrong version (open Gleaner).
+            Each command writes one JSON object to stdout, with the index it is evidence of. So does \
+            each failure: {"error": {"kind", "message"}}, with the index when a library was open, and \
+            the message on stderr too. Exit codes: 0 success; 1 not found, no bytes for that version, \
+            or another failure; 2 usage; 3 no library, or the wrong version (open Gleaner).
             """,
         subcommands: [Find.self, Show.self, Read.self, Resolve.self, Handoff.self, Verify.self])
 
-    /// Runs the command as `ParsableCommand.main` does, with the contract's exit codes: a catalog
-    /// failure exits with its own, and a usage error with 2, where ArgumentParser would give 64.
+    /// Runs the command as `ParsableCommand.main` does, with the contract's exit codes: a failure
+    /// exits with its own, and a usage error with 2, where ArgumentParser would give 64. A refusal's
+    /// answer is written where it was refused (`Library.answer`); a usage error is refused before
+    /// any library is open, so it is written here, without an index.
     static func main() {
         do {
             var command = try parseAsRoot()
             try command.run()
-        } catch let failure as Catalog.Failure {
-            fail("Error: \(failure)", status: failure.exitCode)
+        } catch let refusal as Refusal {
+            fail("Error: \(refusal.failure)", status: refusal.failure.exitCode)
         } catch let error where exitCode(for: error) == .validationFailure {
+            try? write(Catalog.Refused(index: nil, error: .usage(message(for: error))))
             fail(fullMessage(for: error), status: 2)
         } catch {
+            // Help, and the like: not a failure.
             exit(withError: error)
         }
     }
@@ -134,8 +139,8 @@ extension Gleaner {
         func run() throws {
             let kept = FileManager.default.fileExists(atPath: reference) ? try keptReference() : nil
             let verified = try library.answer { catalog in try kept.map(catalog.verify) ?? catalog.verify(reference) }
-            // Neither: there are no bytes for that version now.
-            if !verified.original, !verified.savedCopy { throw ExitCode.failure }
+            // Neither holds the bytes: there are none for that version now, and the answer says why.
+            if let error = verified.error { throw Refusal(failure: error) }
         }
 
         /// The reference the file `reference` holds.
@@ -157,20 +162,43 @@ struct Library: ParsableArguments {
         try Catalog(home: home.map { URL(fileURLWithPath: $0, isDirectory: true) })
     }
 
-    /// Writes the catalog's answer. When there is none about a delivery (exit 1), writes why, with
-    /// the index that is evidence of, then fails as the catalog did.
+    /// Writes the catalog's answer. When there is none, writes why, beside the index that is
+    /// evidence of once the library is open, and throws that refusal.
     @discardableResult
     func answer<Answer: Encodable>(_ body: (Catalog) throws -> Answer) throws -> Answer {
-        let catalog = try catalog()
+        let catalog: Catalog
         do {
-            let answer = try body(catalog)
-            try write(answer)
-            return answer
-        } catch let failure as Catalog.Failure where failure.exitCode == 1 {
-            try write(Catalog.Refused(index: catalog.registry.index(), error: failure))
-            throw failure
+            catalog = try self.catalog()
+        } catch {
+            throw refuse(error, index: nil)
         }
+        let answer: Answer
+        do {
+            answer = try body(catalog)
+        } catch {
+            throw refuse(error, index: try? catalog.registry.index())
+        }
+        try write(answer)
+        return answer
     }
+
+    /// Writes why there is no answer, as a failure the catalog names, beside `index`.
+    private func refuse(_ error: Error, index: Catalog.Index?) -> Refusal {
+        let failure = error as? Catalog.Failure ?? .failed(Self.words(error))
+        try? write(Catalog.Refused(index: index, error: failure))
+        return Refusal(failure: failure)
+    }
+
+    /// What went wrong, in words: Foundation's own for a file system error, else the error's.
+    private static func words(_ error: Error) -> String {
+        let ns = error as NSError
+        return [NSCocoaErrorDomain, NSPOSIXErrorDomain].contains(ns.domain) ? ns.localizedDescription : "\(error)"
+    }
+}
+
+/// A failure whose answer is on stdout: the command says why on stderr too, and exits with its code.
+struct Refusal: Error {
+    var failure: Catalog.Failure
 }
 
 /// `A:B`, as `read --lines` and `--bytes` take a range.
