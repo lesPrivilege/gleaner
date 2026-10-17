@@ -177,19 +177,25 @@ extension Catalog {
     }
 
     /// Hashes the original and Gleaner's saved copy again, and says which, if either, still holds
-    /// the reference's bytes. Neither means there are no bytes for that version now (exit 1).
-    public func verify(_ reference: Reference) throws -> Verified {
+    /// the delivery's bytes; its reference says where they are from the same hashes. Neither means
+    /// there are no bytes for that version now (exit 1).
+    public func verify(_ id: String) throws -> Verified {
+        let (_, artifact, delivery) = try lookup(id)
         let index = try registry.index()
-        guard let sha = reference.sha256 else { return Verified(index: index, reference: reference, original: false, savedCopy: false) }
-        return Verified(
-            index: index, reference: reference,
-            original: Locator.stat(reference.path).kind == .file && Locator.sha256(reference.path) == sha,
-            savedCopy: Locator.sha256(store.objectURL(sha).path) == sha)
+        let now = check(artifact)
+        let original = delivery.sha256 != nil && now.state.sha256 == delivery.sha256
+        let savedCopy = delivery.sha256.map { Locator.sha256(store.objectURL($0).path) == $0 } ?? false
+        var reference = reference(delivery, of: artifact, now: now, library: index.library)
+        reference.availability = original ? Availability(state: .original)
+            : savedCopy ? Availability(state: .savedCopy)
+            : Availability(state: .unavailable, reason: reason(delivery))
+        return Verified(index: index, reference: reference, original: original, savedCopy: savedCopy)
     }
 
-    /// `verify(_:)` for the delivery `id`, as `resolve` names it now.
-    public func verify(delivery id: String) throws -> Verified {
-        try verify(resolve(id).reference)
+    /// `verify(_:)` for the delivery a kept reference names, which must be of this library.
+    public func verify(_ kept: Kept) throws -> Verified {
+        guard kept.library == (try registry.index().library) else { throw Failure.otherLibrary(kept.library) }
+        return try verify(kept.delivery)
     }
 
     /// Every artifact, and the one holding the delivery `id`.
@@ -252,6 +258,8 @@ extension Catalog {
         case wrongVersion(String, found: Int)
         /// No delivery has this id in this library.
         case notFound(String)
+        /// A kept reference is of the library named, not this one: its delivery id names nothing here.
+        case otherLibrary(String)
         /// Gleaner holds none of the version's bytes now.
         case unavailable(Availability.Reason)
         /// The version's bytes aren't text.
@@ -264,7 +272,7 @@ extension Catalog {
         /// 1: not found, or no bytes for that version; 2: usage; 3: no library, or the wrong version.
         public var exitCode: Int32 {
             switch self {
-            case .notFound, .unavailable, .notText, .changed: 1
+            case .notFound, .otherLibrary, .unavailable, .notText, .changed: 1
             case .usage: 2
             case .noLibrary, .wrongVersion: 3
             }
@@ -278,6 +286,8 @@ extension Catalog {
                 "The Gleaner library at \(path) is version \(found); this reads version \(Registry.extractorVersion). Open Gleaner to update it."
             case .notFound(let id):
                 "No delivery \(id) in this library."
+            case .otherLibrary(let library):
+                "The reference is of another Gleaner library, \(library). A delivery id names a delivery only in its own library."
             case .unavailable(let reason):
                 "Gleaner holds none of this version’s bytes: \(reason.rawValue.replacingOccurrences(of: "_", with: " "))."
             case .notText:
@@ -320,6 +330,28 @@ extension Catalog {
             try container.encode(evidence, forKey: .evidence)
             try container.encode(provenance, forKey: .provenance)
             try container.encode(availability, forKey: .availability)
+        }
+    }
+
+    /// What `verify` reads of a kept reference, as `resolve` writes it or its `reference` alone: the
+    /// delivery it names, and in which library. Nothing else in it is read; the library has the
+    /// delivery's hash and path, and a capture, once hashed, is never rewritten.
+    public struct Kept: Decodable, Equatable, Sendable {
+        public var library: String
+        public var delivery: String
+
+        public init(library: String, delivery: String) {
+            self.library = library
+            self.delivery = delivery
+        }
+
+        enum CodingKeys: CodingKey { case reference, library, delivery }
+
+        public init(from decoder: Decoder) throws {
+            let answer = try decoder.container(keyedBy: CodingKeys.self)
+            let fields = answer.contains(.reference) ? try answer.nestedContainer(keyedBy: CodingKeys.self, forKey: .reference) : answer
+            library = try fields.decode(String.self, forKey: .library)
+            delivery = try fields.decode(String.self, forKey: .delivery)
         }
     }
 

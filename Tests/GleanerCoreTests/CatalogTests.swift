@@ -104,7 +104,7 @@ import Testing
         _ = try catalog.read(notes)
         _ = try catalog.resolve(notes)
         _ = try catalog.handoff(notes)
-        _ = try catalog.verify(delivery: notes)
+        _ = try catalog.verify(notes)
 
         #expect(try bytes(library) == before)
         #expect(try projectFiles() == files)
@@ -382,19 +382,55 @@ import Testing
         try index(at: delivered.addingTimeInterval(20))
         let catalog = try catalog()
         let notes = try id("notes.md", in: catalog)
-        let both = try catalog.verify(delivery: notes)
+        let both = try catalog.verify(notes)
         #expect(both.original && both.savedCopy)
+        #expect(both.reference.availability == Catalog.Availability(state: .original))
 
-        // A reference kept as JSON, as `resolve` writes it and Copy Reference copies it, is checked later.
-        let kept = try Catalog.encoder.encode(try catalog.resolve(notes))
+        // A reference kept as JSON, as `resolve` writes it and Copy Reference copies it, or its
+        // reference alone, is checked later: where its bytes are is checked again too.
+        let resolved = try catalog.resolve(notes)
+        let answer = try #require(try JSONSerialization.jsonObject(with: Catalog.encoder.encode(resolved)) as? [String: Any])
+        // Kept by another build of Gleaner, whose index says what this one doesn't.
+        var later = try #require(answer["index"] as? [String: Any])
+        later["sources"] = ["claude-code": ["state": "read", "counted_by_a_later_build": 1]]
+        let kept = try [answer, try #require(answer["reference"]), answer.merging(["index": later]) { $1 }].map {
+            try Catalog.decoder.decode(Catalog.Kept.self, from: JSONSerialization.data(withJSONObject: $0))
+        }
+        #expect(kept == Array(repeating: Catalog.Kept(library: resolved.index.library, delivery: notes), count: 3))
         try write(Data("# Notes\nrewritten\n".utf8), to: "out/notes.md", modified: Date())
-        let reference = try Catalog.decoder.decode(Catalog.Resolved.self, from: kept).reference
-        let later = try catalog.verify(reference)
-        #expect(later.reference == reference)
-        #expect(!later.original && later.savedCopy)
+        let rewritten = try catalog.verify(kept[0])
+        #expect(rewritten.reference.delivery == notes && rewritten.reference.sha256 == resolved.reference.sha256)
+        #expect(!rewritten.original && rewritten.savedCopy)
+        #expect(rewritten.reference.availability == Catalog.Availability(state: .savedCopy))
 
         try write(Data("rebuilt in place".utf8), to: "out/build.dmg", modified: Date())
-        let neither = try catalog.verify(delivery: try id("build.dmg", in: catalog))
+        let neither = try catalog.verify(try id("build.dmg", in: catalog))
         #expect(!neither.original && !neither.savedCopy)
+        #expect(neither.reference.availability == Catalog.Availability(state: .unavailable, reason: .tooLargeToHaveBeenSaved))
+    }
+
+    @Test func verifySaysWhereTheBytesAreAsItsHashesFoundThem() throws {
+        try index(at: delivered.addingTimeInterval(20))
+        let catalog = try catalog()
+        let notes = try id("notes.md", in: catalog)
+        // The saved copy is there, but no longer holds the version's bytes; nor does the file on disk.
+        let copy = catalog.store.objectURL(try #require(try catalog.resolve(notes).reference.sha256)).path
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: copy)
+        try Data("damaged".utf8).write(to: URL(fileURLWithPath: copy))
+        try write(Data("# Notes\nrewritten\n".utf8), to: "out/notes.md", modified: Date())
+
+        let verified = try catalog.verify(notes)
+        #expect(!verified.original && !verified.savedCopy)
+        #expect(verified.reference.availability == Catalog.Availability(state: .unavailable, reason: .savedCopyMissing))
+    }
+
+    @Test func aReferenceFromAnotherLibraryIsNotVerifiedHere() throws {
+        try index(at: delivered.addingTimeInterval(20))
+        let catalog = try catalog()
+        // The same logs read into another library give the same delivery ids, but not the same captures.
+        let other = UUID().uuidString.lowercased()
+        let refusal = Catalog.Failure.otherLibrary(other)
+        #expect(throws: refusal) { try catalog.verify(Catalog.Kept(library: other, delivery: try id("notes.md", in: catalog))) }
+        #expect(refusal.exitCode == 1)
     }
 }

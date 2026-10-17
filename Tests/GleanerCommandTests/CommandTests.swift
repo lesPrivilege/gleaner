@@ -63,7 +63,11 @@ import Testing
         let output = Pipe(), error = Pipe()
         process.standardOutput = output
         process.standardError = error
+        // A command that hangs is stopped, and fails its test, rather than holding up the suite.
+        let deadline = DispatchWorkItem { process.terminate() }
+        defer { deadline.cancel() }
         try process.run()
+        DispatchQueue.global().asyncAfter(deadline: .now() + 10, execute: deadline)
         let out = output.fileHandleForReading.readDataToEndOfFile()
         let err = error.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
@@ -184,13 +188,39 @@ import Testing
         let both = try answer(["verify", notes])
         #expect(both["original"] as? Bool == true && both["saved_copy"] as? Bool == true)
 
-        // A reference kept as `resolve` wrote it, checked after an agent rewrote the file.
-        let kept = home.appendingPathComponent("notes-reference.json")
-        try gleaner(["resolve", notes]).output.write(to: kept)
+        // A reference kept as `resolve` wrote it, or its reference alone, checked after an agent
+        // rewrote the file: where its bytes are is checked again too.
+        let resolved = try #require(try JSONSerialization.jsonObject(with: try gleaner(["resolve", notes]).output) as? [String: Any])
+        let kept = home.appendingPathComponent("notes-reference.json"), bare = home.appendingPathComponent("notes-bare.json")
+        try JSONSerialization.data(withJSONObject: resolved).write(to: kept)
+        try JSONSerialization.data(withJSONObject: try #require(resolved["reference"])).write(to: bare)
         try write(Data("# Notes\nrewritten\n".utf8), to: "out/notes.md", modified: Date())
-        let later = try answer(["verify", kept.path])
-        #expect((later["reference"] as? [String: Any])?["delivery"] as? String == notes)
-        #expect(later["original"] as? Bool == false && later["saved_copy"] as? Bool == true)
+        for file in [kept, bare] {
+            let later = try answer(["verify", file.path])
+            let reference = later["reference"] as? [String: Any]
+            #expect(reference?["delivery"] as? String == notes)
+            #expect((reference?["availability"] as? [String: Any])?["state"] as? String == "saved_copy")
+            #expect(later["original"] as? Bool == false && later["saved_copy"] as? Bool == true)
+        }
+    }
+
+    @Test func aKeptReferenceNamesNoFileToRead() throws {
+        try index()
+        let notes = try id("notes.md")
+        // A reference whose hash leads out of Gleaner's store, to a pipe that would block a read for ever.
+        let pipe = home.appendingPathComponent("pipe").path
+        #expect(mkfifo(pipe, 0o600) == 0)
+        var resolved = try #require(try JSONSerialization.jsonObject(with: try gleaner(["resolve", notes]).output) as? [String: Any])
+        var reference = try #require(resolved["reference"] as? [String: Any])
+        reference["sha256"] = String(repeating: "../", count: 40) + pipe
+        resolved["reference"] = reference
+        let kept = home.appendingPathComponent("forged-reference.json")
+        try JSONSerialization.data(withJSONObject: resolved).write(to: kept)
+
+        // The delivery's own bytes, as the library recorded them, are what is checked.
+        let verified = try answer(["verify", kept.path])
+        #expect(verified["original"] as? Bool == true && verified["saved_copy"] as? Bool == true)
+        #expect((verified["reference"] as? [String: Any])?["sha256"] as? String == Locator.sha256(project.appendingPathComponent("out/notes.md").path))
     }
 
     // MARK: exit codes

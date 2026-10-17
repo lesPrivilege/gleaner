@@ -126,7 +126,7 @@ extension Gleaner {
             abstract: "Hash the original and Gleaner's saved copy again, and say which still hold a reference's bytes.",
             discussion: "Exits 1 when neither does.")
 
-        @Argument(help: "A delivery's id, or a file holding a reference as resolve writes it.")
+        @Argument(help: "A delivery's id, or a file holding a reference: resolve's answer, or its reference alone.")
         var reference: String
         @OptionGroup var library: Library
 
@@ -134,12 +134,12 @@ extension Gleaner {
             let catalog = try library.catalog()
             let verified: Catalog.Verified
             if FileManager.default.fileExists(atPath: reference) {
-                guard let kept = try? Catalog.decoder.decode(Catalog.Resolved.self, from: Data(contentsOf: URL(fileURLWithPath: reference))) else {
+                guard let kept = try? Catalog.decoder.decode(Catalog.Kept.self, from: Data(contentsOf: URL(fileURLWithPath: reference))) else {
                     throw ValidationError("\(reference) holds no reference as resolve writes it.")
                 }
-                verified = try catalog.verify(kept.reference)
+                verified = try catalog.verify(kept)
             } else {
-                verified = try catalog.verify(delivery: reference)
+                verified = try catalog.verify(reference)
             }
             try write(verified)
             // Neither: there are no bytes for that version now.
