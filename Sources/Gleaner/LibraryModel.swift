@@ -132,6 +132,8 @@ final class LibraryModel {
     func reindex() {
         guard !indexing else { pending = true; return }
         indexing = true
+        // A log folder that appeared since launch is watched from now on.
+        watcher?.refresh()
         let indexer = indexer
         work.async {
             let outcome = Swift.Result {
