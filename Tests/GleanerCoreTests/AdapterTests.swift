@@ -68,10 +68,18 @@ func fixture(_ name: String, then record: String) throws -> URL {
         #expect(try ClaudeCodeAdapter.parse(try fixture("claude-split-reply")).unknownFields.isEmpty)
     }
 
+    @Test func aPullRequestLinkIsKnownAndHoldsNoReply() {
+        // Claude Code records the pull request a session opened or was linked to: its number, URL
+        // and repository.
+        #expect(log.unknownRecordTypes["pr-link"] == nil)
+        #expect(!log.unknownFields.keys.contains { $0.hasPrefix("pr-link.") })
+        #expect(!log.turns.contains { $0.reply.contains("pull/42") })
+    }
+
     @Test func eachReadIsCounted() {
-        // 16 lines, one of them not JSON; one record of a type the adapter doesn't know.
-        #expect(log.records == 15)
-        #expect(log.knownRecords == 14)
+        // 17 lines, one of them not JSON; one record of a type the adapter doesn't know.
+        #expect(log.records == 16)
+        #expect(log.knownRecords == 15)
         // The request and the task notification each got an answer that ended in a final reply.
         #expect(log.answeredTurns == 2)
         #expect(log.turns.count == 2)

@@ -51,6 +51,8 @@ public enum ClaudeCodeAdapter {
             "bridge-session": ["type", "sessionId", "bridgeSessionId", "lastSequenceNum", "ownerAccountUuid", "ownerOrganizationUuid"],
             "atis-latch": ["type", "sessionId", "atis"],
             "frame-link": ["type", "sessionId", "timestamp", "artifactCount", "frameUrl", "path", "title"],
+            // The pull request a session opened or was linked to. It holds no reply.
+            "pr-link": ["type", "sessionId", "timestamp", "prNumber", "prUrl", "prRepository"],
             "file-history-snapshot": ["type", "messageId", "snapshot", "isSnapshotUpdate"],
             "file-history-delta": ["type", "messageId", "snapshotMessageId", "timestamp", "trackingPath", "backup"],
             "relocated": ["type", "sessionId", "relocatedCwd"],
