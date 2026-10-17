@@ -209,7 +209,7 @@ struct HandoffPanel: View {
     var staging: Staging { model.staging(for: plan.sha) }
 
     var body: some View {
-        let statement = Wording.handoff(plan, delivery: delivery.number, onDisk: onDisk, large: model.isLarge(delivery))
+        let statement = Wording.handoff(plan, delivery: delivery, onDisk: onDisk, large: model.isLarge(delivery))
         let disk = Wording.onDisk(onDisk, checked: observation.checkedAt)
         VStack(alignment: .leading, spacing: 12) {
             Text("Hand off delivery \(delivery.number)").font(.headline)

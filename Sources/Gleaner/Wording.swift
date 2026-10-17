@@ -97,7 +97,7 @@ enum Wording {
                              detail: "The file on disk matches the bytes Gleaner first saw for delivery \(k) on \(date(seen)), after that delivery; it is not the latest delivery \(latest). \(when)")
         case .changed(let n):
             return Statement(mark: .attention, title: "Changed since delivery \(n)",
-                             detail: "Edited after the last delivery. Not among the deliveries Gleaner found. \(when)")
+                             detail: "What is at this path now isn’t among the deliveries Gleaner found. \(when)")
         case .missingWithSavedCopy(let n, nil):
             return Statement(mark: .dashed, title: "Not on disk", detail: "Gleaner saved a copy of delivery \(n). \(when)")
         case .missingWithSavedCopy(let n, let seen?):
@@ -119,7 +119,8 @@ enum Wording {
 
     /// `large` says the delivery was over the save limit, the one reason Gleaner chose not to
     /// keep its bytes.
-    static func handoff(_ plan: Handoff, delivery n: Int, onDisk: OnDisk, large: Bool) -> Statement {
+    static func handoff(_ plan: Handoff, delivery: Delivery, onDisk: OnDisk, large: Bool) -> Statement {
+        let n = delivery.number
         switch plan {
         case .ready(_, .original, nil):
             return Statement(mark: .solid, title: "Ready: the file on disk is delivery \(n)",
@@ -135,11 +136,18 @@ enum Wording {
             let again = if case .rolledBack(_, _, _?) = onDisk { "matches what Gleaner first saw for delivery \(k)" } else { "is delivery \(k) again" }
             return Statement(mark: .attention, title: "Delivery \(n) is no longer available",
                              detail: "The file on disk \(again), and Gleaner didn’t save a copy of delivery \(n).")
-        case .unavailable(nil, _):
+        case .unavailable(nil, let current):
             let unsaved = large ? "Gleaner didn’t save a copy: large files are saved only when you choose to"
                 : "Gleaner has no saved copy of delivery \(n)"
-            return Statement(mark: .attention, title: "Delivery \(n) is no longer available",
-                             detail: "The file has changed and \(unsaved). You can hand off the current file, but it isn’t among the deliveries Gleaner found.")
+            let why = if delivery.capture?.isDirectory == true {
+                "Delivery \(n) was a folder, and something else is at this path now. Folders aren’t versioned, so Gleaner has no copy of it."
+            } else if current == nil {
+                "Something else is at this path now, and \(unsaved)."
+            } else {
+                "The file has changed and \(unsaved)."
+            }
+            let offer = current == nil ? "" : " You can hand off the current file, but it isn’t among the deliveries Gleaner found."
+            return Statement(mark: .attention, title: "Delivery \(n) is no longer available", detail: why + offer)
         case .restoreFromGit:
             return Statement(mark: .dashed, title: "Restore it from git first",
                              detail: "Git history has a file at this path. Gleaner can’t confirm it is the delivered version, and doesn’t write to your repository.")

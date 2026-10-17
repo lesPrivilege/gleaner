@@ -273,10 +273,11 @@ final class LibraryModel {
     }
 
     /// A drag from a result row: the matched delivery's bytes, staged and verified only when the
-    /// receiving app asks for them.
+    /// receiving app asks for them. Decided by that delivery's capture: a file delivery has a hash,
+    /// whatever else the artifact's other deliveries were; a folder delivery has none.
     func dragItem(for result: SearchResult) -> NSItemProvider {
         let delivery = result.artifact.deliveries[result.deliveryIndex]
-        guard let sha = delivery.sha256, result.artifact.kind != .folder else { return NSItemProvider() }
+        guard let sha = delivery.sha256 else { return NSItemProvider() }
         let store = indexer.store, name = result.artifact.name, source = result.artifact.path
         let provider = NSItemProvider()
         provider.suggestedName = name
