@@ -124,6 +124,16 @@ import Testing
         #expect(Wording.sourcesLine([.claudeCode: source]) == "Claude Code: read with problems (1 log found shorter than when read before)")
     }
 
+    @Test func aFormatThatMovedIsNamedAsSuch() {
+        let source = Indexer.Report.Source(
+            folder: .listed, unknownFields: ["assistant.newKey": 3, "user.otherKey": 1],
+            logsWithoutFinalReply: ["/logs/a.jsonl"], logsWithFewerReplies: ["/logs/b.jsonl", "/logs/c.jsonl"])
+        #expect(Wording.source(source) == (.attention, "Read with problems"))
+        #expect(Wording.sourcesLine([.codex: source]) == "Codex: read with problems (2 unknown fields, "
+                + "1 log with assistant records but no final reply, 2 logs with fewer final replies than when read before)")
+        #expect(Wording.sourceDetail(source)?.hasSuffix(". Unknown fields: assistant.newKey, user.otherKey") == true)
+    }
+
     // MARK: "First seen later" (A9)
 
     @Test func statementsNamingADeliveryKeepFirstSeenLater() {

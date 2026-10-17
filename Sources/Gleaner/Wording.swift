@@ -384,20 +384,26 @@ enum Wording {
     static func problems(_ source: Indexer.Report.Source) -> String? {
         let parts = [
             source.unknownRecordTypes.isEmpty ? nil : count(source.unknownRecordTypes.count, "unknown record type"),
+            source.unknownFields.isEmpty ? nil : count(source.unknownFields.count, "unknown field"),
             source.partialLogs.isEmpty ? nil : count(source.partialLogs.count, "log") + " with malformed lines",
             source.shortenedLogs.isEmpty ? nil : count(source.shortenedLogs.count, "log") + " found shorter than when read before",
+            source.logsWithoutFinalReply.isEmpty ? nil
+                : count(source.logsWithoutFinalReply.count, "log") + " with assistant records but no final reply",
+            source.logsWithFewerReplies.isEmpty ? nil
+                : count(source.logsWithFewerReplies.count, "log") + " with fewer final replies than when read before",
             source.failures.isEmpty ? nil : count(source.failures.count, "log") + " couldn’t be read",
             source.unlistedFolders.isEmpty ? nil : count(source.unlistedFolders.count, "folder") + " couldn’t be listed",
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
 
-    /// The fuller story for Settings: why a folder can't be read, or which record types are new.
+    /// The fuller story for Settings: why a folder can't be read, or which record types and fields are new.
     static func sourceDetail(_ source: Indexer.Report.Source) -> String? {
         if case .unreadable(let reason) = source.folder { return reason }
         guard let problems = problems(source) else { return nil }
-        let types = source.unknownRecordTypes.keys.sorted()
+        let types = source.unknownRecordTypes.keys.sorted(), fields = source.unknownFields.keys.sorted()
         return problems + (types.isEmpty ? "" : ". Unknown record types: " + types.joined(separator: ", "))
+            + (fields.isEmpty ? "" : ". Unknown fields: " + fields.joined(separator: ", "))
     }
 
     /// The sources that need a look, in one line; nil when each read cleanly or isn't on this Mac.

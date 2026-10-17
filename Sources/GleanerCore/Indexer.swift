@@ -77,6 +77,9 @@ public final class Indexer: @unchecked Sendable {
             /// Record types the adapter does not recognize in the folder's logs, with counts, whichever
             /// run read them. Non-empty means the format moved; reading again can't change it.
             public var unknownRecordTypes: [String: Int] = [:]
+            /// Keys the adapter does not know inside the record types it does, as "type.key", with
+            /// counts, whichever run read them. Non-empty means the format moved.
+            public var unknownFields: [String: Int] = [:]
             /// Logs with malformed lines. What they name was added and nothing was removed; they are
             /// read again next run.
             public var partialLogs: [String] = []
@@ -84,6 +87,11 @@ public final class Indexer: @unchecked Sendable {
             /// lost. What they name is added, and nothing they no longer name is removed, however
             /// they grow again; reading again can't bring the records back.
             public var shortenedLogs: [String] = []
+            /// Logs with assistant records but no final reply: the adapter may no longer recognize one.
+            public var logsWithoutFinalReply: [String] = []
+            /// Logs whose last complete read found fewer final replies than the one before it: the log
+            /// or the adapter changed, and the deliveries only those replies named were removed.
+            public var logsWithFewerReplies: [String] = []
             /// Logs that could not be read or stored, with the reason. Their deliveries stay as they were.
             public var failures: [String] = []
             /// Folders in it that could not be listed, with the reason. Their logs went unread; what
@@ -91,13 +99,26 @@ public final class Indexer: @unchecked Sendable {
             public var unlistedFolders: [String] = []
 
             /// Listed, but not everything in it could be read or understood.
-            public var hasProblems: Bool { !unknownRecordTypes.isEmpty || !shortenedLogs.isEmpty || isIncomplete }
+            public var hasProblems: Bool {
+                !unknownRecordTypes.isEmpty || !unknownFields.isEmpty || !shortenedLogs.isEmpty
+                    || !logsWithoutFinalReply.isEmpty || !logsWithFewerReplies.isEmpty || isIncomplete
+            }
 
             /// Something reading again may fix: the folder, a folder in it, or a log couldn't be read
-            /// whole. Unknown record types stay until Gleaner learns them, and lost records stay lost.
+            /// whole. Unknown record types and fields stay until Gleaner learns them, lost records stay
+            /// lost, and a log's replies are counted again only once it changes.
             public var isIncomplete: Bool {
                 if case .unreadable = folder { return true }
                 return !partialLogs.isEmpty || !failures.isEmpty || !unlistedFolders.isEmpty
+            }
+
+            /// Adds what reading `log` found, by this run or by the run that last read it whole.
+            mutating func add(_ found: LogFindings, log: String) {
+                unknownRecordTypes.merge(found.unknownRecordTypes, uniquingKeysWith: +)
+                unknownFields.merge(found.unknownFields, uniquingKeysWith: +)
+                if found.shortened { shortenedLogs.append(log) }
+                if found.lacksFinalReply { logsWithoutFinalReply.append(log) }
+                if found.fewerReplies { logsWithFewerReplies.append(log) }
             }
         }
 
@@ -135,23 +156,22 @@ public final class Indexer: @unchecked Sendable {
         let codex = CodexAdapter(titles: CodexAdapter.loadTitles(
             index: sources.codexHome.appendingPathComponent("session_index.jsonl")))
 
-        var changed: [(Provider, URL, Int64, Date, shortened: Bool)] = []
+        var changed: [(Provider, URL, Int64, Date, shortened: Bool, finalReplies: Int?)] = []
         for (provider, url) in files {
             let info = Locator.stat(url.path)
             guard let size = info.size, let mtime = info.modifiedAt else { continue }
             if let found = try registry.findings(unchangedLog: url.path, size: size, mtime: mtime) {
-                report.sources[provider]?.unknownRecordTypes.merge(found.unknownRecordTypes, uniquingKeysWith: +)
-                if found.shortened { report.sources[provider]?.shortenedLogs.append(url.path) }
+                report.sources[provider]?.add(found, log: url.path)
             } else {
-                let shortened = try registry.lastRead(logFile: url.path).map { $0.shortened || size < $0.size } ?? false
-                changed.append((provider, url, size, mtime, shortened))
+                let last = try registry.lastRead(logFile: url.path)
+                changed.append((provider, url, size, mtime, last.map { $0.shortened || size < $0.size } ?? false, last?.finalReplies))
             }
         }
 
         let jobs = changed
         let parsed = Slots<Result<SessionLog?, Error>>(count: jobs.count)
         DispatchQueue.concurrentPerform(iterations: jobs.count) { index in
-            let (provider, url, _, _, _) = jobs[index]
+            let (provider, url, _, _, _, _) = jobs[index]
             parsed[index] = Result { () throws -> SessionLog? in
                 switch provider {
                 case .claudeCode: try ClaudeCodeAdapter.parse(url)
@@ -160,7 +180,7 @@ public final class Indexer: @unchecked Sendable {
             }
         }
 
-        for (index, (provider, url, size, mtime, shortened)) in changed.enumerated() {
+        for (index, (provider, url, size, mtime, shortened, finalReplies)) in changed.enumerated() {
             progress(index, changed.count)
             switch parsed[index] {
             case .failure(let error):
@@ -170,27 +190,34 @@ public final class Indexer: @unchecked Sendable {
                 // A log shorter than when it was read lost records, so like a malformed one it can't
                 // show that a delivery is gone: not now, and not once it grows again.
                 let complete = log.map { $0.isComplete && !shortened } ?? true
+                let found: LogFindings
                 do {
-                    report.newDeliveries += try registry.transaction {
-                        let added = try log.map { try ingest($0, isComplete: complete, now: now()) } ?? 0
+                    let added: Int
+                    (added, found) = try registry.transaction {
+                        let (added, candidates) = try log.map { try ingest($0, isComplete: complete, now: now()) } ?? (0, 0)
+                        let counts = log.map {
+                            LogCounts(records: $0.records, knownRecords: $0.knownRecords, turns: $0.answeredTurns,
+                                      finalReplies: $0.turns.count, candidates: candidates)
+                        }
+                        let findings = LogFindings(
+                            unknownRecordTypes: log?.unknownRecordTypes ?? [:], unknownFields: log?.unknownFields ?? [:],
+                            counts: counts,
+                            // Only a whole read shows that replies are gone, as it does deliveries.
+                            fewerReplies: complete && (counts?.finalReplies ?? 0) < (finalReplies ?? 0),
+                            shortened: shortened)
                         if shortened { try registry.markShortened(logFile: url.path) }
                         // A log with malformed lines stays unread, so it is read and reported again next run.
-                        if log?.isComplete ?? true {
-                            try registry.markRead(logFile: url.path, size: size, mtime: mtime,
-                                                  unknownRecordTypes: log?.unknownRecordTypes ?? [:])
-                        }
-                        return added
+                        if log?.isComplete ?? true { try registry.markRead(logFile: url.path, size: size, mtime: mtime, findings: findings) }
+                        return (added, findings)
                     }
+                    report.newDeliveries += added
                 } catch {
                     // A log the registry refuses fails alone; the run goes on.
                     report.sources[provider]?.failures.append("\(url.path): \(error)")
                     continue
                 }
-                if let log {
-                    report.sources[provider]?.unknownRecordTypes.merge(log.unknownRecordTypes, uniquingKeysWith: +)
-                    if !log.isComplete { report.sources[provider]?.partialLogs.append(url.path) }
-                    if shortened { report.sources[provider]?.shortenedLogs.append(url.path) }
-                }
+                report.sources[provider]?.add(found, log: url.path)
+                if log?.isComplete == false { report.sources[provider]?.partialLogs.append(url.path) }
                 report.logsRead += 1
             }
         }
@@ -201,13 +228,17 @@ public final class Indexer: @unchecked Sendable {
     }
 
     /// `isComplete` says the whole log was read: only then does it show that a delivery it no
-    /// longer admits is gone.
-    func ingest(_ log: SessionLog, isComplete: Bool, now: Date) throws -> Int {
+    /// longer admits is gone. Returns the deliveries it added, and the candidates the log's final
+    /// replies name, admitted or not.
+    func ingest(_ log: SessionLog, isComplete: Bool, now: Date) throws -> (added: Int, candidates: Int) {
         try registry.upsert(log.session)
         var added = 0
+        var candidates = 0
         var admitted = Set<String>()
         for turn in log.turns {
-            for (rank, candidate) in MentionExtractor.candidates(in: turn).enumerated() where Admission.admits(candidate) {
+            let found = MentionExtractor.candidates(in: turn)
+            candidates += found.count
+            for (rank, candidate) in found.enumerated() where Admission.admits(candidate) {
                 // A delivery keeps the id, and the capture, it was first given. A later extractor may
                 // find the reply's first mention of the path in another of its records, or admit it
                 // again after a reread dropped it; a new capture would record the bytes as they are now.
@@ -243,7 +274,7 @@ public final class Indexer: @unchecked Sendable {
             }
         }
         if isComplete { try registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
-        return added
+        return (added, candidates)
     }
 
     /// Over the save limit: tracked by hash, and saved only when the person asks (SPEC §6). A
