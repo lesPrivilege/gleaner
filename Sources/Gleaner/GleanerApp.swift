@@ -21,6 +21,7 @@ struct GleanerApp: App {
                 LibraryView()
                     .environment(model)
                     .onAppear { model.start() }
+                    .onOpenURL { model.open($0) }
             } else {
                 ContentUnavailableView(
                     "Gleaner couldn’t open its library",

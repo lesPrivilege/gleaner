@@ -157,6 +157,28 @@ final class LibraryModel {
         chosenDelivery = delivery.id
     }
 
+    /// Why the last `gleaner://` link showed nothing, until the person dismisses it.
+    var linkFailure: String?
+
+    /// The delivery id a `gleaner://delivery/<id>` link names; nil for any other URL.
+    static func deliveryID(in link: URL) -> String? {
+        guard link.scheme?.lowercased() == "gleaner", link.host()?.lowercased() == "delivery",
+              link.pathComponents.count == 2 else { return nil }
+        return link.pathComponents[1]
+    }
+
+    /// Opens a `gleaner://delivery/<id>` link, as an extension or another tool sends it: shows that
+    /// delivery as `select` does, or says why it can't.
+    func open(_ link: URL) {
+        guard let id = Self.deliveryID(in: link) else { linkFailure = Wording.notADeliveryLink(link); return }
+        guard let delivery = artifacts.lazy.flatMap(\.deliveries).first(where: { $0.id == id }) else {
+            linkFailure = Wording.noDelivery(id)
+            return
+        }
+        linkFailure = nil
+        select(delivery)
+    }
+
     func start() {
         watcher = LogWatcher(directories: indexer.sources.watchedDirectories, queue: work) { [weak self] in
             Task { @MainActor in self?.reindex() }

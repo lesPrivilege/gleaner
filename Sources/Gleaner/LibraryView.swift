@@ -37,6 +37,11 @@ struct LibraryView: View {
         .onChange(of: model.query) { savedQuery = model.query }
         .onChange(of: model.kind) { savedKind = model.kind?.rawValue ?? "" }
         .onChange(of: model.project) { savedProject = model.project ?? "" }
+        .alert("Gleaner couldn’t open this link",
+               isPresented: Binding(get: { model.linkFailure != nil }, set: { if !$0 { model.linkFailure = nil } })) {
+        } message: {
+            Text(model.linkFailure ?? "")
+        }
         .navigationSubtitle(model.progress.map { "Reading logs… \($0.done) of \($0.total)" } ?? model.status)
         .toolbar {
             ToolbarItem {

@@ -546,6 +546,51 @@ import UniformTypeIdentifiers
         #expect(model.actionFailure(video, first) == "The session log is no longer on disk: \(first.logPath)")
     }
 
+    @Test func aLinkNamesOneDelivery() throws {
+        func id(_ link: String) throws -> String? { LibraryModel.deliveryID(in: try #require(URL(string: link))) }
+        #expect(try id("gleaner://delivery/3f2a9c01d4e5b6a7c8d9") == "3f2a9c01d4e5b6a7c8d9")
+        #expect(try id("GLEANER://delivery/3f2a9c01d4e5b6a7c8d9") == "3f2a9c01d4e5b6a7c8d9")
+        #expect(try id("gleaner://delivery/") == nil)
+        #expect(try id("gleaner://delivery") == nil)
+        #expect(try id("gleaner://delivery/3f2a/9c01") == nil)
+        #expect(try id("gleaner://artifact/3f2a9c01d4e5b6a7c8d9") == nil)
+        #expect(try id("https://delivery/3f2a9c01d4e5b6a7c8d9") == nil)
+    }
+
+    @Test func aLinkShowsItsDeliveryClearingOnlyWhatWouldHideIt() throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try artifact(model, "demo.mp4"), first = video.deliveries[2]
+        // The video is among the results: the search stays, and the link picks its first delivery.
+        model.query = "demo"
+        model.open(try #require(URL(string: "gleaner://delivery/\(first.id)")))
+        #expect(model.query == "demo")
+        #expect(model.selected.map(model.delivery(in:))?.id == first.id)
+
+        // A search and a filter hide it: both are cleared.
+        model.kind = .document
+        model.query = "notes"
+        model.open(try #require(URL(string: "gleaner://delivery/\(video.latest.id)")))
+        #expect(model.kind == nil)
+        #expect(model.query.isEmpty)
+        #expect(model.selected.map(model.delivery(in:))?.id == video.latest.id)
+        #expect(model.linkFailure == nil)
+    }
+
+    @Test func aLinkThisLibraryCantShowSaysSoAndKeepsTheSelection() throws {
+        let model = LibraryModel(indexer: indexer)
+        let notes = try artifact(model, "notes.md")
+        model.selection = notes.path
+
+        model.open(try #require(URL(string: "gleaner://delivery/00000000000000000000")))
+        #expect(model.selection == notes.path)
+        #expect(model.linkFailure
+                == "This library has no delivery 00000000000000000000. The link may be from another library, or from a log Gleaner hasn’t read yet.")
+
+        model.open(try #require(URL(string: "gleaner://search?q=notes")))
+        #expect(model.selection == notes.path)
+        #expect(model.linkFailure == "Gleaner opens links to a delivery, gleaner://delivery/ and its id. This link isn’t one: gleaner://search?q=notes")
+    }
+
     // MARK: Check Again (A7)
 
     @Test func checkAgainChecksTheFileAndPreparesItsCopyAgain() async throws {

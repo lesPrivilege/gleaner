@@ -337,6 +337,16 @@ enum Wording {
         "Couldn’t copy the reference: \(error)"
     }
 
+    /// Why a `gleaner://` link showed nothing: it doesn't name a delivery.
+    static func notADeliveryLink(_ link: URL) -> String {
+        "Gleaner opens links to a delivery, gleaner://delivery/ and its id. This link isn’t one: \(link.absoluteString)"
+    }
+
+    /// Why a `gleaner://delivery/` link showed nothing: this library has no delivery `id`.
+    static func noDelivery(_ id: String) -> String {
+        "This library has no delivery \(id). The link may be from another library, or from a log Gleaner hasn’t read yet."
+    }
+
     /// A delivery as one end of a comparison, keeping "first seen later" (SPEC §6).
     static func compareTitle(_ delivery: Delivery) -> String {
         "Delivery \(number(delivery))"
