@@ -443,13 +443,13 @@ struct DeliveriesSection: View {
     func row(_ delivery: Delivery) -> some View {
         let isSelected = delivery.id == selected.id
         let provenance = Wording.provenanceShort(delivery.capture)
-        let sameAs = sameAs(delivery)
+        let earlier = sameAs(delivery)
         return HStack(spacing: 12) {
             Text("Delivery \(delivery.number)").fontWeight(isSelected ? .semibold : .regular)
             Text(Wording.date(delivery.deliveredAt)).foregroundStyle(.secondary)
             Text(Wording.provider(delivery.provider)).foregroundStyle(.secondary)
             Spacer()
-            if let sameAs { Text("same as \(Wording.number(sameAs))").foregroundStyle(.secondary) }
+            if let earlier { Text("same as \(Wording.number(earlier))").foregroundStyle(.secondary) }
             StatusLabel(mark: provenance.0, text: provenance.1)
         }
         .font(.callout)
