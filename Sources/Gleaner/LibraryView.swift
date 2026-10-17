@@ -110,7 +110,7 @@ struct ResultRow: View {
                 if !FileManager.default.fileExists(atPath: artifact.path) {
                     StatusLabel(mark: .dashed, text: "Not on disk")
                 }
-                Text("Delivered \(artifact.latest.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "—")")
+                Text("Delivered \(hit.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "—")")
                     .foregroundStyle(.secondary)
                 if result.deliveryIndex > 0 {
                     Text("Matched delivery \(hit.number) of \(artifact.latest.number)").foregroundStyle(.secondary)

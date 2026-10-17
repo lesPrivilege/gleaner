@@ -10,18 +10,28 @@ struct SearchResult: Identifiable {
     var id: String { artifact.id }
 }
 
-/// A verified copy prepared for dragging, or why there isn't one.
+/// A verified copy prepared for dragging, or why there isn't one. Every state names the version
+/// it is for, so work started for one selection is never shown under another.
 enum Staging: Equatable {
     case idle
-    case preparing
+    case preparing(sha: String)
     case ready(URL, sha: String)
-    case failed(String)
+    case failed(String, sha: String)
+
+    var sha: String? {
+        switch self {
+        case .idle: nil
+        case .preparing(let sha), .ready(_, let sha), .failed(_, let sha): sha
+        }
+    }
 }
 
 @MainActor @Observable
 final class LibraryModel {
     var artifacts: [Artifact] = []
-    var query = ""
+    var query = "" {
+        didSet { if query != oldValue { chosenDelivery = nil } }
+    }
     var kind: Artifact.Kind?
     var selection: Artifact.ID? {
         didSet { if selection != oldValue { chosenDelivery = nil } }
@@ -31,7 +41,7 @@ final class LibraryModel {
     var progress: (done: Int, total: Int)?
     var status = "Starting…"
     var observations: [String: FileObservation] = [:]
-    var staging: Staging = .idle
+    private(set) var staging: Staging = .idle
 
     let indexer: Indexer
     private let work = DispatchQueue(label: "gleaner.index", qos: .utility)
@@ -106,6 +116,13 @@ final class LibraryModel {
 
     func hasSaved(_ sha: String) -> Bool { indexer.store.has(sha) }
 
+    /// The hand-off state for the version `sha`; idle when what is staged belongs to another one.
+    func staging(for sha: String?) -> Staging {
+        sha != nil && staging.sha == sha ? staging : .idle
+    }
+
+    func clearStaging() { staging = .idle }
+
     /// Checks the file now (hash and git), off the main thread.
     func observe(_ artifact: Artifact) async {
         let path = artifact.path
@@ -115,17 +132,20 @@ final class LibraryModel {
 
     /// Prepares a verified, immutable copy of `sha` to drag.
     func stage(sha: String, artifact: Artifact) async {
-        staging = .preparing
+        staging = .preparing(sha: sha)
         let store = indexer.store
         let name = artifact.name
         let source = artifact.path
         let result = await Task.detached(priority: .userInitiated) {
             Swift.Result { try store.stage(sha: sha, name: name, source: source) }
         }.value
+        // The selection moved on, or another version is being prepared: this result is stale.
+        guard !Task.isCancelled, staging == .preparing(sha: sha) else { return }
         switch result {
         case .success(let url): staging = .ready(url, sha: sha)
-        case .failure(ContentStore.Failure.changed): staging = .failed("The file changed while Gleaner was copying it. Check again.")
-        case .failure: staging = .failed("Gleaner couldn’t read these bytes.")
+        case .failure(ContentStore.Failure.changed):
+            staging = .failed("The file changed while Gleaner was copying it. Check again.", sha: sha)
+        case .failure: staging = .failed("Gleaner couldn’t read these bytes.", sha: sha)
         }
     }
 

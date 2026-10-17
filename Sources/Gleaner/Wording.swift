@@ -72,9 +72,12 @@ enum Wording {
                              detail: "The file on disk is delivery \(k) again, not the latest delivery \(latest). \(when)")
         case .changed(let n):
             return Statement(mark: .attention, title: "Changed since delivery \(n)",
-                             detail: "Edited after the last delivery. No agent handed you this version. \(when)")
-        case .missingWithSavedCopy(let n):
+                             detail: "Edited after the last delivery. Not among the deliveries Gleaner found. \(when)")
+        case .missingWithSavedCopy(let n, nil):
             return Statement(mark: .dashed, title: "Not on disk", detail: "Gleaner saved a copy of delivery \(n). \(when)")
+        case .missingWithSavedCopy(let n, let seen?):
+            return Statement(mark: .dashed, title: "Not on disk",
+                             detail: "Gleaner saved a copy for delivery \(n), first seen \(date(seen)), after the delivery. It may not be what was delivered. \(when)")
         case .missingInGitHistory:
             return Statement(mark: .dashed, title: "Not on disk", detail: "Git history still has a file at this path. \(when)")
         case .lost:
@@ -106,7 +109,7 @@ enum Wording {
                              detail: "The file on disk is delivery \(k) again, and Gleaner didn’t save a copy of delivery \(n).")
         case .unavailable(nil, _):
             return Statement(mark: .attention, title: "Delivery \(n) is no longer available",
-                             detail: "The file has changed and Gleaner didn’t save a copy: large files are saved only when you choose to. You can hand off the current file, but no agent handed you that version.")
+                             detail: "The file has changed and Gleaner didn’t save a copy: large files are saved only when you choose to. You can hand off the current file, but it isn’t among the deliveries Gleaner found.")
         case .restoreFromGit:
             return Statement(mark: .dashed, title: "Restore it from git first",
                              detail: "Git history has a file at this path. Gleaner can’t confirm it is the delivered version, and doesn’t write to your repository.")

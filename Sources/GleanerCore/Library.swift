@@ -142,7 +142,8 @@ public enum OnDisk: Equatable, Sendable {
     case unchangedSinceFirstSeen(Date)
     case rolledBack(to: Int, latest: Int)
     case changed(since: Int)
-    case missingWithSavedCopy(of: Int)
+    /// `firstSeen` is set when the saved bytes were captured after that delivery.
+    case missingWithSavedCopy(of: Int, firstSeen: Date?)
     case missingInGitHistory
     case lost
     case folder
@@ -161,6 +162,16 @@ public enum Handoff: Equatable, Sendable {
     case lost
     /// Folders are not versioned in v0.1; the current folder can be handed over as it is.
     case folder
+
+    /// The bytes a hand-off copy must hash to: the delivery's, or the current file's when the
+    /// person chooses to hand that over instead.
+    public var sha: String? {
+        switch self {
+        case .ready(let sha, _, _): sha
+        case .unavailable(_, let current): current
+        default: nil
+        }
+    }
 }
 
 extension Artifact {
@@ -170,7 +181,8 @@ extension Artifact {
         case .special: return .special
         case .missing:
             if let saved = deliveries.first(where: { $0.sha256.map(hasSaved) == true }) {
-                return .missingWithSavedCopy(of: saved.number)
+                let firstSeen = saved.capture?.provenance == .firstSeenAfterDelivery ? saved.capture?.observedAt : nil
+                return .missingWithSavedCopy(of: saved.number, firstSeen: firstSeen)
             }
             if now.state.git == .recoverableFromHead || now.state.git == .recoverableFromHistory {
                 return .missingInGitHistory
@@ -209,24 +221,29 @@ extension Artifact {
         return recoverable ? .restoreFromGit : .lost
     }
 
-    /// For a search: nil when the artifact doesn't match every token; otherwise the index of the
-    /// newest delivery whose own words matched, or 0 when only the name or project did.
+    /// For a search: nil unless every token appears in the file name, the project, or one
+    /// delivery's own words (request, session title, reply). Words from different deliveries don't
+    /// combine (SPEC §10). Otherwise the index of the newest delivery whose own words matched, or
+    /// 0 when the name or project alone matched.
     public func match(_ tokens: [String]) -> (deliveryIndex: Int, fields: [String])? {
         guard !tokens.isEmpty else { return (0, []) }
-        func text(_ d: Delivery) -> String {
-            ([d.request, d.sessionTitle] + d.evidence.map(\.excerpt)).compactMap { $0 }.joined(separator: " ").lowercased()
+        let name = path.lowercased()
+        let projectName = project.lowercased()
+        func fields(_ d: Delivery) -> [(String, String)] {
+            [("file name", name), ("project", projectName),
+             ("your request", d.request?.lowercased() ?? ""),
+             ("session title", d.sessionTitle?.lowercased() ?? ""),
+             ("reply", d.evidence.map(\.excerpt).joined(separator: " ").lowercased())]
         }
-        let fields: [(String, String)] = [
-            ("file name", path.lowercased()),
-            ("your request", deliveries.compactMap(\.request).joined(separator: " ").lowercased()),
-            ("session title", deliveries.compactMap(\.sessionTitle).joined(separator: " ").lowercased()),
-            ("project", project.lowercased()),
-            ("reply", deliveries.flatMap(\.evidence).map(\.excerpt).joined(separator: " ").lowercased()),
-        ]
-        let all = fields.map(\.1).joined(separator: " ")
-        guard tokens.allSatisfy({ all.contains($0) }) else { return nil }
-        let hit = fields.filter { field in tokens.contains { field.1.contains($0) } }.map(\.0)
-        let index = deliveries.firstIndex { d in tokens.contains { text(d).contains($0) } } ?? 0
+        let matching = deliveries.indices.filter { i in
+            let all = fields(deliveries[i]).map(\.1).joined(separator: " ")
+            return tokens.allSatisfy { all.contains($0) }
+        }
+        guard let first = matching.first else { return nil }
+        let index = matching.first { i in
+            fields(deliveries[i]).dropFirst(2).contains { field in tokens.contains { field.1.contains($0) } }
+        } ?? first
+        let hit = fields(deliveries[index]).filter { field in tokens.contains { field.1.contains($0) } }.map(\.0)
         return (index, hit)
     }
 }

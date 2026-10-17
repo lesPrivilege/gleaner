@@ -16,7 +16,7 @@ struct DetailView: View {
 
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
-                PreviewPane(artifact: artifact, plan: plan, staging: model.staging)
+                PreviewPane(artifact: artifact, plan: plan, staging: model.staging(for: plan?.sha))
                 header(artifact, observation: observation)
                 if let observation, let onDisk {
                     Panel(statement: Wording.onDisk(onDisk, checked: observation.checkedAt), eyebrow: "On disk now")
@@ -33,14 +33,14 @@ struct DetailView: View {
             .frame(maxWidth: 900, alignment: .leading)
         }
         .task(id: artifact.id) {
-            model.staging = .idle
+            model.clearStaging()
             await model.observe(artifact)
         }
         .task(id: "\(artifact.id)|\(delivery.id)|\(observation?.checkedAt.timeIntervalSince1970 ?? 0)") {
             if case .ready(let sha, _, _) = plan {
                 await model.stage(sha: sha, artifact: artifact)
             } else {
-                model.staging = .idle
+                model.clearStaging()
             }
         }
     }
@@ -103,6 +103,10 @@ extension Panel where Actions == EmptyView {
     }
 }
 
+extension Staging {
+    var isPreparing: Bool { if case .preparing = self { true } else { false } }
+}
+
 struct PreviewPane: View {
     var artifact: Artifact
     var plan: Handoff?
@@ -122,7 +126,7 @@ struct PreviewPane: View {
             } else {
                 VStack(spacing: 6) {
                     Image(systemName: "eye.slash").font(.title2)
-                    Text(staging == .preparing ? "Preparing a verified copy…" : "No preview: these bytes aren’t available")
+                    Text(staging.isPreparing ? "Preparing a verified copy…" : "No preview: these bytes aren’t available")
                 }
                 .foregroundStyle(.secondary)
             }
@@ -214,9 +218,12 @@ struct HandoffPanel: View {
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(nsColor: .separatorColor)))
     }
 
+    /// What is staged for this panel's version only.
+    var staging: Staging { model.staging(for: plan.sha) }
+
     /// The thing you drag: the file itself, labeled with the exact version it carries.
     @ViewBuilder var tile: some View {
-        let ready: URL? = switch (plan, model.staging) {
+        let ready: URL? = switch (plan, staging) {
         case (.folder, _): URL(fileURLWithPath: artifact.path)
         case (_, .ready(let url, _)): url
         default: nil
@@ -228,7 +235,7 @@ struct HandoffPanel: View {
                 Text(artifact.name).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
                 Text(tileCaption).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
             }
-            if model.staging == .preparing { ProgressView().controlSize(.small) }
+            if staging.isPreparing { ProgressView().controlSize(.small) }
         }
         .padding(.horizontal, 12)
         .frame(minHeight: 52)
@@ -245,13 +252,15 @@ struct HandoffPanel: View {
     }
 
     var tileCaption: String {
-        switch model.staging {
+        switch staging {
         case .ready(_, let sha):
             let label = artifact.deliveries.first { $0.sha256 == sha && $0.isTrusted }.map { "delivery \($0.number)" }
-                ?? (sha == delivery.sha256 ? "delivery \(delivery.number)" : "current file · never delivered")
+                ?? (sha == delivery.sha256
+                    ? "delivery \(delivery.number)" + (delivery.capture?.provenance == .firstSeenAfterDelivery ? " · first seen later" : "")
+                    : "current file · not a found delivery")
             return "\(label) · \(sha.prefix(12))…"
         case .preparing: return "verifying…"
-        case .failed(let why): return why
+        case .failed(let why, _): return why
         case .idle: return plan == .folder ? "folder as it is now" : "not available"
         }
     }
@@ -274,7 +283,7 @@ struct HandoffPanel: View {
         default:
             EmptyView()
         }
-        if case .failed(let why) = model.staging {
+        if case .failed(let why, _) = staging {
             StatusLabel(mark: .attention, text: why).font(.callout)
         }
     }
@@ -289,7 +298,7 @@ struct HandoffPanel: View {
     }
 
     var openURL: URL? {
-        if case .ready(let url, _) = model.staging { return url }
+        if case .ready(let url, _) = staging { return url }
         if plan == .folder { return URL(fileURLWithPath: artifact.path) }
         return nil
     }

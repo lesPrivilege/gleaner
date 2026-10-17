@@ -109,7 +109,7 @@ import Testing
         try FileManager.default.removeItem(at: worktree)
 
         let observation = now(report.path)
-        #expect(report.onDisk(observation, hasSaved: saved) == .missingWithSavedCopy(of: 1))
+        #expect(report.onDisk(observation, hasSaved: saved) == .missingWithSavedCopy(of: 1, firstSeen: nil))
         guard case .ready(let sha, .savedCopy, nil) = report.handoff(report.latest, now: observation, hasSaved: saved) else {
             Issue.record("expected the saved copy"); return
         }
@@ -153,6 +153,12 @@ import Testing
         #expect(video.match(["harness"])?.deliveryIndex == 1)
         #expect(video.match(["intro"])?.deliveryIndex == 0)
         #expect(video.match(["nothing-like-this"]) == nil)
+
+        // Words from two different deliveries don't combine into one match.
+        #expect(video.match(["harness", "intro"]) == nil)
+        // The file name combines with either delivery's words.
+        #expect(video.match(["demo", "harness"])?.deliveryIndex == 1)
+        #expect(video.match(["demo"])?.deliveryIndex == 0)
     }
 
     @Test func backfillIsNeverCalledTheDeliveredVersion() throws {
