@@ -217,6 +217,48 @@ import Testing
         #expect(after.latest.capture == before)
     }
 
+    @Test func aFolderInPlaceOfADeliveredFileNeverStandsInForIt() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let fm = FileManager.default
+        for name in ["demo.mp4", "build.dmg"] {
+            try fm.removeItem(at: project.appendingPathComponent("out/\(name)"))
+            try fm.createDirectory(at: project.appendingPathComponent("out/\(name)"), withIntermediateDirectories: false)
+        }
+
+        // The delivery was a file: its saved copy is still what a drag hands over.
+        let video = try artifact("demo.mp4")
+        let observation = now(video.path)
+        #expect(video.handoff(video.latest, now: observation, hasSaved: saved)
+                == .ready(sha: video.latest.sha256!, from: .savedCopy, firstSeen: nil))
+        #expect(video.onDisk(observation, hasSaved: saved) == .changed(since: 1))
+
+        // Without a saved copy the delivery is unavailable; the folder is not offered in its place.
+        let build = try artifact("build.dmg")
+        #expect(build.handoff(build.latest, now: now(build.path), hasSaved: saved)
+                == .unavailable(alternative: nil, currentSha: nil))
+    }
+
+    @Test func aDeliveredFolderIsHandedOverOnlyWhileItIsAFolder() throws {
+        let site = project.appendingPathComponent("out/site")
+        try FileManager.default.createDirectory(at: site, withIntermediateDirectories: true)
+        try appendLog([assistant("Site: [site](out/site)", at: delivered.addingTimeInterval(1), cwd: project.path)])
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let folder = try artifact("site")
+        #expect(folder.kind == .folder)
+        #expect(folder.handoff(folder.latest, now: now(site.path), hasSaved: saved) == .folder)
+        #expect(folder.onDisk(now(site.path), hasSaved: saved) == .folder)
+
+        try FileManager.default.removeItem(at: site)
+        #expect(folder.handoff(folder.latest, now: now(site.path), hasSaved: saved) == .lost)
+
+        // A file in its place is not the delivered folder.
+        try "not the folder".write(to: site, atomically: true, encoding: .utf8)
+        let observation = now(site.path)
+        #expect(folder.handoff(folder.latest, now: observation, hasSaved: saved)
+                == .unavailable(alternative: nil, currentSha: observation.state.sha256))
+        #expect(folder.onDisk(observation, hasSaved: saved) == .changed(since: 1))
+    }
+
     @Test func fileGoneBeforeFirstLookIsNeverObserved() throws {
         try FileManager.default.removeItem(at: project.appendingPathComponent("out/demo.mp4"))
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
