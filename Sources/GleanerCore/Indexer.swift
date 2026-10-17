@@ -32,7 +32,12 @@ public struct LogSources: Sendable {
 extension DeliveryCandidate {
     /// Stable for a given reply and path, so re-reading a log never duplicates a delivery.
     public func id(logPath: String) -> String {
-        let key = "\(logPath)\n\(evidence[0].part.line)\n\(path)"
+        Self.id(logPath: logPath, line: evidence[0].part.line, path: path)
+    }
+
+    /// The id of a delivery of `path` whose first mention is in the reply record at `line`.
+    static func id(logPath: String, line: Int, path: String) -> String {
+        let key = "\(logPath)\n\(line)\n\(path)"
         return SHA256.hash(data: Data(key.utf8)).prefix(10).map { String(format: "%02x", $0) }.joined()
     }
 }
@@ -168,9 +173,16 @@ public final class Indexer: @unchecked Sendable {
         var admitted = Set<String>()
         for turn in log.turns {
             for candidate in MentionExtractor.candidates(in: turn) where Admission.admits(candidate) {
-                let id = candidate.id(logPath: log.session.logPath)
+                // A delivery keeps the id it was first given. A later extractor may find the reply's
+                // first mention of the path in another of its records; a new id would drop the
+                // delivery and capture its bytes again, as they are now.
+                let fresh = candidate.id(logPath: log.session.logPath)
+                let known = try ([fresh] + turn.parts.map {
+                    DeliveryCandidate.id(logPath: log.session.logPath, line: $0.line, path: candidate.path)
+                }).first(where: registry.hasDelivery)
+                let id = known ?? fresh
                 admitted.insert(id)
-                let isNew = try !registry.hasDelivery(id)
+                let isNew = known == nil
                 let first = candidate.evidence[0]
                 try registry.upsertDelivery(
                     id: id, sessionID: log.session.id, logPath: log.session.logPath, path: candidate.path, deliveredAt: first.part.at,

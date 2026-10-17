@@ -311,6 +311,42 @@ import Testing
         #expect(after.latest.capture == before)
     }
 
+    @Test func aRereadThatFindsTheFirstMentionInAnotherRecordKeepsTheDeliveryAndItsCapture() throws {
+        let notes = project.appendingPathComponent("out/notes.md")
+        try write("notes n1", to: "out/notes.md", modified: delivered.addingTimeInterval(-30))
+        // One reply in two records (log lines 4 and 5): the first shows the path inside an example,
+        // the second hands the file over.
+        let example = "Check it with:\\n````\\n```sh\\ncat \(notes.path)\\n```\\n````"
+        try appendLog([
+            user("Write the release notes", at: delivered.addingTimeInterval(-60)),
+            assistant(example, at: delivered, cwd: project.path),
+            assistant("Done: [notes](out/notes.md)", at: delivered.addingTimeInterval(1), cwd: project.path),
+        ])
+        // An older extractor read the path in the example, so it took the first record's mention as
+        // the first: the delivery was recorded, and its bytes captured, under that record.
+        let logPath = try #require(try FileManager.default.contentsOfDirectory(
+            at: root.appendingPathComponent("claude/-Praxis"), includingPropertiesForKeys: nil).first).path
+        let older = SessionLog(
+            session: SessionInfo(provider: .claudeCode, id: "s1", title: nil, cwd: project.path, logPath: logPath),
+            turns: [Turn(request: "Write the release notes", parts: [
+                ReplyPart(text: "Check it with: cat \(notes.path)", line: 4, at: delivered, cwd: project.path),
+                ReplyPart(text: "Done: [notes](out/notes.md)", line: 5, at: delivered.addingTimeInterval(1), cwd: project.path),
+            ])],
+            unknownRecordTypes: [:], malformedLines: 0)
+        _ = try indexer.ingest(older, now: delivered.addingTimeInterval(20))
+        let before = try artifact("notes.md").latest
+        #expect(before.capture?.provenance == .atDelivery)
+
+        // The file is edited, then the current extractor rereads the log: the example is masked and
+        // the reply's first mention is now in the second record.
+        try write("notes n2, edited later", to: "out/notes.md", modified: Date())
+        _ = try indexer.run(now: { delivered.addingTimeInterval(9999) })
+        let after = try artifact("notes.md")
+        #expect(after.deliveries.map(\.id) == [before.id])
+        #expect(after.latest.capture == before.capture)
+        #expect(after.latest.evidence.map(\.line) == [5])
+    }
+
     @Test func aFolderInPlaceOfADeliveredFileNeverStandsInForIt() throws {
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
         let fm = FileManager.default
