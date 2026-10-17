@@ -1,0 +1,89 @@
+{
+  "checked_at": "2026-10-17T15:57:04.780630+00:00",
+  "report_parts": 12,
+  "max_part_bytes": 9303,
+  "all_parts_below_10000_bytes": true,
+  "missing_local_links": [],
+  "verified_source_blobs": 10,
+  "synthetic_checks_passed": 20,
+  "synthetic_checks_failed": 0,
+  "files": [
+    {
+      "path": "README.md",
+      "bytes": 4845,
+      "sha256": "956b925f5c70c52c20aace6f2a2eba85b5689c01dde9ea1ce219e8033cfea8b5"
+    },
+    {
+      "path": "research/01-findings-and-scope.md",
+      "bytes": 7910,
+      "sha256": "0943174c59b1d8de719977efd17f39a479dae38369350d6f060f119eac160476"
+    },
+    {
+      "path": "research/02-paper-atlas.md",
+      "bytes": 6157,
+      "sha256": "77c1610d44e1681ab7a44d33e019fee1dce515e4020f76e8b29645425632e976"
+    },
+    {
+      "path": "research/02b-linkage-and-semantics-atlas.md",
+      "bytes": 4502,
+      "sha256": "601ea62db81486291f436f42f0c390b74f66e13dea9250ef5963b87f26ece7e1"
+    },
+    {
+      "path": "research/03-standards-and-implementation-atlas.md",
+      "bytes": 9187,
+      "sha256": "60d4af871939b9b30c713ea2317e887ab7be9f1a2eca0953b0b39d75f4734ba2"
+    },
+    {
+      "path": "research/04-provider-evidence.md",
+      "bytes": 7521,
+      "sha256": "c536fefa6de3019eca83cfe34947bbd0488c899215c8faa9cdf4f04d5949c9c5"
+    },
+    {
+      "path": "research/05-minimal-model.md",
+      "bytes": 8965,
+      "sha256": "3f607714c4173a4dbff51f11e7872662a13eb72d8453a944ff0ed59808bcccd1"
+    },
+    {
+      "path": "research/06-reconstruction-feasibility.md",
+      "bytes": 9303,
+      "sha256": "ac8102accc92e6aa630124b680c8a380fc7fba6a7aa2744fa0abe5f33bc66101"
+    },
+    {
+      "path": "research/07-bounded-recipes.md",
+      "bytes": 7996,
+      "sha256": "718f92dc58db8c5ada600ac72ceec271441c7c2726bc09280b84ab88e8ea6a6c"
+    },
+    {
+      "path": "research/08-adversarial-probes.md",
+      "bytes": 8487,
+      "sha256": "2c4b3504009a1bba2f6477e07a8351a3955465813e1606b36a43bb0d3701df5a"
+    },
+    {
+      "path": "research/09-pointers-and-evolution.md",
+      "bytes": 7619,
+      "sha256": "1cc5c8e0064a80796338f7701af27d32607822239775ef369f115c6a0761dfb4"
+    },
+    {
+      "path": "research/10-permission-boundaries.md",
+      "bytes": 6354,
+      "sha256": "12e61e6474cc807cb2217f0df8038be08f20ac19f9c9f6dbe48384b511b6eb1b"
+    },
+    {
+      "path": "research/11-proposals-and-opus-handoff.md",
+      "bytes": 6232,
+      "sha256": "1945379805369f54ad7c94cd0fd592dae0c02ccc7a8b0828fa3df794ad9add9b"
+    },
+    {
+      "path": "process/PROCESS.md",
+      "bytes": 6804,
+      "sha256": "b398619141541483d62391728b9516b6cb1b56a35a999b78ae32ebaf6b7d058c"
+    }
+  ],
+  "limits": [
+    "No real logs or provider runtime inspected",
+    "No application build/test",
+    "No enterprise ACL enforcement test",
+    "No real-data recovery rate",
+    "No public push/commit/deployment"
+  ]
+}

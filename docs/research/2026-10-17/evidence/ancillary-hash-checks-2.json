@@ -1,0 +1,26 @@
+[
+  {
+    "path": "evidence/validation.json",
+    "raw_sha256": "9176659b039433a821de8b1a3869bb7166f1e18b5af12fe32a2be7c69f25a97f",
+    "origin_sha256": "9176659b039433a821de8b1a3869bb7166f1e18b5af12fe32a2be7c69f25a97f",
+    "matched": true
+  },
+  {
+    "path": "evidence/source-licenses.json",
+    "raw_sha256": "6f76c5ca9730b1c1235c41461d94e0812dbfee3418252d050ecde4be55a0172b",
+    "origin_sha256": "6f76c5ca9730b1c1235c41461d94e0812dbfee3418252d050ecde4be55a0172b",
+    "matched": true
+  },
+  {
+    "path": "process/PROCESS.md",
+    "raw_sha256": "ba1e88334872a7f554332dc4330415991ddb061da7b70b9b02b164fece3b5691",
+    "origin_sha256": "b398619141541483d62391728b9516b6cb1b56a35a999b78ae32ebaf6b7d058c",
+    "matched": true
+  },
+  {
+    "path": "process/search-workstreams.json",
+    "raw_sha256": "b0b0f544a1339b131855c819f05f5a368a3baa0dacd0c71fcc9a2b3e3c039f2f",
+    "origin_sha256": "b0b0f544a1339b131855c819f05f5a368a3baa0dacd0c71fcc9a2b3e3c039f2f",
+    "matched": true
+  }
+]

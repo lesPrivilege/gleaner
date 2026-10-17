@@ -1,0 +1,524 @@
+{
+  "environment": {
+    "python": "3.12.14",
+    "platform": "Linux-6.18.55-x86_64-with-glibc2.41"
+  },
+  "repetitions": 15,
+  "token_count": null,
+  "token_note": "UTF-8 bytes measured. No model tokenizer or model calls.",
+  "tasks": [
+    {
+      "name": "correct-project-old-version",
+      "project": "repo-00",
+      "version": 1,
+      "expected": "ok"
+    },
+    {
+      "name": "same-name-other-project",
+      "project": "repo-01",
+      "version": 2,
+      "expected": "ok"
+    },
+    {
+      "name": "current-delivery",
+      "project": "repo-07",
+      "version": 3,
+      "expected": "ok"
+    },
+    {
+      "name": "deleted-source",
+      "project": "repo-04",
+      "version": 3,
+      "expected": "ok"
+    },
+    {
+      "name": "silent-current-change",
+      "project": "repo-05",
+      "version": 3,
+      "expected": "ok"
+    },
+    {
+      "name": "injection-is-data",
+      "project": "repo-06",
+      "version": 2,
+      "expected": "ok"
+    },
+    {
+      "name": "late-observation",
+      "project": "repo-02",
+      "version": 1,
+      "expected": "historical_bytes_unproven"
+    },
+    {
+      "name": "missing-version",
+      "project": "repo-03",
+      "version": 1,
+      "expected": "version_unavailable"
+    },
+    {
+      "name": "ambiguous-project",
+      "project_label": "Atlas",
+      "version": 1,
+      "expected": "ambiguous_project"
+    },
+    {
+      "name": "absent-project",
+      "project": "repo-99",
+      "version": 1,
+      "expected": "not_found"
+    }
+  ],
+  "methods": {
+    "exhaustive": {
+      "cases_correct": 10,
+      "io_bytes_total": 130659823,
+      "output_bytes_total": 130205624,
+      "sum_task_medians_ms": 103.499953,
+      "per_task": [
+        {
+          "task": "correct-project-old-version",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 13085455,
+          "output_bytes": 13020546,
+          "responses": 178,
+          "median_ms": 9.836027,
+          "p95_ms": 13.76514
+        },
+        {
+          "task": "same-name-other-project",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 13085455,
+          "output_bytes": 13020546,
+          "responses": 178,
+          "median_ms": 9.17137,
+          "p95_ms": 9.529249
+        },
+        {
+          "task": "current-delivery",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 13085455,
+          "output_bytes": 13020546,
+          "responses": 178,
+          "median_ms": 9.549792,
+          "p95_ms": 16.156238
+        },
+        {
+          "task": "deleted-source",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 13085455,
+          "output_bytes": 13020546,
+          "responses": 178,
+          "median_ms": 9.440139,
+          "p95_ms": 13.34023
+        },
+        {
+          "task": "silent-current-change",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 13085455,
+          "output_bytes": 13020546,
+          "responses": 178,
+          "median_ms": 9.458256,
+          "p95_ms": 13.322905
+        },
+        {
+          "task": "injection-is-data",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 13085455,
+          "output_bytes": 13020546,
+          "responses": 178,
+          "median_ms": 9.323329,
+          "p95_ms": 10.133286
+        },
+        {
+          "task": "late-observation",
+          "correct": true,
+          "status": "historical_bytes_unproven",
+          "io_bytes": 13020546,
+          "output_bytes": 13020605,
+          "responses": 179,
+          "median_ms": 9.228606,
+          "p95_ms": 10.162497
+        },
+        {
+          "task": "missing-version",
+          "correct": true,
+          "status": "version_unavailable",
+          "io_bytes": 13085455,
+          "output_bytes": 13020599,
+          "responses": 179,
+          "median_ms": 9.852659,
+          "p95_ms": 19.376937
+        },
+        {
+          "task": "ambiguous-project",
+          "correct": true,
+          "status": "ambiguous_project",
+          "io_bytes": 13020546,
+          "output_bytes": 13020576,
+          "responses": 179,
+          "median_ms": 9.283226,
+          "p95_ms": 17.726249
+        },
+        {
+          "task": "absent-project",
+          "correct": true,
+          "status": "not_found",
+          "io_bytes": 13020546,
+          "output_bytes": 13020568,
+          "responses": 179,
+          "median_ms": 18.356549,
+          "p95_ms": 22.74007
+        }
+      ]
+    },
+    "targeted_full": {
+      "cases_correct": 10,
+      "io_bytes_total": 4921575,
+      "output_bytes_total": 394437,
+      "sum_task_medians_ms": 11.837502,
+      "per_task": [
+        {
+          "task": "correct-project-old-version",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 313043,
+          "output_bytes": 65382,
+          "responses": 2,
+          "median_ms": 0.711783,
+          "p95_ms": 2.834426
+        },
+        {
+          "task": "same-name-other-project",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 313043,
+          "output_bytes": 65382,
+          "responses": 2,
+          "median_ms": 0.692279,
+          "p95_ms": 0.863703
+        },
+        {
+          "task": "current-delivery",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 313091,
+          "output_bytes": 65386,
+          "responses": 2,
+          "median_ms": 0.69278,
+          "p95_ms": 0.809806
+        },
+        {
+          "task": "deleted-source",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 313091,
+          "output_bytes": 65386,
+          "responses": 2,
+          "median_ms": 0.694226,
+          "p95_ms": 3.866338
+        },
+        {
+          "task": "silent-current-change",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 313091,
+          "output_bytes": 65386,
+          "responses": 2,
+          "median_ms": 0.694172,
+          "p95_ms": 3.837414
+        },
+        {
+          "task": "injection-is-data",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 313141,
+          "output_bytes": 65436,
+          "responses": 2,
+          "median_ms": 0.691198,
+          "p95_ms": 0.750412
+        },
+        {
+          "task": "late-observation",
+          "correct": true,
+          "status": "historical_bytes_unproven",
+          "io_bytes": 248196,
+          "output_bytes": 550,
+          "responses": 2,
+          "median_ms": 0.622883,
+          "p95_ms": 0.696986
+        },
+        {
+          "task": "missing-version",
+          "correct": true,
+          "status": "version_unavailable",
+          "io_bytes": 313091,
+          "output_bytes": 530,
+          "responses": 2,
+          "median_ms": 0.715015,
+          "p95_ms": 3.862804
+        },
+        {
+          "task": "ambiguous-project",
+          "correct": true,
+          "status": "ambiguous_project",
+          "io_bytes": 2481788,
+          "output_bytes": 975,
+          "responses": 2,
+          "median_ms": 6.31683,
+          "p95_ms": 9.519299
+        },
+        {
+          "task": "absent-project",
+          "correct": true,
+          "status": "not_found",
+          "io_bytes": 0,
+          "output_bytes": 24,
+          "responses": 2,
+          "median_ms": 0.006336,
+          "p95_ms": 0.014398
+        }
+      ]
+    },
+    "targeted_section": {
+      "cases_correct": 10,
+      "io_bytes_total": 4921575,
+      "output_bytes_total": 5967,
+      "sum_task_medians_ms": 14.957842000000001,
+      "per_task": [
+        {
+          "task": "correct-project-old-version",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 313043,
+          "output_bytes": 637,
+          "responses": 2,
+          "median_ms": 0.711705,
+          "p95_ms": 3.841101
+        },
+        {
+          "task": "same-name-other-project",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 313043,
+          "output_bytes": 637,
+          "responses": 2,
+          "median_ms": 0.723996,
+          "p95_ms": 3.871081
+        },
+        {
+          "task": "current-delivery",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 313091,
+          "output_bytes": 641,
+          "responses": 2,
+          "median_ms": 0.709351,
+          "p95_ms": 3.873626
+        },
+        {
+          "task": "deleted-source",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 313091,
+          "output_bytes": 641,
+          "responses": 2,
+          "median_ms": 0.719506,
+          "p95_ms": 2.346354
+        },
+        {
+          "task": "silent-current-change",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 313091,
+          "output_bytes": 641,
+          "responses": 2,
+          "median_ms": 0.702127,
+          "p95_ms": 2.623247
+        },
+        {
+          "task": "injection-is-data",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 313141,
+          "output_bytes": 691,
+          "responses": 2,
+          "median_ms": 0.707996,
+          "p95_ms": 3.880267
+        },
+        {
+          "task": "late-observation",
+          "correct": true,
+          "status": "historical_bytes_unproven",
+          "io_bytes": 248196,
+          "output_bytes": 550,
+          "responses": 2,
+          "median_ms": 0.637186,
+          "p95_ms": 3.724856
+        },
+        {
+          "task": "missing-version",
+          "correct": true,
+          "status": "version_unavailable",
+          "io_bytes": 313091,
+          "output_bytes": 530,
+          "responses": 2,
+          "median_ms": 0.711964,
+          "p95_ms": 1.839528
+        },
+        {
+          "task": "ambiguous-project",
+          "correct": true,
+          "status": "ambiguous_project",
+          "io_bytes": 2481788,
+          "output_bytes": 975,
+          "responses": 2,
+          "median_ms": 9.327455,
+          "p95_ms": 12.489611
+        },
+        {
+          "task": "absent-project",
+          "correct": true,
+          "status": "not_found",
+          "io_bytes": 0,
+          "output_bytes": 24,
+          "responses": 2,
+          "median_ms": 0.006556,
+          "p95_ms": 0.044973
+        }
+      ]
+    },
+    "catalog": {
+      "cases_correct": 10,
+      "io_bytes_total": 454363,
+      "output_bytes_total": 4885,
+      "sum_task_medians_ms": 0.624019,
+      "per_task": [
+        {
+          "task": "correct-project-old-version",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 64909,
+          "output_bytes": 605,
+          "responses": 3,
+          "median_ms": 0.088285,
+          "p95_ms": 0.184458
+        },
+        {
+          "task": "same-name-other-project",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 64909,
+          "output_bytes": 605,
+          "responses": 3,
+          "median_ms": 0.084335,
+          "p95_ms": 2.189864
+        },
+        {
+          "task": "current-delivery",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 64909,
+          "output_bytes": 605,
+          "responses": 3,
+          "median_ms": 0.086016,
+          "p95_ms": 0.152512
+        },
+        {
+          "task": "deleted-source",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 64909,
+          "output_bytes": 605,
+          "responses": 3,
+          "median_ms": 0.083303,
+          "p95_ms": 0.109372
+        },
+        {
+          "task": "silent-current-change",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 64909,
+          "output_bytes": 605,
+          "responses": 3,
+          "median_ms": 0.085924,
+          "p95_ms": 2.268121
+        },
+        {
+          "task": "injection-is-data",
+          "correct": true,
+          "status": "ok",
+          "io_bytes": 64909,
+          "output_bytes": 605,
+          "responses": 3,
+          "median_ms": 0.084734,
+          "p95_ms": 2.241995
+        },
+        {
+          "task": "late-observation",
+          "correct": true,
+          "status": "historical_bytes_unproven",
+          "io_bytes": 0,
+          "output_bytes": 342,
+          "responses": 2,
+          "median_ms": 0.013067,
+          "p95_ms": 0.05267
+        },
+        {
+          "task": "missing-version",
+          "correct": true,
+          "status": "version_unavailable",
+          "io_bytes": 64909,
+          "output_bytes": 322,
+          "responses": 2,
+          "median_ms": 0.07405,
+          "p95_ms": 0.100708
+        },
+        {
+          "task": "ambiguous-project",
+          "correct": true,
+          "status": "ambiguous_project",
+          "io_bytes": 0,
+          "output_bytes": 538,
+          "responses": 2,
+          "median_ms": 0.014395,
+          "p95_ms": 0.052602
+        },
+        {
+          "task": "absent-project",
+          "correct": true,
+          "status": "not_found",
+          "io_bytes": 0,
+          "output_bytes": 53,
+          "responses": 2,
+          "median_ms": 0.00991,
+          "p95_ms": 0.028799
+        }
+      ]
+    }
+  },
+  "corpus": {
+    "projects": 10,
+    "deliveries": 120,
+    "files": 178,
+    "bytes": 13020546
+  },
+  "index_build": {
+    "read_bytes": 2481788,
+    "json_bytes": 57089,
+    "latency_ms": 6.801724,
+    "excludes": "capture acquisition, hashing all captures, serialization to disk"
+  },
+  "fault_checks": {
+    "corrupt_snapshot_refused": true,
+    "stale_catalog_false_negative_reproduced": true,
+    "stale_catalog_result": {
+      "status": "not_found"
+    }
+  }
+}

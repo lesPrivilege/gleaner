@@ -1,0 +1,118 @@
+{
+  "source_task": "01a14a80-578d-7423-a89c-5ea2e4e5101d",
+  "checks": [
+    {
+      "path": "README.md",
+      "raw_sha256": "ee74a6ffb156ad63dd429a79416bec4196914160141acb7efff480f1d1d04ba7",
+      "origin_sha256": "956b925f5c70c52c20aace6f2a2eba85b5689c01dde9ea1ce219e8033cfea8b5",
+      "verified": true,
+      "transformation": "HTML entity decoding"
+    },
+    {
+      "path": "research/01-findings-and-scope.md",
+      "raw_sha256": "0943174c59b1d8de719977efd17f39a479dae38369350d6f060f119eac160476",
+      "origin_sha256": "0943174c59b1d8de719977efd17f39a479dae38369350d6f060f119eac160476",
+      "verified": true,
+      "transformation": "none"
+    },
+    {
+      "path": "research/02-paper-atlas.md",
+      "raw_sha256": "0e2543a3cce6778d8265d7e8a3232e4de7e6dffc7970dda7177457ecc76b8413",
+      "origin_sha256": "77c1610d44e1681ab7a44d33e019fee1dce515e4020f76e8b29645425632e976",
+      "verified": true,
+      "transformation": "HTML entity decoding"
+    },
+    {
+      "path": "research/02b-linkage-and-semantics-atlas.md",
+      "raw_sha256": "601ea62db81486291f436f42f0c390b74f66e13dea9250ef5963b87f26ece7e1",
+      "origin_sha256": "601ea62db81486291f436f42f0c390b74f66e13dea9250ef5963b87f26ece7e1",
+      "verified": true,
+      "transformation": "none"
+    },
+    {
+      "path": "research/03-standards-and-implementation-atlas.md",
+      "raw_sha256": "60d4af871939b9b30c713ea2317e887ab7be9f1a2eca0953b0b39d75f4734ba2",
+      "origin_sha256": "60d4af871939b9b30c713ea2317e887ab7be9f1a2eca0953b0b39d75f4734ba2",
+      "verified": true,
+      "transformation": "none"
+    },
+    {
+      "path": "research/04-provider-evidence.md",
+      "raw_sha256": "07c0542f3849d0883ac403003d015468ddce448d1951270bb6907c2ccdeb75b5",
+      "origin_sha256": "c536fefa6de3019eca83cfe34947bbd0488c899215c8faa9cdf4f04d5949c9c5",
+      "verified": true,
+      "transformation": "HTML entity decoding"
+    },
+    {
+      "path": "research/05-minimal-model.md",
+      "raw_sha256": "cb54e19e9807f3462e7f1aabbaa3e1fae06c41de9f7ee05fc3399cc35d0dbbf2",
+      "origin_sha256": "3f607714c4173a4dbff51f11e7872662a13eb72d8453a944ff0ed59808bcccd1",
+      "verified": true,
+      "transformation": "HTML entity decoding"
+    },
+    {
+      "path": "research/06-reconstruction-feasibility.md",
+      "raw_sha256": "ac8102accc92e6aa630124b680c8a380fc7fba6a7aa2744fa0abe5f33bc66101",
+      "origin_sha256": "ac8102accc92e6aa630124b680c8a380fc7fba6a7aa2744fa0abe5f33bc66101",
+      "verified": true,
+      "transformation": "none"
+    },
+    {
+      "path": "research/07-bounded-recipes.md",
+      "raw_sha256": "75b520717a201cd5f16db7a6ccabd00b4c5ec286c8c2cc3c538289e998f85646",
+      "origin_sha256": "718f92dc58db8c5ada600ac72ceec271441c7c2726bc09280b84ab88e8ea6a6c",
+      "verified": true,
+      "transformation": "HTML entity decoding"
+    },
+    {
+      "path": "research/08-adversarial-probes.md",
+      "raw_sha256": "2c4b3504009a1bba2f6477e07a8351a3955465813e1606b36a43bb0d3701df5a",
+      "origin_sha256": "2c4b3504009a1bba2f6477e07a8351a3955465813e1606b36a43bb0d3701df5a",
+      "verified": true,
+      "transformation": "none"
+    },
+    {
+      "path": "research/09-pointers-and-evolution.md",
+      "raw_sha256": "1cc5c8e0064a80796338f7701af27d32607822239775ef369f115c6a0761dfb4",
+      "origin_sha256": "1cc5c8e0064a80796338f7701af27d32607822239775ef369f115c6a0761dfb4",
+      "verified": true,
+      "transformation": "none"
+    },
+    {
+      "path": "research/10-permission-boundaries.md",
+      "raw_sha256": "12e61e6474cc807cb2217f0df8038be08f20ac19f9c9f6dbe48384b511b6eb1b",
+      "origin_sha256": "12e61e6474cc807cb2217f0df8038be08f20ac19f9c9f6dbe48384b511b6eb1b",
+      "verified": true,
+      "transformation": "none"
+    },
+    {
+      "path": "research/11-proposals-and-opus-handoff.md",
+      "raw_sha256": "a913dc02bfcd16a859f1e8acb9690570a2c7f4e9bd57a3a34c43ae9db25255c8",
+      "origin_sha256": "1945379805369f54ad7c94cd0fd592dae0c02ccc7a8b0828fa3df794ad9add9b",
+      "verified": true,
+      "transformation": "HTML entity decoding"
+    },
+    {
+      "path": "probes/run_probes.py",
+      "raw_sha256": "296b961c799f5cf520c533e8d7ea583b6b190ef8529401d82f040e7776510d27",
+      "origin_sha256": "296b961c799f5cf520c533e8d7ea583b6b190ef8529401d82f040e7776510d27",
+      "verified": true,
+      "transformation": "none"
+    },
+    {
+      "path": "probes/results.json",
+      "raw_sha256": "bd6fe894f9810af5c7b22b212ce704578b5de3d5ca93c7084370d9381c2bb233",
+      "origin_sha256": "bd6fe894f9810af5c7b22b212ce704578b5de3d5ca93c7084370d9381c2bb233",
+      "verified": true,
+      "transformation": "none"
+    }
+  ],
+  "assembly_checks": [
+    "15 origin hashes match",
+    "Python AST parse",
+    "JSON parse and 20 result entries"
+  ],
+  "executed_by_assembler": false,
+  "origin_zip_sha256": "a38adc3f85c91f86a55f7b661a59be85ac49aa55d5df193ecb899061771ab267",
+  "origin_pretty_results_sha256": "496bb0368a296f90ff7fa1e9151eb1dd979d6cac7a8ac726f5023b62c41eaf9d"
+}

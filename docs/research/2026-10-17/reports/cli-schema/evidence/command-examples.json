@@ -1,0 +1,9 @@
+{
+  "git_command": "git cat-file --batch-check=%(objectname) %(objecttype) %(objectsize)",
+  "git_input": "HEAD:docs/SPEC.md\\nHEAD:does-not-exist\\n",
+  "git_output": "5f15eaa73eb376886df00713bdd40f65ce8206f9 blob 23795\nHEAD:does-not-exist missing\n",
+  "git_exit": 0,
+  "rg_command": "rg --json -n -F \"Retry policy\" <synthetic-temp>/report.md",
+  "rg_output": "{\"type\":\"begin\",\"data\":{\"path\":{\"text\":\"<synthetic-temp>/report.md\"}}}\n{\"type\":\"match\",\"data\":{\"path\":{\"text\":\"<synthetic-temp>/report.md\"},\"lines\":{\"text\":\"Retry policy: wait 30 seconds.\\n\"},\"line_number\":2,\"absolute_offset\":9,\"submatches\":[{\"match\":{\"text\":\"Retry policy\"},\"start\":0,\"end\":12}]}}\n{\"type\":\"end\",\"data\":{\"path\":{\"text\":\"<synthetic-temp>/report.md\"},\"binary_offset\":null,\"stats\":{\"elapsed\":{\"secs\":0,\"nanos\":145251,\"human\":\"0.000145s\"},\"searches\":1,\"searches_with_match\":1,\"bytes_searched\":40,\"bytes_printed\":314,\"matched_lines\":1,\"matches\":1}}}\n{\"data\":{\"elapsed_total\":{\"human\":\"0.001319s\",\"nanos\":1319407,\"secs\":0},\"stats\":{\"bytes_printed\":314,\"bytes_searched\":40,\"elapsed\":{\"human\":\"0.000145s\",\"nanos\":145251,\"secs\":0},\"matched_lines\":1,\"matches\":1,\"searches\":1,\"searches_with_match\":1}},\"type\":\"summary\"}\n",
+  "rg_exit": 0
+}

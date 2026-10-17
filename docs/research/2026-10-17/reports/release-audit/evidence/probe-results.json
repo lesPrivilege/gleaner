@@ -1,0 +1,71 @@
+[
+  {
+    "name": "provider-id-collision",
+    "evidence_kind": "actual SQLite; verbatim Registry.upsert SQL",
+    "result": [
+      "claude-code",
+      "Beta",
+      "/beta",
+      "/b.jsonl"
+    ]
+  },
+  {
+    "name": "partial-reread-prunes-history",
+    "evidence_kind": "actual SQLite pruning; malformed-parse-to-empty path established by source",
+    "result": {
+      "deliveries": 0,
+      "captures": 0
+    }
+  },
+  {
+    "name": "distinct-repositories-share-filter-label",
+    "evidence_kind": "Projects.swift transcription over synthetic .git directories",
+    "result": [
+      "app",
+      "app"
+    ]
+  },
+  {
+    "name": "external-worktree-after-cold-relaunch",
+    "evidence_kind": "Projects.swift transcription; cache intentionally cold as on relaunch",
+    "result": {
+      "before": "Atlas",
+      "repository_after": "/tmp",
+      "project_after": "tmp"
+    }
+  },
+  {
+    "name": "history-restore-parent-is-wrong",
+    "evidence_kind": "actual Git; synthetic repository; exact generated argument pattern",
+    "result": {
+      "recoverable_candidate": true,
+      "suggested_restore_exit": 1,
+      "error": "error: pathspec 'report.md' did not match any file(s) known to git"
+    }
+  },
+  {
+    "name": "restore-apostrophe-quoting",
+    "evidence_kind": "actual POSIX shell syntax check; no command execution",
+    "result": {
+      "exit": 2,
+      "error": "sh: 1: Syntax error: Unterminated quoted string"
+    }
+  },
+  {
+    "name": "unclosed-fence-not-covered",
+    "evidence_kind": "verbatim regex run with Python on ASCII fixture; Swift/ICU acceptance test supplied separately",
+    "result": {
+      "fence_matches": 0,
+      "exposed_absolute_path": "/tmp/out/report.md"
+    }
+  },
+  {
+    "name": "historical-file-current-directory",
+    "evidence_kind": "direct source branch trace; Swift regression test supplied separately",
+    "result": {
+      "selected_sha": "saved-file-sha",
+      "current_kind": "directory",
+      "handoff": "folder"
+    }
+  }
+]

@@ -1,0 +1,94 @@
+{
+  "date": "2026-10-17",
+  "count_semantics": "Requested result slots, not distinct sources or fully read papers. Initial legacy-discovery output is in tool history; later results preserved locally.",
+  "searches": [
+    {
+      "angle": "legacy-document reconstruction",
+      "numResults": 8
+    },
+    {
+      "angle": "Git2PROV and inference",
+      "numResults": 8
+    },
+    {
+      "angle": "Claude checkpoints",
+      "numResults": 5
+    },
+    {
+      "angle": "OpenLineage and catalogs",
+      "numResults": 6
+    },
+    {
+      "angle": "record linkage and schema matching",
+      "numResults": 7
+    },
+    {
+      "angle": "Gemini checkpoints",
+      "numResults": 5
+    },
+    {
+      "angle": "execution-time capture",
+      "numResults": 6
+    },
+    {
+      "angle": "event sourcing",
+      "numResults": 4
+    },
+    {
+      "angle": "schema evolution",
+      "numResults": 4
+    },
+    {
+      "angle": "OpenMetadata logs",
+      "numResults": 4
+    },
+    {
+      "angle": "DataHub reconciliation",
+      "numResults": 4
+    },
+    {
+      "angle": "preservation standards",
+      "numResults": 5
+    },
+    {
+      "angle": "provenance sanitization",
+      "numResults": 3
+    },
+    {
+      "angle": "ReproZip bibliographic verification",
+      "numResults": 5
+    },
+    {
+      "angle": "Git and filesystem capture",
+      "numResults": 5
+    },
+    {
+      "angle": "recent reconstruction gap check",
+      "numResults": 6
+    },
+    {
+      "angle": "why/where provenance",
+      "numResults": 4
+    },
+    {
+      "angle": "Claude checkpoint locations",
+      "numResults": 4
+    },
+    {
+      "angle": "event ordering",
+      "numResults": 3
+    },
+    {
+      "angle": "provenance semirings",
+      "numResults": 3
+    }
+  ],
+  "themes": [
+    "post-hoc reconstruction counterexamples",
+    "execution capture and replay",
+    "standards and catalogs",
+    "linkage and schema evolution",
+    "provider evidence storage",
+    "permission-aware governance"
+  ]
+}

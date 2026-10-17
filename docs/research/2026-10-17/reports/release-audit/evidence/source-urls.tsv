@@ -1,0 +1,13 @@
+apple-window.md	https://developer.apple.com/documentation/swiftui/window.md
+apple-keyboards.md	https://developer.apple.com/design/human-interface-guidelines/keyboards.md
+apple-drag.md	https://developer.apple.com/design/human-interface-guidelines/drag-and-drop.md
+apple-accessibility.md	https://developer.apple.com/design/human-interface-guidelines/accessibility.md
+apple-notarization.md	https://developer.apple.com/documentation/security/notarizing-macos-software-before-distribution.md
+Obelisk-types.ts	https://raw.githubusercontent.com/tommy0103/obelisk/a4b7329e1fcb8d907ec1f1c9543a26513d87631c/packages/core/src/providers/types.ts
+AgentsView-mappings.go	https://raw.githubusercontent.com/kenn-io/agentsview/905a5fe2ee7c01fb55f620d9ce4e4728aed177ae/internal/db/worktree_mappings.go
+AgentsView-reclassification.go	https://raw.githubusercontent.com/kenn-io/agentsview/905a5fe2ee7c01fb55f620d9ce4e4728aed177ae/internal/db/worktree_reclassification.go
+Cass-sqlite.rs	https://raw.githubusercontent.com/Dicklesworthstone/coding_agent_session_search/b605426e0d134fdc2c5621cb8c3795fb8274bfde/src/storage/sqlite.rs
+CotEditor-FolderFinder.swift	https://raw.githubusercontent.com/coteditor/CotEditor/3de66b63ccab9c4f6fa0d836ffefaacb6b6f754f/CotEditor/Sources/Document%20Window/Sidebar/Folder%20Find/FolderFinder.swift
+Itsycal-PrefsEventsVC.m	https://raw.githubusercontent.com/sfsam/Itsycal/1a31050555a97e3b7aac5470ec147abfe7aa0d6a/Itsycal/Prefs/PrefsEventsVC.m
+Vibe-migration.sql	https://raw.githubusercontent.com/BloopAI/vibe-kanban/d5cbb5380fa0b32e98ef9b8d987f63decce4be3a/crates/db/migrations/20260217120312_remove_task_fk_from_workspaces.sql
+OpenCode-project.ts	https://raw.githubusercontent.com/anomalyco/opencode/a49f179170b620f719fc6c25986e971af47b5268/packages/core/src/project.ts

@@ -1,0 +1,72 @@
+[
+  {
+    "path": "report.md",
+    "expected": "e09c224e1034766f0b7c80d9a01dc4fd1caeb49feb5b01615bbe53f26063529a",
+    "actual": "e09c224e1034766f0b7c80d9a01dc4fd1caeb49feb5b01615bbe53f26063529a",
+    "match": true,
+    "characters": 14358
+  },
+  {
+    "path": "evidence-appendix.md",
+    "expected": "9672f04d5817c809efc6e299ed32a386d083e909373cc3631cb1d94219957183",
+    "actual": "9672f04d5817c809efc6e299ed32a386d083e909373cc3631cb1d94219957183",
+    "match": true,
+    "characters": 19292
+  },
+  {
+    "path": "native-acceptance.md",
+    "expected": "b409523040c66d7d03ec82346f35a836a7bb33dd085ab4546e4c6dd3a9b73658",
+    "actual": "b409523040c66d7d03ec82346f35a836a7bb33dd085ab4546e4c6dd3a9b73658",
+    "match": true,
+    "characters": 9291
+  },
+  {
+    "path": "source-locations.md",
+    "expected": "2e3eb4d47d0293967c8e0eb88b2d93f068106da34c50cecac2995ac8eb3679ab",
+    "actual": "2e3eb4d47d0293967c8e0eb88b2d93f068106da34c50cecac2995ac8eb3679ab",
+    "match": true,
+    "characters": 6552
+  },
+  {
+    "path": "process-log.md",
+    "expected": "bb277cadf0710168b9458b90d4d1314f72a36551ec15ad7b522e3293823ec520",
+    "actual": "bb277cadf0710168b9458b90d4d1314f72a36551ec15ad7b522e3293823ec520",
+    "match": true,
+    "characters": 5249
+  },
+  {
+    "path": "probes/probe.py",
+    "expected": "7f14037d5d5239b3494c3b98d0d04dd909096190de1dc75956b3a52567253f17",
+    "actual": "7f14037d5d5239b3494c3b98d0d04dd909096190de1dc75956b3a52567253f17",
+    "match": true,
+    "characters": 6554
+  },
+  {
+    "path": "probes/make_fixtures.py",
+    "expected": "2af2986f3b9c4b69cbb37cab1641a6bed82a70698d4b39130b83396df13803b6",
+    "actual": "2af2986f3b9c4b69cbb37cab1641a6bed82a70698d4b39130b83396df13803b6",
+    "match": true,
+    "characters": 3267
+  },
+  {
+    "path": "probes/AuditRegressionTests.swift",
+    "expected": "8f7c90a853fc2b556277554ca463e42ccbbfde952c0bbe7e2a575b62777413f0",
+    "actual": "8f7c90a853fc2b556277554ca463e42ccbbfde952c0bbe7e2a575b62777413f0",
+    "match": true,
+    "characters": 3760
+  },
+  {
+    "path": "evidence/probe-results.json",
+    "expected": "7e5faa27dd7d568f4dc572455f3d55c5456458a641764a55de1de53bb4ed7180",
+    "actual": "7e5faa27dd7d568f4dc572455f3d55c5456458a641764a55de1de53bb4ed7180",
+    "match": true,
+    "characters": 1990
+  },
+  {
+    "path": "evidence/source-urls.tsv",
+    "expected": "bdfdac065588f571c30f4cdec11ddb9049bd703cabf418e5aaec7fda33098797",
+    "actual": "bdfdac065588f571c30f4cdec11ddb9049bd703cabf418e5aaec7fda33098797",
+    "match": true,
+    "characters": 1780
+  }
+]

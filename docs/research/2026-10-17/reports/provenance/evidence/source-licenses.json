@@ -1,0 +1,28 @@
+{
+  "checked_date": "2026-10-17",
+  "gleaner": {
+    "commit": "22dd07d926a764f0a2efcdeb093b78f0b9eab41b",
+    "local_files": ["public-source/gleaner/ClaudeCodeAdapter.swift", "public-source/gleaner/CodexAdapter.swift", "public-source/gleaner/Indexer.swift", "public-source/gleaner/Registry.swift", "public-source/gleaner/SessionLog.swift"],
+    "license_status": "No root LICENSE/COPYING file in the pinned tree and no license header in the five selected files; GitHub repository metadata returned license null. No general redistribution license established.",
+    "public_package_action": "Link pinned originals unless the rights holder explicitly authorizes redistribution or a suitable license is established."
+  },
+  "codex": {
+    "commit": "ce0323f2f2d3b25e82806cd555237da3db4e1897",
+    "local_files": ["public-source/codex-rollout-src-config.rs", "public-source/codex-rollout-src-maintenance.rs", "public-source/codex-rollout-src-policy.rs", "public-source/codex-rollout-src-recorder.rs", "public-source/codex-message-history-src-lib.rs"],
+    "license": "Apache-2.0",
+    "license_url": "https://github.com/openai/codex/blob/ce0323f2f2d3b25e82806cd555237da3db4e1897/LICENSE",
+    "notice_url": "https://github.com/openai/codex/blob/ce0323f2f2d3b25e82806cd555237da3db4e1897/NOTICE",
+    "notice_summary": "OpenAI Codex; Copyright 2025 OpenAI; NOTICE also acknowledges Ratatui-derived MIT-licensed code and its copyright holders.",
+    "public_package_action": "Prefer pinned links; any source redistribution should retain applicable LICENSE, NOTICE and attribution, and identify modifications."
+  },
+  "papers_and_documentation": {
+    "status": "Public access is not a blanket redistribution license. Raw retrieval responses are local research evidence, not public-package material.",
+    "public_package_action": "Link original papers and specifications. Do not redistribute full copyrighted papers without appropriate rights."
+  },
+  "authored_research_and_probes": {
+    "status": "Created for this task; no publication license selected or public release authorized.",
+    "public_package_action": "Parent may assemble the reference package. Publication and its license remain separate decisions."
+  },
+  "original_bundle_unchanged_sha256": "a38adc3f85c91f86a55f7b661a59be85ac49aa55d5df193ecb899061771ab267",
+  "limits": ["Local-user recovery not tested", "Enterprise enforcement not tested", "Research findings are not a product contract", "No push"]
+}

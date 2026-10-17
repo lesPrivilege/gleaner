@@ -1,0 +1,60 @@
+{
+  "markdown_checks": [
+    {
+      "path": "01-synthesis.md",
+      "characters": 9739,
+      "bytes": 9755
+    },
+    {
+      "path": "02-interface-retrieval-atlas.md",
+      "characters": 9380,
+      "bytes": 9388
+    },
+    {
+      "path": "03-identity-schema-atlas.md",
+      "characters": 9628,
+      "bytes": 9650
+    },
+    {
+      "path": "04-logical-object-options.md",
+      "characters": 9731,
+      "bytes": 9813
+    },
+    {
+      "path": "05-evaluation.md",
+      "characters": 9640,
+      "bytes": 9653
+    },
+    {
+      "path": "06-opus-handoff.md",
+      "characters": 3610,
+      "bytes": 3620
+    },
+    {
+      "path": "07-interaction-examples.md",
+      "characters": 5831,
+      "bytes": 5831
+    },
+    {
+      "path": "README.md",
+      "characters": 1104,
+      "bytes": 1104
+    },
+    {
+      "path": "evidence/check-record.md",
+      "characters": 9518,
+      "bytes": 9526
+    },
+    {
+      "path": "evidence/source-access.md",
+      "characters": 5540,
+      "bytes": 5548
+    }
+  ],
+  "local_links": "pass",
+  "python_ast": "pass",
+  "result_totals": "pass",
+  "repository_sha": "22dd07d926a764f0a2efcdeb093b78f0b9eab41b",
+  "repository_clean": true,
+  "probe_rerun": "not needed: wording-only clarification"
+}

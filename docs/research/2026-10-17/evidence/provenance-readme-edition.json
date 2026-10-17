@@ -1,0 +1,8 @@
+{
+  "source": "incoming/provenance/README.md (HTML-decoded origin)",
+  "source_sha256": "956b925f5c70c52c20aace6f2a2eba85b5689c01dde9ea1ce219e8033cfea8b5",
+  "assembled_path": "reports/provenance/README.md",
+  "assembled_sha256": "4c43073905389e4b6ad51b68d25b2bda72386d01af778c85a0b8d9c82cb8254f",
+  "change": "Parent-authorized source-inspection wording correction; original retained.",
+  "publication_status": "Source pending-approval statements are historical; parent later supplied explicit public branch authorization."
+}

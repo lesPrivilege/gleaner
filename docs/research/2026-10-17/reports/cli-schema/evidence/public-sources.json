@@ -1,0 +1,52 @@
+[
+  {
+    "repository": "modelcontextprotocol/swift-sdk",
+    "checked_at": "2026-10-17T15:14:35.109024+00:00",
+    "error": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  {
+    "repository": "swiftlang/swift-argument-parser",
+    "checked_at": "2026-10-17T15:14:35.109385+00:00",
+    "error": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  {
+    "repository": "github/github-mcp-server",
+    "checked_at": "2026-10-17T15:14:35.110671+00:00",
+    "error": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  {
+    "repository": "cli/cli",
+    "checked_at": "2026-10-17T15:14:35.111173+00:00",
+    "error": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  {
+    "repository": "BurntSushi/ripgrep",
+    "checked_at": "2026-10-17T15:14:35.111608+00:00",
+    "error": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  {
+    "repository": "sourcegraph/zoekt",
+    "checked_at": "2026-10-17T15:14:35.130303+00:00",
+    "error": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  {
+    "repository": "datahub-project/datahub",
+    "checked_at": "2026-10-17T15:14:35.132930+00:00",
+    "error": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  {
+    "repository": "opencontainers/image-spec",
+    "checked_at": "2026-10-17T15:14:35.135821+00:00",
+    "error": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  {
+    "repository": "a2aproject/A2A",
+    "checked_at": "2026-10-17T15:14:35.137958+00:00",
+    "error": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  },
+  {
+    "repository": "modelcontextprotocol/modelcontextprotocol",
+    "checked_at": "2026-10-17T15:14:35.140423+00:00",
+    "error": "<urlopen error Tunnel connection failed: 403 Forbidden>"
+  }
+]

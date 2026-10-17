@@ -1,0 +1,42 @@
+{
+  "checks": [
+    {
+      "file": "00-positioning.md",
+      "raw_sha256": "4d6e8d7b4c6347dfaa768beef8d3694380e48d084afd96017cf6b9c2a3a797cd",
+      "origin_sha256": "4d6e8d7b4c6347dfaa768beef8d3694380e48d084afd96017cf6b9c2a3a797cd",
+      "matched": true
+    },
+    {
+      "file": "01-related-work-atlas.md",
+      "raw_sha256": "a4388ae742e6fc9eda7cb1536f073edd5fa9af12e9f920a94804865f469d47c2",
+      "origin_sha256": "a4388ae742e6fc9eda7cb1536f073edd5fa9af12e9f920a94804865f469d47c2",
+      "matched": true
+    },
+    {
+      "file": "02-comparison-matrix.md",
+      "raw_sha256": "55fcf93442d77e6afab660c53b400ea6b2ac29366b8f1633cf7a297ee2ef7adf",
+      "origin_sha256": "55fcf93442d77e6afab660c53b400ea6b2ac29366b8f1633cf7a297ee2ef7adf",
+      "matched": true
+    },
+    {
+      "file": "03-existing-evaluations.md",
+      "raw_sha256": "a2f01d62efc0c5b8520cb1d60601eb6db71921d99764d7237bfe47798c6811f9",
+      "origin_sha256": "a2f01d62efc0c5b8520cb1d60601eb6db71921d99764d7237bfe47798c6811f9",
+      "matched": true
+    },
+    {
+      "file": "04-experiments-and-questions.md",
+      "raw_sha256": "7a542ca0caf37d85b47301f58b562c022ab543cf4da756698ffd9415cfc7f34c",
+      "origin_sha256": "7a542ca0caf37d85b47301f58b562c022ab543cf4da756698ffd9415cfc7f34c",
+      "matched": true
+    },
+    {
+      "file": "90-search-access-log.md",
+      "raw_sha256": "76892114b03cf434e74df7990a836bc2f61acb1a25e43c50430e92e83b332079",
+      "origin_sha256": "81e955b1782a4df4252f386db1f47dd7e9f19812ead65075b25b68554433877b",
+      "matched": true
+    }
+  ],
+  "independent_execution": false,
+  "source_task_id": "not supplied"
+}

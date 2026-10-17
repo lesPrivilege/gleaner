@@ -1,0 +1,92 @@
+[
+  {
+    "local": "public-source/gleaner/ClaudeCodeAdapter.swift",
+    "url": "https://github.com/lesPrivilege/gleaner/blob/22dd07d926a764f0a2efcdeb093b78f0b9eab41b/Sources/GleanerCore/ClaudeCodeAdapter.swift",
+    "git_blob_sha1": "fa7f39f6e09996511308f687c4758fdeb6531217",
+    "commit": "22dd07d926a764f0a2efcdeb093b78f0b9eab41b",
+    "verified_git_blob": true,
+    "sha256": "971f61c55b60646e567ef08439c25891ef35a6e2566180e411d2814478145752",
+    "bytes": 5866
+  },
+  {
+    "local": "public-source/gleaner/CodexAdapter.swift",
+    "url": "https://github.com/lesPrivilege/gleaner/blob/22dd07d926a764f0a2efcdeb093b78f0b9eab41b/Sources/GleanerCore/CodexAdapter.swift",
+    "git_blob_sha1": "d231c1207ba9c5acdf980e7252c45b2d0fba2dd1",
+    "commit": "22dd07d926a764f0a2efcdeb093b78f0b9eab41b",
+    "verified_git_blob": true,
+    "sha256": "3ed2bc3ce25c7f9e7fb2bb8a4a7f5933d69bd663786246551356fd3ffb58799a",
+    "bytes": 5501
+  },
+  {
+    "local": "public-source/gleaner/Indexer.swift",
+    "url": "https://github.com/lesPrivilege/gleaner/blob/22dd07d926a764f0a2efcdeb093b78f0b9eab41b/Sources/GleanerCore/Indexer.swift",
+    "git_blob_sha1": "c6a110de3eac13dfef97c1ac58424000182434a4",
+    "commit": "22dd07d926a764f0a2efcdeb093b78f0b9eab41b",
+    "verified_git_blob": true,
+    "sha256": "61baf60956dbf44f4765beacea7c39d55b9e27b61e67c42e09ea562b27db2703",
+    "bytes": 7946
+  },
+  {
+    "local": "public-source/gleaner/Registry.swift",
+    "url": "https://github.com/lesPrivilege/gleaner/blob/22dd07d926a764f0a2efcdeb093b78f0b9eab41b/Sources/GleanerCore/Registry.swift",
+    "git_blob_sha1": "604d1814c383b0c55d3ff87cda97accc07915866",
+    "commit": "22dd07d926a764f0a2efcdeb093b78f0b9eab41b",
+    "verified_git_blob": true,
+    "sha256": "d17d9090ffcba584498ea270bef6a7cab071fc3efafed9133c70dfd4dbb174cc",
+    "bytes": 8058
+  },
+  {
+    "local": "public-source/gleaner/SessionLog.swift",
+    "url": "https://github.com/lesPrivilege/gleaner/blob/22dd07d926a764f0a2efcdeb093b78f0b9eab41b/Sources/GleanerCore/SessionLog.swift",
+    "git_blob_sha1": "9ac6d7bf81123fed7b58b83930c8bae37e663ab2",
+    "commit": "22dd07d926a764f0a2efcdeb093b78f0b9eab41b",
+    "verified_git_blob": true,
+    "sha256": "7067ac353bd4db5b82189a117a93ea69279caa7031042037b3427abc0d145cee",
+    "bytes": 4585
+  },
+  {
+    "local": "public-source/codex-rollout-src-config.rs",
+    "url": "https://github.com/openai/codex/blob/ce0323f2f2d3b25e82806cd555237da3db4e1897/codex-rs/rollout/src/config.rs",
+    "git_blob_sha1": "59d2b6453b2c3f0cece46a36411ec226f98159a9",
+    "commit": "ce0323f2f2d3b25e82806cd555237da3db4e1897",
+    "verified_git_blob": true,
+    "sha256": "be2ad1e4fa2c410c062df7616ca535843df4c90b1034b921433dcd60196336af",
+    "bytes": 2330
+  },
+  {
+    "local": "public-source/codex-rollout-src-maintenance.rs",
+    "url": "https://github.com/openai/codex/blob/ce0323f2f2d3b25e82806cd555237da3db4e1897/codex-rs/rollout/src/maintenance.rs",
+    "git_blob_sha1": "35b792874096835b65097850a774eae2d6edd1c9",
+    "commit": "ce0323f2f2d3b25e82806cd555237da3db4e1897",
+    "verified_git_blob": true,
+    "sha256": "abdbd690732aaee671609fc0540c9e845a15116c0de183b0dd976d560f55c404",
+    "bytes": 1501
+  },
+  {
+    "local": "public-source/codex-rollout-src-policy.rs",
+    "url": "https://github.com/openai/codex/blob/ce0323f2f2d3b25e82806cd555237da3db4e1897/codex-rs/rollout/src/policy.rs",
+    "git_blob_sha1": "51997cd91beb8338e9f36022166cc1ad67b67885",
+    "commit": "ce0323f2f2d3b25e82806cd555237da3db4e1897",
+    "verified_git_blob": true,
+    "sha256": "eb2221af4eed77c25d400cf09d21c73a3a6a5f54ee3ed4ea9873bbbdcb714e81",
+    "bytes": 11606
+  },
+  {
+    "local": "public-source/codex-rollout-src-recorder.rs",
+    "url": "https://github.com/openai/codex/blob/ce0323f2f2d3b25e82806cd555237da3db4e1897/codex-rs/rollout/src/recorder.rs",
+    "git_blob_sha1": "765d83ccc7df4b136c04774930f4ac65af15bbd5",
+    "commit": "ce0323f2f2d3b25e82806cd555237da3db4e1897",
+    "verified_git_blob": true,
+    "sha256": "42a973710d6eb7e6731b3774cdf30dba89f56fd7685cdeac2857825c08b83612",
+    "bytes": 77131
+  },
+  {
+    "local": "public-source/codex-message-history-src-lib.rs",
+    "url": "https://github.com/openai/codex/blob/ce0323f2f2d3b25e82806cd555237da3db4e1897/codex-rs/message-history/src/lib.rs",
+    "git_blob_sha1": "4b2ce273b0b35389676b41a8c2d0d8bb283bf255",
+    "commit": "ce0323f2f2d3b25e82806cd555237da3db4e1897",
+    "verified_git_blob": true,
+    "sha256": "5296d70335948ca3b1a59ddede75c599ec1c192efa4630b6d8d198ce992703b6",
+    "bytes": 14141
+  }
+]

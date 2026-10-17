@@ -1,0 +1,18 @@
+{
+  "checked_date": "2026-10-17",
+  "repository": "https://github.com/lesPrivilege/gleaner",
+  "main_sha": "22dd07d926a764f0a2efcdeb093b78f0b9eab41b",
+  "main_tree": "ea7c7e601be4f5a178159964028500d501d590c4",
+  "pr4": {
+    "url": "https://github.com/lesPrivilege/gleaner/pull/4",
+    "number": 4,
+    "state": "open",
+    "merged": false,
+    "title": "Show threads, outlines and the project timeline",
+    "base": "main",
+    "base_sha": "22dd07d926a764f0a2efcdeb093b78f0b9eab41b",
+    "head": "claude/structure-views",
+    "head_sha": "72a42993512281a8bcc36fd9c6f22566132258d9"
+  },
+  "codex_sha": "ce0323f2f2d3b25e82806cd555237da3db4e1897"
+}

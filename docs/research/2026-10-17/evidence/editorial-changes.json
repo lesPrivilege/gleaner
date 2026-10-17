@@ -1,0 +1,20 @@
+[
+  {
+    "path": "reports/provenance/evidence/revision-pins.json",
+    "before_sha256": "46079513e4c376687309f394b40684dd32a5b1a55230a54ece1bea447820268f",
+    "after_sha256": "f5c144cef82d463fbbb271dbbe17ae8f3306ae4f89d2023a37ff8f821eaa5e02",
+    "reason": "Public minimization: remove user/avatar IDs, copied PR body and unnecessary metadata. Raw source preserved privately."
+  },
+  {
+    "path": "reports/release-audit/README.md",
+    "before_sha256": "a728fe9ceed70ab168f55a1a17e76799b9c65aed847028e98c68ce17cbca2637",
+    "after_sha256": "04ec182442f890c8be86b178bfccc85f5bfa93f1a460efce958a4e7b4bfb3580",
+    "reason": "Replace private/local incoming-transfer link with public assembly record."
+  },
+  {
+    "path": "reports/benchmark/deliverables/FULL_TEXT_INDEX.md",
+    "before_sha256": "cc3ac4f84c5e7a1a63632ff6c8be15749c8f091958c6c5762d302c76a7e5d291",
+    "after_sha256": "13d1b12e01e32276dce2ebbf07675b8137451593dec276580db3e08f5e567d2c",
+    "reason": "Publish chunk hashes rather than duplicate non-standalone fragments with context-dependent links."
+  }
+]

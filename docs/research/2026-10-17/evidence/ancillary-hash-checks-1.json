@@ -1,0 +1,37 @@
+[
+  {
+    "stream": "benchmark",
+    "path": "evidence/process-log.md",
+    "raw_sha256": "0686e2cbc4538fb0b17c20a4e1f0b52c087d80c73eff71014708591c93580bd3",
+    "origin_sha256": "a11ac25b231d6b485df580332d3cbaf3f277255827d27743fe8a9e9d05a292d1",
+    "matched": true
+  },
+  {
+    "stream": "benchmark",
+    "path": "synthetic/run-001/config.json",
+    "raw_sha256": "06b15f44c916139a86bbdbc0ab50d4cd8163283190324015bf2183e0299374db",
+    "origin_sha256": "06b15f44c916139a86bbdbc0ab50d4cd8163283190324015bf2183e0299374db",
+    "matched": true
+  },
+  {
+    "stream": "benchmark",
+    "path": "synthetic/run-001/fixture-manifests.json",
+    "raw_sha256": "bb3624cc3a5106ba4917887cc91455d3ce442d1474d524d8bbb90a7a9ac459d9",
+    "origin_sha256": "bb3624cc3a5106ba4917887cc91455d3ce442d1474d524d8bbb90a7a9ac459d9",
+    "matched": true
+  },
+  {
+    "stream": "provenance",
+    "path": "evidence/revision-pins.json",
+    "raw_sha256": "46079513e4c376687309f394b40684dd32a5b1a55230a54ece1bea447820268f",
+    "origin_sha256": "46079513e4c376687309f394b40684dd32a5b1a55230a54ece1bea447820268f",
+    "matched": true
+  },
+  {
+    "stream": "provenance",
+    "path": "evidence/public-source-manifest.json",
+    "raw_sha256": "b2ff45c0a9ad74d7b3981a3cbb57dcf94d25e3ce5f4c062e80d432af6fb5656d",
+    "origin_sha256": "b2ff45c0a9ad74d7b3981a3cbb57dcf94d25e3ce5f4c062e80d432af6fb5656d",
+    "matched": true
+  }
+]

@@ -1,0 +1,117 @@
+{
+  "source_task": "01a14a80-3519-7520-bf51-23380650a01d",
+  "verified": [
+    {
+      "path": "REGISTRATION.md",
+      "sha256": "9e078e483afea337c6a048635119dc29d41addae083f93c7c00b98a0575f0f77",
+      "matched": true
+    },
+    {
+      "path": "deliverables/PROTOCOL.md",
+      "sha256": "f2fe644270d99435301eb1eeb1f4367b8124af5a0b90bb06101cce11d68cd333",
+      "matched": true
+    },
+    {
+      "path": "synthetic/probe.py",
+      "sha256": "8c4b6cc1625f62da1d54edf72fc66e8eb70aa608d38acdeea16c74802d5f06f4",
+      "matched": true
+    },
+    {
+      "path": "synthetic/run-001/results.json",
+      "sha256": "526df2090f9a495c4194ca4ce25b1bfd7256bb2f4f3c71b04e486ce93b22b857",
+      "matched": true
+    }
+  ],
+  "split_editions": [
+    {
+      "file": "deliverables/README.md",
+      "bytes": 3583,
+      "sha256": "a9667635d9b8ace959ddbe80fe82893a756adbee58d2ab2c8b4316e1853eed3c",
+      "operation": "Editorial split of verified full protocol; remove document separators; one final LF. No individual originating-file hash claimed."
+    },
+    {
+      "file": "deliverables/01-claims-and-design.md",
+      "bytes": 8937,
+      "sha256": "57332f94a04fab3daa2a7d82c94e3f5292f2abdc352335bae0fa7fb79958ed45",
+      "operation": "Editorial split of verified full protocol; remove document separators; one final LF. No individual originating-file hash claimed."
+    },
+    {
+      "file": "deliverables/02-evidence-and-lifecycle.md",
+      "bytes": 8227,
+      "sha256": "d5e1b91fd8f369b3673ba24f65f32498d94579a0a28405dc42b90fe3979808fe",
+      "operation": "Editorial split of verified full protocol; remove document separators; one final LF. No individual originating-file hash claimed."
+    },
+    {
+      "file": "deliverables/03-scoring-and-statistics.md",
+      "bytes": 11325,
+      "sha256": "f9f69c7a5d31c58f1d65ad2a4a5134873fcc93e0ef7113b8f0ecb775d0461890",
+      "operation": "Editorial split of verified full protocol; remove document separators; one final LF. No individual originating-file hash claimed."
+    },
+    {
+      "file": "deliverables/04-tasks-shared-information.md",
+      "bytes": 9816,
+      "sha256": "0e6c8fa14e96713dcdbfd11e0603fbb8967585d50dc4d0101cd0e4bcbd3bf943",
+      "operation": "Editorial split of verified full protocol; remove document separators; one final LF. No individual originating-file hash claimed."
+    },
+    {
+      "file": "deliverables/05-tasks-recorded-state.md",
+      "bytes": 6496,
+      "sha256": "1ab4717b8a45e9debb05f1ccdc7b773fbf0bf31d35f564ee6d926676d12f38fb",
+      "operation": "Editorial split of verified full protocol; remove document separators; one final LF. No individual originating-file hash claimed."
+    },
+    {
+      "file": "deliverables/06-tasks-fallback.md",
+      "bytes": 7474,
+      "sha256": "2108e2109de5557d8c50239e10f6a715b518580953eb7bd5c9ae19eebfa87bbd",
+      "operation": "Editorial split of verified full protocol; remove document separators; one final LF. No individual originating-file hash claimed."
+    },
+    {
+      "file": "deliverables/07-primary-research-and-dataset-atlas.md",
+      "bytes": 10398,
+      "sha256": "b916598fcd64a4542bc2d22fc1e184a0d832867efac60335706cd314090b7052",
+      "operation": "Editorial split of verified full protocol; remove document separators; one final LF. No individual originating-file hash claimed."
+    },
+    {
+      "file": "deliverables/08-controls-and-execution.md",
+      "bytes": 8374,
+      "sha256": "d5cddf8f5c98873949f21668fbcb12a9e41106898bdd253a0e3eeee0ddc6b2e0",
+      "operation": "Editorial split of verified full protocol; remove document separators; one final LF. No individual originating-file hash claimed."
+    },
+    {
+      "file": "deliverables/09-synthetic-results.md",
+      "bytes": 3317,
+      "sha256": "ca899ff9b9cb1a6be2288745a2cf15013e4ace3d2b9d8e75cee51ce898d36551",
+      "operation": "Editorial split of verified full protocol; remove document separators; one final LF. No individual originating-file hash claimed."
+    }
+  ],
+  "script_transformation": "Concatenate two code transfers; decode HTML less-than; remove one transport-added terminal LF to match origin hash.",
+  "executed_by_assembler": false,
+  "task_ids": [
+    "T01",
+    "T02",
+    "T03",
+    "T04",
+    "T05",
+    "T06",
+    "T07",
+    "T08",
+    "T09",
+    "T10",
+    "T11",
+    "T12",
+    "T13",
+    "T14",
+    "T15",
+    "T16",
+    "T17",
+    "T18",
+    "T19",
+    "T20",
+    "T21",
+    "T22",
+    "T23",
+    "T24",
+    "T25",
+    "T26"
+  ]
+}
