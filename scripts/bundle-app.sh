@@ -1,5 +1,5 @@
 #!/bin/sh
-# Builds Gleaner.app into build/ (release, ad-hoc signed for local use).
+# Builds Gleaner.app into build/ (release build; signing as below).
 set -eu
 cd "$(dirname "$0")/.."
 swift build -c release --product Gleaner
@@ -18,6 +18,13 @@ app=build/Gleaner.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp .build/release/Gleaner "$app/Contents/MacOS/Gleaner"
+# The owner's icon, when there is one: Resources/AppIcon.icns.
+icon=""
+if [ -f Resources/AppIcon.icns ]; then
+  mkdir -p "$app/Contents/Resources"
+  cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
+  icon="<key>CFBundleIconFile</key><string>AppIcon</string>"
+fi
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -34,8 +41,15 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHumanReadableCopyright</key><string>© 2026 lesPrivilege</string>
+  $icon
 </dict>
 </plist>
 PLIST
-codesign --force --sign - "$app"
+# GLEANER_SIGN_IDENTITY="Developer ID Application: Name (TEAMID)" signs for distribution with the
+# hardened runtime and a secure timestamp; without it the app is ad-hoc signed for local use.
+if [ -n "${GLEANER_SIGN_IDENTITY:-}" ]; then
+  codesign --force --options runtime --timestamp --sign "$GLEANER_SIGN_IDENTITY" "$app"
+else
+  codesign --force --sign - "$app"
+fi
 echo "$app $version ($build)"
