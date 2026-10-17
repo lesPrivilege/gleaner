@@ -36,31 +36,30 @@ public struct LocatorState: Sendable {
 
 /// Observes a path in place. Read-only: it never writes to the file or its repository.
 public enum Locator {
-    /// `checkout` is the one the file was found in at delivery, which outlives a removed
-    /// worktree; without it, the checkout holding the path now.
+    /// A file on disk is checked in the checkout holding it now. A missing one is looked for in
+    /// `checkout`, the one it was found in at delivery, which outlives a removed worktree; without
+    /// it, in the checkout its path was last found in.
     public static func observe(_ path: String, checkout recorded: Checkout? = nil) -> LocatorState {
         let fm = FileManager.default
         var isDirectory: ObjCBool = false
-        let exists = fm.fileExists(atPath: path, isDirectory: &isDirectory)
-        let checkout = recorded ?? Projects.checkout(path: path)
-        let root = checkout?.folder
-
-        guard exists else {
-            guard let checkout else { return LocatorState(kind: .missing, git: .notInRepo) }
+        guard fm.fileExists(atPath: path, isDirectory: &isDirectory) else {
+            guard let checkout = recorded ?? Projects.checkout(path: path) else { return LocatorState(kind: .missing, git: .notInRepo) }
             let rel = relative(path, to: checkout.folder)
             // A removed worktree takes its HEAD with it; its branch and commits stay in the repository.
             let removed = !fm.fileExists(atPath: checkout.folder + "/.git")
             guard let commit = commit(containing: rel, root: removed ? checkout.repository : checkout.folder, head: !removed) else {
-                return LocatorState(kind: .missing, repositoryRoot: root, git: .lost)
+                return LocatorState(kind: .missing, repositoryRoot: checkout.folder, git: .lost)
             }
             return LocatorState(
-                kind: .missing, repositoryRoot: root, git: commit.isHead ? .recoverableFromHead : .recoverableFromHistory,
+                kind: .missing, repositoryRoot: checkout.folder,
+                git: commit.isHead ? .recoverableFromHead : .recoverableFromHistory,
                 restoreCommand: removed
                     ? "git -C \(quoted(checkout.repository)) worktree add --detach \(quoted(checkout.folder)) \(quoted(commit.sha))"
                     : "git --literal-pathspecs -C \(quoted(checkout.folder)) restore --source=\(quoted(commit.sha)) -- \(quoted(rel))")
         }
 
         let info = stat(path)
+        let root = Projects.resolve((path as NSString).deletingLastPathComponent)?.folder
         return LocatorState(
             kind: info.kind,
             size: info.size,

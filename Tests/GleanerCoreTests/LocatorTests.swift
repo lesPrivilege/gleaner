@@ -122,6 +122,9 @@ import Testing
         let command = try #require(state.restoreCommand)
         #expect(try sh(["-c", command]) == 0)
         #expect(try String(contentsOfFile: report, encoding: .utf8) == "from ch3")
+        // Back on disk, it is checked in the checkout holding it now, whatever was recorded.
+        try "edited".write(toFile: report, atomically: true, encoding: .utf8)
+        #expect(Locator.observe(report, checkout: Checkout(folder: root, repository: root)).git == .modified)
     }
 
     @Test func specialFilesAreNeverOpened() {

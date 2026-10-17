@@ -34,7 +34,8 @@ public enum Projects {
         (checkout(path: path) ?? cwd.flatMap(checkout(containing:)))?.repository
     }
 
-    /// The checkout holding the file at `path`, or nil outside git.
+    /// The checkout holding the file at `path`, or nil outside git. Found once per folder, like the
+    /// repository, so a worktree removed later is still the one found.
     public static func checkout(path: String) -> Checkout? {
         checkout(containing: (path as NSString).deletingLastPathComponent)
     }
@@ -75,9 +76,9 @@ public enum Projects {
         lock.withLock { checkouts.removeAll() }
     }
 
-    /// The nearest folder holding `.git`: a directory there makes it a main folder, a file a
-    /// linked worktree (or a submodule).
-    private static func resolve(_ directory: String) -> Checkout? {
+    /// The checkout containing `directory` as the disk has it now: the nearest folder holding
+    /// `.git`, a main folder when that is a directory, a linked worktree (or a submodule) when a file.
+    static func resolve(_ directory: String) -> Checkout? {
         let fm = FileManager.default
         var current = directory
         while current != "/" && !current.isEmpty {
