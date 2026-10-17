@@ -7,7 +7,8 @@ let package = Package(
     products: [
         .library(name: "GleanerCore", targets: ["GleanerCore"]),
         .executable(name: "gleaner-spike", targets: ["gleaner-spike"]),
-        .executable(name: "Gleaner", targets: ["Gleaner"]),
+        // Not "Gleaner": on a case-insensitive disk it would be the same file as the `gleaner` command.
+        .executable(name: "GleanerApp", targets: ["Gleaner"]),
     ],
     targets: [
         .target(name: "GleanerCore"),

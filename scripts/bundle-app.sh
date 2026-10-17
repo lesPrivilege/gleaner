@@ -2,7 +2,7 @@
 # Builds Gleaner.app into build/ (release build; signing as below).
 set -eu
 cd "$(dirname "$0")/.."
-swift build -c release --product Gleaner
+swift build -c release --product GleanerApp
 
 # The version is the tag on HEAD (v0.1.0 -> 0.1.0). Untagged builds name the last tag, or the
 # release in progress, plus the commit: 0.1.0-dev+1a2b3c4. The build number counts commits.
@@ -17,7 +17,7 @@ build=$(git rev-list --count HEAD)
 app=build/Gleaner.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
-cp .build/release/Gleaner "$app/Contents/MacOS/Gleaner"
+cp .build/release/GleanerApp "$app/Contents/MacOS/Gleaner"
 # The owner's icon, when there is one: Resources/AppIcon.icns.
 icon=""
 if [ -f Resources/AppIcon.icns ]; then
