@@ -5,7 +5,8 @@ import Foundation
 public final class Registry: @unchecked Sendable {
     let db: Database
 
-    /// Bump when extraction changes what is derived from logs (requests, evidence, admission).
+    /// Bump when extraction changes what is derived from logs (requests, evidence, admission, the
+    /// record types a log holds that Gleaner doesn't know).
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
     /// at a moment in time, are never rewritten.
     public static let extractorVersion = 10
