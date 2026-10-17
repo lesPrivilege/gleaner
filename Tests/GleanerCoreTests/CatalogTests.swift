@@ -381,6 +381,47 @@ import Testing
         #expect(failed == 0, "of \(reads) reads")
     }
 
+    @Test func readGivesALargeVersionsTextAcrossThePiecesItIsReadIn() throws {
+        // Larger than the 4 MB pieces a version is read in, and tracked by hash only. In the rows,
+        // 16 bytes each, one piece ends just after "before the seam\n".
+        let seam = 4 << 20, count = 600_000
+        var rows = Data(capacity: count * 16)
+        for row in 0..<count {
+            rows.append(contentsOf: Array((row == seam / 16 - 1 ? "before the seam\n" : row == seam / 16 ? "after the seam.\n" : "filler row \(row % 1000 + 1000)\n").utf8))
+        }
+        try write(rows, to: "out/rows.csv", modified: delivered.addingTimeInterval(-30))
+        // A character split by the seam; a NUL, and a character left unfinished, past the first piece.
+        try write(Data(repeating: 0x61, count: seam - 1) + Data("é\nend\n".utf8), to: "out/split.md", modified: delivered.addingTimeInterval(-30))
+        try write(Data(repeating: 0x61, count: seam + 5) + Data([0]) + Data("tail\n".utf8), to: "out/nul.md", modified: delivered.addingTimeInterval(-30))
+        try write(Data(repeating: 0x61, count: seam + 5) + Data([0xC3]), to: "out/cut.md", modified: delivered.addingTimeInterval(-30))
+        try appendLog([
+            user("Export the rows", at: delivered.addingTimeInterval(30)),
+            assistant("Rows: [rows](out/rows.csv). Split: [split](out/split.md). NUL: [nul](out/nul.md). Cut: [cut](out/cut.md)", at: delivered.addingTimeInterval(40)),
+        ])
+        try index(at: delivered.addingTimeInterval(60))
+        let catalog = try catalog(), table = try id("rows.csv", in: catalog), split = try id("split.md", in: catalog)
+
+        let across = try catalog.read(table, span: .lines(seam / 16, seam / 16 + 1))
+        #expect(across.text == "before the seam\nafter the seam.\n")
+        #expect(across.range == seam - 16..<seam + 16 && across.size == count * 16 && !across.truncated)
+        #expect(try catalog.read(table, span: .bytes(seam - 4, seam + 6)).text == "eam\nafter ")
+        #expect(try catalog.read(table, span: .lines(count, count + 4)).text == "filler row \((count - 1) % 1000 + 1000)\n")
+        #expect(try catalog.read(table, span: .lines(count + 1, count + 4)).range == count * 16..<count * 16)
+        let first = try catalog.read(table)
+        #expect(first.range == 0..<16 << 10 && first.truncated && first.text.hasPrefix("filler row 1000\nfiller row 1001\n"))
+        let tail = try catalog.read(table, span: .lines(seam / 16 + 1, count), max: 20)
+        #expect(tail.text == "after the seam.\nfill" && tail.range == seam..<seam + 20 && tail.truncated)
+
+        // Each end of a cut falls between characters, whichever piece holds them.
+        #expect(try catalog.read(split, span: .bytes(seam, seam + 3)).range == seam + 1..<seam + 3)
+        #expect(try catalog.read(split, span: .bytes(seam - 2, seam)).text == "a")
+        #expect(try catalog.read(split, span: .lines(1, 1), max: seam).text.hasSuffix("aaa"))
+        #expect(try catalog.read(split, span: .bytes(seam - 1, seam + 1)).text == "é")
+        for name in ["nul.md", "cut.md"] {
+            #expect(throws: Catalog.Failure.notText) { try catalog.read(try id(name, in: catalog)) }
+        }
+    }
+
     @Test func readRefusesWhatIsNotText() throws {
         try index(at: delivered.addingTimeInterval(20))
         let catalog = try catalog()
@@ -404,6 +445,8 @@ import Testing
         #expect(cut.text == "line three: caf")
         #expect(cut.range == 17..<32 && cut.truncated)
         #expect(try catalog.read(notes, span: .bytes(33, 35)).range == 34..<35)
+        #expect(try catalog.read(notes, span: .bytes(33, 33)).range == 34..<34)
+        #expect(try catalog.read(notes, max: .max).range == 0..<35)
 
         for wrong in [Catalog.Span.lines(0, 2), .lines(3, 2), .bytes(-1, 2), .bytes(5, 2)] {
             #expect(throws: Catalog.Failure.self) { try catalog.read(notes, span: wrong) }

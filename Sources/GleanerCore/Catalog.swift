@@ -99,7 +99,8 @@ extension Catalog {
 
     /// The text of the delivery's exact bytes: its saved copy, or the original only while it hashes
     /// to the capture, never what is at the path instead. `span` selects lines or bytes (all of
-    /// them when nil), and at most `max` bytes come back. A cut never splits a character.
+    /// them when nil), and at most `max` bytes come back. A cut never splits a character. However
+    /// large the version, only what can come back is held.
     public func read(_ id: String, span: Span? = nil, max: Int = 16 << 10) throws -> Text {
         switch span {
         case .lines(let first, let last)? where first < 1 || last < first:
@@ -121,37 +122,54 @@ extension Catalog {
         let saved = store.has(sha)
         let end = Comparison.End(title: artifact.name, source: saved ? "saved copy" : "file on disk", sha: sha,
                                  url: saved ? store.objectURL(sha) : URL(fileURLWithPath: artifact.path))
-        // A first look settles most files that aren't text without holding them; text is held whole.
-        guard case .success(var version) = Comparison.read(end, keeping: 8 << 10) else { throw Failure.changed }
-        if !version.isWhole, Comparison.isText(version) {
-            guard case .success(let whole) = Comparison.read(end, keeping: .max) else { throw Failure.changed }
-            version = whole
-        }
-        guard Comparison.isText(version) else { throw Failure.notText }
-
-        let bytes = [UInt8](version.data)
-        var selection = 0..<bytes.count
+        // One pass, and the version is never held whole: all of it is hashed and checked to be text,
+        // while the selection's ends are found and only the bytes from its start that the answer
+        // can hold are kept, with a few more to end it between characters.
+        var lower: Int? = 0, upper: Int?, newlines = 0, offset = 0, kept = Data(), text = Comparison.TextCheck()
         switch span {
-        case .lines(let first, let last)?:
-            let starts = [0] + bytes.indices.filter { bytes[$0] == UInt8(ascii: "\n") }.map { $0 + 1 }
-            selection = (first <= starts.count ? starts[first - 1] : bytes.count)..<(last < starts.count ? starts[last] : bytes.count)
-        case .bytes(let start, let end)?:
-            selection = Swift.min(start, bytes.count)..<Swift.min(end, bytes.count)
-        case nil:
-            break
+        case .lines(let first, _)?: lower = first == 1 ? 0 : nil
+        case .bytes(let start, let end)?: (lower, upper) = (start, end)
+        case nil: break
         }
-        // Off UTF-8 continuation bytes (10xxxxxx), so each end falls between characters.
+        let room = Swift.min(max, Int.max - 8) + 8
+        let read = Comparison.read(end) { piece in
+            text.add(piece)
+            if case .lines(let first, let last)? = span, upper == nil {
+                var from = piece.startIndex
+                while upper == nil, let newline = piece[from...].firstIndex(of: UInt8(ascii: "\n")) {
+                    newlines += 1
+                    let after = offset + (newline - piece.startIndex) + 1
+                    if newlines == first - 1 { lower = after }
+                    if newlines == last { upper = after }
+                    from = newline + 1
+                }
+            }
+            if let lower, kept.count < room, lower < offset + piece.count {
+                let start = piece.startIndex + Swift.max(lower - offset, 0)
+                kept.append(piece[start...].prefix(room - kept.count))
+            }
+            offset += piece.count
+        }
+        guard case .success(let length) = read else { throw Failure.changed }
+        guard text.isText else { throw Failure.notText }
+
+        let size = Int(length)
+        let selection = Swift.min(lower ?? size, size)..<Swift.min(upper ?? size, size)
+        // Off UTF-8 continuation bytes (10xxxxxx), so each end falls between characters. Only kept
+        // bytes are looked at: one before the selection is before its start, which is where an end
+        // moved back to it stops, and one past them is past the most the answer can hold.
         func boundary(_ offset: Int, forward: Bool) -> Int {
             var offset = offset
-            while offset > 0, offset < bytes.count, bytes[offset] & 0xC0 == 0x80 { offset += forward ? 1 : -1 }
+            while offset > 0, offset < size, kept.indices.contains(offset - selection.lowerBound),
+                  kept[offset - selection.lowerBound] & 0xC0 == 0x80 { offset += forward ? 1 : -1 }
             return offset
         }
         let start = boundary(selection.lowerBound, forward: true)
         let wanted = Swift.max(start, boundary(selection.upperBound, forward: false))
         let cut = boundary(start + Swift.min(wanted - start, max), forward: false)
         return Text(index: index, reference: reference(delivery, of: artifact, now: now, library: index.library),
-                    text: String(decoding: bytes[start..<cut], as: UTF8.self), range: start..<cut, size: bytes.count,
-                    truncated: cut < wanted)
+                    text: String(decoding: kept[(start - selection.lowerBound)..<(cut - selection.lowerBound)], as: UTF8.self),
+                    range: start..<cut, size: size, truncated: cut < wanted)
     }
 
     /// The delivery's reference, as the app's Copy Reference copies it.
