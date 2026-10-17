@@ -234,11 +234,16 @@ final class LibraryModel {
         return failure.message
     }
 
-    /// The file the Quick Look panel shows; nil closes it.
-    var quickLookURL: URL?
+    /// True while the Quick Look panel is open. The library closes it when the selection has no
+    /// copy ready, so it never shows a delivery other than the selected one.
+    var isQuickLookOpen = false
+
+    /// What the Quick Look panel shows: always the selected delivery's prepared copy (or delivered
+    /// folder), so it follows a change of delivery or query.
+    var quickLookURL: URL? { isQuickLookOpen ? selectedHandoffURL : nil }
 
     func toggleQuickLook() {
-        quickLookURL = quickLookURL == nil ? selectedHandoffURL : nil
+        isQuickLookOpen = !isQuickLookOpen && selectedHandoffURL != nil
     }
 
     /// Opens the selection's verified copy (or folder) in its app, or says why it couldn't.

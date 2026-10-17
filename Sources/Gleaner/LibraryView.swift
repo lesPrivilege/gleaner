@@ -11,6 +11,8 @@ struct LibraryView: View {
 
     var body: some View {
         @Bindable var model = model
+        // Read here so the view follows every change to what the selection hands over.
+        let quickLookURL = model.quickLookURL
         NavigationSplitView {
             ResultsList()
                 .navigationSplitViewColumnWidth(min: 340, ideal: 380, max: 460)
@@ -25,8 +27,8 @@ struct LibraryView: View {
             }
         }
         .searchable(text: $model.query, placement: .sidebar, prompt: "What you asked for, file name, project…")
-        .quickLookPreview($model.quickLookURL)
-        .onChange(of: model.selection) { if model.quickLookURL != nil { model.quickLookURL = model.selectedHandoffURL } }
+        .quickLookPreview(Binding(get: { quickLookURL }, set: { model.isQuickLookOpen = $0 != nil }))
+        .onChange(of: model.selectedHandoffURL) { if model.selectedHandoffURL == nil { model.isQuickLookOpen = false } }
         .onAppear {
             model.query = savedQuery
             model.kind = Artifact.Kind(rawValue: savedKind)
@@ -78,7 +80,7 @@ struct ResultsList: View {
                 }
             }
             .onKeyPress(.space) {
-                guard model.selectedHandoffURL != nil || model.quickLookURL != nil else { return .ignored }
+                guard model.selectedHandoffURL != nil || model.isQuickLookOpen else { return .ignored }
                 model.toggleQuickLook()
                 return .handled
             }
