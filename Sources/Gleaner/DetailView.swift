@@ -363,7 +363,7 @@ struct ReplySection: View {
     var body: some View {
         let others = model.siblings[delivery.id] ?? []
         VStack(alignment: .leading, spacing: 8) {
-            Text("Delivered \(Wording.date(delivery.deliveredAt)) by \(delivery.provider == .codex ? "Codex" : "Claude Code") · “\(delivery.sessionTitle ?? "Untitled session")”")
+            Text("Delivered \(Wording.date(delivery.deliveredAt)) by \(Wording.provider(delivery.provider)) · “\(delivery.sessionTitle ?? "Untitled session")”")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             if let request = delivery.request {
                 (Text("You asked: ").foregroundStyle(.secondary) + Text("“\(request)”"))
@@ -429,7 +429,7 @@ struct DeliveriesSection: View {
             $0.number < delivery.number && $0.sha256 != nil && $0.sha256 == delivery.sha256
         }
         return ["Delivery \(delivery.number)", Wording.date(delivery.deliveredAt),
-                delivery.provider == .codex ? "Codex" : "Claude Code",
+                Wording.provider(delivery.provider),
                 Wording.provenanceShort(delivery.capture).1.lowercased(),
                 sameAs.map { "same content as delivery \($0.number)" }].compactMap { $0 }.joined(separator: ", ")
     }
@@ -443,7 +443,7 @@ struct DeliveriesSection: View {
         return HStack(spacing: 12) {
             Text("Delivery \(delivery.number)").fontWeight(isSelected ? .semibold : .regular)
             Text(Wording.date(delivery.deliveredAt)).foregroundStyle(.secondary)
-            Text(delivery.provider == .codex ? "Codex" : "Claude Code").foregroundStyle(.secondary)
+            Text(Wording.provider(delivery.provider)).foregroundStyle(.secondary)
             Spacer()
             if let sameAs { Text("same as \(sameAs.number)").foregroundStyle(.secondary) }
             StatusLabel(mark: provenance.0, text: provenance.1)

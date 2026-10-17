@@ -89,6 +89,19 @@ struct ResultsList: View {
                 return [provider]
             }
             .overlay { emptyState(results) }
+            if !model.artifacts.isEmpty, let trouble = model.logTrouble {
+                Divider()
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    StatusLabel(mark: .attention, text: trouble).font(.caption).lineLimit(2)
+                        .help(trouble)
+                    Spacer(minLength: 8)
+                    Button("Try Again") { model.reindex() }
+                        .controlSize(.small)
+                        .help("Read the agent logs again. Settings shows each source.")
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
         }
     }
 
@@ -120,16 +133,23 @@ struct ResultsList: View {
     @ViewBuilder
     func emptyState(_ results: [SearchResult]) -> some View {
         if model.artifacts.isEmpty {
-            let folders = model.logFolders
             if !model.indexed {
                 ContentUnavailableView("Reading agent logs…", systemImage: "hourglass",
                                        description: Text("The first read takes a moment. Results appear when it finishes."))
-            } else if folders.found.isEmpty {
+            } else if let trouble = model.logTrouble {
+                ContentUnavailableView {
+                    Label("Gleaner couldn’t read every agent log", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(trouble)
+                } actions: {
+                    Button("Try Again") { model.reindex() }
+                }
+            } else if model.sources?.values.allSatisfy({ $0.folder == .absent }) == true {
                 ContentUnavailableView {
                     Label("No agent logs found", systemImage: "folder.badge.questionmark")
                 } description: {
                     Text("Gleaner reads Claude Code and Codex logs. It looked in:\n"
-                         + folders.missing.map { ($0 as NSString).abbreviatingWithTildeInPath }.joined(separator: "\n"))
+                         + model.indexer.sources.watchedDirectories.map { ($0 as NSString).abbreviatingWithTildeInPath }.joined(separator: "\n"))
                 }
             } else {
                 ContentUnavailableView("No delivered files yet", systemImage: "tray",

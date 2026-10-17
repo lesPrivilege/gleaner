@@ -226,6 +226,53 @@ enum Wording {
         }
     }
 
+    static func provider(_ provider: Provider) -> String {
+        provider == .codex ? "Codex" : "Claude Code"
+    }
+
+    /// One agent's log folder as last read (SPEC §8): not on this Mac, unreadable, read with
+    /// problems, or read.
+    static func source(_ source: Indexer.Report.Source) -> (Mark, String) {
+        switch source.folder {
+        case .absent: (.dashed, "Not on this Mac")
+        case .unreadable: (.cross, "Can’t be read")
+        case .listed where source.hasProblems: (.attention, "Read with problems")
+        case .listed: (.solid, "Read")
+        }
+    }
+
+    /// What went wrong reading a listed folder, counted; nil when nothing did.
+    static func problems(_ source: Indexer.Report.Source) -> String? {
+        let parts = [
+            source.unknownRecordTypes.isEmpty ? nil : count(source.unknownRecordTypes.count, "unknown record type"),
+            source.partialLogs.isEmpty ? nil : count(source.partialLogs.count, "log") + " with malformed lines",
+            source.failures.isEmpty ? nil : count(source.failures.count, "log") + " couldn’t be read",
+        ].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: ", ")
+    }
+
+    /// The fuller story for Settings: why a folder can't be read, or which record types are new.
+    static func sourceDetail(_ source: Indexer.Report.Source) -> String? {
+        if case .unreadable(let reason) = source.folder { return reason }
+        guard let problems = problems(source) else { return nil }
+        let types = source.unknownRecordTypes.keys.sorted()
+        return problems + (types.isEmpty ? "" : ". Unknown record types: " + types.joined(separator: ", "))
+    }
+
+    /// The sources that need a look, in one line; nil when each read cleanly or isn't on this Mac.
+    static func sourcesLine(_ sources: [Provider: Indexer.Report.Source]) -> String? {
+        let lines = Provider.allCases.compactMap { provider -> String? in
+            guard let source = sources[provider], source.folder != .absent,
+                  source.folder != .listed || source.hasProblems else { return nil }
+            return "\(self.provider(provider)): \(self.source(source).1.lowercased())" + (problems(source).map { " (\($0))" } ?? "")
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: " · ")
+    }
+
+    static func count(_ n: Int, _ noun: String) -> String {
+        "\(n) \(noun)\(n == 1 ? "" : "s")"
+    }
+
     /// A project as shown. When no repository was found for the file, that is said rather than
     /// guessed (SPEC §5).
     static func project(_ name: String, inRepository: Bool) -> String {

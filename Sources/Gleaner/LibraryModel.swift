@@ -45,6 +45,11 @@ final class LibraryModel {
     private(set) var projectNames: [String: String] = [:]
     /// False until the first read of the logs finishes.
     private(set) var indexed = false
+    /// How each agent's log folder read in the latest run; nil until a run finishes. Unknown record
+    /// types are kept for the session, since a run reports only those of the logs it read.
+    private(set) var sources: [Provider: Indexer.Report.Source]?
+    /// Why the latest run stopped before reading the logs, when it did.
+    private(set) var indexFailure: String?
     var query = "" {
         didSet { if query != oldValue { chosenDelivery = nil } }
     }
@@ -92,11 +97,10 @@ final class LibraryModel {
         Set(artifacts.lazy.map(\.path).filter { !FileManager.default.fileExists(atPath: $0) })
     }
 
-    /// The agent log folders that exist on this Mac.
-    var logFolders: (found: [String], missing: [String]) {
-        let all = indexer.sources.watchedDirectories
-        let found = all.filter { FileManager.default.fileExists(atPath: $0) }
-        return (found, all.filter { !found.contains($0) })
+    /// One line about the agents' logs when something needs a look: a run that failed, or a
+    /// source that can't be read or was read with problems. What the library holds stays shown.
+    var logTrouble: String? {
+        indexFailure ?? sources.flatMap(Wording.sourcesLine)
     }
 
     /// Each project once, by its most recently delivered file, most recent first.
@@ -151,12 +155,16 @@ final class LibraryModel {
                 self.indexed = true
                 switch outcome {
                 case .success(let report):
-                    let count = report.sources.values.reduce(0) { $0 + $1.failures.count }
-                    let failures = count == 0 ? "" : " · \(count) logs unreadable"
-                    self.status = "\(artifacts.count) delivered files\(failures)"
+                    var sources = report.sources
+                    for (provider, earlier) in self.sources ?? [:] {
+                        sources[provider]?.unknownRecordTypes.merge(earlier.unknownRecordTypes, uniquingKeysWith: max)
+                    }
+                    self.sources = sources
+                    self.indexFailure = nil
                 case .failure(let error):
-                    self.status = "Indexing failed: \(error)"
+                    self.indexFailure = "Indexing failed: \(error)"
                 }
+                self.status = "\(artifacts.count) delivered files"
                 self.indexing = false
                 if self.pending { self.pending = false; self.reindex() }
             }
