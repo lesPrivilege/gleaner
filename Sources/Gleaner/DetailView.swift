@@ -369,7 +369,7 @@ struct ReplySection: View {
     var delivery: Delivery
 
     var body: some View {
-        let others = (model.siblings[delivery.id] ?? []).compactMap { id in model.artifacts.first { $0.id == id } }
+        let others = model.siblings[delivery.id] ?? []
         VStack(alignment: .leading, spacing: 8) {
             Text("Delivered \(Wording.date(delivery.deliveredAt)) by \(delivery.provider == .codex ? "Codex" : "Claude Code") · “\(delivery.sessionTitle ?? "Untitled session")”")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -388,18 +388,14 @@ struct ReplySection: View {
             if !others.isEmpty {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("Delivered with:").font(.caption).foregroundStyle(.secondary)
-                    ForEach(others.prefix(6), id: \.id) { other in
-                        Button(other.name) { select(other) }.buttonStyle(.link).font(.caption)
+                    ForEach(others.prefix(6)) { other in
+                        Button((other.path as NSString).lastPathComponent) { model.select(other) }
+                            .buttonStyle(.link).font(.caption)
                     }
                     if others.count > 6 { Text("and \(others.count - 6) more").font(.caption).foregroundStyle(.secondary) }
                 }
             }
         }
-    }
-
-    func select(_ other: Artifact) {
-        if !model.results.contains(where: { $0.id == other.id }) { model.clearFilters() }
-        model.selection = other.id
     }
 }
 

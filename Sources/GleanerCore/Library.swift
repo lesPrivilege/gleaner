@@ -260,6 +260,26 @@ extension Artifact {
         return .unavailable(alternative: match?.number, currentSha: current)
     }
 
+    /// The other files each reply named, keyed by delivery id, as their deliveries from that reply:
+    /// a sibling delivered again later is still offered as the occurrence that came with this one.
+    /// One reply is one log and one delivery time; every file it named shares both.
+    public static func deliveredWith(_ artifacts: [Artifact]) -> [Delivery.ID: [Delivery]] {
+        var byReply: [String: [Delivery]] = [:]
+        for artifact in artifacts {
+            for d in artifact.deliveries {
+                guard let at = d.deliveredAt else { continue }
+                byReply["\(d.logPath)|\(at.timeIntervalSince1970)", default: []].append(d)
+            }
+        }
+        var result: [Delivery.ID: [Delivery]] = [:]
+        for group in byReply.values where group.count > 1 {
+            for delivery in group {
+                result[delivery.id] = group.filter { $0.id != delivery.id }.sorted { $0.path < $1.path }
+            }
+        }
+        return result
+    }
+
     /// For a search: nil unless every token appears in the file name, the project, or one
     /// delivery's own words (request, session title, reply). Words from different deliveries don't
     /// combine (SPEC §10). Otherwise the index of the newest delivery whose own words matched, or

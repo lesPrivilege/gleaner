@@ -31,15 +31,15 @@ enum Staging: Equatable {
 final class LibraryModel {
     var artifacts: [Artifact] = [] {
         didSet {
-            siblings = Self.siblings(of: artifacts)
+            siblings = Artifact.deliveredWith(artifacts)
             missing = Self.missing(artifacts)
         }
     }
     /// Paths not on disk, checked once per load and refreshed when a file is observed, so list
     /// rows never touch the disk while drawing.
     private(set) var missing: Set<String> = []
-    /// Files named in the same reply, keyed by delivery id.
-    private(set) var siblings: [Delivery.ID: [Artifact.ID]] = [:]
+    /// The other files named in the same reply, as their deliveries from it, keyed by delivery id.
+    private(set) var siblings: [Delivery.ID: [Delivery]] = [:]
     /// False until the first read of the logs finishes.
     private(set) var indexed = false
     var query = "" {
@@ -80,7 +80,7 @@ final class LibraryModel {
             store: ContentStore(objects: support.appendingPathComponent("objects"), staging: caches.appendingPathComponent("handoff")),
             sources: .standard)
         artifacts = (try? registry.artifacts()) ?? []
-        siblings = Self.siblings(of: artifacts)
+        siblings = Artifact.deliveredWith(artifacts)
         missing = Self.missing(artifacts)
     }
 
@@ -107,22 +107,12 @@ final class LibraryModel {
         project = nil
     }
 
-    /// One reply is one log and one delivery time; every file it named shares both.
-    private static func siblings(of artifacts: [Artifact]) -> [Delivery.ID: [Artifact.ID]] {
-        var byReply: [String: [(Delivery.ID, Artifact.ID)]] = [:]
-        for artifact in artifacts {
-            for d in artifact.deliveries {
-                guard let at = d.deliveredAt else { continue }
-                byReply["\(d.logPath)|\(at.timeIntervalSince1970)", default: []].append((d.id, artifact.id))
-            }
-        }
-        var result: [Delivery.ID: [Artifact.ID]] = [:]
-        for group in byReply.values where group.count > 1 {
-            for (delivery, artifact) in group {
-                result[delivery] = group.map(\.1).filter { $0 != artifact }.sorted()
-            }
-        }
-        return result
+    /// Shows `delivery` itself, not just its file, clearing filters that would hide it. A delivery's
+    /// path is its artifact's id.
+    func select(_ delivery: Delivery) {
+        if !results.contains(where: { $0.id == delivery.path }) { clearFilters() }
+        selection = delivery.path
+        chosenDelivery = delivery.id
     }
 
     func start() {

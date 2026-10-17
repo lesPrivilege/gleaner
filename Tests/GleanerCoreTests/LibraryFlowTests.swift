@@ -164,6 +164,27 @@ import Testing
         #expect(video.match(["demo"])?.deliveryIndex == 0)
     }
 
+    @Test func deliveredWithNamesTheSiblingsDeliveryFromThatReply() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let second = delivered.addingTimeInterval(3600)
+        try write("video v2", to: "out/demo.mp4", modified: second.addingTimeInterval(-30))
+        try appendLog([
+            user("Tighten the intro and render again", at: second.addingTimeInterval(-300)),
+            assistant("Rendered again: [demo](out/demo.mp4)", at: second, cwd: project.path),
+        ])
+        _ = try indexer.run(now: { second.addingTimeInterval(20) })
+        let library = Artifact.deliveredWith(try indexer.registry.artifacts())
+        let report = try artifact("report.md"), video = try artifact("demo.mp4"), build = try artifact("build.dmg")
+
+        // The report's reply also named the video and the build: their deliveries from that reply,
+        // not the video's later one.
+        let siblings = try #require(library[report.latest.id])
+        #expect(siblings.map(\.path) == [build.path, video.path])
+        #expect(siblings.map(\.id) == [build.latest.id, video.deliveries[1].id])
+        // The second reply named the video alone.
+        #expect(library[video.latest.id] == nil)
+    }
+
     @Test func backfillIsNeverCalledTheDeliveredVersion() throws {
         let later = delivered.addingTimeInterval(30 * 86400)
         _ = try indexer.run(now: { later })
