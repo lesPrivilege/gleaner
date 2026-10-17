@@ -131,15 +131,11 @@ public struct Artifact: Sendable, Identifiable {
         "pkg": .build, "ipa": .build, "apk": .build, "app": .build,
     ]
 
-    /// Where the file lives: a named worktree, or the project's own folder.
+    /// Where the file lives: a worktree, named after its folder wherever it is kept, or the
+    /// repository's main folder.
     public var place: String {
-        for marker in ["/.claude/worktrees/", "/.worktrees/", "/.codex/worktrees/"] {
-            if let range = path.range(of: marker) {
-                let rest = path[range.upperBound...]
-                return "worktree " + (rest.split(separator: "/").first.map(String.init) ?? "")
-            }
-        }
-        return "main folder"
+        guard let checkout, checkout.folder != checkout.repository else { return "main folder" }
+        return "worktree " + (checkout.folder as NSString).lastPathComponent
     }
 
     /// True when the file lives in a worktree rather than the project's own folder.

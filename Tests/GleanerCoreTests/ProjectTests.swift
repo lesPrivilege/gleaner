@@ -69,6 +69,7 @@ import Testing
         let restarted = try #require(try Registry(path: registryPath).artifacts().first)
         #expect(restarted.project == "Atlas")
         #expect(restarted.inRepository)
+        #expect(restarted.place == "worktree atlas-feature")
 
         // Rereading the log resolves worse; what was recorded at delivery stands.
         let registry = try Registry(path: registryPath)
@@ -76,6 +77,19 @@ import Testing
         _ = try Indexer(registry: try Registry(path: registryPath), store: store, sources: sources).run()
         Projects.forgetRepositories()
         #expect(try registry.artifacts().first?.project == "Atlas")
+    }
+
+    @Test func aWorktreeIsNamedAsOneWhereverItIsKept() throws {
+        let atlas = try repository("Atlas")
+        let external = root.appendingPathComponent("atlas-feature").path, inside = atlas + "/.claude/worktrees/ch3"
+        for worktree in [external, inside] {
+            #expect(Locator.run(["-C", atlas, "worktree", "add", "-q", "--detach", worktree]).status == 0)
+        }
+        #expect(artifact(external + "/out/report.md", cwd: external).place == "worktree atlas-feature")
+        #expect(artifact(inside + "/out/report.md", cwd: inside).place == "worktree ch3")
+        #expect(!artifact(atlas + "/out/report.md", cwd: atlas).inWorktree)
+        // Outside git there is no worktree, whatever the folders are called.
+        #expect(!artifact(root.path + "/notes/.claude/worktrees/x/plan.md", cwd: root.path + "/notes").inWorktree)
     }
 
     @Test func worktreesOfABareRepositoryFoldIntoIt() throws {
