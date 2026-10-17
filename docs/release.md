@@ -9,10 +9,11 @@ The path from a green `main` to a downloadable, notarized `Gleaner-0.1.0.zip`. S
 - [ ] Manual checks on a build from `./scripts/bundle-app.sh`, in light and dark appearance:
   - drag the hand-off tile, and a result row, into Finder, Claude Desktop, Codex and a browser upload field;
   - ⌘C in the list, then paste into Finder and into an agent's composer;
-  - Space and ⌘Y open Quick Look on the selection; Space again closes it;
+  - Space and ⌘Y open Quick Look on the selection; picking another delivery or changing the search closes it unless the same bytes stay selected; Space again closes it;
   - right-click a result: each item acts on that result;
   - Compare two deliveries, an image pair, and a delivery against a changed file on disk;
-  - Settings shows both log folders and clears hand-off copies;
+  - a file under "Delivered with" opens on its delivery from that reply;
+  - Settings shows how each log folder read and Read Again rereads them; clearing hand-off copies prepares the selection's copy again;
   - VoiceOver reads a result row, a delivery row and the drag tile as one sentence each;
   - quit and relaunch: search and filters come back.
 - [ ] `CHANGELOG.md`: give 0.1.0 its date.
