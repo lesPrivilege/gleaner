@@ -32,12 +32,16 @@ final class LibraryModel {
         didSet {
             siblings = Artifact.deliveredWith(artifacts)
             missing = Self.missing(artifacts)
+            saved = Self.saved(artifacts, in: indexer.store)
             projectNames = Projects.names(artifacts.map(\.projectFolder))
         }
     }
     /// Paths not on disk, checked once per load and refreshed when a file is observed, so list
     /// rows never touch the disk while drawing.
     private(set) var missing: Set<String> = []
+    /// The versions whose saved copies the store holds, checked as `missing` is, so the detail and
+    /// the list rows agree on what can be handed over.
+    private(set) var saved: Set<String> = []
     /// The other files named in the same reply, as their deliveries from it, keyed by delivery id.
     private(set) var siblings: [Delivery.ID: [Delivery]] = [:]
     /// What each project folder is shown as; a name two projects share carries its parent folder.
@@ -102,12 +106,18 @@ final class LibraryModel {
         artifacts = (try? indexer.registry.artifacts()) ?? []
         siblings = Artifact.deliveredWith(artifacts)
         missing = Self.missing(artifacts)
+        saved = Self.saved(artifacts, in: indexer.store)
         projectNames = Projects.names(artifacts.map(\.projectFolder))
     }
 
     /// Only what is shown to be gone: a file Gleaner can't reach is unreadable, not missing.
     private static func missing(_ artifacts: [Artifact]) -> Set<String> {
         Set(artifacts.lazy.map(\.path).filter { Locator.stat($0).kind == .missing })
+    }
+
+    /// The store is shared by content: a copy saved for one file serves every file with its bytes.
+    private static func saved(_ artifacts: [Artifact], in store: ContentStore) -> Set<String> {
+        Set(artifacts.lazy.flatMap(\.deliveries).compactMap(\.sha256).filter(store.has))
     }
 
     /// One line about the agents' logs when something needs a look: a run that failed, or a
@@ -208,7 +218,7 @@ final class LibraryModel {
         return result.artifact.deliveries[result.deliveryIndex]
     }
 
-    func hasSaved(_ sha: String) -> Bool { indexer.store.has(sha) }
+    func hasSaved(_ sha: String) -> Bool { saved.contains(sha) }
 
     /// Over the save limit, so its bytes are kept only when the person asks.
     func isLarge(_ delivery: Delivery) -> Bool { delivery.capture.map(indexer.isLarge) ?? false }
@@ -319,22 +329,21 @@ final class LibraryModel {
     }
 
     /// What dragging `result`'s row hands over; nil when the library already knows there is
-    /// nothing: the delivery's bytes were never read, or they weren't saved and the file was found
-    /// gone or changed. Decided from what the library holds and this session's checks, never by
-    /// reading the disk, so a row can ask while it is drawn. The drop verifies what it hands over.
+    /// nothing: the delivery's bytes were never read, or the store holds no copy of them and the
+    /// file was found gone or changed. Decided from what the library holds and this session's
+    /// checks, never by reading the disk, so a row can ask while it is drawn. The drop verifies
+    /// what it hands over.
     func rowHandoff(_ result: SearchResult) -> RowHandoff? {
         let artifact = result.artifact, delivery = delivery(in: result)
-        // Saved copies as the library records them.
-        let saved = { (sha: String) in artifact.deliveries.contains { $0.sha256 == sha && $0.capture?.savedAt != nil } }
         if let observation = observations[artifact.path] {
-            switch artifact.handoff(delivery, now: observation, hasSaved: saved) {
+            switch artifact.handoff(delivery, now: observation, hasSaved: hasSaved) {
             case .ready(let sha, _, _): return .bytes(sha: sha)
             case .folder: return .folder
             default: return nil
             }
         }
         if delivery.capture?.isDirectory == true { return missing.contains(artifact.path) ? nil : .folder }
-        guard let sha = delivery.sha256, !missing.contains(artifact.path) || saved(sha) else { return nil }
+        guard let sha = delivery.sha256, !missing.contains(artifact.path) || hasSaved(sha) else { return nil }
         return .bytes(sha: sha)
     }
 
@@ -435,15 +444,19 @@ final class LibraryModel {
 
     func clearStaging() { staging = .idle }
 
-    /// Checks the file now (hash and git), off the main thread. When it is Gleaner's first read of
-    /// a file whose bytes a delivery never had, the library is read again with them.
+    /// Checks the file now (hash and git), and which of its versions the store holds, off the main
+    /// thread. When it is Gleaner's first read of a file whose bytes a delivery never had, the
+    /// library is read again with them.
     func observe(_ artifact: Artifact) async {
-        let path = artifact.path, checkout = artifact.checkout
+        let path = artifact.path, checkout = artifact.checkout, versions = Set(artifact.deliveries.compactMap(\.sha256))
         let indexer = indexer
-        let (state, completed) = await Task.detached(priority: .userInitiated) {
-            (Locator.observe(path, checkout: checkout), (try? indexer.completeCaptures(of: path, now: Date())) == true)
+        let (state, held, completed) = await Task.detached(priority: .userInitiated) {
+            (Locator.observe(path, checkout: checkout), versions.filter(indexer.store.has),
+             (try? indexer.completeCaptures(of: path, now: Date())) == true)
         }.value
         observations[path] = FileObservation(state: state, checkedAt: Date())
+        saved.subtract(versions)
+        saved.formUnion(held)
         if completed { artifacts = (try? indexer.registry.artifacts()) ?? artifacts }
         if state.kind == .missing { missing.insert(path) } else { missing.remove(path) }
     }

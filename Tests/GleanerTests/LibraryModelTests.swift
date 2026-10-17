@@ -301,6 +301,40 @@ import UniformTypeIdentifiers
         #expect(reloaded.dragItem(for: try row(reloaded, "notes.md")) != nil)
     }
 
+    @Test func aRowHandsOverTheSavedCopyTheDetailWouldWhicheverPathSavedIt() async throws {
+        // The same bytes at two paths, too large to have been saved; the person saves the first.
+        indexer.saveLimit = 0
+        try write("clip c1", to: "out/a.mov", modified: delivered.addingTimeInterval(9000))
+        try write("clip c1", to: "out/b.mov", modified: delivered.addingTimeInterval(9000))
+        try deliver("out/a.mov")
+        try deliver("out/b.mov")
+        let model = LibraryModel(indexer: indexer)
+        await model.saveCopy(of: try artifact(model, "a.mov").latest, artifact: try artifact(model, "a.mov"))
+
+        // The second is edited: the detail hands over the copy the store holds, and so does its row.
+        try write("clip c2", to: "out/b.mov", modified: Date())
+        let b = try artifact(model, "b.mov")
+        model.selection = b.path
+        await model.observe(b)
+        let sha = try #require(b.latest.sha256)
+        #expect(model.selectedHandoff?.plan == .ready(sha: sha, from: .savedCopy, firstSeen: nil))
+        #expect(model.rowHandoff(try row(model, "b.mov")) == .bytes(sha: sha))
+        #expect(try await dropped(model.dragItem(for: try row(model, "b.mov"))).contents == "clip c1")
+    }
+
+    @Test func aSavedCopyRemovedFromTheStoreIsOfferedByNeitherTheRowNorTheDetail() async throws {
+        let model = LibraryModel(indexer: indexer)
+        // The notes' saved copy is removed from the store after the library loaded, and the file edited.
+        let notes = try artifact(model, "notes.md")
+        try FileManager.default.removeItem(at: indexer.store.objectURL(try #require(notes.latest.sha256)))
+        try write("notes n2, edited", to: "out/notes.md", modified: Date())
+        model.selection = notes.path
+        await model.observe(notes)
+        guard case .unavailable? = model.selectedHandoff?.plan else { Issue.record("expected no copy"); return }
+        #expect(model.dragItem(for: try row(model, "notes.md")) == nil)
+        #expect(model.rowStatus(try row(model, "notes.md")).mark?.1 == "Not available · changed")
+    }
+
     @Test func aRowWithNothingToHandOverSaysWhy() async throws {
         try deliver("out/never.mp4")
         indexer.saveLimit = 0
