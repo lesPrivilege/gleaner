@@ -3,6 +3,8 @@ import GleanerCore
 import Quartz
 import SwiftUI
 
+/// One delivered file, preview first. Always visible: the bytes, what they are, how to hand them
+/// over and any caveat about them. On demand: other deliveries and the full record (rulings §5).
 struct DetailView: View {
     @Environment(LibraryModel.self) private var model
     var result: SearchResult
@@ -13,21 +15,22 @@ struct DetailView: View {
         let observation = model.observations[artifact.path]
         let onDisk = observation.map { artifact.onDisk($0, hasSaved: model.hasSaved) }
         let plan = observation.map { artifact.handoff(delivery, now: $0, hasSaved: model.hasSaved) }
+        let staging = model.staging(for: plan?.sha)
 
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                PreviewPane(artifact: artifact, plan: plan, staging: model.staging(for: plan?.sha))
-                header(artifact, observation: observation)
-                if let observation, let onDisk {
-                    Panel(statement: Wording.onDisk(onDisk, checked: observation.checkedAt), eyebrow: "On disk now")
+            VStack(alignment: .leading, spacing: 18) {
+                header(artifact)
+                PreviewPane(artifact: artifact, delivery: delivery, plan: plan, staging: staging)
+                if let plan, let onDisk, let observation {
+                    HandoffPanel(artifact: artifact, delivery: delivery, plan: plan, onDisk: onDisk, observation: observation)
                 } else {
                     ProgressView("Checking the file…").controlSize(.small)
                 }
-                if let plan, let onDisk, let observation {
-                    HandoffPanel(artifact: artifact, delivery: delivery, plan: plan, onDisk: onDisk, observation: observation)
+                ReplySection(artifact: artifact, delivery: delivery)
+                if artifact.deliveries.count > 1 {
+                    DeliveriesSection(artifact: artifact, selected: delivery)
                 }
-                DeliveriesSection(artifact: artifact, selected: delivery, checked: observation != nil,
-                                  current: observation?.state.sha256)
+                DetailsSection(artifact: artifact, delivery: delivery, observation: observation)
             }
             .padding(24)
             .frame(maxWidth: 900, alignment: .leading)
@@ -45,15 +48,10 @@ struct DetailView: View {
         }
     }
 
-    @ViewBuilder
-    func header(_ artifact: Artifact, observation: FileObservation?) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
+    func header(_ artifact: Artifact) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
             Text(artifact.name).font(.title2.weight(.semibold)).textSelection(.enabled)
-            Text(artifact.path).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary)
-                .textSelection(.enabled)
-            let size = observation?.state.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) }
-            let git = observation.map { "Git: " + $0.state.git.rawValue.replacingOccurrences(of: "_", with: " ") }
-            Text(([artifact.project, artifact.place, size, git] as [String?]).compactMap { $0 }.joined(separator: " · "))
+            Text(([artifact.project, artifact.inWorktree ? artifact.place : nil] as [String?]).compactMap { $0 }.joined(separator: " · "))
                 .font(.callout).foregroundStyle(.secondary)
         }
     }
@@ -107,8 +105,10 @@ extension Staging {
     var isPreparing: Bool { if case .preparing = self { true } else { false } }
 }
 
+/// The selected version's bytes, with one line saying exactly which bytes they are.
 struct PreviewPane: View {
     var artifact: Artifact
+    var delivery: Delivery
     var plan: Handoff?
     var staging: Staging
 
@@ -118,51 +118,59 @@ struct PreviewPane: View {
         case (_, .ready(let url, _)): url
         default: nil
         }
-        ZStack {
-            if let url, let text = TextPreview.load(url) {
-                TextPreview(text: text, markdown: ["md", "markdown"].contains(url.pathExtension.lowercased()))
-            } else if let url {
-                QuickLookPreview(url: url)
-            } else {
-                VStack(spacing: 6) {
-                    Image(systemName: "eye.slash").font(.title2)
-                    Text(staging.isPreparing ? "Preparing a verified copy…" : "No preview: these bytes aren’t available")
+        let text = url.flatMap(TextPreview.load)
+        let caption = Wording.bytesCaption(plan, staged: staging.sha, delivery: delivery)
+        VStack(alignment: .leading, spacing: 6) {
+            ZStack {
+                if let url, let text, ["md", "markdown"].contains(url.pathExtension.lowercased()) {
+                    MarkdownPreview(text.text)
+                } else if let text {
+                    TextPreview(text: text.text)
+                } else if let url, !Self.neverPreviewed.contains(url.pathExtension.lowercased()) {
+                    QuickLookPreview(url: url)
+                } else {
+                    VStack(spacing: 6) {
+                        Image(systemName: url == nil ? "eye.slash" : "shippingbox").font(.title2)
+                        Text(url != nil ? "No preview for this kind of file. Open it to look inside."
+                             : staging.isPreparing ? "Preparing a verified copy…"
+                             : plan == nil ? "Checking the file…" : "No preview: these bytes aren’t available")
+                    }
+                    .foregroundStyle(.secondary)
                 }
-                .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 320)
+            .background(Color(nsColor: .underPageBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            if let caption {
+                Text(caption + (text?.truncated == true ? " · showing the first 64 KB, Open to read all" : ""))
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: 260)
-        .background(Color(nsColor: .underPageBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
     }
+
+    /// Installers and apps are never opened, mounted or previewed by selection.
+    static let neverPreviewed: Set<String> = ["dmg", "pkg", "app", "ipa"]
 }
 
 /// Quick Look's compact view leaves plain text and Markdown blank, so those are shown directly.
 struct TextPreview: View {
     var text: String
-    var markdown: Bool
 
     static let textTypes: Set<String> = ["md", "markdown", "txt", "json", "tsv", "csv", "log", "yaml", "yml", "toml", "swift", "py", "js", "ts"]
+    static let limit = 64 << 10
 
-    static func load(_ url: URL) -> String? {
+    static func load(_ url: URL) -> (text: String, truncated: Bool)? {
         guard textTypes.contains(url.pathExtension.lowercased()),
               let handle = try? FileHandle(forReadingFrom: url),
-              let data = try? handle.read(upToCount: 64 << 10) else { return nil }
-        return String(decoding: data, as: UTF8.self)
+              let data = try? handle.read(upToCount: limit + 1) else { return nil }
+        return (String(decoding: data.prefix(limit), as: UTF8.self), data.count > limit)
     }
 
     var body: some View {
         ScrollView {
-            Group {
-                if markdown, let rich = try? AttributedString(
-                    markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
-                    Text(rich)
-                } else {
-                    Text(text).font(.system(.callout, design: .monospaced))
-                }
-            }
-            .textSelection(.enabled)
+            Text(text).font(.system(.callout, design: .monospaced))
+                .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
         }
@@ -183,6 +191,8 @@ struct QuickLookPreview: NSViewRepresentable {
     }
 }
 
+/// Hand-off: the tile and Open act on the verified copy; the Original row acts on the file's
+/// location. Each says which.
 struct HandoffPanel: View {
     @Environment(LibraryModel.self) private var model
     var artifact: Artifact
@@ -191,43 +201,55 @@ struct HandoffPanel: View {
     var onDisk: OnDisk
     var observation: FileObservation
 
+    /// What is staged for this panel's version only.
+    var staging: Staging { model.staging(for: plan.sha) }
+
     var body: some View {
         let statement = Wording.handoff(plan, delivery: delivery.number, onDisk: onDisk)
+        let disk = Wording.onDisk(onDisk, checked: observation.checkedAt)
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Hand off delivery \(delivery.number)").font(.headline)
-                Spacer()
-                Text("To hand off another version, pick it under Deliveries.").font(.caption).foregroundStyle(.secondary)
-            }
+            Text("Hand off delivery \(delivery.number)").font(.headline)
             HStack(spacing: 10) {
                 tile
-                Button("Open") { open() }.disabled(openURL == nil)
-                Button("Show in Finder") { reveal() }
-                Button("Copy Path") { copy(artifact.path) }
+                Button("Open") { open() }
+                    .keyboardShortcut("o")
+                    .disabled(openURL == nil)
+                    .help("Open the verified copy in its app (⌘O). ⌘C in the list copies it as a file.")
                 if canSave {
                     Button("Save a Copy (\(sizeText))") { Task { await model.saveCopy(of: delivery, artifact: artifact) } }
+                        .help("Keep these bytes in Gleaner, so this version survives later edits.")
                 }
             }
             .controlSize(.large)
-            Panel(statement: statement) {
-                actions
+            Panel(statement: statement) { actions }
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text("On disk now:").foregroundStyle(.secondary)
+                    StatusLabel(mark: disk.mark, text: disk.title)
+                }
+                HStack(spacing: 8) {
+                    Text("Original:").foregroundStyle(.secondary)
+                    Text((artifact.path as NSString).abbreviatingWithTildeInPath)
+                        .font(.system(.callout, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                        .textSelection(.enabled)
+                    Spacer(minLength: 8)
+                    Button(sourceExists ? "Show in Finder" : "Show Folder") { reveal() }
+                        .help(sourceExists ? "Select the original file in Finder." : "The file isn’t there; show the folder it was in.")
+                    Button("Copy Path") { copy(artifact.path) }
+                        .help("Copies where the original lives. The file there may change; drag or ⌘C hands over the verified copy.")
+                }
             }
+            .font(.callout)
+            .controlSize(.small)
         }
         .padding(14)
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(nsColor: .separatorColor)))
     }
 
-    /// What is staged for this panel's version only.
-    var staging: Staging { model.staging(for: plan.sha) }
-
     /// The thing you drag: the file itself, labeled with the exact version it carries.
     @ViewBuilder var tile: some View {
-        let ready: URL? = switch (plan, staging) {
-        case (.folder, _): URL(fileURLWithPath: artifact.path)
-        case (_, .ready(let url, _)): url
-        default: nil
-        }
+        let ready = openURL
         HStack(spacing: 10) {
             Image(systemName: "line.3.horizontal").foregroundStyle(.secondary).accessibilityHidden(true)
             TypeBadge(artifact: artifact)
@@ -288,6 +310,8 @@ struct HandoffPanel: View {
         }
     }
 
+    var sourceExists: Bool { observation.state.kind != .missing }
+
     var canSave: Bool {
         guard let sha = delivery.sha256, !model.hasSaved(sha) else { return false }
         return observation.state.sha256 == sha
@@ -298,8 +322,8 @@ struct HandoffPanel: View {
     }
 
     var openURL: URL? {
-        if case .ready(let url, _) = staging { return url }
         if plan == .folder { return URL(fileURLWithPath: artifact.path) }
+        if case .ready(let url, _) = staging { return url }
         return nil
     }
 
@@ -316,12 +340,10 @@ struct HandoffPanel: View {
 
     func reveal() {
         let source = URL(fileURLWithPath: artifact.path)
-        if FileManager.default.fileExists(atPath: source.path) {
+        if sourceExists {
             NSWorkspace.shared.activateFileViewerSelecting([source])
-        } else if let openURL {
-            NSWorkspace.shared.activateFileViewerSelecting([openURL])
         } else {
-            NSWorkspace.shared.activateFileViewerSelecting([source.deletingLastPathComponent()])
+            NSWorkspace.shared.open(source.deletingLastPathComponent())
         }
     }
 
@@ -331,69 +353,127 @@ struct HandoffPanel: View {
     }
 }
 
+/// Why this file is here: the request and the reply that handed it over, and what else that
+/// reply named.
+struct ReplySection: View {
+    @Environment(LibraryModel.self) private var model
+    var artifact: Artifact
+    var delivery: Delivery
+
+    var body: some View {
+        let others = (model.siblings[delivery.id] ?? []).compactMap { id in model.artifacts.first { $0.id == id } }
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Delivered \(Wording.date(delivery.deliveredAt)) by \(delivery.provider == .codex ? "Codex" : "Claude Code") · “\(delivery.sessionTitle ?? "Untitled session")”")
+                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+            if let request = delivery.request {
+                (Text("You asked: ").foregroundStyle(.secondary) + Text("“\(request)”"))
+                    .font(.callout).lineLimit(4).textSelection(.enabled)
+            }
+            ForEach(Array(delivery.evidence.enumerated()), id: \.offset) { _, item in
+                Text(item.excerpt)
+                    .font(.callout)
+                    .textSelection(.enabled)
+                    .padding(.horizontal, 10).padding(.vertical, 7)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            }
+            if !others.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Text("Delivered with:").font(.caption).foregroundStyle(.secondary)
+                    ForEach(others.prefix(6), id: \.id) { other in
+                        Button(other.name) { select(other) }.buttonStyle(.link).font(.caption)
+                    }
+                    if others.count > 6 { Text("and \(others.count - 6) more").font(.caption).foregroundStyle(.secondary) }
+                }
+            }
+        }
+    }
+
+    func select(_ other: Artifact) {
+        if !model.results.contains(where: { $0.id == other.id }) { model.clearFilters() }
+        model.selection = other.id
+    }
+}
+
+/// One line per delivery; picking one switches the preview and the hand-off together.
 struct DeliveriesSection: View {
     @Environment(LibraryModel.self) private var model
     var artifact: Artifact
     var selected: Delivery
-    var checked: Bool
-    var current: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Deliveries").font(.headline)
-                Spacer()
-                Text("Newest first, one entry per reply that handed you this file. Spacing doesn’t show time.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+        VStack(alignment: .leading, spacing: 6) {
+            Text("Deliveries").font(.headline)
             ForEach(artifact.deliveries) { delivery in
-                Button { model.chosenDelivery = delivery.id } label: { card(delivery) }
+                Button { model.chosenDelivery = delivery.id } label: { row(delivery) }
                     .buttonStyle(.plain)
                     .accessibilityAddTraits(delivery.id == selected.id ? .isSelected : [])
             }
         }
     }
 
-    func card(_ delivery: Delivery) -> some View {
+    func row(_ delivery: Delivery) -> some View {
         let isSelected = delivery.id == selected.id
-        let provenance = Wording.provenance(delivery.capture)
-        let storage = Wording.storage(delivery, hasSaved: delivery.sha256.map(model.hasSaved) ?? false,
-                                      current: current, checked: checked)
+        let provenance = Wording.provenanceShort(delivery.capture)
         let sameAs = artifact.deliveries.first {
             $0.number < delivery.number && $0.sha256 != nil && $0.sha256 == delivery.sha256
         }
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text("Delivery \(delivery.number) · \(Wording.date(delivery.deliveredAt))").fontWeight(.semibold)
-                Spacer()
-                Text("\(delivery.provider == .codex ? "Codex" : "Claude Code") · “\(delivery.sessionTitle ?? "Untitled session")”")
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
-            if let request = delivery.request {
-                (Text("You asked: ").foregroundStyle(.secondary) + Text("“\(request)”"))
-                    .font(.callout).lineLimit(3)
-            }
-            ForEach(Array(delivery.evidence.enumerated()), id: \.offset) { _, item in
-                Text(item.excerpt)
-                    .font(.callout)
-                    .padding(.horizontal, 10).padding(.vertical, 7)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
-            }
-            HStack(spacing: 16) {
-                StatusLabel(mark: provenance.0, text: provenance.1)
-                StatusLabel(mark: storage.0, text: storage.1)
-                if let sameAs { Text("Same content as delivery \(sameAs.number)").foregroundStyle(.secondary) }
-            }
-            .font(.caption)
-            Text("sha256 \(delivery.sha256 ?? "not recorded")")
-                .font(.system(.caption2, design: .monospaced)).foregroundStyle(.secondary).textSelection(.enabled)
+        return HStack(spacing: 12) {
+            Text("Delivery \(delivery.number)").fontWeight(isSelected ? .semibold : .regular)
+            Text(Wording.date(delivery.deliveredAt)).foregroundStyle(.secondary)
+            Text(delivery.provider == .codex ? "Codex" : "Claude Code").foregroundStyle(.secondary)
+            Spacer()
+            if let sameAs { Text("same as \(sameAs.number)").foregroundStyle(.secondary) }
+            StatusLabel(mark: provenance.0, text: provenance.1)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(isSelected ? Palette.selection : Color(nsColor: .separatorColor),
-                                                               lineWidth: isSelected ? 2 : 1))
+        .font(.callout)
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(isSelected ? Palette.selection.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(isSelected ? Palette.selection : Color(nsColor: .separatorColor),
+                                                              lineWidth: isSelected ? 1.5 : 1))
         .contentShape(Rectangle())
+    }
+}
+
+/// The full record for the selected delivery, for when the short answer isn't enough.
+struct DetailsSection: View {
+    @Environment(LibraryModel.self) private var model
+    var artifact: Artifact
+    var delivery: Delivery
+    var observation: FileObservation?
+
+    var body: some View {
+        DisclosureGroup("Details") {
+            let capture = delivery.capture
+            let provenance = Wording.provenance(capture)
+            let storage = Wording.storage(delivery, hasSaved: delivery.sha256.map(model.hasSaved) ?? false,
+                                          current: observation?.state.sha256, checked: observation != nil)
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
+                row("Path", artifact.path, mono: true)
+                if let observation {
+                    row("On disk", [observation.state.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) },
+                                    "git " + observation.state.git.rawValue.replacingOccurrences(of: "_", with: " "),
+                                    "checked \(Wording.date(observation.checkedAt))"].compactMap { $0 }.joined(separator: " · "))
+                }
+                row("Delivery \(delivery.number)", provenance.1)
+                row("Storage", storage.1)
+                row("sha256", delivery.sha256 ?? "not recorded", mono: true)
+                if let capture { row("First looked", Wording.date(capture.observedAt)) }
+                if let saved = capture?.savedAt { row("Saved", Wording.date(saved)) }
+                row("Session log", delivery.logPath, mono: true)
+            }
+            .padding(.top, 8)
+        }
+        .font(.callout)
+    }
+
+    func row(_ label: String, _ value: String, mono: Bool = false) -> some View {
+        GridRow {
+            Text(label).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
+            Text(value)
+                .font(mono ? .system(.caption, design: .monospaced) : .callout)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }
