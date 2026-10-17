@@ -28,11 +28,19 @@ enum Staging: Equatable {
 
 @MainActor @Observable
 final class LibraryModel {
-    var artifacts: [Artifact] = []
+    var artifacts: [Artifact] = [] {
+        didSet { siblings = Self.siblings(of: artifacts) }
+    }
+    /// Files named in the same reply, keyed by delivery id.
+    private(set) var siblings: [Delivery.ID: [Artifact.ID]] = [:]
+    /// False until the first read of the logs finishes.
+    private(set) var indexed = false
     var query = "" {
         didSet { if query != oldValue { chosenDelivery = nil } }
     }
     var kind: Artifact.Kind?
+    /// nil shows every project.
+    var project: String?
     var selection: Artifact.ID? {
         didSet { if selection != oldValue { chosenDelivery = nil } }
     }
@@ -60,6 +68,44 @@ final class LibraryModel {
             store: ContentStore(objects: support.appendingPathComponent("objects"), staging: caches.appendingPathComponent("handoff")),
             sources: .standard)
         artifacts = (try? registry.artifacts()) ?? []
+        siblings = Self.siblings(of: artifacts)
+    }
+
+    /// The agent log folders that exist on this Mac.
+    var logFolders: (found: [String], missing: [String]) {
+        let all = indexer.sources.watchedDirectories
+        let found = all.filter { FileManager.default.fileExists(atPath: $0) }
+        return (found, all.filter { !found.contains($0) })
+    }
+
+    /// Projects, most recently delivered to first.
+    var projects: [String] {
+        var seen = Set<String>()
+        return artifacts.compactMap { seen.insert($0.project).inserted ? $0.project : nil }
+    }
+
+    func clearFilters() {
+        query = ""
+        kind = nil
+        project = nil
+    }
+
+    /// One reply is one log and one delivery time; every file it named shares both.
+    private static func siblings(of artifacts: [Artifact]) -> [Delivery.ID: [Artifact.ID]] {
+        var byReply: [String: [(Delivery.ID, Artifact.ID)]] = [:]
+        for artifact in artifacts {
+            for d in artifact.deliveries {
+                guard let at = d.deliveredAt else { continue }
+                byReply["\(d.logPath)|\(at.timeIntervalSince1970)", default: []].append((d.id, artifact.id))
+            }
+        }
+        var result: [Delivery.ID: [Artifact.ID]] = [:]
+        for group in byReply.values where group.count > 1 {
+            for (delivery, artifact) in group {
+                result[delivery] = group.map(\.1).filter { $0 != artifact }.sorted()
+            }
+        }
+        return result
     }
 
     func start() {
@@ -84,6 +130,7 @@ final class LibraryModel {
                 guard let self else { return }
                 self.artifacts = artifacts
                 self.progress = nil
+                self.indexed = true
                 switch outcome {
                 case .success(let report):
                     let failures = report.failures.isEmpty ? "" : " · \(report.failures.count) logs unreadable"
@@ -102,7 +149,8 @@ final class LibraryModel {
     var results: [SearchResult] {
         let tokens = tokens
         return artifacts.compactMap { artifact in
-            guard kind == nil || artifact.kind == kind, let match = artifact.match(tokens) else { return nil }
+            guard kind == nil || artifact.kind == kind, project == nil || artifact.project == project,
+                  let match = artifact.match(tokens) else { return nil }
             return SearchResult(artifact: artifact, deliveryIndex: match.deliveryIndex, matchedIn: match.fields)
         }
     }
@@ -115,6 +163,21 @@ final class LibraryModel {
     }
 
     func hasSaved(_ sha: String) -> Bool { indexer.store.has(sha) }
+
+    /// What the selection would hand over now, once its file has been checked.
+    var selectedHandoff: (artifact: Artifact, delivery: Delivery, plan: Handoff)? {
+        guard let result = selected, let observation = observations[result.artifact.path] else { return nil }
+        let delivery = delivery(in: result)
+        return (result.artifact, delivery, result.artifact.handoff(delivery, now: observation, hasSaved: hasSaved))
+    }
+
+    /// The verified copy (or folder) the selection hands over, when it is ready.
+    var selectedHandoffURL: URL? {
+        guard let (artifact, _, plan) = selectedHandoff else { return nil }
+        if plan == .folder { return URL(fileURLWithPath: artifact.path) }
+        if case .ready(let url, _) = staging(for: plan.sha) { return url }
+        return nil
+    }
 
     /// The hand-off state for the version `sha`; idle when what is staged belongs to another one.
     func staging(for sha: String?) -> Staging {

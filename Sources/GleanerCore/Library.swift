@@ -67,6 +67,14 @@ public struct Artifact: Sendable, Identifiable {
     public var path: String
     /// Newest first.
     public var deliveries: [Delivery]
+    /// See `Projects.project(path:cwd:)`.
+    public var project: String
+
+    public init(path: String, deliveries: [Delivery]) {
+        self.path = path
+        self.deliveries = deliveries
+        project = Projects.project(path: path, cwd: deliveries.first?.cwd)
+    }
 
     public var id: String { path }
     public var name: String { (path as NSString).lastPathComponent }
@@ -84,18 +92,6 @@ public struct Artifact: Sendable, Identifiable {
         }
     }
 
-    /// The project a person would name: the repository or folder the agent worked in.
-    /// The project a person would name. When the file sits outside the folder the agent worked
-    /// in, the first folder where the two paths part is the file's own project.
-    public var project: String {
-        let directory = (path as NSString).deletingLastPathComponent
-        guard let cwd = latest.cwd else { return Self.projectName(directory) }
-        if directory == cwd || directory.hasPrefix(cwd + "/") { return Self.projectName(cwd) }
-        let a = directory.split(separator: "/"), b = cwd.split(separator: "/")
-        let shared = zip(a, b).prefix { $0 == $1 }.count
-        return shared < a.count ? String(a[shared]) : Self.projectName(directory)
-    }
-
     /// Where the file lives: a named worktree, or the project's own folder.
     public var place: String {
         for marker in ["/.claude/worktrees/", "/.worktrees/", "/.codex/worktrees/"] {
@@ -107,21 +103,15 @@ public struct Artifact: Sendable, Identifiable {
         return "main folder"
     }
 
+    /// True when the file lives in a worktree rather than the project's own folder.
+    public var inWorktree: Bool { place != "main folder" }
+
     /// The folder holding the file, relative to where the agent worked when that is an ancestor.
     public var folder: String {
         let directory = (path as NSString).deletingLastPathComponent
         if let cwd = latest.cwd, directory == cwd { return "." }
         if let cwd = latest.cwd, directory.hasPrefix(cwd + "/") { return String(directory.dropFirst(cwd.count + 1)) }
         return (directory as NSString).abbreviatingWithTildeInPath
-    }
-
-    public static func projectName(_ cwd: String) -> String {
-        for marker in ["/.claude/worktrees/", "/.worktrees/", "/.codex/worktrees/"] {
-            if let range = cwd.range(of: marker) {
-                return (String(cwd[..<range.lowerBound]) as NSString).lastPathComponent
-            }
-        }
-        return (cwd as NSString).lastPathComponent
     }
 }
 

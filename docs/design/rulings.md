@@ -16,7 +16,7 @@ The test for every choice is Gleaner's product contract (SPEC §2): find an old 
 ## 2. Project affiliation: derived from git, no manual filing yet
 
 **Adopted:** derive the project from the repository, not from folder names.
-- A delivery's project is the repository its cwd belongs to, resolved through `git rev-parse --git-common-dir`. Every worktree of a repository therefore folds into one project, wherever the agent keeps it.
+- A delivery's project is the repository holding the file, else the one its cwd belongs to. Gleaner finds it by reading `.git` entries (a worktree's `.git` file and its `commondir`), without running git. Every worktree of a repository therefore folds into one project, wherever the agent keeps it, and a deleted worktree resolves through the folder that held it.
 - Outside git, the project stays the cwd's folder name.
 - The value is computed once per distinct cwd at load and kept in memory. No schema change.
 - The list gets a project scope next to the kind filter. Global results keep the project label.
@@ -82,6 +82,7 @@ The three reset meanings in [evidence and lifecycle](evidence-and-lifecycle.md#p
 
 **Adopted:**
 - Quick Look for most formats, and the text view for text.
+- Markdown is the one exception to "no format-specific renderers": it is most of what agents deliver. Gleaner renders its block structure (headings, lists, quotes, code blocks, tables) with Foundation's parser. Nothing is fetched: images show as alt text.
 - When text preview stops at 64 KB, it says so and points to Open.
 - No format-specific renderers.
 - No HTML dependency crawling.

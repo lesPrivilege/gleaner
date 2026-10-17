@@ -146,6 +146,31 @@ enum Wording {
             : (.cross, "Not saved · this version no longer exists")
     }
 
+    /// A few words for a one-line delivery row; the full sentence is under Details.
+    static func provenanceShort(_ capture: Capture?) -> (Mark, String) {
+        switch capture?.provenance {
+        case .atDelivery?: (.solid, "Seen at delivery")
+        case .firstSeenAfterDelivery?: (.hollow, "First seen later")
+        case .neverObserved?, nil: (.dashed, "Never seen")
+        }
+    }
+
+    /// Names the bytes on screen and in the drag tile, so the preview never speaks for another version.
+    static func bytesCaption(_ plan: Handoff?, staged sha: String?, delivery: Delivery) -> String? {
+        switch plan {
+        case .folder?:
+            return "Folder as it is now · not versioned"
+        case .ready(_, let from, let seen)?:
+            guard sha != nil else { return nil }
+            let source = from == .original ? "file on disk" : "Gleaner’s saved copy"
+            return "Delivery \(delivery.number) · \(source)" + (seen == nil ? "" : " · first seen later, may differ")
+        case .unavailable(_, let current?)? where sha == current:
+            return "Current file · not among the deliveries Gleaner found"
+        default:
+            return nil
+        }
+    }
+
     static func kindLabel(_ kind: Artifact.Kind, path: String) -> String {
         let ext = (path as NSString).pathExtension.uppercased()
         return kind == .folder ? "FOLDER" : (ext.isEmpty ? "FILE" : String(ext.prefix(5)))

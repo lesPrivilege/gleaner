@@ -21,6 +21,18 @@ import Testing
         try "log".write(toFile: root + "/out/build.log", atomically: true, encoding: .utf8)
     }
 
+    @Test func worktreesResolveToTheirRepository() throws {
+        let worktree = root + "/.claude/worktrees/ch3"
+        #expect(Locator.run(["-C", root, "worktree", "add", "-q", worktree]).status == 0)
+        let name = (root as NSString).lastPathComponent
+        #expect(Projects.project(path: worktree + "/out/report.md", cwd: worktree) == name)
+        #expect(Projects.project(path: root + "/out/committed.md", cwd: "/elsewhere") == name)
+
+        // A deleted worktree resolves through the folder that held it.
+        try FileManager.default.removeItem(atPath: worktree)
+        #expect(Projects.project(path: worktree + "/out/report.md", cwd: worktree) == name)
+    }
+
     @Test func committedFileIsHashed() {
         let state = Locator.observe(root + "/out/committed.md")
         #expect(state.kind == .file)
