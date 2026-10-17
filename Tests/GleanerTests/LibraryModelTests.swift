@@ -422,6 +422,35 @@ import UniformTypeIdentifiers
         #expect(!FileManager.default.fileExists(atPath: older.path))
     }
 
+    // MARK: Check Again (A7)
+
+    @Test func checkAgainChecksTheFileAndPreparesItsCopyAgain() async throws {
+        indexer.saveLimit = 0 // nothing saved: the file on disk is the only copy
+        try write("build b1", to: "out/app.dmg", modified: delivered.addingTimeInterval(9000))
+        try deliver("out/app.dmg")
+        let model = LibraryModel(indexer: indexer)
+        let build = try artifact(model, "app.dmg")
+        model.selection = build.path
+        await model.observe(build)
+        let sha = try #require(build.latest.sha256)
+
+        // Rebuilt between the check and the copy: the copy fails, and the panel advises checking again.
+        try write("build b2", to: "out/app.dmg", modified: Date())
+        await model.stage(sha: sha, artifact: build)
+        guard case .failed = model.staging(for: sha) else { Issue.record("expected a failed copy"); return }
+        let checked = try #require(model.observations[build.path]).checkedAt
+        let generation = model.stagingGeneration
+
+        // Put back, then Check Again: a new check, and the copy prepared again as after Clear.
+        try write("build b1", to: "out/app.dmg", modified: delivered.addingTimeInterval(9000))
+        await model.checkAgain(build)
+        #expect(try #require(model.observations[build.path]).checkedAt > checked)
+        #expect(model.staging(for: sha) == .idle)
+        #expect(model.stagingGeneration == generation + 1)
+        await model.stage(sha: sha, artifact: build)
+        #expect(try text(model.selectedHandoffURL) == "build b1")
+    }
+
     // MARK: A deleted worktree
 
     @Test func aFileCommittedInADeletedWorktreeIsOfferedFromGitAfterARestart() async throws {

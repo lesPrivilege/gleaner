@@ -402,9 +402,23 @@ final class LibraryModel {
     /// paste reads it later. The selection's copy is prepared again.
     func clearHandoffCopies(keeping pasteboard: NSPasteboard) {
         let copied = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
-        clearStaging()
         try? indexer.store.clearStaging(keeping: copied)
+        restage()
+    }
+
+    /// Drops what is staged and starts a new generation: the detail view prepares the selection's
+    /// copy again, and a preparation started before is never shown after.
+    private func restage() {
+        clearStaging()
         stagingGeneration += 1
+    }
+
+    /// Check Again, wherever the app advises it: checks the file now, then prepares its copy again
+    /// as clearing hand-off copies does. Both land together, so the copy is prepared once, for what
+    /// the check found.
+    func checkAgain(_ artifact: Artifact) async {
+        await observe(artifact)
+        restage()
     }
 
     private static func size(of directory: URL) -> Int64 {

@@ -52,7 +52,14 @@ struct ComparePane: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 case .failed(let reason)?:
-                    note(reason)
+                    HStack {
+                        note(reason)
+                        Button("Check Again") {
+                            model.comparison = nil
+                            Task { await model.checkAgain(artifact) }
+                        }
+                        .help("Close the comparison, check the file now, and prepare its copy again.")
+                    }
                 }
             }
         }

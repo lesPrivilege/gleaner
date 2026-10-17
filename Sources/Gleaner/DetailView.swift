@@ -319,7 +319,11 @@ struct HandoffPanel: View {
             EmptyView()
         }
         if case .failed(let why, _) = staging {
-            StatusLabel(mark: .attention, text: why).font(.callout)
+            HStack {
+                StatusLabel(mark: .attention, text: why).font(.callout)
+                Button("Check Again") { Task { await model.checkAgain(artifact) } }
+                    .help("Check the file now and prepare its copy again.")
+            }
         }
         if let failure = model.actionFailure(artifact, delivery) {
             StatusLabel(mark: .attention, text: failure).font(.callout)
