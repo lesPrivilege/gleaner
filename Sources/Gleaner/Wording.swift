@@ -117,7 +117,9 @@ enum Wording {
         }
     }
 
-    static func handoff(_ plan: Handoff, delivery n: Int, onDisk: OnDisk) -> Statement {
+    /// `large` says the delivery was over the save limit, the one reason Gleaner chose not to
+    /// keep its bytes.
+    static func handoff(_ plan: Handoff, delivery n: Int, onDisk: OnDisk, large: Bool) -> Statement {
         switch plan {
         case .ready(_, .original, nil):
             return Statement(mark: .solid, title: "Ready: the file on disk is delivery \(n)",
@@ -134,8 +136,10 @@ enum Wording {
             return Statement(mark: .attention, title: "Delivery \(n) is no longer available",
                              detail: "The file on disk \(again), and Gleaner didn’t save a copy of delivery \(n).")
         case .unavailable(nil, _):
+            let unsaved = large ? "Gleaner didn’t save a copy: large files are saved only when you choose to"
+                : "Gleaner has no saved copy of delivery \(n)"
             return Statement(mark: .attention, title: "Delivery \(n) is no longer available",
-                             detail: "The file has changed and Gleaner didn’t save a copy: large files are saved only when you choose to. You can hand off the current file, but it isn’t among the deliveries Gleaner found.")
+                             detail: "The file has changed and \(unsaved). You can hand off the current file, but it isn’t among the deliveries Gleaner found.")
         case .restoreFromGit:
             return Statement(mark: .dashed, title: "Restore it from git first",
                              detail: "Git history has a file at this path. Gleaner can’t confirm it is the delivered version, and doesn’t write to your repository.")
@@ -157,7 +161,7 @@ enum Wording {
         }
     }
 
-    static func storage(_ delivery: Delivery, hasSaved: Bool, current: String?, checked: Bool) -> (Mark, String) {
+    static func storage(_ delivery: Delivery, hasSaved: Bool, large: Bool, current: String?, checked: Bool) -> (Mark, String) {
         guard let capture = delivery.capture, !capture.isDirectory else { return (.hollow, "Folder · not versioned") }
         guard let sha = capture.sha256 else { return (.cross, "Not saved") }
         let size = capture.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? ""
@@ -166,10 +170,22 @@ enum Wording {
                 ? (.hollow, "Saved copy of what Gleaner first saw (\(size))")
                 : (.solid, "Saved copy (\(size))")
         }
-        guard checked else { return (.hollow, "Not saved · large file (\(size)), checking…") }
+        let what = large ? "large file (\(size))" : size
+        guard checked else { return (.hollow, "Not saved · \(what), checking…") }
         return current == sha
-            ? (.hollow, "Not saved · large file (\(size)), checked by hash")
+            ? (.hollow, "Not saved · \(what), checked by hash")
             : (.cross, "Not saved · this version no longer exists")
+    }
+
+    static func openFailed(_ error: Error) -> String {
+        "Couldn’t open it: \(error.localizedDescription)"
+    }
+
+    static func saveFailed(_ error: Error, delivery n: Int) -> String {
+        if case ContentStore.Failure.changed = error {
+            return "The file changed before Gleaner could save it; it no longer holds delivery \(n)."
+        }
+        return "Couldn’t save a copy: \(error.localizedDescription)"
     }
 
     /// A few words for a one-line delivery row; the full sentence is under Details.

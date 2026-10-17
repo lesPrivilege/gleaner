@@ -209,13 +209,13 @@ struct HandoffPanel: View {
     var staging: Staging { model.staging(for: plan.sha) }
 
     var body: some View {
-        let statement = Wording.handoff(plan, delivery: delivery.number, onDisk: onDisk)
+        let statement = Wording.handoff(plan, delivery: delivery.number, onDisk: onDisk, large: model.isLarge(delivery))
         let disk = Wording.onDisk(onDisk, checked: observation.checkedAt)
         VStack(alignment: .leading, spacing: 12) {
             Text("Hand off delivery \(delivery.number)").font(.headline)
             HStack(spacing: 10) {
                 tile
-                Button("Open") { open() }
+                Button("Open") { model.openSelected() }
                     .disabled(openURL == nil)
                     .help("Open the verified copy in its app (⌘O). ⌘C in the list copies it as a file.")
                 if let ends = diskComparison {
@@ -318,6 +318,9 @@ struct HandoffPanel: View {
         if case .failed(let why, _) = staging {
             StatusLabel(mark: .attention, text: why).font(.callout)
         }
+        if let failure = model.actionFailure(artifact, delivery) {
+            StatusLabel(mark: .attention, text: failure).font(.callout)
+        }
     }
 
     var sourceExists: Bool { observation.state.kind != .missing }
@@ -352,8 +355,6 @@ struct HandoffPanel: View {
         }
         return "git -C '\(root)' checkout \"$(git -C '\(root)' rev-list -n 1 --all -- '\(rel)')^\" -- '\(rel)'"
     }
-
-    func open() { if let openURL { NSWorkspace.shared.open(openURL) } }
 
     func copy(_ text: String) {
         NSPasteboard.general.clearContents()
@@ -477,7 +478,8 @@ struct DetailsSection: View {
             let capture = delivery.capture
             let provenance = Wording.provenance(capture)
             let storage = Wording.storage(delivery, hasSaved: delivery.sha256.map(model.hasSaved) ?? false,
-                                          current: observation?.state.sha256, checked: observation != nil)
+                                          large: model.isLarge(delivery), current: observation?.state.sha256,
+                                          checked: observation != nil)
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
                 row("Path", artifact.path, mono: true)
                 if let observation {

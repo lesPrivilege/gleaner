@@ -132,6 +132,38 @@ import Testing
         }
     }
 
+    @Test func savingACopySaysWhyNothingWasKept() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let build = try artifact("build.dmg")
+        #expect(indexer.isLarge(try #require(build.latest.capture)))
+
+        // Rebuilt in place: the file no longer holds delivery 1, so nothing is kept as its copy.
+        try write("big build b2, rebuilt in place after delivery", to: "out/build.dmg", modified: Date())
+        #expect(throws: ContentStore.Failure.self) { try indexer.saveCopy(of: build.latest, at: Date()) }
+        #expect(try artifact("build.dmg").latest.capture?.savedAt == nil)
+
+        // The delivered bytes are back: the copy is kept.
+        try write("big build b1, larger than the save limit", to: "out/build.dmg", modified: Date())
+        try indexer.saveCopy(of: build.latest, at: Date())
+        #expect(try artifact("build.dmg").latest.capture?.savedAt != nil)
+        #expect(saved(try #require(build.latest.sha256)))
+    }
+
+    @Test func aSmallFileGleanerCouldNotSaveIsNotALargeFile() throws {
+        // The store can't be written, so the copy made at capture fails.
+        let blocked = root.appendingPathComponent("blocked")
+        try "not a folder".write(to: blocked, atomically: true, encoding: .utf8)
+        let indexer = Indexer(
+            registry: indexer.registry,
+            store: ContentStore(objects: blocked.appendingPathComponent("objects"), staging: root.appendingPathComponent("staging")),
+            sources: indexer.sources)
+        indexer.saveLimit = 32
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let capture = try #require(try artifact("demo.mp4").latest.capture)
+        #expect(capture.sha256 != nil && capture.savedAt == nil)
+        #expect(!indexer.isLarge(capture))
+    }
+
     @Test func secondDeliveryThenRollback() throws {
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
         let second = delivered.addingTimeInterval(3600)

@@ -191,6 +191,22 @@ public final class Indexer: @unchecked Sendable {
         return added
     }
 
+    /// Over the save limit: tracked by hash, and saved only when the person asks (SPEC §6). A
+    /// smaller file without a saved copy is one Gleaner could not save, not this policy.
+    public func isLarge(_ capture: Capture) -> Bool {
+        (capture.size ?? 0) > saveLimit
+    }
+
+    /// Saves a copy of a delivery's bytes while the file still holds them (SPEC §6). Throws
+    /// `ContentStore.Failure.changed` when it no longer does, and any error reading the file or
+    /// recording the copy, so the person learns why nothing was kept.
+    public func saveCopy(of delivery: Delivery, at date: Date) throws {
+        guard let sha = delivery.sha256 else { throw ContentStore.Failure.unavailable }
+        let saved = try store.save(delivery.path)
+        guard saved.sha == sha else { throw ContentStore.Failure.changed(expected: sha, found: saved.sha) }
+        try registry.markSaved(deliveryID: delivery.id, at: date)
+    }
+
     /// Reads the delivery's bytes once, saves small files, and records when that happened relative
     /// to the delivery (SPEC §5.1).
     public func capture(_ path: String, deliveredAt: Date?, now: Date) -> Capture {

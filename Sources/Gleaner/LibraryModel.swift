@@ -183,6 +183,9 @@ final class LibraryModel {
 
     func hasSaved(_ sha: String) -> Bool { indexer.store.has(sha) }
 
+    /// Over the save limit, so its bytes are kept only when the person asks.
+    func isLarge(_ delivery: Delivery) -> Bool { delivery.capture.map(indexer.isLarge) ?? false }
+
     /// What the selection would hand over now, once its file has been checked.
     var selectedHandoff: (artifact: Artifact, delivery: Delivery, plan: Handoff)? {
         guard let result = selected, let observation = observations[result.artifact.path] else { return nil }
@@ -223,6 +226,15 @@ final class LibraryModel {
 
     // MARK: Actions shared by buttons, menus and the right-click menu
 
+    /// The last Open or Save a Copy that failed, with the delivery it was pressed on.
+    private var actionFailure: (artifact: Artifact.ID, delivery: Delivery.ID, message: String)?
+
+    /// Why the last Open or Save a Copy on this delivery failed, shown where it was pressed.
+    func actionFailure(_ artifact: Artifact, _ delivery: Delivery) -> String? {
+        guard let failure = actionFailure, failure.artifact == artifact.id, failure.delivery == delivery.id else { return nil }
+        return failure.message
+    }
+
     /// The file the Quick Look panel shows; nil closes it.
     var quickLookURL: URL?
 
@@ -230,9 +242,19 @@ final class LibraryModel {
         quickLookURL = quickLookURL == nil ? selectedHandoffURL : nil
     }
 
-    /// Opens the selection's verified copy (or folder) in its app.
+    /// Opens the selection's verified copy (or folder) in its app, or says why it couldn't.
     func openSelected() {
-        if let url = selectedHandoffURL { NSWorkspace.shared.open(url) }
+        guard let (artifact, delivery, _) = selectedHandoff, let url = selectedHandoffURL else { return }
+        actionFailure = nil
+        Task {
+            do {
+                _ = try await NSWorkspace.shared.open(url, configuration: NSWorkspace.OpenConfiguration())
+            } catch CocoaError.userCancelled {
+                // The person said no: nothing failed.
+            } catch {
+                actionFailure = (artifact.id, delivery.id, Wording.openFailed(error))
+            }
+        }
     }
 
     /// Shows the original in Finder, or the folder it was in when it is gone.
@@ -323,17 +345,16 @@ final class LibraryModel {
         }
     }
 
-    /// Saves a copy of a large delivery whose bytes are still on disk, after checking they match.
+    /// Saves a copy of a delivery whose bytes are still on disk, after checking they match, or
+    /// says why it couldn't.
     func saveCopy(of delivery: Delivery, artifact: Artifact) async {
-        guard let sha = delivery.sha256 else { return }
+        actionFailure = nil
         let indexer = indexer
-        let path = artifact.path
-        let ok = await Task.detached {
-            guard let saved = try? indexer.store.save(path), saved.sha == sha else { return false }
-            try? indexer.registry.markSaved(deliveryID: delivery.id, at: Date())
-            return true
-        }.value
-        if ok { artifacts = (try? indexer.registry.artifacts()) ?? artifacts }
+        let result = await Task.detached { Result { try indexer.saveCopy(of: delivery, at: Date()) } }.value
+        switch result {
+        case .success: artifacts = (try? indexer.registry.artifacts()) ?? artifacts
+        case .failure(let error): actionFailure = (artifact.id, delivery.id, Wording.saveFailed(error, delivery: delivery.number))
+        }
         await observe(artifact)
     }
 }
