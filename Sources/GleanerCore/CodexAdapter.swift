@@ -45,7 +45,7 @@ public struct CodexAdapter: Sendable {
     /// Returns nil for sub-agent threads: their replies go to another agent, not the user.
     public func parse(_ url: URL) throws -> SessionLog? {
         let file = try JSONLines.read(url)
-        var unknown: [String: Int] = file.malformed > 0 ? ["<malformed>": file.malformed] : [:]
+        var unknown: [String: Int] = [:]
         var meta: [String: Any]?
         var cwd: String?
         var request: String?
@@ -90,7 +90,8 @@ public struct CodexAdapter: Sendable {
                 provider: .codex, id: id, title: titles[id],
                 cwd: meta?["cwd"] as? String, logPath: url.path),
             turns: turns,
-            unknownRecordTypes: unknown)
+            unknownRecordTypes: unknown,
+            malformedLines: file.malformed)
     }
 
     /// The typed text of a user message. Injected context (AGENTS.md, environment, goals) is

@@ -177,7 +177,7 @@ Admission for v0.1 is a synthetic rule derived from what a delivery is: a file t
 - Anything inside a fenced code block, or a link written inside inline code, is an example or an instruction, not a hand-off.
 - A path with a placeholder (`build/<name>.zip`, `out/{id}.md`) names a pattern, not a file.
 
-When a log is reread, deliveries it no longer admits are removed from the index with their captures; saved copies stay in the store.
+When a log is reread completely, deliveries it no longer admits are removed from the index with their captures; saved copies stay in the store. A log with malformed lines removes nothing: what it still names is updated, it is reported as partial, and it is read again on the next run.
 
 Answers to an agent's question prompt (Codex sends them as JSON, sometimes wrapped in a tag) are not requests; the previous request stays as context.
 

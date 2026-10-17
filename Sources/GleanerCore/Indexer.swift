@@ -55,11 +55,14 @@ public final class Indexer: @unchecked Sendable {
             public var folder: Folder
             /// Record types the adapter does not recognize, with counts. Non-empty means the format moved.
             public var unknownRecordTypes: [String: Int] = [:]
-            /// Logs that could not be read, with the reason. Their deliveries stay as they were.
+            /// Logs with malformed lines. What they name was added and nothing was removed; they are
+            /// read again next run.
+            public var partialLogs: [String] = []
+            /// Logs that could not be read or stored, with the reason. Their deliveries stay as they were.
             public var failures: [String] = []
 
             /// Listed, but not everything in it could be read or understood.
-            public var hasProblems: Bool { !unknownRecordTypes.isEmpty || !failures.isEmpty }
+            public var hasProblems: Bool { !unknownRecordTypes.isEmpty || !partialLogs.isEmpty || !failures.isEmpty }
         }
 
         public var logsRead = 0
@@ -136,12 +139,21 @@ public final class Indexer: @unchecked Sendable {
                 report.sources[provider]?.failures.append("\(url.path): \(error)")
                 continue
             case .success(let log):
-                try registry.transaction {
-                    if let log {
-                        report.newDeliveries += try ingest(log, now: now())
-                        report.sources[provider]?.unknownRecordTypes.merge(log.unknownRecordTypes, uniquingKeysWith: +)
+                do {
+                    report.newDeliveries += try registry.transaction {
+                        let added = try log.map { try ingest($0, now: now()) } ?? 0
+                        // A partial log stays unread, so it is read and reported again next run.
+                        if log?.isComplete ?? true { try registry.markRead(logFile: url.path, size: size, mtime: mtime) }
+                        return added
                     }
-                    try registry.markRead(logFile: url.path, size: size, mtime: mtime)
+                } catch {
+                    // A log the registry refuses fails alone; the run goes on.
+                    report.sources[provider]?.failures.append("\(url.path): \(error)")
+                    continue
+                }
+                if let log {
+                    report.sources[provider]?.unknownRecordTypes.merge(log.unknownRecordTypes, uniquingKeysWith: +)
+                    if !log.isComplete { report.sources[provider]?.partialLogs.append(url.path) }
                 }
                 report.logsRead += 1
             }
@@ -173,7 +185,8 @@ public final class Indexer: @unchecked Sendable {
                 added += 1
             }
         }
-        try registry.removeDeliveries(logPath: log.session.logPath, except: admitted)
+        // Only a log read whole shows that a delivery is gone from it.
+        if log.isComplete { try registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
         return added
     }
 

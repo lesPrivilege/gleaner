@@ -26,7 +26,7 @@ public enum ClaudeCodeAdapter {
 
     public static func parse(_ url: URL) throws -> SessionLog {
         let file = try JSONLines.read(url)
-        var unknown: [String: Int] = file.malformed > 0 ? ["<malformed>": file.malformed] : [:]
+        var unknown: [String: Int] = [:]
         var sessionID = url.deletingPathExtension().lastPathComponent
         var customTitle: String?
         var aiTitle: String?
@@ -102,7 +102,8 @@ public enum ClaudeCodeAdapter {
                 provider: .claudeCode, id: sessionID, title: customTitle ?? aiTitle,
                 cwd: sessionCwd, logPath: url.path),
             turns: turns,
-            unknownRecordTypes: unknown)
+            unknownRecordTypes: unknown,
+            malformedLines: file.malformed)
     }
 
     static func userText(_ content: Any?) -> String {
