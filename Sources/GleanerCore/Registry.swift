@@ -8,7 +8,7 @@ public final class Registry: @unchecked Sendable {
     /// Bump when extraction changes what is derived from logs (requests, evidence, admission).
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
     /// at a moment in time, are never rewritten.
-    public static let extractorVersion = 3
+    public static let extractorVersion = 5
 
     public init(path: String) throws {
         db = try Database(path: path)

@@ -79,7 +79,7 @@ enum RequestText {
 
     /// Strips injected context and markup from a user request, keeping the words a person would search for.
     static func clean(_ text: String) -> String {
-        var t = text
+        var t = withoutAttachmentHeader(text)
         for tag in ["system-reminder", "local-command-stdout", "local-command-caveat"] {
             t = t.replacingOccurrences(of: "<\(tag)[^>]*>[\\s\\S]*?</\(tag)>", with: " ", options: .regularExpression)
         }
@@ -90,5 +90,20 @@ enum RequestText {
         t = t.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
         return String(t.prefix(maxLength))
+    }
+
+    /// Codex prefixes attached files as "# Files mentioned by the user: ## name: path … ## My
+    /// request: …". The person's words follow "My request"; with none, the attachments stand in.
+    static func withoutAttachmentHeader(_ raw: String) -> String {
+        let marker = "## My request:"
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard text.hasPrefix("# Files mentioned by the user:"), let range = text.range(of: marker) else { return text }
+        let own = text[range.upperBound...].trimmingCharacters(in: .whitespacesAndNewlines)
+        if !own.isEmpty { return own }
+        let names = text[..<range.lowerBound].split(separator: "\n").compactMap { line -> String? in
+            guard line.hasPrefix("## "), let colon = line.range(of: ": /") else { return nil }
+            return String(line[line.index(line.startIndex, offsetBy: 3)..<colon.lowerBound])
+        }
+        return names.isEmpty ? "" : "Attached " + names.joined(separator: ", ")
     }
 }
