@@ -82,6 +82,35 @@ import Testing
         try String(contentsOf: try #require(url), encoding: .utf8)
     }
 
+    /// Rereads the logs and waits until `done` holds.
+    func reindex(_ model: LibraryModel, until done: () -> Bool) async throws {
+        model.reindex()
+        for _ in 0..<300 where !done() { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(done())
+    }
+
+    // MARK: Reading the logs (N3)
+
+    @Test func aFailedReadKeepsShowingTheLibrary() async throws {
+        let model = LibraryModel(indexer: indexer)
+        try await reindex(model) { model.sources != nil }
+        let shown = model.artifacts.map(\.path)
+        #expect(shown.count == 2)
+        // Neither the logs' read markers nor the library can be read now.
+        try indexer.registry.db.execute("DROP TABLE log_files; DROP TABLE captures;")
+        try await reindex(model) { model.indexFailure != nil }
+        #expect(model.artifacts.map(\.path) == shown)
+    }
+
+    @Test func aFailedRunNeverClaimsTheLogsWereRead() async throws {
+        let model = LibraryModel(indexer: indexer)
+        try await reindex(model) { model.sources != nil }
+        try indexer.registry.db.execute("DROP TABLE log_files;")
+        try await reindex(model) { model.indexFailure != nil }
+        #expect(model.sources == nil)
+        #expect(model.logTrouble?.hasPrefix("Indexing failed") == true)
+    }
+
     // MARK: Delivered with (D6)
 
     @Test func aFileDeliveredWithAnotherOpensOnItsDeliveryFromThatReply() throws {

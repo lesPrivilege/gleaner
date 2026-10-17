@@ -45,10 +45,12 @@ final class LibraryModel {
     private(set) var projectNames: [String: String] = [:]
     /// False until the first read of the logs finishes.
     private(set) var indexed = false
-    /// How each agent's log folder read in the latest run; nil until a run finishes. Unknown record
-    /// types are kept for the session, since a run reports only those of the logs it read.
+    /// How each agent's log folder read in the latest run; nil until a run finishes, and after one
+    /// that failed. Unknown record types are kept for the session, since a run reports only those
+    /// of the logs it read.
     private(set) var sources: [Provider: Indexer.Report.Source]?
-    /// Why the latest run stopped before reading the logs, when it did.
+    /// Why the latest run stopped before reading the logs, or why the library couldn't be read
+    /// after it. What the library already showed stays.
     private(set) var indexFailure: String?
     var query = "" {
         didSet { if query != oldValue { chosenDelivery = nil } }
@@ -151,10 +153,10 @@ final class LibraryModel {
                     Task { @MainActor [weak self] in self?.progress = total > 0 && done < total ? (done, total) : nil }
                 })
             }
-            let artifacts = (try? indexer.registry.artifacts()) ?? []
+            let library = Swift.Result { try indexer.registry.artifacts() }
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                self.artifacts = artifacts
+                if case .success(let artifacts) = library { self.artifacts = artifacts }
                 self.progress = nil
                 self.indexed = true
                 switch outcome {
@@ -164,11 +166,15 @@ final class LibraryModel {
                         sources[provider]?.unknownRecordTypes.merge(earlier.unknownRecordTypes, uniquingKeysWith: max)
                     }
                     self.sources = sources
-                    self.indexFailure = nil
-                case .failure(let error):
-                    self.indexFailure = "Indexing failed: \(error)"
+                case .failure:
+                    self.sources = nil
                 }
-                self.status = "\(artifacts.count) delivered files"
+                self.indexFailure = switch (outcome, library) {
+                case (.failure(let error), _): "Indexing failed: \(error)"
+                case (_, .failure(let error)): "Gleaner couldn’t read its library: \(error)"
+                default: nil
+                }
+                self.status = "\(self.artifacts.count) delivered files"
                 self.indexing = false
                 if self.pending { self.pending = false; self.reindex() }
             }

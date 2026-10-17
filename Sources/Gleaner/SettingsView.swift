@@ -26,6 +26,9 @@ struct SettingsView: View {
                         }
                     }
                 }
+                if let failure = model.indexFailure {
+                    StatusLabel(mark: .attention, text: failure)
+                }
                 HStack(alignment: .firstTextBaseline) {
                     Text("Gleaner watches these agent log folders while it is open, and reads only the files their replies name.")
                         .font(.caption).foregroundStyle(.secondary)
