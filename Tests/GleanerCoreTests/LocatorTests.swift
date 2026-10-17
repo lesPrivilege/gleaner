@@ -120,6 +120,16 @@ import Testing
         #expect(try Data(contentsOf: URL(fileURLWithPath: index)) == before)
     }
 
+    @Test func observingRunsNoCommandTheRepositoryConfigures() throws {
+        let hook = root + "/fsmonitor.sh", ran = root + "/fsmonitor-ran"
+        try "#!/bin/sh\ntouch \(Locator.quoted(ran))\n".write(toFile: hook, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hook)
+        #expect(Locator.run(["-C", root, "config", "core.fsmonitor", hook]).status == 0)
+
+        for file in ["committed.md", "untracked.md", "gone.md", "moved.md"] { _ = Locator.observe(root + "/out/" + file) }
+        #expect(!FileManager.default.fileExists(atPath: ran), "git ran the repository's fsmonitor hook")
+    }
+
     @Test func directoryHasNoHash() {
         let state = Locator.observe(root + "/out")
         #expect(state.kind == .directory)

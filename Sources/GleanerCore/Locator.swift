@@ -138,8 +138,9 @@ public enum Locator {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         // Without the first, `git status` refreshes and rewrites the index: not read-only. The second
-        // keeps a file name like `notes [1].md` from matching other files as a pattern.
-        process.arguments = ["--no-optional-locks", "--literal-pathspecs"] + arguments
+        // keeps a file name like `notes [1].md` from matching other files as a pattern. The third keeps
+        // reading the index from running a hook or daemon the repository configures (SPEC §7).
+        process.arguments = ["--no-optional-locks", "--literal-pathspecs", "-c", "core.fsmonitor=false"] + arguments
         let pipe = Pipe()
         process.standardOutput = pipe
         process.standardError = FileHandle.nullDevice
