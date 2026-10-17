@@ -245,9 +245,16 @@ public enum Admission {
     public static func admits(_ candidate: DeliveryCandidate) -> Bool {
         candidate.evidence.contains { item in
             switch item.mention.syntax {
-            case .link, .image: return true
+            case .link, .image: return !isLineAnchor(item.mention.anchor)
             case .code, .bare: return item.mention.anchor == nil && item.mention.rawTarget.dropFirst().contains("/")
             }
         }
+    }
+
+    /// `:42`, `:42:7` or `#L42` point at a line of code; a heading anchor (`#usage`) points at a
+    /// section of a document that may itself be the delivery.
+    static func isLineAnchor(_ anchor: String?) -> Bool {
+        guard let anchor else { return false }
+        return anchor.range(of: #"^(:\d|#L\d)"#, options: .regularExpression) != nil
     }
 }

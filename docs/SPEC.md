@@ -172,7 +172,14 @@ Features recorded per candidate, for later ranking: syntax (link / image / code 
 
 A line-anchored code reference (`src/foo.swift:42`) is usually a pointer, not a delivery.
 
-Provisional admission, until Gate 1 labels replace it: links and images are admitted; inline code and bare paths only when they contain a directory component and no line anchor. This keeps out most code references (`App.tsx`, `src/a.ts:42`) at a cost in recall that Gate 1 will measure.
+Admission for v0.1 is a synthetic rule derived from what a delivery is: a file the agent hands to the person. Each clause is a test case (`AdmissionTests`):
+
+- A link or image is a hand-off: the agent made the file clickable. Images are always admitted.
+- A line anchor (`:42`, `#L42`) points into code instead of handing a file over, so a mention with one never admits a file, even as a link. A heading anchor (`#usage`) points at a section of a document that may itself be the delivery, so it does not block admission.
+- Inline code or a bare path admits a file only when it names a place (a directory component) and has no anchor. A bare file name (`App.tsx`) names a topic, not a place.
+- Anything inside a fenced code block, or a link written inside inline code, is an example or an instruction, not a hand-off.
+
+When a log is reread, deliveries it no longer admits are removed from the index with their captures; saved copies stay in the store.
 
 Answers to an agent's question prompt (Codex sends them as JSON, sometimes wrapped in a tag) are not requests; the previous request stays as context.
 
@@ -199,7 +206,7 @@ The index covers, per mention: the delivery excerpt, the user request that start
 - locator resolution rate (real deliveries whose file was found),
 - duplicate rate (same file mentioned repeatedly).
 
-Library work was meant to start only once these numbers are acceptable. At the user's direction the native library was built before labeling (2026-10-17); its admission rule is provisional (§9), and the Gate 1 numbers still decide it.
+Library work was meant to start only once these numbers are acceptable. At the user's direction the native library was built before labeling (2026-10-17). Labeling one person's logs would overfit the rule to one working style, so v0.1 ships the synthetic rule in §9, and Gate 1 is measured on broader feedback after release.
 
 **Gate 2 — Artifact usability (Spike B).** With fixed MP4, PDF, Markdown, and HTML-bundle samples: find, preview, detect source change, restore from snapshot, and drag into Finder, Claude Desktop, Codex, and a browser upload field. Show correctly which versions remain available after a worktree is removed.
 

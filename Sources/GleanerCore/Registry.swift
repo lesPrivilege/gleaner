@@ -8,7 +8,7 @@ public final class Registry: @unchecked Sendable {
     /// Bump when extraction changes what is derived from logs (requests, evidence, admission).
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
     /// at a moment in time, are never rewritten.
-    public static let extractorVersion = 5
+    public static let extractorVersion = 6
 
     public init(path: String) throws {
         db = try Database(path: path)
@@ -62,6 +62,18 @@ public final class Registry: @unchecked Sendable {
             VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET cwd = excluded.cwd, request = excluded.request, evidence = excluded.evidence
             """, [id, sessionID, path, deliveredAt, cwd, request.map(Redactor.redact), json])
+    }
+
+    /// Removes deliveries a reread log no longer admits, with their captures. They are derived
+    /// from the log and come back if the log admits them again; saved copies stay in the store.
+    public func removeDeliveries(logPath: String, except kept: Set<String>) throws {
+        let keep = String(decoding: try JSONEncoder().encode(Array(kept)), as: UTF8.self)
+        let stale = """
+            SELECT d.id FROM deliveries d JOIN sessions s ON s.id = d.session_id
+            WHERE s.log_path = ? AND d.id NOT IN (SELECT value FROM json_each(?))
+            """
+        try db.run("DELETE FROM captures WHERE delivery_id IN (\(stale))", [logPath, keep])
+        try db.run("DELETE FROM deliveries WHERE id IN (\(stale))", [logPath, keep])
     }
 
     public func setCapture(_ capture: Capture, for deliveryID: String) throws {

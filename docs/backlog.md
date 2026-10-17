@@ -12,6 +12,5 @@ Work items for the v0.1 release, highest impact first. Each one is finished when
 
 Left with the owner:
 
-- Gate 1 labeling (`out/candidates.tsv`, `out/recall-sample.md`), which decides the admission rule.
 - Listening to VoiceOver and looking at dark appearance; neither could be checked from here.
 - An app icon, a `v0.1.0` tag, and notarization with a Developer ID.
