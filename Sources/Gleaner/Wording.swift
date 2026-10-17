@@ -322,6 +322,21 @@ enum Wording {
         "Its folder isn’t on disk either: \((folder as NSString).abbreviatingWithTildeInPath)"
     }
 
+    /// Where the reply that delivered `delivery` is in its session's log: the line Show in Log leads to.
+    static func logLine(_ delivery: Delivery) -> String {
+        delivery.evidence.first.map { "Line \($0.line) of the session log" } ?? "The session log"
+    }
+
+    /// Said where Show in Log was pressed when the agent has removed the log.
+    static func logGone(_ log: String) -> String {
+        "The session log is no longer on disk: \((log as NSString).abbreviatingWithTildeInPath)"
+    }
+
+    /// Said where Copy Reference was pressed when the library couldn't name the delivery.
+    static func referenceFailed(_ error: Error) -> String {
+        "Couldn’t copy the reference: \(error)"
+    }
+
     /// A delivery as one end of a comparison, keeping "first seen later" (SPEC §6).
     static func compareTitle(_ delivery: Delivery) -> String {
         "Delivery \(number(delivery))"

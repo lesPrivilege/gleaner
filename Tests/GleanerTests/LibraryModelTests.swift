@@ -494,6 +494,58 @@ import UniformTypeIdentifiers
         #expect(!FileManager.default.fileExists(atPath: older.path))
     }
 
+    // MARK: The same reference inside the app (query-core "In the app")
+
+    @Test func copyReferencePutsWhatResolveAnswersOnTheClipboardAsText() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try artifact(model, "demo.mp4"), first = video.deliveries[2]
+        let clipboard = pasteboard()
+        defer { clipboard.releaseGlobally() }
+        await model.copyReference(first, to: clipboard)
+
+        // Text, not a file as ⌘C copies one.
+        #expect(clipboard.types?.contains(.fileURL) == false)
+        let text = try #require(clipboard.string(forType: .string))
+        // Exactly what `gleaner resolve` writes for that delivery.
+        #expect(Data(text.utf8) == (try Catalog.encoder.encode(Catalog(registry: indexer.registry, store: indexer.store).resolve(first.id))))
+        // Its identity fields, kept apart: the version, where it was delivered, the reply that named it.
+        let reference = try Catalog.decoder.decode(Catalog.Resolved.self, from: Data(text.utf8)).reference
+        #expect(reference.library == (try indexer.registry.index().library))
+        #expect(reference.delivery == first.id)
+        #expect(reference.sha256 == first.sha256)
+        #expect(reference.path == video.path)
+        #expect(reference.evidence == Catalog.LogLine(log: first.logPath, line: 2))
+    }
+
+    @Test func copyReferenceSaysWhyWhenTheLibraryNoLongerHasTheDelivery() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let notes = try artifact(model, "notes.md")
+        // Dropped from the library after it loaded.
+        try indexer.registry.db.run("DELETE FROM deliveries WHERE id = ?", [notes.latest.id])
+        let clipboard = pasteboard()
+        defer { clipboard.releaseGlobally() }
+        clipboard.setString("copied before", forType: .string)
+
+        await model.copyReference(notes.latest, to: clipboard)
+        #expect(clipboard.string(forType: .string) == "copied before")
+        #expect(model.selection == notes.path)
+        #expect(model.actionFailure(notes, notes.latest) == "Couldn’t copy the reference: No delivery \(notes.latest.id) in this library.")
+    }
+
+    @Test func showInLogNamesTheReplysLineAndSaysWhenTheLogIsGone() throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try artifact(model, "demo.mp4"), first = video.deliveries[2]
+        // The detail pane names the line of the reply that delivered it.
+        #expect(Wording.logLine(first) == "Line 2 of the session log")
+        #expect(Wording.logLine(video.latest) == "Line 6 of the session log")
+
+        // The agent removed the log. Pressed on a delivery that isn't shown: it is shown, and says why.
+        try FileManager.default.removeItem(atPath: first.logPath)
+        model.revealLog(first)
+        #expect(model.selected.map(model.delivery(in:))?.id == first.id)
+        #expect(model.actionFailure(video, first) == "The session log is no longer on disk: \(first.logPath)")
+    }
+
     // MARK: Check Again (A7)
 
     @Test func checkAgainChecksTheFileAndPreparesItsCopyAgain() async throws {
