@@ -205,6 +205,11 @@ enum Wording {
         }
     }
 
+    /// A delivery as one end of a comparison, keeping "first seen later" (SPEC §6).
+    static func compareTitle(_ delivery: Delivery) -> String {
+        "Delivery \(delivery.number)" + (delivery.capture?.provenance == .firstSeenAfterDelivery ? " (first seen later)" : "")
+    }
+
     /// Names the bytes on screen and in the drag tile, so the preview never speaks for another version.
     static func bytesCaption(_ plan: Handoff?, staged sha: String?, delivery: Delivery) -> String? {
         switch plan {

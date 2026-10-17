@@ -8,9 +8,19 @@ struct ComparePane: View {
     var artifact: Artifact
     var from: Comparison.End
     var to: Comparison.End
-    @State private var content: Comparison.Content?
+    @State private var loaded: (request: Request, content: Comparison.Content)?
+
+    /// What a comparison is of: both ends, each naming its delivery, source and hash.
+    struct Request: Equatable {
+        var from: Comparison.End
+        var to: Comparison.End
+        var kind: Artifact.Kind
+    }
 
     var body: some View {
+        let request = Request(from: from, to: to, kind: artifact.kind)
+        // Only a result loaded for this very pair is shown; until then it is loading.
+        let content = loaded?.request == request ? loaded?.content : nil
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("\(from.title) → \(to.title)").font(.headline)
@@ -39,7 +49,7 @@ struct ComparePane: View {
                         Text(a.sha == b.sha ? "Same content" : "These bytes differ").font(.callout.weight(.semibold))
                         bytesLine(from, a)
                         bytesLine(to, b)
-                        Text("Gleaner compares text line by line and images side by side; for this kind it compares size and hash.")
+                        Text("Gleaner compares text line by line and images side by side; for these files it compares size and hash.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 case .failed(let reason)?:
@@ -51,10 +61,13 @@ struct ComparePane: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color(nsColor: .separatorColor)))
-        .task(id: "\(from.sha)|\(to.sha)") {
-            content = nil
-            let (from, to, kind) = (from, to, artifact.kind)
-            content = await Task.detached(priority: .userInitiated) { Comparison.load(from, to, kind: kind) }.value
+        .task(id: request) {
+            let content = await Task.detached(priority: .userInitiated) {
+                Comparison.load(request.from, request.to, kind: request.kind)
+            }.value
+            // Another comparison was asked for while this one loaded.
+            guard !Task.isCancelled else { return }
+            loaded = (request, content)
         }
     }
 

@@ -202,16 +202,15 @@ final class LibraryModel {
     }
 
     /// A delivery's bytes as a comparison end: its saved copy, or the file on disk while that still
-    /// hashes to the delivery.
+    /// hashes to the delivery. Bytes first seen after the delivery say so.
     func compareEnd(_ delivery: Delivery, artifact: Artifact) -> Comparison.End? {
         guard let sha = delivery.sha256 else { return nil }
+        let title = Wording.compareTitle(delivery)
         if hasSaved(sha) {
-            return Comparison.End(title: "Delivery \(delivery.number)", source: "saved copy", sha: sha,
-                                  url: indexer.store.objectURL(sha))
+            return Comparison.End(title: title, source: "saved copy", sha: sha, url: indexer.store.objectURL(sha))
         }
         if observations[artifact.path]?.state.sha256 == sha {
-            return Comparison.End(title: "Delivery \(delivery.number)", source: "file on disk", sha: sha,
-                                  url: URL(fileURLWithPath: artifact.path))
+            return Comparison.End(title: title, source: "file on disk", sha: sha, url: URL(fileURLWithPath: artifact.path))
         }
         return nil
     }
