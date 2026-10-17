@@ -79,6 +79,69 @@ import Testing
         #expect(try registry.artifacts().first?.project == "Atlas")
     }
 
+    // MARK: The checkout recorded while a worktree was there (SPEC §5)
+
+    /// Atlas with `out/report.md` committed on branch ch3 in its worktree `.claude/worktrees/ch3`.
+    func atlasWithAReportInWorktreeCh3() throws -> (atlas: String, worktree: String) {
+        let atlas = try repository("Atlas"), worktree = atlas + "/.claude/worktrees/ch3"
+        #expect(Locator.run(["-C", atlas, "worktree", "add", "-q", "-b", "ch3", worktree]).status == 0)
+        try FileManager.default.createDirectory(atPath: worktree + "/out", withIntermediateDirectories: true)
+        try "r1".write(toFile: worktree + "/out/report.md", atomically: true, encoding: .utf8)
+        let commit = ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "report"]
+        for args in [["add", "."], commit] { #expect(Locator.run(["-C", worktree] + args).status == 0) }
+        return (atlas, worktree)
+    }
+
+    /// A request and its reply from `cwd`, as lines of session s1's log.
+    func turn(_ reply: String, cwd: String, at time: String) -> [String] {
+        [#"{"type":"user","message":{"role":"user","content":"Write the report"},"origin":{"kind":"human"},"timestamp":"2026-10-17T\#(time).000Z","cwd":"\#(cwd)","sessionId":"s1"}"#,
+         #"{"type":"assistant","message":{"model":"m","role":"assistant","content":[{"type":"text","text":"\#(reply)"}]},"timestamp":"2026-10-17T\#(time).500Z","cwd":"\#(cwd)","sessionId":"s1"}"#]
+    }
+
+    /// Writes session s1's log, then reads the logs as a fresh launch of Gleaner would.
+    func index(_ lines: [String]) throws -> Registry {
+        let logs = root.appendingPathComponent("claude/-ch3")
+        try FileManager.default.createDirectory(at: logs, withIntermediateDirectories: true)
+        try (lines.joined(separator: "\n") + "\n").write(to: logs.appendingPathComponent("s1.jsonl"), atomically: true, encoding: .utf8)
+        let registry = try Registry(path: root.appendingPathComponent("registry.sqlite").path)
+        _ = try Indexer(
+            registry: registry,
+            store: ContentStore(objects: root.appendingPathComponent("objects"), staging: root.appendingPathComponent("staging")),
+            sources: LogSources(claudeProjects: root.appendingPathComponent("claude"), codexHome: root.appendingPathComponent("codex"))).run()
+        return registry
+    }
+
+    @Test func aDeliveryReadAfterItsWorktreeIsGoneLeavesTheRecordedCheckoutStanding() throws {
+        let (atlas, worktree) = try atlasWithAReportInWorktreeCh3()
+        let first = turn("Report: [report](out/report.md)", cwd: worktree, at: "00:00:00")
+        _ = try index(first)
+
+        // Delivered again while Gleaner is closed, and the worktree removed before it starts again.
+        #expect(Locator.run(["-C", atlas, "worktree", "remove", worktree]).status == 0)
+        Projects.forgetRepositories()
+        let report = try #require(try index(first + turn("Again: [report](out/report.md)", cwd: worktree, at: "01:00:00"))
+            .artifacts().first)
+        #expect(report.deliveries.count == 2)
+        #expect(report.checkout == Checkout(folder: worktree, repository: atlas))
+        #expect(report.place == "worktree ch3")
+        #expect(Locator.observe(report.path, checkout: report.checkout).git == .recoverableFromHistory)
+    }
+
+    @Test func aDeliveryAdmittedAgainAfterItsWorktreeIsGoneGetsItsRecordedCheckoutBack() throws {
+        let (atlas, worktree) = try atlasWithAReportInWorktreeCh3()
+        let delivery = turn("Report: [report](out/report.md)", cwd: worktree, at: "00:00:00")
+        _ = try index(delivery)
+        // Reread under a rule that no longer admits it (a link written inside inline code).
+        #expect(try index(turn("Report: `[report](out/report.md)`", cwd: worktree, at: "00:00:00")).artifacts().isEmpty)
+
+        // The worktree is removed, Gleaner starts again, and the log admits the delivery again.
+        #expect(Locator.run(["-C", atlas, "worktree", "remove", worktree]).status == 0)
+        Projects.forgetRepositories()
+        let report = try #require(try index(delivery + turn("Anything else?", cwd: worktree, at: "00:10:00")).artifacts().first)
+        #expect(report.checkout == Checkout(folder: worktree, repository: atlas))
+        #expect(Locator.observe(report.path, checkout: report.checkout).git == .recoverableFromHistory)
+    }
+
     @Test func aWorktreeIsNamedAsOneWhereverItIsKept() throws {
         let atlas = try repository("Atlas")
         let external = root.appendingPathComponent("atlas-feature").path, inside = atlas + "/.claude/worktrees/ch3"

@@ -1,7 +1,7 @@
 import Foundation
 
 /// Gleaner's index: sessions, deliveries (one per reply that names a path), and what Gleaner
-/// captured of each delivery's bytes. Excerpts are stored redacted; whole logs never are.
+/// captured of each delivery's bytes, and where. Excerpts are stored redacted; whole logs never are.
 public final class Registry: @unchecked Sendable {
     let db: Database
 
@@ -20,12 +20,11 @@ public final class Registry: @unchecked Sendable {
                 id TEXT PRIMARY KEY, provider TEXT NOT NULL, title TEXT, cwd TEXT, log_path TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS deliveries (
                 id TEXT PRIMARY KEY, session_id TEXT NOT NULL, path TEXT NOT NULL, delivered_at REAL,
-                cwd TEXT, request TEXT, evidence TEXT NOT NULL, log_path TEXT, repository TEXT, checkout TEXT,
-                reply_line INTEGER, reply_rank INTEGER);
+                cwd TEXT, request TEXT, evidence TEXT NOT NULL, log_path TEXT, reply_line INTEGER, reply_rank INTEGER);
             CREATE INDEX IF NOT EXISTS deliveries_path ON deliveries(path);
             CREATE TABLE IF NOT EXISTS captures (
                 delivery_id TEXT PRIMARY KEY, sha256 TEXT, size INTEGER, mtime REAL, observed_at REAL NOT NULL,
-                saved_at REAL, provenance TEXT NOT NULL, kind TEXT NOT NULL);
+                saved_at REAL, provenance TEXT NOT NULL, kind TEXT NOT NULL, repository TEXT, checkout TEXT);
             """)
         // Each change of several statements is made whole or not at all: a launch that stops partway,
         // say while another copy of Gleaner holds the library, leaves all of it to the next launch.
@@ -38,16 +37,6 @@ public final class Registry: @unchecked Sendable {
                     UPDATE deliveries SET log_path = (SELECT log_path FROM sessions WHERE sessions.id = deliveries.session_id);
                     """)
             }
-        }
-        // Each delivery keeps the repository it was found in: a deleted external worktree leaves
-        // nothing on disk that leads back to it.
-        if try !has("deliveries", "repository") {
-            try db.execute("ALTER TABLE deliveries ADD COLUMN repository TEXT;")
-        }
-        // And the checkout it was in: once a worktree is removed, the path no longer shows which
-        // one held it, or where in the repository's history the file is.
-        if try !has("deliveries", "checkout") {
-            try db.execute("ALTER TABLE deliveries ADD COLUMN checkout TEXT;")
         }
         // Each delivery keeps its place in the reply that made it, so the files one reply named are
         // found together, in its order, however many records it took.
@@ -73,6 +62,21 @@ public final class Registry: @unchecked Sendable {
                         provenance = CASE WHEN is_directory = 0 AND sha256 IS NULL THEN 'never_observed' ELSE provenance END;
                     ALTER TABLE captures DROP COLUMN is_directory;
                     """)
+            }
+        }
+        // Each capture keeps the repository and the checkout the file was found in: a deleted
+        // external worktree leaves nothing on disk that leads back to its repository, and a removed
+        // worktree's path no longer shows which checkout held it. Kept with its delivery before, they
+        // went with it when a reread dropped it.
+        if try !has("captures", "checkout") {
+            try db.transaction {
+                try db.execute("ALTER TABLE captures ADD COLUMN repository TEXT; ALTER TABLE captures ADD COLUMN checkout TEXT;")
+                for column in ["repository", "checkout"] where try has("deliveries", column) {
+                    try db.execute("""
+                        UPDATE captures SET \(column) = (SELECT \(column) FROM deliveries WHERE deliveries.id = captures.delivery_id);
+                        ALTER TABLE deliveries DROP COLUMN \(column);
+                        """)
+                }
             }
         }
         let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
@@ -121,28 +125,21 @@ public final class Registry: @unchecked Sendable {
         try !db.rows("SELECT 1 FROM captures WHERE delivery_id = ?", [id]).isEmpty
     }
 
-    /// `repository` and `checkout` (its folder) are kept once recorded: a later reread may find
-    /// none, or an unrelated one around a deleted worktree. `replyLine` and `replyRank` place it in
-    /// its reply (`Delivery`).
+    /// `replyLine` and `replyRank` place it in its reply (`Delivery`).
     public func upsertDelivery(id: String, sessionID: String, logPath: String, path: String, deliveredAt: Date?,
-                               replyLine: Int, replyRank: Int, cwd: String?, repository: String?, checkout: String?,
-                               request: String?, evidence: [Evidence]) throws {
+                               replyLine: Int, replyRank: Int, cwd: String?, request: String?, evidence: [Evidence]) throws {
         let json = String(decoding: try JSONEncoder().encode(evidence), as: UTF8.self)
         try db.run("""
-            INSERT INTO deliveries (id, session_id, log_path, path, delivered_at, reply_line, reply_rank, cwd, repository,
-                                    checkout, request, evidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO deliveries (id, session_id, log_path, path, delivered_at, reply_line, reply_rank, cwd, request, evidence)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET log_path = excluded.log_path, reply_line = excluded.reply_line,
-                reply_rank = excluded.reply_rank, cwd = excluded.cwd,
-                repository = COALESCE(repository, excluded.repository), checkout = COALESCE(checkout, excluded.checkout),
-                request = excluded.request, evidence = excluded.evidence
-            """, [id, sessionID, logPath, path, deliveredAt, replyLine, replyRank, cwd, repository, checkout,
-                  request.map(Redactor.redact), json])
+                reply_rank = excluded.reply_rank, cwd = excluded.cwd, request = excluded.request, evidence = excluded.evidence
+            """, [id, sessionID, logPath, path, deliveredAt, replyLine, replyRank, cwd, request.map(Redactor.redact), json])
     }
 
     /// Removes deliveries a reread log no longer admits. They are derived from the log and come
-    /// back if it admits them again; their captures, which record what Gleaner saw, stay, so a
-    /// delivery admitted again gets its own back. Saved copies stay in the store.
+    /// back if it admits them again; their captures, which record what Gleaner saw and where, stay,
+    /// so a delivery admitted again gets its own back. Saved copies stay in the store.
     public func removeDeliveries(logPath: String, except kept: Set<String>) throws {
         let keep = String(decoding: try JSONEncoder().encode(Array(kept)), as: UTF8.self)
         try db.run("""
@@ -181,6 +178,14 @@ public final class Registry: @unchecked Sendable {
                   Provenance.firstSeenAfterDelivery.rawValue, capture.kind.rawValue, path])
     }
 
+    /// Records the repository the delivery `id`'s file belongs to and the checkout (its folder)
+    /// holding it, once: a later reread may find none, or an unrelated one around a deleted
+    /// worktree. Kept with its capture, it outlives the delivery's row.
+    public func record(repository: String, checkout: String?, of id: String) throws {
+        try db.run("UPDATE captures SET repository = ?, checkout = ? WHERE delivery_id = ? AND repository IS NULL",
+                   [repository, checkout, id])
+    }
+
     public func markSaved(deliveryID: String, at date: Date) throws {
         try db.run("UPDATE captures SET saved_at = ? WHERE delivery_id = ?", [date, deliveryID])
     }
@@ -188,10 +193,9 @@ public final class Registry: @unchecked Sendable {
     /// Every artifact with its deliveries, newest delivery first, artifacts by latest delivery.
     public func artifacts() throws -> [Artifact] {
         let rows = try db.rows("""
-            SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.repository, d.checkout, d.request,
-                   d.evidence,
+            SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.request, d.evidence,
                    s.provider, s.title, d.log_path,
-                   c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind
+                   c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind, c.repository, c.checkout
             FROM deliveries d JOIN sessions s ON s.id = d.session_id
             LEFT JOIN captures c ON c.delivery_id = d.id
             ORDER BY d.path, d.delivered_at
@@ -201,10 +205,13 @@ public final class Registry: @unchecked Sendable {
         var checkouts: [String: Checkout] = [:]
         for row in rows {
             let path = row["path"] as! String
-            // Rows run oldest first: the newest recorded repository and checkout win.
+            // Rows run oldest first: the earliest recorded repository and checkout win, the likeliest
+            // to have been found while a worktree that held the file was there.
             if let repository = row["repository"] as? String {
-                repositories[path] = repository
-                if let folder = row["checkout"] as? String { checkouts[path] = Checkout(folder: folder, repository: repository) }
+                if repositories[path] == nil { repositories[path] = repository }
+                if checkouts[path] == nil, let folder = row["checkout"] as? String {
+                    checkouts[path] = Checkout(folder: folder, repository: repository)
+                }
             }
             let capture = (row["observed_at"] as? Double).map { observed in
                 Capture(

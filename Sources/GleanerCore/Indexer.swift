@@ -217,21 +217,25 @@ public final class Indexer: @unchecked Sendable {
                 let first = candidate.evidence[0]
                 try registry.upsertDelivery(
                     id: id, sessionID: log.session.id, logPath: log.session.logPath, path: candidate.path, deliveredAt: first.part.at,
-                    replyLine: turn.parts[0].line, replyRank: rank,
-                    cwd: first.part.cwd, repository: Projects.repository(path: candidate.path, cwd: first.part.cwd),
-                    checkout: Projects.checkout(path: candidate.path)?.folder,
-                    request: turn.request,
+                    replyLine: turn.parts[0].line, replyRank: rank, cwd: first.part.cwd, request: turn.request,
                     evidence: candidate.evidence.map {
                         Evidence(line: $0.part.line, syntax: $0.mention.syntax.rawValue,
                                  rawTarget: Redactor.redact($0.mention.rawTarget),
                                  anchor: $0.mention.anchor.map(Redactor.redact), excerpt: $0.mention.excerpt)
                     })
-                guard isNew else { continue }
-                let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
-                try registry.addCapture(captured, for: id)
-                // Gleaner's first read of the file for an earlier delivery whose bytes it never had.
-                if captured.sha256 != nil { try registry.complete(capturesOf: candidate.path, with: captured) }
-                added += 1
+                if isNew {
+                    let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
+                    try registry.addCapture(captured, for: id)
+                    // Gleaner's first read of the file for an earlier delivery whose bytes it never had.
+                    if captured.sha256 != nil { try registry.complete(capturesOf: candidate.path, with: captured) }
+                    added += 1
+                }
+                // Where the file is, only while its folder is there to show it: once a worktree is
+                // removed, its paths resolve to the main folder that kept it (SPEC §5).
+                if Locator.stat((candidate.path as NSString).deletingLastPathComponent).kind == .directory,
+                   let repository = Projects.repository(path: candidate.path, cwd: first.part.cwd) {
+                    try registry.record(repository: repository, checkout: Projects.checkout(path: candidate.path)?.folder, of: id)
+                }
             }
         }
         if isComplete { try registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
