@@ -152,6 +152,18 @@ import Testing
         #expect(twice.sources["claude-code"] == Catalog.Source(state: .readWithProblems, partialLogs: 1))
     }
 
+    @Test func eachProblemAnAdapterFindsIsCounted() throws {
+        // A field Gleaner doesn't know, and a log whose agent only called a tool.
+        try appendLog([#"{"type":"mode","mode":"plan","sessionId":"s1","brandNewField":true}"#])
+        let toolCall = #"{"type":"assistant","message":{"model":"m","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]},"timestamp":"\#(stamp(delivered))","cwd":"\#(project.path)","sessionId":"s2"}"#
+        try ([user("Build it", at: delivered.addingTimeInterval(-60)), toolCall].joined(separator: "\n") + "\n")
+            .write(toFile: home.appendingPathComponent(".claude/projects/-Praxis/s2.jsonl").path, atomically: true, encoding: .utf8)
+        try index(at: delivered.addingTimeInterval(20))
+
+        #expect(try Catalog(home: home).registry.index().sources["claude-code"] == Catalog.Source(
+            state: .readWithProblems, unknownFields: ["mode.brandNewField": 1], logsWithoutFinalReply: 1))
+    }
+
     @Test func aLibraryNeverScannedSaysSo() throws {
         try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         _ = try Registry(path: library)

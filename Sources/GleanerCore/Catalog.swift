@@ -543,10 +543,16 @@ extension Catalog {
         public var reason: String?
         /// Record types the adapter doesn't recognize, with counts.
         public var unknownRecordTypes: [String: Int] = [:]
+        /// Keys the adapter doesn't know inside the record types it does, as "type.key", with counts.
+        public var unknownFields: [String: Int] = [:]
         /// Logs with malformed lines.
         public var partialLogs = 0
         /// Logs found shorter than when Gleaner read them: records were lost.
         public var shortenedLogs = 0
+        /// Logs with assistant records but no final reply.
+        public var logsWithoutFinalReply = 0
+        /// Logs whose last complete read found fewer final replies than the one before it.
+        public var logsWithFewerReplies = 0
         /// Logs that couldn't be read or stored.
         public var failures = 0
         /// Folders in it that couldn't be listed.
@@ -562,8 +568,11 @@ extension Catalog.Source {
         case .listed: state = source.hasProblems ? .readWithProblems : .read
         }
         unknownRecordTypes = source.unknownRecordTypes
+        unknownFields = source.unknownFields
         partialLogs = source.partialLogs.count
         shortenedLogs = source.shortenedLogs.count
+        logsWithoutFinalReply = source.logsWithoutFinalReply.count
+        logsWithFewerReplies = source.logsWithFewerReplies.count
         failures = source.failures.count
         unlistedFolders = source.unlistedFolders.count
     }
