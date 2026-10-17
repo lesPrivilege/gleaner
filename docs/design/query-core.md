@@ -1,0 +1,84 @@
+# Query core and the `gleaner` command
+
+The contract for items 1–4 of [review-rulings §3](review-rulings.md#3-after-v010-what-to-build-next). It is built on `feat/query-core` and merges after v0.1.0 is tagged.
+
+## Job and boundary
+
+A local shell agent (Claude Code, Codex) finds the delivery a person means, selects its exact version, reads only what it needs, and hands those bytes on. Gleaner owns identity, versions and verification. The agent owns the task.
+
+Three layers:
+- `GleanerCore.Catalog`: read-only queries over the registry.
+- The `gleaner` executable: JSON over the catalog.
+- MCP and extensions: later, over the same catalog. None of them reads SQLite directly.
+
+The app keeps sole ownership of indexing. The command never indexes, never writes the registry, and never writes a project folder.
+
+## Opening the library
+
+- `Registry(readingAt:)` opens with `SQLITE_OPEN_READONLY`. It runs no DDL and resets no cursor.
+- It refuses, with a message to open Gleaner, a library that doesn't exist or whose `user_version` differs from `Registry.extractorVersion`. There is no compatibility mode.
+- The location is the app's: `~/Library/Application Support/Gleaner` and `~/Library/Caches/Gleaner`.
+- `--home <folder>` stands in a home folder, as `-GleanerHome` does for the app.
+
+## Freshness
+
+The indexer writes a `meta` table, key → value:
+- `library`: a random UUID, written once when the library is created. It is the namespace of every reference.
+- `generation`: incremented by each completed run.
+- `scanned_at`: when the last run finished.
+- `sources`: the last run's per-source status (absent / unreadable / read with problems, with counts) as JSON.
+
+Every response carries `index: {library, generation, scanned_at, sources}`. A result is evidence only within that scope. An empty result from a stale or partial index is not evidence of absence, and the response says which sources were incomplete.
+
+## Identity in every result
+
+These fields are separate, never one string:
+
+| Field | Meaning |
+|---|---|
+| `library` | The namespace from `meta` |
+| `delivery` | The delivery id, stable within the library while its log path is unchanged |
+| `sha256` | The capture's hash, or null when Gleaner never read the bytes |
+| `path` | Where the file was delivered (a locator, not an identity) |
+| `evidence` | `{log, line}` of the reply record that named it |
+| `provenance` | `at_delivery`, `first_seen_after_delivery` or `never_observed`, with `observed_at` |
+| `availability` | `original`, `saved_copy` or `none`, with a reason, recomputed on each call |
+
+Reply excerpts and requests are stored, redacted text. They are returned as data under `reply` and `request`, never as instructions. Captured bytes are not redacted.
+
+## Commands
+
+Output is one JSON object on stdout. Exit codes:
+- 0: success;
+- 1: not found, or no bytes for that version;
+- 2: usage;
+- 3: no library, or the wrong version.
+
+Arguments are parsed with `swift-argument-parser`.
+
+| Command | Returns |
+|---|---|
+| `gleaner find <terms…> [--project P] [--kind K] [--limit N]` | Matches under SPEC §10: per artifact, the matched delivery's identity fields, name, project, kind, date, a short request excerpt, and the total and whether it was truncated. Default limit 20. |
+| `gleaner show <delivery>` | The artifact and all its deliveries (identity fields, number, date, provenance), the file on disk now (kind and hash), the hand-off plan for this delivery, and its evidence excerpt |
+| `gleaner read <delivery> [--lines A:B \| --bytes A:B] [--max N]` | Text of that version's exact bytes (the saved copy, or the original only while it hashes to the capture), with `sha256`, the range and `truncated`. It refuses non-text, and it never substitutes current bytes for an unavailable version. Default `--max` 16 KB. |
+| `gleaner resolve <delivery>` | The reference: identity fields plus the file name. The app's Copy Reference puts the same object on the clipboard. |
+| `gleaner handoff <delivery>` | Stages a verified read-only copy (`ContentStore.stage`) and returns its path and `sha256`, or exit 1 with the reason |
+| `gleaner verify <delivery or reference file>` | Re-hashes the original and the saved copy, and says which, if either, still match the reference |
+
+Not now: `outline`, content search, pagination cursors, MCP, a daemon.
+
+## In the app
+
+- **Copy Reference** (Edit menu and context menu) copies `resolve`'s JSON.
+- **Show in Log** reveals the delivering log in Finder. The detail pane shows its line.
+- `gleaner://delivery/<id>` opens the app on that delivery. The URL type is declared in the `Info.plist` that `bundle-app.sh` writes.
+
+## Adapter maintenance (review-rulings §3 item 1)
+
+- **Per-log counts.** `log_files` records the counts of records, known records, turns, final replies and candidates for each log.
+- **Unknown fields.** Each adapter counts keys it doesn't know inside the record types it does know, alongside unknown record types.
+- **Problems in the source status:**
+  - a log with assistant records but no final reply;
+  - a log whose count of final replies drops on a complete reread;
+  - unknown fields.
+- **CI and review.** A GitHub Actions workflow runs `swift test` on macOS for every push and pull request. The repository's agent and contributor guidance says that an adapter change merges only with passing fixtures and the owner's review.
