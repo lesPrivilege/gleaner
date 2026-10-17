@@ -43,7 +43,8 @@ struct ResultsList: View {
             List(selection: $model.selection) {
                 ForEach(results) { result in
                     ResultRow(result: result, showProject: model.project == nil,
-                              showFolder: repeated.contains(result.artifact.name))
+                              showFolder: repeated.contains(result.artifact.name),
+                              onDisk: !model.missing.contains(result.artifact.path))
                         .tag(result.id)
                 }
             }
@@ -130,6 +131,7 @@ struct ResultRow: View {
     var result: SearchResult
     var showProject: Bool
     var showFolder: Bool
+    var onDisk: Bool
 
     var body: some View {
         let artifact = result.artifact
@@ -150,7 +152,7 @@ struct ResultRow: View {
                 Text("“\(request)”").font(.callout).lineLimit(2)
             }
             HStack(spacing: 10) {
-                if !FileManager.default.fileExists(atPath: artifact.path) {
+                if !onDisk {
                     StatusLabel(mark: .dashed, text: "Not on disk")
                 }
                 Text(hit.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "Unknown date")

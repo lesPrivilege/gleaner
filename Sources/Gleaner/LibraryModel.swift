@@ -29,8 +29,14 @@ enum Staging: Equatable {
 @MainActor @Observable
 final class LibraryModel {
     var artifacts: [Artifact] = [] {
-        didSet { siblings = Self.siblings(of: artifacts) }
+        didSet {
+            siblings = Self.siblings(of: artifacts)
+            missing = Self.missing(artifacts)
+        }
     }
+    /// Paths not on disk, checked once per load and refreshed when a file is observed, so list
+    /// rows never touch the disk while drawing.
+    private(set) var missing: Set<String> = []
     /// Files named in the same reply, keyed by delivery id.
     private(set) var siblings: [Delivery.ID: [Artifact.ID]] = [:]
     /// False until the first read of the logs finishes.
@@ -69,6 +75,11 @@ final class LibraryModel {
             sources: .standard)
         artifacts = (try? registry.artifacts()) ?? []
         siblings = Self.siblings(of: artifacts)
+        missing = Self.missing(artifacts)
+    }
+
+    private static func missing(_ artifacts: [Artifact]) -> Set<String> {
+        Set(artifacts.lazy.map(\.path).filter { !FileManager.default.fileExists(atPath: $0) })
     }
 
     /// The agent log folders that exist on this Mac.
@@ -191,6 +202,7 @@ final class LibraryModel {
         let path = artifact.path
         let state = await Task.detached(priority: .userInitiated) { Locator.observe(path) }.value
         observations[path] = FileObservation(state: state, checkedAt: Date())
+        if state.kind == .missing { missing.insert(path) } else { missing.remove(path) }
     }
 
     /// Prepares a verified, immutable copy of `sha` to drag.
