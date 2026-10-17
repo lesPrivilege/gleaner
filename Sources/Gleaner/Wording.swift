@@ -250,6 +250,7 @@ enum Wording {
             source.unknownRecordTypes.isEmpty ? nil : count(source.unknownRecordTypes.count, "unknown record type"),
             source.partialLogs.isEmpty ? nil : count(source.partialLogs.count, "log") + " with malformed lines",
             source.failures.isEmpty ? nil : count(source.failures.count, "log") + " couldn’t be read",
+            source.unlistedFolders.isEmpty ? nil : count(source.unlistedFolders.count, "folder") + " couldn’t be listed",
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }

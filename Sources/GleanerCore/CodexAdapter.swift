@@ -28,18 +28,20 @@ public struct CodexAdapter: Sendable {
         return titles
     }
 
-    /// Rollout logs under `root`. Throws when a folder cannot be listed, so an unreadable folder
-    /// is never taken for an empty one.
-    public static func sessionFiles(root: URL) throws -> [URL] {
-        var failure: Error?
-        guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil, errorHandler: {
-            failure = $1
-            return false
+    /// Rollout logs under `root`, and the folders under it that could not be listed, with the
+    /// reason. Throws when `root` itself cannot be listed, so an unreadable folder is never taken
+    /// for an empty one; a folder under it that can't be listed leaves the others read.
+    public static func sessionFiles(root: URL) throws -> (logs: [URL], unlisted: [String]) {
+        let fm = FileManager.default
+        _ = try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        var unlisted: [String] = []
+        guard let walker = fm.enumerator(at: root, includingPropertiesForKeys: nil, errorHandler: {
+            unlisted.append("\($0.path): \($1.localizedDescription)")
+            return true
         }) else { throw CocoaError(.fileReadUnknown, userInfo: [NSURLErrorKey: root]) }
-        let files = walker.compactMap { $0 as? URL }
+        let logs = walker.compactMap { $0 as? URL }
             .filter { $0.pathExtension == "jsonl" && $0.lastPathComponent.hasPrefix("rollout-") }
-        if let failure { throw failure }
-        return files
+        return (logs, unlisted)
     }
 
     /// Returns nil for sub-agent threads: their replies go to another agent, not the user.

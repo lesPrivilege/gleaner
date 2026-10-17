@@ -77,9 +77,22 @@ enum Parsed {
     case failed(Provider, String, String)
 }
 
-let jobs: [(Provider, URL)] =
-    try ClaudeCodeAdapter.sessionFiles(root: options.claudeRoot).map { (.claudeCode, $0) }
-    + CodexAdapter.sessionFiles(root: options.codexRoot.appendingPathComponent("sessions")).map { (.codex, $0) }
+// A log folder that is missing or can't be listed is reported and skipped: the sheet covers the
+// logs that could be read.
+let sources = LogSources(claudeProjects: options.claudeRoot, codexHome: options.codexRoot)
+let jobs: [(Provider, URL)] = Provider.allCases.flatMap { provider in
+    let (source, files) = sources.logs(provider)
+    let folder = sources.folder(provider).path
+    switch source.folder {
+    case .absent: FileHandle.standardError.write(Data("\(provider.rawValue): no log folder at \(folder)\n".utf8))
+    case .unreadable(let reason): FileHandle.standardError.write(Data("\(provider.rawValue): can't list \(folder): \(reason)\n".utf8))
+    case .listed: break
+    }
+    for unlisted in source.unlistedFolders {
+        FileHandle.standardError.write(Data("\(provider.rawValue): can't list \(unlisted)\n".utf8))
+    }
+    return files.map { (provider, $0) }
+}
 FileHandle.standardError.write(Data("parsing \(jobs.count) session files…\n".utf8))
 
 let parsed = Collector<Parsed>()

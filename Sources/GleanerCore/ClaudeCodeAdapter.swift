@@ -13,15 +13,22 @@ public enum ClaudeCodeAdapter {
         "cost-state", "artifact-autoreact-ledger", "artifact-comment-monitor",
     ]
 
-    /// Session logs under `root`, excluding sub-agent transcripts. Throws when a folder cannot be
-    /// listed, so an unreadable folder is never taken for an empty one.
-    public static func sessionFiles(root: URL) throws -> [URL] {
+    /// Session logs under `root`, excluding sub-agent transcripts, and the project folders that
+    /// could not be listed, with the reason. Throws when `root` itself cannot be listed, so an
+    /// unreadable folder is never taken for an empty one; one project folder that can't be listed
+    /// leaves the others read.
+    public static func sessionFiles(root: URL) throws -> (logs: [URL], unlisted: [String]) {
         let fm = FileManager.default
-        return try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
-            .filter { Locator.stat($0.path).kind == .directory }
-            .flatMap { project in
-                try fm.contentsOfDirectory(at: project, includingPropertiesForKeys: nil).filter { $0.pathExtension == "jsonl" }
+        var logs: [URL] = [], unlisted: [String] = []
+        for project in try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        where Locator.stat(project.path).kind == .directory {
+            do {
+                logs += try fm.contentsOfDirectory(at: project, includingPropertiesForKeys: nil).filter { $0.pathExtension == "jsonl" }
+            } catch {
+                unlisted.append("\(project.path): \(error.localizedDescription)")
             }
+        }
+        return (logs, unlisted)
     }
 
     public static func parse(_ url: URL) throws -> SessionLog {

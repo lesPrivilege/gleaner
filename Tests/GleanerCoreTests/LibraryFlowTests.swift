@@ -433,9 +433,7 @@ import Testing
     @Test func anUnreadableFolderIsNeverTakenForAnEmptyOne() throws {
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
         let fm = FileManager.default
-        let codexDay = root.appendingPathComponent("codex/sessions/2026")
-        try fm.createDirectory(at: codexDay, withIntermediateDirectories: true)
-        let denied = [root.appendingPathComponent("claude"), codexDay]
+        let denied = [root.appendingPathComponent("claude"), root.appendingPathComponent("codex/sessions")]
         for folder in denied { try fm.setAttributes([.posixPermissions: 0], ofItemAtPath: folder.path) }
         defer { for folder in denied { try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) } }
 
@@ -447,6 +445,31 @@ import Testing
         }
         // What the library already holds stays.
         #expect(try indexer.registry.artifacts().count == 3)
+    }
+
+    @Test func aFolderInsideASourceThatCannotBeListedLeavesTheRestRead() throws {
+        let fm = FileManager.default
+        // Codex delivered from a readable day; another day, and a Claude project folder, can't be listed.
+        let day = root.appendingPathComponent("codex/sessions/2026/10/17")
+        try fm.createDirectory(at: day, withIntermediateDirectories: true)
+        try [#"{"type":"session_meta","payload":{"id":"t1","cwd":"\#(project.path)"}}"#,
+             #"{"type":"response_item","timestamp":"\#(stamp(delivered))","payload":{"type":"message","role":"assistant","phase":"final_answer","content":[{"type":"output_text","text":"Notes: [notes](out/codex.md)"}]}}"#]
+            .joined(separator: "\n").write(to: day.appendingPathComponent("rollout-1.jsonl"), atomically: true, encoding: .utf8)
+        let denied = [root.appendingPathComponent("claude/-Locked"), root.appendingPathComponent("codex/sessions/2025")]
+        for folder in denied {
+            try fm.createDirectory(at: folder, withIntermediateDirectories: true)
+            try fm.setAttributes([.posixPermissions: 0], ofItemAtPath: folder.path)
+        }
+        defer { for folder in denied { try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) } }
+
+        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        for provider in Provider.allCases {
+            #expect(report.sources[provider]?.folder == .listed)
+            #expect(report.sources[provider]?.unlistedFolders.count == 1)
+            #expect(report.sources[provider]?.hasProblems == true)
+        }
+        #expect(report.logsRead == 2)
+        #expect(try indexer.registry.artifacts().map(\.name).sorted() == ["build.dmg", "codex.md", "demo.mp4", "report.md"])
     }
 
     @Test func unknownRecordTypesAreReportedForTheirOwnSource() throws {

@@ -27,6 +27,22 @@ public struct LogSources: Sendable {
     }
 
     public var watchedDirectories: [String] { Provider.allCases.map { folder($0).path } }
+
+    /// One agent's session logs, and how its folder read (SPEC §8). A folder that is missing or
+    /// can't be listed is reported, never taken for an empty one.
+    public func logs(_ provider: Provider) -> (source: Indexer.Report.Source, files: [URL]) {
+        let folder = folder(provider)
+        guard FileManager.default.fileExists(atPath: folder.path) else { return (Indexer.Report.Source(folder: .absent), []) }
+        do {
+            let (logs, unlisted) = switch provider {
+            case .claudeCode: try ClaudeCodeAdapter.sessionFiles(root: folder)
+            case .codex: try CodexAdapter.sessionFiles(root: folder)
+            }
+            return (Indexer.Report.Source(folder: .listed, unlistedFolders: unlisted), logs)
+        } catch {
+            return (Indexer.Report.Source(folder: .unreadable(error.localizedDescription)), [])
+        }
+    }
 }
 
 extension DeliveryCandidate {
@@ -65,9 +81,14 @@ public final class Indexer: @unchecked Sendable {
             public var partialLogs: [String] = []
             /// Logs that could not be read or stored, with the reason. Their deliveries stay as they were.
             public var failures: [String] = []
+            /// Folders in it that could not be listed, with the reason. Their logs went unread; what
+            /// they delivered stays as it was.
+            public var unlistedFolders: [String] = []
 
             /// Listed, but not everything in it could be read or understood.
-            public var hasProblems: Bool { !unknownRecordTypes.isEmpty || !partialLogs.isEmpty || !failures.isEmpty }
+            public var hasProblems: Bool {
+                !unknownRecordTypes.isEmpty || !partialLogs.isEmpty || !failures.isEmpty || !unlistedFolders.isEmpty
+            }
         }
 
         public var logsRead = 0
@@ -97,21 +118,9 @@ public final class Indexer: @unchecked Sendable {
         var report = Report()
         var files: [(Provider, URL)] = []
         for provider in Provider.allCases {
-            let folder = sources.folder(provider)
-            guard FileManager.default.fileExists(atPath: folder.path) else {
-                report.sources[provider] = Report.Source(folder: .absent)
-                continue
-            }
-            do {
-                let logs = switch provider {
-                case .claudeCode: try ClaudeCodeAdapter.sessionFiles(root: folder)
-                case .codex: try CodexAdapter.sessionFiles(root: folder)
-                }
-                files += logs.map { (provider, $0) }
-                report.sources[provider] = Report.Source(folder: .listed)
-            } catch {
-                report.sources[provider] = Report.Source(folder: .unreadable(error.localizedDescription))
-            }
+            let (source, logs) = sources.logs(provider)
+            report.sources[provider] = source
+            files += logs.map { (provider, $0) }
         }
         let codex = CodexAdapter(titles: CodexAdapter.loadTitles(
             index: sources.codexHome.appendingPathComponent("session_index.jsonl")))
