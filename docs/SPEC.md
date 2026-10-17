@@ -128,7 +128,7 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 
 ## 7. Watching
 
-- Watch only the agents' log directories (FSEvents). New sessions are ingested near real time, so `observed_at` stays close to `delivered_at`.
+- Watch only the agents' log directories (FSEvents). New sessions are ingested near real time, so `observed_at` stays close to `delivered_at`. While a log directory does not exist yet, the nearest existing folder above it is watched only to notice it appear.
 - Do not watch the paths of indexed artifacts. Re-verify a file's hash when it is selected and again when its hand-off copy is staged; there is no background pass in v0.1.
 - Observation is read-only: only regular files are opened (a FIFO, socket, or device is reported as `special`), and git runs with `--no-optional-locks` so `git status` never rewrites the index.
 
