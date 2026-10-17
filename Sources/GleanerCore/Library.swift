@@ -89,7 +89,7 @@ public struct Artifact: Sendable, Identifiable {
     }
 
     /// The project's name, its folder's. Two projects can share one.
-    public var project: String { (projectFolder as NSString).lastPathComponent }
+    public var project: String { Projects.name(projectFolder) }
 
     public var id: String { path }
     public var name: String { (path as NSString).lastPathComponent }

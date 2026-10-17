@@ -78,6 +78,26 @@ import Testing
         #expect(try registry.artifacts().first?.project == "Atlas")
     }
 
+    @Test func worktreesOfABareRepositoryFoldIntoIt() throws {
+        let source = try repository("source")
+        let bare = root.appendingPathComponent("app.git").path
+        #expect(Locator.run(["clone", "-q", "--bare", source, bare]).status == 0)
+        let main = root.appendingPathComponent("app-main").path, feature = root.appendingPathComponent("app-feature").path
+        #expect(Locator.run(["-C", bare, "worktree", "add", "-q", main]).status == 0)
+        #expect(Locator.run(["-C", bare, "worktree", "add", "-q", "--detach", feature]).status == 0)
+        let a = artifact(main + "/out/report.md", cwd: main), b = artifact(feature + "/out/report.md", cwd: feature)
+        #expect(a.projectFolder == bare && b.projectFolder == bare)
+        #expect(a.project == "app" && Projects.names([bare]) == [bare: "app"])
+
+        // The same layout kept in one folder: the bare repository in `.bare`, its worktrees beside it.
+        let folder = root.appendingPathComponent("tool").path
+        #expect(Locator.run(["clone", "-q", "--bare", source, folder + "/.bare"]).status == 0)
+        try "gitdir: ./.bare\n".write(toFile: folder + "/.git", atomically: true, encoding: .utf8)
+        #expect(Locator.run(["-C", folder, "worktree", "add", "-q", folder + "/main"]).status == 0)
+        let c = artifact(folder + "/main/out/report.md", cwd: folder + "/main")
+        #expect(c.projectFolder == folder && c.project == "tool")
+    }
+
     @Test func aFileOutsideGitIsNamedAfterItsFolder() {
         let notes = artifact(root.path + "/notes/plan.md", cwd: root.path + "/notes")
         #expect(notes.project == "notes")

@@ -2,8 +2,9 @@ import Foundation
 
 /// The project a delivery belongs to: the git repository holding the file, else the repository
 /// the agent worked in, else the folder it worked in. Every worktree of a repository resolves to
-/// the repository's main folder, wherever the agent keeps it (rulings §2). A project is told
-/// apart by that folder's path and shown by its name, so two repositories named `app` stay two.
+/// the repository's main folder, wherever the agent keeps it (rulings §2); a bare repository
+/// (`app.git`) is its own main folder. A project is told apart by that folder's path and shown by
+/// its name, so two repositories named `app` stay two.
 ///
 /// Repositories are found by reading `.git` entries, not by running git, so resolving a library
 /// costs only file reads. A deleted worktree inside its repository resolves through its nearest
@@ -31,10 +32,16 @@ public enum Projects {
         return root
     }
 
+    /// A project folder's name: a bare repository's without its `.git`.
+    public static func name(_ folder: String) -> String {
+        let name = (folder as NSString).lastPathComponent
+        return name.hasSuffix(".git") && name.count > 4 ? String(name.dropLast(4)) : name
+    }
+
     /// What each project folder is shown as: its name, or its parent folder's name and its own
     /// when another folder has the same name (`client-a/app`, `client-b/app`).
     public static func names(_ folders: some Sequence<String>) -> [String: String] {
-        let byName = Dictionary(grouping: Set(folders)) { ($0 as NSString).lastPathComponent }
+        let byName = Dictionary(grouping: Set(folders), by: name)
         var names: [String: String] = [:]
         for (name, group) in byName {
             for folder in group {
@@ -66,7 +73,9 @@ public enum Projects {
     }
 
     /// A `.git` file points at the worktree's git directory; its `commondir` leads to the shared
-    /// one, whose parent is the main folder. A submodule has no `commondir` and is its own project.
+    /// one. Kept in a folder under a hidden name (`.git`, or `.bare` beside a `.git` file naming
+    /// it), it belongs to that folder; a bare repository (`app.git`) is its own main folder. A
+    /// submodule has no `commondir` and is its own project.
     private static func mainFolder(gitFile: String, worktree: String) -> String {
         guard let text = try? String(contentsOfFile: gitFile, encoding: .utf8),
               let line = text.split(separator: "\n").first(where: { $0.hasPrefix("gitdir:") }) else { return worktree }
@@ -76,7 +85,7 @@ public enum Projects {
         var commonDir = common.trimmingCharacters(in: .whitespacesAndNewlines)
         if !commonDir.hasPrefix("/") { commonDir = (gitDir as NSString).appendingPathComponent(commonDir) }
         commonDir = (commonDir as NSString).standardizingPath
-        return (commonDir as NSString).lastPathComponent == ".git" ? (commonDir as NSString).deletingLastPathComponent : worktree
+        return (commonDir as NSString).lastPathComponent.hasPrefix(".") ? (commonDir as NSString).deletingLastPathComponent : commonDir
     }
 
     /// Outside git: the folder the agent worked in, or, when the file sits outside it, the first
