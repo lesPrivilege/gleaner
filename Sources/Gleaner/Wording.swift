@@ -262,9 +262,13 @@ enum Wording {
     /// The sources that need a look, in one line; nil when each read cleanly or isn't on this Mac.
     static func sourcesLine(_ sources: [Provider: Indexer.Report.Source]) -> String? {
         let lines = Provider.allCases.compactMap { provider -> String? in
-            guard let source = sources[provider], source.folder != .absent,
-                  source.folder != .listed || source.hasProblems else { return nil }
-            return "\(self.provider(provider)): \(self.source(source).1.lowercased())" + (problems(source).map { " (\($0))" } ?? "")
+            guard let source = sources[provider] else { return nil }
+            let state = "\(self.provider(provider)): \(self.source(source).1.lowercased())"
+            switch source.folder {
+            case .absent: return nil
+            case .unreadable: return state
+            case .listed: return problems(source).map { state + " (\($0))" }
+            }
         }
         return lines.isEmpty ? nil : lines.joined(separator: " · ")
     }

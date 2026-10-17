@@ -62,12 +62,12 @@ struct ComparePane: View {
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color(nsColor: .separatorColor)))
         .task(id: request) {
-            let content = await Task.detached(priority: .userInitiated) {
+            let result = await Task.detached(priority: .userInitiated) {
                 Comparison.load(request.from, request.to, kind: request.kind)
             }.value
             // Another comparison was asked for while this one loaded.
             guard !Task.isCancelled else { return }
-            loaded = (request, content)
+            loaded = (request, result)
         }
     }
 

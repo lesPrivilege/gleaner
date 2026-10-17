@@ -156,7 +156,7 @@ final class LibraryModel {
                 switch outcome {
                 case .success(let report):
                     var sources = report.sources
-                    for (provider, earlier) in self.sources ?? [:] {
+                    for (provider, earlier) in self.sources ?? [:] where sources[provider]?.folder == .listed {
                         sources[provider]?.unknownRecordTypes.merge(earlier.unknownRecordTypes, uniquingKeysWith: max)
                     }
                     self.sources = sources
