@@ -45,6 +45,34 @@ public struct LogSources: Sendable {
     }
 }
 
+/// Where Gleaner keeps its library, one place for the app and for everything that reads it: the
+/// registry and saved copies in Application Support, hand-off copies in Caches, and the agents'
+/// logs. `home` stands in for the home folder, as the app's `-GleanerHome` and the command's
+/// `--home` do; nil is the person's own.
+public struct LibraryFolders: Sendable {
+    /// Application Support/Gleaner: the registry and the saved copies.
+    public var support: URL
+    /// Caches/Gleaner: hand-off copies.
+    public var caches: URL
+    public var sources: LogSources
+
+    public init(home: URL?) {
+        let fm = FileManager.default
+        let library = home.map { $0.appendingPathComponent("Library") }
+        support = (library?.appendingPathComponent("Application Support")
+            ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
+        caches = (library?.appendingPathComponent("Caches")
+            ?? fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
+        sources = home.map {
+            LogSources(claudeProjects: $0.appendingPathComponent(".claude/projects"), codexHome: $0.appendingPathComponent(".codex"))
+        } ?? .standard
+    }
+
+    public var registry: String { support.appendingPathComponent("registry.sqlite").path }
+    public var objects: URL { support.appendingPathComponent("objects") }
+    public var staging: URL { caches.appendingPathComponent("handoff") }
+}
+
 extension DeliveryCandidate {
     /// Stable for a given reply and path, so re-reading a log never duplicates a delivery.
     public func id(logPath: String) -> String {

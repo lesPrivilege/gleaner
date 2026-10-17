@@ -81,24 +81,17 @@ final class LibraryModel {
     private var indexing = false
     private var pending = false
 
-    /// The library in its standard places: Application Support, and Caches for hand-off copies.
+    /// The library in its standard places (`LibraryFolders`), where the `gleaner` command reads it.
     /// Launched with `-GleanerHome <folder>`, the app takes that folder for the home directory, so an
     /// acceptance run on synthetic logs never touches the person's own library or agent history.
     convenience init() throws {
-        let fm = FileManager.default
-        let home = UserDefaults.standard.string(forKey: "GleanerHome").map { URL(fileURLWithPath: $0, isDirectory: true) }
-        let library = home.map { $0.appendingPathComponent("Library") }
-        let support = (library?.appendingPathComponent("Application Support")
-            ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
-        let caches = (library?.appendingPathComponent("Caches")
-            ?? fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
-        try fm.createDirectory(at: support, withIntermediateDirectories: true)
+        let folders = LibraryFolders(
+            home: UserDefaults.standard.string(forKey: "GleanerHome").map { URL(fileURLWithPath: $0, isDirectory: true) })
+        try FileManager.default.createDirectory(at: folders.support, withIntermediateDirectories: true)
         self.init(indexer: Indexer(
-            registry: try Registry(path: support.appendingPathComponent("registry.sqlite").path),
-            store: ContentStore(objects: support.appendingPathComponent("objects"), staging: caches.appendingPathComponent("handoff")),
-            sources: home.map {
-                LogSources(claudeProjects: $0.appendingPathComponent(".claude/projects"), codexHome: $0.appendingPathComponent(".codex"))
-            } ?? .standard))
+            registry: try Registry(path: folders.registry),
+            store: ContentStore(objects: folders.objects, staging: folders.staging),
+            sources: folders.sources))
     }
 
     init(indexer: Indexer) {

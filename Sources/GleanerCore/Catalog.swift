@@ -17,18 +17,12 @@ public struct Catalog: Sendable {
         self.store = store
     }
 
-    /// The library where the app keeps it: Application Support, and Caches for hand-off copies.
-    /// `home` stands in for the home folder, as the app's `-GleanerHome` does.
+    /// The library where the app keeps it (`LibraryFolders`). `home` stands in for the home folder,
+    /// as the app's `-GleanerHome` does.
     public init(home: URL? = nil) throws {
-        let fm = FileManager.default
-        let library = home.map { $0.appendingPathComponent("Library") }
-        let support = (library?.appendingPathComponent("Application Support")
-            ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
-        let caches = (library?.appendingPathComponent("Caches")
-            ?? fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
-        self.init(
-            registry: try Registry(readingAt: support.appendingPathComponent("registry.sqlite").path),
-            store: ContentStore(objects: support.appendingPathComponent("objects"), staging: caches.appendingPathComponent("handoff")))
+        let folders = LibraryFolders(home: home)
+        self.init(registry: try Registry(readingAt: folders.registry),
+                  store: ContentStore(objects: folders.objects, staging: folders.staging))
     }
 
     /// How answers are written as JSON: snake_case keys, ISO 8601 dates, keys sorted, paths as they are.
