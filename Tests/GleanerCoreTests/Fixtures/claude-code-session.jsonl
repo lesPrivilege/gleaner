@@ -9,7 +9,7 @@
 {"type":"ai-title","aiTitle":"Chapter 3 video","sessionId":"s-claude"}
 {"type":"user","isMeta":true,"message":{"role":"user","content":"Base directory for this skill: /x"},"timestamp":"2026-07-12T10:20:00.000Z","sessionId":"s-claude"}
 {"type":"user","isSidechain":false,"message":{"role":"user","content":"<task-notification>agent finished</task-notification>"},"origin":{"kind":"task-notification"},"timestamp":"2026-07-12T10:30:00.000Z","cwd":"/work/Praxis","sessionId":"s-claude"}
-{"type":"assistant","isSidechain":false,"message":{"model":"claude-fable-5","role":"assistant","content":[{"type":"text","text":"The subtitle pass is in `output/subs.srt`."}]},"timestamp":"2026-07-12T10:31:00.000Z","sessionId":"s-claude"}
+{"type":"assistant","isSidechain":false,"message":{"model":"claude-fable-5","role":"assistant","content":[{"type":"text","text":"The subtitle pass is in `output/subs.srt`."}]},"timestamp":"2026-07-12T10:31:00.000Z","sessionId":"s-claude","brandNewField":true}
 {"type":"assistant","isSidechain":false,"message":{"model":"<synthetic>","role":"assistant","content":[{"type":"text","text":"API Error"}]},"timestamp":"2026-07-12T10:31:30.000Z","sessionId":"s-claude"}
 {"type":"custom-title","customTitle":"Praxis ch3 video","sessionId":"s-claude"}
 {"type":"brand-new-record","sessionId":"s-claude"}

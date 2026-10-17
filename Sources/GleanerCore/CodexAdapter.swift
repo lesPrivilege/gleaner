@@ -5,9 +5,46 @@ import Foundation
 /// Final replies are assistant messages with `phase == "final_answer"`. Forked threads replay
 /// their parent's messages marked `inherited_user_message`; those are skipped.
 public struct CodexAdapter: Sendable {
-    static let knownTypes: Set<String> = [
-        "session_meta", "event_msg", "response_item", "turn_context", "world_state",
-        "token_usage_record", "inter_agent_communication_metadata", "compacted",
+    /// The keys of every record. Its content is in its payload.
+    static let recordKeys: Set<String> = ["timestamp", "type", "ordinal", "payload", "metadata"]
+
+    /// The record types Codex writes, each with the keys it writes in their payloads, whatever the
+    /// payload's own type. A key outside these sets is an unknown field: the format moved.
+    static let payloadKeys: [String: Set<String>] = [
+        "session_meta": [
+            "id", "session_id", "timestamp", "cwd", "originator", "cli_version", "source", "thread_source",
+            "model_provider", "base_instructions", "context_window", "creator_account_id", "creator_user_id",
+            "git", "history_mode", "runtime_workspace_roots", "forked_from_id", "parent_thread_id",
+            "agent_nickname", "agent_path", "agent_role", "multi_agent_version", "subagent_history_start_ordinal",
+        ],
+        "turn_context": [
+            "turn_id", "root_turn_id", "cwd", "workspace_roots", "model", "effort", "summary", "personality",
+            "approval_policy", "approvals_reviewer", "sandbox_policy", "permission_profile",
+            "active_permission_profile", "collaboration_mode", "comp_hash", "current_date", "timezone",
+            "cyber_access_program", "disabled_plugin_ids", "multi_agent_version", "realtime_active",
+        ],
+        "response_item": [
+            "type", "id", "role", "phase", "content", "status", "internal_chat_message_metadata_passthrough",
+            "author", "recipient", "name", "namespace", "call_id", "arguments", "input", "output",
+            "summary", "encrypted_content",
+        ],
+        "event_msg": [
+            "type", "turn_id", "root_turn_id", "thread_id", "threadId", "started_at", "started_at_ms",
+            "completed_at", "completed_at_ms", "duration_ms", "time_to_first_token_ms", "item",
+            "last_agent_message", "error", "reason", "collaboration_mode_kind", "model_context_window",
+            "turn_attribution", "goal", "thread_settings", "info", "rate_limits",
+        ],
+        "world_state": ["state", "full"],
+        "token_usage_record": [
+            "session_id", "thread_id", "turn_id", "root_turn_id", "response_id", "usage", "turn_token_usage",
+            "thread_token_usage",
+        ],
+        "inter_agent_communication_metadata": ["trigger_turn"],
+        "compacted": [
+            "message", "replacement_history", "replacement_history_metadata", "retained_context",
+            "resume_metadata", "latest_token_usage_record", "compaction_response_id", "window_id",
+            "window_number", "first_window_id", "previous_window_id",
+        ],
     ]
 
     /// Thread titles by thread id, from `session_index.jsonl`.
@@ -48,29 +85,36 @@ public struct CodexAdapter: Sendable {
     public func parse(_ url: URL) throws -> SessionLog? {
         let file = try JSONLines.read(url)
         var unknown: [String: Int] = [:]
+        var unknownFields: [String: Int] = [:]
         var meta: [String: Any]?
         var cwd: String?
         var model: String?
         var request: String?
         var requestAt: Date?
         var turns: [Turn] = []
+        var answeredTurns = 0
+        var answered = false
 
         for (line, record) in file.records {
             let type = record["type"] as? String ?? "<none>"
-            guard Self.knownTypes.contains(type) else {
+            guard let known = Self.payloadKeys[type] else {
                 unknown[type, default: 0] += 1
                 continue
             }
             let payload = record["payload"] as? [String: Any] ?? [:]
+            JSONLines.countUnknownKeys(of: record, known: Self.recordKeys, as: type, into: &unknownFields)
+            JSONLines.countUnknownKeys(of: payload, known: known, as: type + ".payload", into: &unknownFields)
             switch type {
             case "session_meta" where meta == nil:
                 if payload["thread_source"] as? String == "subagent" { return nil }
                 meta = payload
                 cwd = payload["cwd"] as? String
             case "turn_context":
+                // Codex starts each turn with one.
                 cwd = payload["cwd"] as? String ?? cwd
                 // The model the turn asked for; through a gateway, as the gateway's catalog names it.
                 model = payload["model"] as? String ?? model
+                answered = false
             case "response_item" where payload["type"] as? String == "message":
                 if (record["metadata"] as? [String: Any])?["inherited_user_message"] as? Bool == true { continue }
                 let content = payload["content"] as? [[String: Any]] ?? []
@@ -80,7 +124,12 @@ public struct CodexAdapter: Sendable {
                         request = RequestText.clean(text)
                         requestAt = Timestamp.parse(record["timestamp"])
                     }
-                case "assistant" where payload["phase"] as? String == "final_answer":
+                case "assistant":
+                    if !answered {
+                        answeredTurns += 1
+                        answered = true
+                    }
+                    guard payload["phase"] as? String == "final_answer" else { continue }
                     let text = content.compactMap { $0["text"] as? String }.joined(separator: "\n\n")
                     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                     turns.append(Turn(request: request, requestAt: requestAt, parts: [ReplyPart(
@@ -99,7 +148,8 @@ public struct CodexAdapter: Sendable {
                 provider: .codex, id: id, title: titles[id],
                 cwd: meta?["cwd"] as? String, logPath: url.path, modelProvider: meta?["model_provider"] as? String),
             turns: turns,
-            unknownRecordTypes: unknown,
+            records: file.records.count, answeredTurns: answeredTurns,
+            unknownRecordTypes: unknown, unknownFields: unknownFields,
             malformedLines: file.malformed)
     }
 

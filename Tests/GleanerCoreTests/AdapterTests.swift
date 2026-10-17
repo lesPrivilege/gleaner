@@ -64,6 +64,21 @@ func fixture(_ name: String) throws -> URL {
         #expect(log.malformedLines == 1)
         #expect(!log.isComplete)
     }
+
+    @Test func unknownFieldsInKnownRecordTypesAreReported() throws {
+        // Every other key in the fixtures is one Claude Code writes.
+        #expect(log.unknownFields == ["assistant.brandNewField": 1])
+        #expect(try ClaudeCodeAdapter.parse(try fixture("claude-split-reply")).unknownFields.isEmpty)
+    }
+
+    @Test func eachReadIsCounted() {
+        // 16 lines, one of them not JSON; one record of a type the adapter doesn't know.
+        #expect(log.records == 15)
+        #expect(log.knownRecords == 14)
+        // The request and the task notification each got an answer that ended in a final reply.
+        #expect(log.answeredTurns == 2)
+        #expect(log.turns.count == 2)
+    }
 }
 
 @Suite struct CodexAdapterTests {
@@ -92,6 +107,21 @@ func fixture(_ name: String) throws -> URL {
         let log = try #require(try adapter.parse(try fixture("codex-rollout")))
         #expect(log.session.modelProvider == "openai")
         #expect(log.turns[0].model == "gpt-5-codex")
+    }
+
+    @Test func unknownFieldsInKnownRecordTypesAreReported() throws {
+        // Every other key in the fixture, of a record or of its payload, is one Codex writes.
+        let log = try #require(try adapter.parse(try fixture("codex-rollout")))
+        #expect(log.unknownFields == ["event_msg.payload.brand_new_field": 1])
+    }
+
+    @Test func eachReadIsCounted() throws {
+        let log = try #require(try adapter.parse(try fixture("codex-rollout")))
+        #expect(log.records == 11)
+        #expect(log.knownRecords == 10)
+        // One turn, with commentary and then the final answer; the inherited answer isn't this thread's.
+        #expect(log.answeredTurns == 1)
+        #expect(log.turns.count == 1)
     }
 
     @Test func structuredAnswersAreNotRequests() {

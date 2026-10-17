@@ -5,13 +5,65 @@ import Foundation
 /// Records hold one content block each. A turn starts at a user record that is neither a tool
 /// result nor injected context; its final reply is the assistant text after the last tool call.
 public enum ClaudeCodeAdapter {
-    static let knownTypes: Set<String> = [
-        "user", "assistant", "system", "attachment", "summary",
-        "ai-title", "custom-title", "agent-name", "last-prompt", "queue-operation",
-        "mode", "permission-mode", "bridge-session", "atis-latch", "frame-link",
-        "file-history-snapshot", "file-history-delta", "relocated", "worktree-state",
-        "cost-state", "artifact-autoreact-ledger", "artifact-comment-monitor",
-    ]
+    /// The record types Claude Code writes, each with the keys it writes in them. A key outside
+    /// its type's set is an unknown field: the format moved.
+    static let knownKeys: [String: Set<String>] = {
+        // Keys of every transcript entry.
+        let entry: Set<String> = [
+            "type", "uuid", "parentUuid", "sessionId", "session_id", "sessionKind", "timestamp", "cwd",
+            "entrypoint", "gitBranch", "isSidechain", "userType", "version", "slug",
+        ]
+        return [
+            "user": entry.union([
+                "message", "origin", "isMeta", "isCompactSummary", "isVisibleInTranscriptOnly", "toolUseResult",
+                "sourceToolAssistantUUID", "sourceToolUseID", "promptId", "promptSource", "permissionMode",
+                "permissionDecision", "imagePasteIds", "interruptedByShutdown", "mcpMeta", "classifierBoundary",
+                "classifierMetaLines", "queueSkipAttachments", "queueSkipSlashCommands", "queueTranscriptOnly",
+                "serverClassifierContext", "summarizedTurnPromptUuids", "toolDenialKind", "turnCompanion",
+                "turnOrigin", "turnPosition", "usageLimitNote",
+            ]),
+            "assistant": entry.union([
+                "message", "requestId", "advisorModel", "apiBlockIndex", "apiError", "apiErrorParams",
+                "apiErrorStatus", "attributionMcpServer", "attributionMcpTool", "attributionPlugin",
+                "attributionSkill", "effort", "error", "errorDetails", "isApiErrorMessage", "perTurnEffort",
+                "quotaLimits", "requestedModel", "serverClassifierRequest", "supersedesUuids", "thinkingDisplay",
+                "thinkingDurationMs", "truncatedAfterOutput", "wireIngestContext", "wireToolInputs",
+            ]),
+            "system": entry.union([
+                "subtype", "level", "content", "isMeta", "error", "apiRefusalCategory", "apiRefusalExplanation",
+                "commandRun", "compactMetadata", "direction", "durationMs", "fallbackModel", "hasOutput",
+                "hookAdditionalContext", "hookCount", "hookErrors", "hookInfos", "logicalParentUuid", "maxRetries",
+                "messageCount", "neutralizedByFork", "originalModel", "preventedContinuation",
+                "refusedUserMessageUuid", "requestId", "retractedMessageUuids", "retryAttempt", "retryInMs",
+                "source", "stopReason", "toolUseID", "trigger",
+            ]),
+            "attachment": entry.union([
+                "attachment", "rendered", "renderedBesideToolResult", "renderedInHumanTurn", "renderedRole",
+            ]),
+            "summary": ["type", "summary", "leafUuid"],
+            "ai-title": ["type", "sessionId", "aiTitle"],
+            "custom-title": ["type", "sessionId", "customTitle"],
+            "agent-name": ["type", "sessionId", "agentName"],
+            "last-prompt": ["type", "sessionId", "lastPrompt", "leafUuid"],
+            "queue-operation": ["type", "sessionId", "timestamp", "operation", "content", "commandUuid", "deliveryId", "reason"],
+            "mode": ["type", "sessionId", "mode"],
+            "permission-mode": ["type", "sessionId", "permissionMode"],
+            "bridge-session": ["type", "sessionId", "bridgeSessionId", "lastSequenceNum", "ownerAccountUuid", "ownerOrganizationUuid"],
+            "atis-latch": ["type", "sessionId", "atis"],
+            "frame-link": ["type", "sessionId", "timestamp", "artifactCount", "frameUrl", "path", "title"],
+            "file-history-snapshot": ["type", "messageId", "snapshot", "isSnapshotUpdate"],
+            "file-history-delta": ["type", "messageId", "snapshotMessageId", "timestamp", "trackingPath", "backup"],
+            "relocated": ["type", "sessionId", "relocatedCwd"],
+            "worktree-state": ["type", "sessionId", "worktreeSession"],
+            "cost-state": [
+                "type", "sessionId", "startTime", "modelUsage", "hasUnknownModelCost", "totalCostUSD", "totalDuration",
+                "totalAPIDuration", "totalAPIDurationWithoutRetries", "totalToolDuration", "totalLinesAdded",
+                "totalLinesRemoved",
+            ],
+            "artifact-autoreact-ledger": ["type", "sessionId", "v", "accountUuid", "artifacts"],
+            "artifact-comment-monitor": ["type", "sessionId", "v", "artifacts"],
+        ]
+    }()
 
     /// Session logs under `root`, excluding sub-agent transcripts, and the project folders that
     /// could not be listed, with the reason. Throws when `root` itself cannot be listed, so an
@@ -34,30 +86,35 @@ public enum ClaudeCodeAdapter {
     public static func parse(_ url: URL) throws -> SessionLog {
         let file = try JSONLines.read(url)
         var unknown: [String: Int] = [:]
+        var unknownFields: [String: Int] = [:]
         var sessionID = url.deletingPathExtension().lastPathComponent
         var customTitle: String?
         var aiTitle: String?
         var sessionCwd: String?
         var turns: [Turn] = []
+        var answeredTurns = 0
 
         var request: String?
         var requestAt: Date?
         var turnCwd: String?
         var reply: [ReplyPart] = []
         var replyModel: String?
+        var answered = false
 
         func closeTurn() {
             if !reply.isEmpty { turns.append(Turn(request: request, requestAt: requestAt, parts: reply, model: replyModel)) }
             reply = []
             replyModel = nil
+            answered = false
         }
 
         for (line, record) in file.records {
             let type = record["type"] as? String ?? "<none>"
-            guard knownTypes.contains(type) else {
+            guard let known = knownKeys[type] else {
                 unknown[type, default: 0] += 1
                 continue
             }
+            JSONLines.countUnknownKeys(of: record, known: known, as: type, into: &unknownFields)
             if let id = record["sessionId"] as? String { sessionID = id }
             switch type {
             case "custom-title":
@@ -86,6 +143,10 @@ public enum ClaudeCodeAdapter {
                       let message = record["message"] as? [String: Any],
                       message["model"] as? String != "<synthetic>",
                       let blocks = message["content"] as? [[String: Any]] else { continue }
+                if !answered {
+                    answeredTurns += 1
+                    answered = true
+                }
                 // The agent may have moved into a worktree since the request; relative paths in
                 // the reply are relative to where it is now.
                 if let cwd = record["cwd"] as? String { turnCwd = cwd }
@@ -118,7 +179,8 @@ public enum ClaudeCodeAdapter {
                 provider: .claudeCode, id: sessionID, title: customTitle ?? aiTitle,
                 cwd: sessionCwd, logPath: url.path),
             turns: turns,
-            unknownRecordTypes: unknown,
+            records: file.records.count, answeredTurns: answeredTurns,
+            unknownRecordTypes: unknown, unknownFields: unknownFields,
             malformedLines: file.malformed)
     }
 
