@@ -243,7 +243,7 @@ extension Artifact {
             let recoverable = now.state.git == .recoverableFromHead || now.state.git == .recoverableFromHistory
             return recoverable ? .restoreFromGit : .lost
         }
-        // Something else is at the path: a changed file, a folder, or a file Gleaner couldn't read.
+        // Something else is at the path: a changed or unreadable file, a folder, a pipe.
         let others = deliveries.filter { $0.id != delivery.id && current != nil && $0.sha256 == current }
         let match = others.first(where: \.isTrusted) ?? others.first
         return .unavailable(alternative: match?.number, currentSha: current)
