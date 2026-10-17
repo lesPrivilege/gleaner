@@ -28,16 +28,24 @@ public struct CodexAdapter: Sendable {
         return titles
     }
 
-    public static func sessionFiles(root: URL) -> [URL] {
-        guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { return [] }
-        return walker.compactMap { $0 as? URL }
+    /// Rollout logs under `root`. Throws when a folder cannot be listed, so an unreadable folder
+    /// is never taken for an empty one.
+    public static func sessionFiles(root: URL) throws -> [URL] {
+        var failure: Error?
+        guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil, errorHandler: {
+            failure = $1
+            return false
+        }) else { throw CocoaError(.fileReadUnknown, userInfo: [NSURLErrorKey: root]) }
+        let files = walker.compactMap { $0 as? URL }
             .filter { $0.pathExtension == "jsonl" && $0.lastPathComponent.hasPrefix("rollout-") }
+        if let failure { throw failure }
+        return files
     }
 
     /// Returns nil for sub-agent threads: their replies go to another agent, not the user.
     public func parse(_ url: URL) throws -> SessionLog? {
         let file = try JSONLines.read(url)
-        var unknown: [String: Int] = file.malformed > 0 ? ["<malformed>": file.malformed] : [:]
+        var unknown: [String: Int] = [:]
         var meta: [String: Any]?
         var cwd: String?
         var request: String?
@@ -82,7 +90,8 @@ public struct CodexAdapter: Sendable {
                 provider: .codex, id: id, title: titles[id],
                 cwd: meta?["cwd"] as? String, logPath: url.path),
             turns: turns,
-            unknownRecordTypes: unknown)
+            unknownRecordTypes: unknown,
+            malformedLines: file.malformed)
     }
 
     /// The typed text of a user message. Injected context (AGENTS.md, environment, goals) is

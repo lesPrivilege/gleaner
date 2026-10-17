@@ -1,20 +1,22 @@
 import Foundation
 
 /// The project a delivery belongs to: the git repository holding the file, else the repository
-/// the agent worked in, else the folder name. Every worktree of a repository resolves to the
-/// repository's main folder, wherever the agent keeps it (rulings §2).
+/// the agent worked in, else the folder it worked in. Every worktree of a repository resolves to
+/// the repository's main folder, wherever the agent keeps it (rulings §2). A project is told
+/// apart by that folder's path and shown by its name, so two repositories named `app` stay two.
 ///
 /// Repositories are found by reading `.git` entries, not by running git, so resolving a library
-/// costs only file reads. A deleted worktree resolves through its nearest existing ancestor.
+/// costs only file reads. A deleted worktree inside its repository resolves through its nearest
+/// existing ancestor; a deleted external one leaves nothing to follow, so the indexer records
+/// each delivery's repository while it can still be found.
 public enum Projects {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var roots: [String: String?] = [:]
 
-    public static func project(path: String, cwd: String?) -> String {
-        let directory = (path as NSString).deletingLastPathComponent
-        if let root = repository(containing: directory) { return (root as NSString).lastPathComponent }
-        if let cwd, let root = repository(containing: cwd) { return (root as NSString).lastPathComponent }
-        return fallbackName(path: path, cwd: cwd)
+    /// The main folder of the repository holding the file at `path`, else of the one the agent
+    /// worked in; nil outside git.
+    public static func repository(path: String, cwd: String?) -> String? {
+        repository(containing: (path as NSString).deletingLastPathComponent) ?? cwd.flatMap(repository(containing:))
     }
 
     /// The main folder of the repository containing `directory`, or nil outside git.
@@ -27,6 +29,11 @@ public enum Projects {
         roots[directory] = root
         lock.unlock()
         return root
+    }
+
+    /// Forgets every repository found, as a fresh launch would.
+    static func forgetRepositories() {
+        lock.withLock { roots.removeAll() }
     }
 
     private static func resolve(_ directory: String) -> String? {
@@ -60,21 +67,20 @@ public enum Projects {
 
     /// Outside git: the folder the agent worked in, or, when the file sits outside it, the first
     /// folder where the two paths part.
-    static func fallbackName(path: String, cwd: String?) -> String {
+    static func folder(path: String, cwd: String?) -> String {
         let directory = (path as NSString).deletingLastPathComponent
-        guard let cwd else { return folderName(directory) }
-        if directory == cwd || directory.hasPrefix(cwd + "/") { return folderName(cwd) }
+        guard let cwd else { return outsideWorktrees(directory) }
+        if directory == cwd || directory.hasPrefix(cwd + "/") { return outsideWorktrees(cwd) }
         let a = directory.split(separator: "/"), b = cwd.split(separator: "/")
         let shared = zip(a, b).prefix { $0 == $1 }.count
-        return shared < a.count ? String(a[shared]) : folderName(directory)
+        return shared < a.count ? "/" + a[...shared].joined(separator: "/") : outsideWorktrees(directory)
     }
 
-    static func folderName(_ directory: String) -> String {
+    /// An agent's worktree folder stands for the folder that keeps it.
+    static func outsideWorktrees(_ directory: String) -> String {
         for marker in ["/.claude/worktrees/", "/.worktrees/", "/.codex/worktrees/"] {
-            if let range = directory.range(of: marker) {
-                return (String(directory[..<range.lowerBound]) as NSString).lastPathComponent
-            }
+            if let range = directory.range(of: marker) { return String(directory[..<range.lowerBound]) }
         }
-        return (directory as NSString).lastPathComponent
+        return directory
     }
 }

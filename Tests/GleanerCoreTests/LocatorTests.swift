@@ -24,13 +24,12 @@ import Testing
     @Test func worktreesResolveToTheirRepository() throws {
         let worktree = root + "/.claude/worktrees/ch3"
         #expect(Locator.run(["-C", root, "worktree", "add", "-q", worktree]).status == 0)
-        let name = (root as NSString).lastPathComponent
-        #expect(Projects.project(path: worktree + "/out/report.md", cwd: worktree) == name)
-        #expect(Projects.project(path: root + "/out/committed.md", cwd: "/elsewhere") == name)
+        #expect(Projects.repository(path: worktree + "/out/report.md", cwd: worktree) == root)
+        #expect(Projects.repository(path: root + "/out/committed.md", cwd: "/elsewhere") == root)
 
         // A deleted worktree resolves through the folder that held it.
         try FileManager.default.removeItem(atPath: worktree)
-        #expect(Projects.project(path: worktree + "/out/report.md", cwd: worktree) == name)
+        #expect(Projects.repository(path: worktree + "/out/report.md", cwd: worktree) == root)
     }
 
     @Test func committedFileIsHashed() {

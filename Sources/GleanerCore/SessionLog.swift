@@ -40,6 +40,11 @@ public struct SessionLog: Sendable {
     public var turns: [Turn]
     /// Record types the adapter does not recognize, with counts. Non-empty means the format moved.
     public var unknownRecordTypes: [String: Int]
+    /// Lines that are not JSON records. A log with any was not read completely: what was read
+    /// stands, but it cannot show that a delivery is gone.
+    public var malformedLines: Int
+
+    public var isComplete: Bool { malformedLines == 0 }
 }
 
 enum JSONLines {

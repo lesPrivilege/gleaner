@@ -196,6 +196,47 @@ import Testing
         }
     }
 
+    @Test func aMalformedRereadKeepsWhatItCannotReadAndReadsTheLogAgain() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let before = try artifact("demo.mp4").latest.capture
+        // The delivering record is cut off mid-line, as by a rewrite that went wrong.
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        let lines = try String(contentsOf: log, encoding: .utf8).split(separator: "\n")
+        try ([lines[0], lines[1].prefix(60)].joined(separator: "\n") + "\n").write(to: log, atomically: true, encoding: .utf8)
+
+        func partialLogs(_ report: Indexer.Report) -> [String]? {
+            report.sources[.claudeCode]?.partialLogs.map { ($0 as NSString).lastPathComponent }
+        }
+        #expect(partialLogs(try indexer.run(now: { delivered.addingTimeInterval(40) })) == ["session-1.jsonl"])
+        #expect(try indexer.registry.artifacts().count == 3)
+        #expect(try artifact("demo.mp4").latest.capture == before)
+        // Not marked read: the next run reads it again and says so again.
+        #expect(partialLogs(try indexer.run()) == ["session-1.jsonl"])
+
+        // Once the log reads whole, what it no longer names is removed.
+        try ([String(lines[0]), assistant("Video: [demo](out/demo.mp4)", at: delivered, cwd: project.path)]
+            .joined(separator: "\n") + "\n").write(to: log, atomically: true, encoding: .utf8)
+        #expect(partialLogs(try indexer.run(now: { delivered.addingTimeInterval(60) })) == [])
+        #expect(try indexer.registry.artifacts().map(\.name) == ["demo.mp4"])
+        #expect(try artifact("demo.mp4").latest.capture == before)
+    }
+
+    @Test func aDatabaseErrorFailsOnlyItsOwnLog() throws {
+        // The registry refuses one log's delivery; the other log is still read.
+        try indexer.registry.db.execute("""
+            CREATE TRIGGER refuse BEFORE INSERT ON deliveries WHEN NEW.path LIKE '%refused%'
+            BEGIN SELECT RAISE(ABORT, 'refused'); END;
+            """)
+        try (assistant("Notes: [notes](out/refused.md)", at: delivered, cwd: project.path) + "\n")
+            .write(to: root.appendingPathComponent("claude/-Praxis/session-2.jsonl"), atomically: true, encoding: .utf8)
+
+        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(report.sources[.claudeCode]?.failures.count == 1)
+        #expect(try indexer.registry.artifacts().count == 3)
+        // Not marked read: it is tried again next run.
+        #expect(try indexer.run().sources[.claudeCode]?.failures.count == 1)
+    }
+
     @Test func unchangedLogsAreNotReread() throws {
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
         let again = try indexer.run(now: { delivered.addingTimeInterval(40) })
@@ -224,6 +265,44 @@ import Testing
         #expect(video.latest.capture?.provenance == .neverObserved)
         #expect(video.onDisk(now(video.path), hasSaved: saved) == .lost)
         #expect(video.handoff(video.latest, now: now(video.path), hasSaved: saved) == .lost)
+    }
+
+    // MARK: sources
+
+    @Test func eachSourceSaysWhetherItsFolderWasThere() throws {
+        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(report.sources[.claudeCode] == Indexer.Report.Source(folder: .listed))
+        #expect(report.sources[.codex] == Indexer.Report.Source(folder: .listed))
+
+        try FileManager.default.removeItem(at: root.appendingPathComponent("codex/sessions"))
+        #expect(try indexer.run().sources[.codex]?.folder == .absent)
+    }
+
+    @Test func anUnreadableFolderIsNeverTakenForAnEmptyOne() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let fm = FileManager.default
+        let codexDay = root.appendingPathComponent("codex/sessions/2026")
+        try fm.createDirectory(at: codexDay, withIntermediateDirectories: true)
+        let denied = [root.appendingPathComponent("claude"), codexDay]
+        for folder in denied { try fm.setAttributes([.posixPermissions: 0], ofItemAtPath: folder.path) }
+        defer { for folder in denied { try? fm.setAttributes([.posixPermissions: 0o755], ofItemAtPath: folder.path) } }
+
+        let report = try indexer.run()
+        for provider in Provider.allCases {
+            guard case .unreadable = report.sources[provider]?.folder else {
+                Issue.record("\(provider) read as if its folder were listed"); continue
+            }
+        }
+        // What the library already holds stays.
+        #expect(try indexer.registry.artifacts().count == 3)
+    }
+
+    @Test func unknownRecordTypesAreReportedForTheirOwnSource() throws {
+        try appendLog([#"{"type":"brand-new-record","sessionId":"s1"}"#])
+        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(report.sources[.claudeCode]?.unknownRecordTypes == ["brand-new-record": 1])
+        #expect(report.sources[.claudeCode]?.hasProblems == true)
+        #expect(report.sources[.codex]?.hasProblems == false)
     }
 }
 

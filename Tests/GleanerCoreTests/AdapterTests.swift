@@ -48,7 +48,9 @@ func fixture(_ name: String) throws -> URL {
     }
 
     @Test func unknownRecordsAreReported() {
-        #expect(log.unknownRecordTypes == ["brand-new-record": 1, "<malformed>": 1])
+        #expect(log.unknownRecordTypes == ["brand-new-record": 1])
+        #expect(log.malformedLines == 1)
+        #expect(!log.isComplete)
     }
 }
 

@@ -18,9 +18,15 @@ public struct LogSources: Sendable {
             codexHome: home.appendingPathComponent(".codex"))
     }
 
-    public var watchedDirectories: [String] {
-        [claudeProjects.path, codexHome.appendingPathComponent("sessions").path]
+    /// The folder holding each agent's session logs.
+    public func folder(_ provider: Provider) -> URL {
+        switch provider {
+        case .claudeCode: claudeProjects
+        case .codex: codexHome.appendingPathComponent("sessions")
+        }
     }
+
+    public var watchedDirectories: [String] { Provider.allCases.map { folder($0).path } }
 }
 
 extension DeliveryCandidate {
@@ -33,11 +39,36 @@ extension DeliveryCandidate {
 
 /// Reads changed logs into the registry and captures each new delivery's bytes once.
 public final class Indexer: @unchecked Sendable {
+    /// What a run read. Each agent's logs are reported apart, so a source that is missing,
+    /// unreadable or read with problems never looks like one that delivered nothing (SPEC §8).
     public struct Report: Sendable {
+        /// How one agent's log folder read.
+        public struct Source: Sendable, Equatable {
+            public enum Folder: Sendable, Equatable {
+                /// Not on this Mac.
+                case absent
+                /// There, but could not be listed, with the reason. What the library holds stays.
+                case unreadable(String)
+                case listed
+            }
+
+            public var folder: Folder
+            /// Record types the adapter does not recognize, with counts. Non-empty means the format moved.
+            public var unknownRecordTypes: [String: Int] = [:]
+            /// Logs with malformed lines. What they name was added and nothing was removed; they are
+            /// read again next run.
+            public var partialLogs: [String] = []
+            /// Logs that could not be read or stored, with the reason. Their deliveries stay as they were.
+            public var failures: [String] = []
+
+            /// Listed, but not everything in it could be read or understood.
+            public var hasProblems: Bool { !unknownRecordTypes.isEmpty || !partialLogs.isEmpty || !failures.isEmpty }
+        }
+
         public var logsRead = 0
         public var newDeliveries = 0
-        public var unknownRecordTypes: [String: Int] = [:]
-        public var failures: [String] = []
+        /// Every provider, whether or not its folder is there.
+        public var sources: [Provider: Source] = [:]
     }
 
     public let registry: Registry
@@ -58,11 +89,27 @@ public final class Indexer: @unchecked Sendable {
     }
 
     public func run(now: () -> Date = Date.init, progress: (Int, Int) -> Void = { _, _ in }) throws -> Report {
+        var report = Report()
+        var files: [(Provider, URL)] = []
+        for provider in Provider.allCases {
+            let folder = sources.folder(provider)
+            guard FileManager.default.fileExists(atPath: folder.path) else {
+                report.sources[provider] = Report.Source(folder: .absent)
+                continue
+            }
+            do {
+                let logs = switch provider {
+                case .claudeCode: try ClaudeCodeAdapter.sessionFiles(root: folder)
+                case .codex: try CodexAdapter.sessionFiles(root: folder)
+                }
+                files += logs.map { (provider, $0) }
+                report.sources[provider] = Report.Source(folder: .listed)
+            } catch {
+                report.sources[provider] = Report.Source(folder: .unreadable(error.localizedDescription))
+            }
+        }
         let codex = CodexAdapter(titles: CodexAdapter.loadTitles(
             index: sources.codexHome.appendingPathComponent("session_index.jsonl")))
-        let files: [(Provider, URL)] =
-            ClaudeCodeAdapter.sessionFiles(root: sources.claudeProjects).map { (.claudeCode, $0) }
-            + CodexAdapter.sessionFiles(root: sources.codexHome.appendingPathComponent("sessions")).map { (.codex, $0) }
 
         var changed: [(Provider, URL, Int64, Date)] = []
         for (provider, url) in files {
@@ -73,7 +120,6 @@ public final class Indexer: @unchecked Sendable {
             }
         }
 
-        var report = Report()
         let jobs = changed
         let parsed = Slots<Result<SessionLog?, Error>>(count: jobs.count)
         DispatchQueue.concurrentPerform(iterations: jobs.count) { index in
@@ -86,19 +132,28 @@ public final class Indexer: @unchecked Sendable {
             }
         }
 
-        for (index, (_, url, size, mtime)) in changed.enumerated() {
+        for (index, (provider, url, size, mtime)) in changed.enumerated() {
             progress(index, changed.count)
             switch parsed[index] {
             case .failure(let error):
-                report.failures.append("\(url.path): \(error)")
+                report.sources[provider]?.failures.append("\(url.path): \(error)")
                 continue
             case .success(let log):
-                try registry.transaction {
-                    if let log {
-                        report.newDeliveries += try ingest(log, now: now())
-                        report.unknownRecordTypes.merge(log.unknownRecordTypes, uniquingKeysWith: +)
+                do {
+                    report.newDeliveries += try registry.transaction {
+                        let added = try log.map { try ingest($0, now: now()) } ?? 0
+                        // A partial log stays unread, so it is read and reported again next run.
+                        if log?.isComplete ?? true { try registry.markRead(logFile: url.path, size: size, mtime: mtime) }
+                        return added
                     }
-                    try registry.markRead(logFile: url.path, size: size, mtime: mtime)
+                } catch {
+                    // A log the registry refuses fails alone; the run goes on.
+                    report.sources[provider]?.failures.append("\(url.path): \(error)")
+                    continue
+                }
+                if let log {
+                    report.sources[provider]?.unknownRecordTypes.merge(log.unknownRecordTypes, uniquingKeysWith: +)
+                    if !log.isComplete { report.sources[provider]?.partialLogs.append(url.path) }
                 }
                 report.logsRead += 1
             }
@@ -119,7 +174,8 @@ public final class Indexer: @unchecked Sendable {
                 let first = candidate.evidence[0]
                 try registry.upsertDelivery(
                     id: id, sessionID: log.session.id, logPath: log.session.logPath, path: candidate.path, deliveredAt: first.part.at,
-                    cwd: first.part.cwd, request: turn.request,
+                    cwd: first.part.cwd, repository: Projects.repository(path: candidate.path, cwd: first.part.cwd),
+                    request: turn.request,
                     evidence: candidate.evidence.map {
                         Evidence(line: $0.part.line, syntax: $0.mention.syntax.rawValue,
                                  rawTarget: Redactor.redact($0.mention.rawTarget),
@@ -130,7 +186,8 @@ public final class Indexer: @unchecked Sendable {
                 added += 1
             }
         }
-        try registry.removeDeliveries(logPath: log.session.logPath, except: admitted)
+        // Only a log read whole shows that a delivery is gone from it.
+        if log.isComplete { try registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
         return added
     }
 

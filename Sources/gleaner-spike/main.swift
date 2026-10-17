@@ -78,7 +78,7 @@ enum Parsed {
 }
 
 let jobs: [(Provider, URL)] =
-    ClaudeCodeAdapter.sessionFiles(root: options.claudeRoot).map { (.claudeCode, $0) }
+    try ClaudeCodeAdapter.sessionFiles(root: options.claudeRoot).map { (.claudeCode, $0) }
     + CodexAdapter.sessionFiles(root: options.codexRoot.appendingPathComponent("sessions")).map { (.codex, $0) }
 FileHandle.standardError.write(Data("parsing \(jobs.count) session files…\n".utf8))
 
@@ -263,6 +263,7 @@ for provider in Provider.allCases {
         unique paths by kind: \(tally { $0.kind.rawValue }.sorted { $0.key < $1.key })
         unique paths by git: \(tally { $0.git.rawValue }.sorted { $0.key < $1.key })
         unknown record types: \(providerLogs.reduce(into: [String: Int]()) { acc, log in acc.merge(log.unknownRecordTypes, uniquingKeysWith: +) }.sorted { $0.key < $1.key })
+        malformed lines: \(providerLogs.reduce(0) { $0 + $1.malformedLines })
         \(failed.map { "failed: \($0)" }.joined(separator: "\n"))
 
         """

@@ -71,14 +71,25 @@ public struct Artifact: Sendable, Identifiable {
     public var path: String
     /// Newest first.
     public var deliveries: [Delivery]
-    /// See `Projects.project(path:cwd:)`.
-    public var project: String
+    /// What a project filter keys on: the main folder of the repository the file belongs to, or
+    /// outside git the folder its agent worked in (see `Projects`).
+    public var projectFolder: String
+    /// False when no repository was found, at delivery or now: the project is only a folder.
+    public var inRepository: Bool
 
-    public init(path: String, deliveries: [Delivery]) {
+    /// `repository` is the one recorded at delivery. It wins over what can be found now, which is
+    /// worse once an external worktree is gone.
+    public init(path: String, deliveries: [Delivery], repository: String? = nil) {
         self.path = path
         self.deliveries = deliveries
-        project = Projects.project(path: path, cwd: deliveries.first?.cwd)
+        let cwd = deliveries.first?.cwd
+        let root = repository ?? Projects.repository(path: path, cwd: cwd)
+        projectFolder = root ?? Projects.folder(path: path, cwd: cwd)
+        inRepository = root != nil
     }
+
+    /// The project's name, its folder's. Two projects can share one.
+    public var project: String { (projectFolder as NSString).lastPathComponent }
 
     public var id: String { path }
     public var name: String { (path as NSString).lastPathComponent }

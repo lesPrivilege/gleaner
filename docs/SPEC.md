@@ -60,7 +60,7 @@ Four core objects. Project is a derived, editable label (from cwd and git reposi
 | **Locator** | resolved path, worktree / repository root, git state (`committed`, `modified`, `untracked`, `ignored`, `not_in_repo`; when missing: `recoverable_from_head`, `recoverable_from_history`, `lost`), availability (`file`, `directory`, `missing`), last verified time |
 | **Capture** | `observed_at`, sha256, size, optional snapshot reference (`captured_at`), and the capture's provenance |
 
-Artifact identity in v0.1 is the path. A renamed or moved file appears as a separate artifact; re-linking is deferred, and Gleaner never guesses identity across paths. A project is the git repository holding the file (every worktree folds into its repository), else the one its cwd belongs to, else the folder name (rulings §2).
+Artifact identity in v0.1 is the path. A renamed or moved file appears as a separate artifact; re-linking is deferred, and Gleaner never guesses identity across paths. A project is the git repository holding the file (every worktree folds into its repository), else the one its cwd belongs to, else the folder name (rulings §2). Projects are told apart by the repository's main folder and shown by its name. Each delivery records the repository it resolved to while it could be found, and that record wins over a later resolution, so a deleted external worktree keeps its project; a delivery never resolved stays explicitly outside any repository.
 
 ### 5.1 Time semantics
 
@@ -177,7 +177,7 @@ Admission for v0.1 is a synthetic rule derived from what a delivery is: a file t
 - Anything inside a fenced code block, or a link written inside inline code, is an example or an instruction, not a hand-off.
 - A path with a placeholder (`build/<name>.zip`, `out/{id}.md`) names a pattern, not a file.
 
-When a log is reread, deliveries it no longer admits are removed from the index with their captures; saved copies stay in the store.
+When a log is reread completely, deliveries it no longer admits are removed from the index with their captures; saved copies stay in the store. A log with malformed lines removes nothing: what it still names is updated, it is reported as partial, and it is read again on the next run.
 
 Answers to an agent's question prompt (Codex sends them as JSON, sometimes wrapped in a tag) are not requests; the previous request stays as context.
 
