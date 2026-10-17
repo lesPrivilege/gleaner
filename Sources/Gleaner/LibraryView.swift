@@ -59,9 +59,9 @@ struct ResultsList: View {
             filters
             List(selection: $model.selection) {
                 ForEach(results) { result in
-                    let row = ResultRow(result: result, project: model.project == nil ? model.projectName(result.artifact) : nil,
-                                        showFolder: repeated.contains(result.artifact.name),
-                                        onDisk: !model.missing.contains(result.artifact.path))
+                    let row = ResultRow(result: result, delivery: model.delivery(in: result),
+                                        project: model.project == nil ? model.projectName(result.artifact) : nil,
+                                        showFolder: repeated.contains(result.artifact.name), status: model.rowStatus(result))
                         .tag(result.id)
                     // A row with nothing to hand over starts no drag, rather than one that fails at drop.
                     if model.rowHandoff(result) != nil {
@@ -193,14 +193,17 @@ struct TypeBadge: View {
 
 struct ResultRow: View {
     var result: SearchResult
+    /// The delivery the row shows and hands over: the one chosen in the detail for the selected
+    /// row, the matched one for any other.
+    var delivery: Delivery
     /// The project as shown, or nil when the list is filtered to one.
     var project: String?
     var showFolder: Bool
-    var onDisk: Bool
+    /// What the row says beside the date (`LibraryModel.rowStatus`).
+    var status: (mark: (Mark, String)?, number: String?)
 
     var body: some View {
         let artifact = result.artifact
-        let hit = artifact.deliveries[result.deliveryIndex]
         let context = [project,
                        artifact.inWorktree ? artifact.place : nil,
                        showFolder ? artifact.folder : nil].compactMap { $0 }
@@ -213,34 +216,33 @@ struct ResultRow: View {
                 Text(context.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
-            if let request = hit.request {
+            if let request = delivery.request {
                 Text("“\(request)”").font(.callout).lineLimit(2)
             }
             HStack(spacing: 10) {
-                if !onDisk {
-                    StatusLabel(mark: .dashed, text: "Not on disk")
+                if let mark = status.mark {
+                    StatusLabel(mark: mark.0, text: mark.1)
                 }
-                Text(hit.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "Unknown date")
+                Text(delivery.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "Unknown date")
                     .foregroundStyle(.secondary)
-                if artifact.deliveries.count > 1 {
-                    Text("Delivery \(hit.number) of \(artifact.latest.number)").foregroundStyle(.secondary)
+                if let number = status.number {
+                    Text(number).foregroundStyle(.secondary)
                 }
             }
             .font(.caption)
         }
         .padding(.vertical, 5)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spoken(context: context, hit: hit))
+        .accessibilityLabel(spoken(context: context))
     }
 
     /// One sentence VoiceOver reads for the row, in the order the eye reads it.
-    func spoken(context: [String], hit: Delivery) -> String {
-        let artifact = result.artifact
-        var parts = [artifact.name] + context
-        if !onDisk { parts.append("not on disk") }
-        parts.append("delivered " + (hit.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "on an unknown date"))
-        if artifact.deliveries.count > 1 { parts.append("delivery \(hit.number) of \(artifact.latest.number)") }
-        if let request = hit.request { parts.append("you asked: \(request.prefix(160))") }
+    func spoken(context: [String]) -> String {
+        var parts = [result.artifact.name] + context
+        if let mark = status.mark { parts.append(mark.1.lowercased()) }
+        parts.append("delivered " + (delivery.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "on an unknown date"))
+        if let number = status.number { parts.append(number.lowercased()) }
+        if let request = delivery.request { parts.append("you asked: \(request.prefix(160))") }
         return parts.joined(separator: ", ")
     }
 }

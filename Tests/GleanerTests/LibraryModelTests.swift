@@ -269,6 +269,55 @@ import UniformTypeIdentifiers
         }
     }
 
+    // MARK: List rows (A3, A9, A10)
+
+    func row(_ model: LibraryModel, _ name: String) throws -> SearchResult {
+        try #require(model.results.first { $0.artifact.name == name })
+    }
+
+    @Test func aRowMarksWhatTheLibraryHoldsAndWhatThisSessionChecked() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try artifact(model, "demo.mp4")
+        // The notes were first read after their delivery; the video is its latest delivery.
+        #expect(model.rowStatus(try row(model, "notes.md")).mark?.1 == "First seen later")
+        #expect(model.rowStatus(try row(model, "demo.mp4")).mark == nil)
+        #expect(model.rowStatus(try row(model, "demo.mp4")).number == "Delivery 3 of 3")
+
+        // Edited on disk: rows don't read the disk, so it is marked only once a check finds it.
+        try write("video v3, edited", to: "out/demo.mp4", modified: Date())
+        #expect(model.rowStatus(try row(model, "demo.mp4")).mark == nil)
+        await model.observe(video)
+        #expect(model.rowStatus(try row(model, "demo.mp4")).mark?.1 == "Changed")
+
+        // The selected row shows the delivery chosen in the detail; its number keeps "first seen later".
+        model.selection = video.path
+        model.chosenDelivery = video.deliveries[2].id
+        #expect(model.rowStatus(try row(model, "demo.mp4")).number == "Delivery 1 of 3 · first seen later")
+
+        // Gone when the library loads: not on disk, and its saved copy still drags.
+        try FileManager.default.removeItem(at: project.appendingPathComponent("out/notes.md"))
+        let reloaded = LibraryModel(indexer: indexer)
+        #expect(reloaded.rowStatus(try row(reloaded, "notes.md")).mark?.1 == "Not on disk")
+        #expect(reloaded.dragItem(for: try row(reloaded, "notes.md")) != nil)
+    }
+
+    @Test func aRowWithNothingToHandOverSaysWhy() async throws {
+        try deliver("out/never.mp4")
+        indexer.saveLimit = 0
+        try write("build b1", to: "out/app.dmg", modified: delivered.addingTimeInterval(9000))
+        try deliver("out/app.dmg")
+        try write("build b2", to: "out/app.dmg", modified: Date())
+        try write("clip c1", to: "out/clip.mov", modified: delivered.addingTimeInterval(9000))
+        try deliver("out/clip.mov")
+        try FileManager.default.removeItem(at: project.appendingPathComponent("out/clip.mov"))
+
+        let model = LibraryModel(indexer: indexer)
+        await model.observe(try artifact(model, "app.dmg"))
+        #expect(model.rowStatus(try row(model, "never.mp4")).mark?.1 == "Not available · never seen")
+        #expect(model.rowStatus(try row(model, "app.dmg")).mark?.1 == "Not available · changed")
+        #expect(model.rowStatus(try row(model, "clip.mov")).mark?.1 == "Not available · not on disk")
+    }
+
     // MARK: Quick Look (N1)
 
     @Test func quickLookShowsOnlyTheSelectedDeliverysPreparedBytes() async throws {

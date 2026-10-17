@@ -339,6 +339,19 @@ final class LibraryModel {
         return .bytes(sha: sha)
     }
 
+    /// What `result`'s row says beside its date, from what the library holds and this session's
+    /// checks: rows never read the disk while they are drawn, so "changed" waits for a check.
+    func rowStatus(_ result: SearchResult) -> (mark: (Mark, String)?, number: String?) {
+        let artifact = result.artifact, observation = observations[artifact.path]
+        let changed = observation.map { now in
+            // No saved copy is asked about: only the missing case would, and it isn't "changed".
+            if case .changed = artifact.onDisk(now, hasSaved: { _ in false }) { true } else { false }
+        } ?? false
+        return Wording.row(delivery(in: result), latest: artifact.latest.number,
+                           now: observation?.state.kind ?? (missing.contains(artifact.path) ? .missing : nil),
+                           changed: changed, available: rowHandoff(result) != nil)
+    }
+
     /// A drag from a result row, handing over what `rowHandoff` says, or nil when there is
     /// nothing. The receiver gets its own copy, never the original to open in place: a delivery's
     /// bytes staged and verified only when the receiving app asks for them, or a delivered folder

@@ -272,6 +272,43 @@ enum Wording {
         }
     }
 
+    /// What a list row says beside the date of the delivery it shows (rulings §5): at most one
+    /// mark, only when something needs a look, and the delivery's number when the file has several.
+    /// `now` is what is at the path as far as the library knows without reading the disk (a check
+    /// this session, or gone when the library loaded), nil when neither says; `changed` is true
+    /// when a check this session found bytes no delivery had. "First seen later" is the mark when
+    /// nothing else needs a look, and otherwise stays with the number.
+    static func row(_ delivery: Delivery, latest: Int, now: LocatorState.Kind?, changed: Bool, available: Bool)
+        -> (mark: (Mark, String)?, number: String?) {
+        let number = latest > 1 ? "Delivery \(delivery.number) of \(latest)" : nil
+        let attention: (Mark, String)? = if !available {
+            (.attention, "Not available · " + unavailable(delivery, now: now))
+        } else if now == .missing {
+            (.dashed, "Not on disk")
+        } else if changed {
+            (.attention, "Changed")
+        } else {
+            nil
+        }
+        guard delivery.capture?.provenance == .firstSeenAfterDelivery else { return (attention, number) }
+        guard let attention else { return ((.hollow, "First seen later"), number) }
+        return (attention, number.map { $0 + " · first seen later" })
+    }
+
+    /// Why a row has nothing to hand over, in a few words.
+    private static func unavailable(_ delivery: Delivery, now: LocatorState.Kind?) -> String {
+        if delivery.sha256 == nil, delivery.capture?.isDirectory != true {
+            return delivery.capture?.kind == .missing ? "never seen" : "never read"
+        }
+        return switch now {
+        case .missing?: "not on disk"
+        case .unreadable?: "can’t be read"
+        case .special?: "not a regular file"
+        case .directory?: "a folder is there now"
+        case .file?, nil: "changed"
+        }
+    }
+
     /// Said where Show Folder was pressed when the folder is gone as well.
     static func folderGone(_ folder: String) -> String {
         "Its folder isn’t on disk either: \((folder as NSString).abbreviatingWithTildeInPath)"
