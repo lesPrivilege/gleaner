@@ -195,6 +195,8 @@ public final class Indexer: @unchecked Sendable {
             }
         }
         progress(changed.count, changed.count)
+        // A result read from the library is evidence only within this run (query-core "Freshness").
+        try registry.recordRun(finishedAt: now(), sources: report.sources)
         return report
     }
 

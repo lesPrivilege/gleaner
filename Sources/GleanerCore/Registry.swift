@@ -6,14 +6,16 @@ public final class Registry: @unchecked Sendable {
     let db: Database
 
     /// Bump when extraction changes what is derived from logs (requests, evidence, admission, the
-    /// record types a log holds that Gleaner doesn't know).
+    /// record types a log holds that Gleaner doesn't know), or when the library gains something its
+    /// readers need: `init(readingAt:)` reads no other version.
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
     /// at a moment in time, are never rewritten.
-    public static let extractorVersion = 12
+    public static let extractorVersion = 13
 
     public init(path: String) throws {
         db = try Database(path: path)
         try db.execute("""
+            CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value);
             CREATE TABLE IF NOT EXISTS log_files (
                 path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL, unknown_types TEXT, shortened INTEGER);
             CREATE TABLE IF NOT EXISTS sessions (
@@ -26,6 +28,8 @@ public final class Registry: @unchecked Sendable {
                 delivery_id TEXT PRIMARY KEY, sha256 TEXT, size INTEGER, mtime REAL, observed_at REAL NOT NULL,
                 saved_at REAL, provenance TEXT NOT NULL, kind TEXT NOT NULL, repository TEXT, checkout TEXT);
             """)
+        // The library's namespace, made once with it: every delivery id is unique only within it.
+        try db.run("INSERT OR IGNORE INTO meta (key, value) VALUES ('library', ?)", [UUID().uuidString.lowercased()])
         // Each change of several statements is made whole or not at all: a launch that stops partway,
         // say while another copy of Gleaner holds the library, leaves all of it to the next launch.
 
@@ -92,11 +96,51 @@ public final class Registry: @unchecked Sendable {
         }
     }
 
+    /// Opens the library at `path` to read only, as the query core does: no schema change, and no
+    /// reread scheduled. A library that isn't there, or that another version of Gleaner wrote, is
+    /// refused (`Catalog.Failure`); opening Gleaner makes or updates it.
+    public init(readingAt path: String) throws {
+        guard FileManager.default.fileExists(atPath: path) else { throw Catalog.Failure.noLibrary(path) }
+        db = try Database(readingAt: path)
+        let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
+        guard version == Int64(Self.extractorVersion) else { throw Catalog.Failure.wrongVersion(path, found: Int(version)) }
+    }
+
     private func has(_ table: String, _ column: String) throws -> Bool {
         try db.rows("PRAGMA table_info(\(table))").contains { $0["name"] as? String == column }
     }
 
     public func transaction<T>(_ body: () throws -> T) throws -> T { try db.transaction(body) }
+
+    /// Records a completed run of the indexer: one more generation, when it finished, and how each
+    /// agent's logs read.
+    public func recordRun(finishedAt date: Date, sources: [Provider: Indexer.Report.Source]) throws {
+        let status = Dictionary(uniqueKeysWithValues: sources.map { ($0.key.rawValue, Catalog.Source($0.value)) })
+        let json = String(decoding: try Catalog.encoder.encode(status), as: UTF8.self)
+        try db.transaction {
+            try db.run("""
+                INSERT INTO meta (key, value) VALUES ('generation', 1)
+                ON CONFLICT(key) DO UPDATE SET value = value + 1
+                """)
+            try db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('scanned_at', ?)", [date])
+            try db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('sources', ?)", [json])
+        }
+    }
+
+    /// The library's namespace and its last completed run (`recordRun`).
+    public func index() throws -> Catalog.Index {
+        var meta: [String: Any] = [:]
+        for row in try db.rows("SELECT key, value FROM meta") {
+            if let key = row["key"] as? String { meta[key] = row["value"] }
+        }
+        guard let library = meta["library"] as? String else { throw Database.Failure(description: "the library has no id") }
+        let sources = try (meta["sources"] as? String).map {
+            try Catalog.decoder.decode([String: Catalog.Source].self, from: Data($0.utf8))
+        }
+        return Catalog.Index(
+            library: library, generation: (meta["generation"] as? Int64).map(Int.init) ?? 0,
+            scannedAt: (meta["scanned_at"] as? Double).map(Date.init(timeIntervalSince1970:)), sources: sources ?? [:])
+    }
 
     /// What reading a log found, when it is unchanged since it was read whole: the record types its
     /// adapter didn't recognize, with counts, and whether it had lost records (`markShortened`).
