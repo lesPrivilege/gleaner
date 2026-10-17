@@ -177,6 +177,11 @@ enum Wording {
     /// nothing, it says why, and offers only what the panel can do.
     static func handoff(_ plan: Handoff, delivery: Delivery, in artifact: Artifact, now: LocatorState, large: Bool) -> Statement {
         let n = number(delivery)
+        // "No longer" only for bytes Gleaner had: not for a delivery it never read, nor for a file
+        // it can't read now.
+        let unavailable = now.kind == .unreadable ? "Delivery \(n) isn’t available now"
+            : delivery.sha256 == nil && delivery.capture?.isDirectory != true ? "Delivery \(n) isn’t available"
+            : "Delivery \(n) is no longer available"
         switch plan {
         case .ready(_, .original, nil):
             return Statement(mark: .solid, title: "Ready: the file on disk is delivery \(n)",
@@ -190,12 +195,11 @@ enum Wording {
         case .unavailable(let k?, _):
             let firstSeen = artifact.deliveries.first { $0.number == k }?.capture?.provenance == .firstSeenAfterDelivery
             let again = firstSeen ? "matches what Gleaner first saw for delivery \(k)" : "is delivery \(number(k, in: artifact)) again"
-            return Statement(mark: .attention, title: "Delivery \(n) is no longer available",
+            return Statement(mark: .attention, title: unavailable,
                              detail: "The file on disk \(again). \(noCopy(delivery, large: large))")
         case .unavailable(nil, let current):
-            let title = now.kind == .unreadable ? "Delivery \(n) isn’t available now" : "Delivery \(n) is no longer available"
             let offer = current == nil ? "" : " You can hand off the current file, but it isn’t among the deliveries Gleaner found."
-            return Statement(mark: .attention, title: title,
+            return Statement(mark: .attention, title: unavailable,
                              detail: "\(atPath(now, delivery: delivery)) \(noCopy(delivery, large: large))" + offer)
         case .restoreFromGit:
             return Statement(mark: .dashed, title: "Restore it from git first",

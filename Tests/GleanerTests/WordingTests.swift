@@ -43,10 +43,12 @@ import Testing
         #expect(detail(delivery(1, .directory)).contains("Delivery 1 was a folder."))
         #expect(detail(delivery(1, .file, sha: "a"), large: true).contains("too large to have been saved"))
         #expect(detail(delivery(1, .file, sha: "a")).contains("Saving a copy of delivery 1 failed"))
-        // Gleaner never read delivery 1, so it can't say the file changed; the current file is offered by name.
+        // Gleaner never read delivery 1, so it can't say the file changed, or that the delivery was
+        // ever available; the current file is offered by name.
         let unread = detail(delivery(1, .missing))
         #expect(!unread.contains("changed"))
         #expect(unread.contains("You can hand off the current file"))
+        #expect(handoff(delivery(1, .missing), in: artifact(delivery(1, .missing)), now: changed).title == "Delivery 1 isn’t available")
     }
 
     @Test func anUnreadablePathIsNeverCalledChangedGoneOrSeen() {
