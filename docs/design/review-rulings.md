@@ -129,6 +129,21 @@ Once §1 and §2 land, these run on this Mac:
 
 Results are recorded per check with the commit and the fixture phase.
 
+**Run on 2026-10-18 at `edefa99`** (Apple silicon, macOS 27, `scripts/acceptance-home.py` with `-GleanerHome`):
+- `swift test`: 168 tests in 22 suites pass. `bundle-app.sh` builds an ad-hoc signed arm64 app.
+- The bundled app indexed the synthetic home with no clicks:
+  - every regular file captured `at_delivery`, with copies saved up to 64 MB and the two 65 MiB files tracked by hash only;
+  - the FIFO recorded as not a regular file, the chmod-000 file as unreadable, and the folder as a folder;
+  - the external worktree's delivery recorded with its repository and its own checkout.
+- A second delivery, appended while the app ran, was indexed through the log watcher as new versions with saved copies.
+- None of these removed a delivery or a capture (15 of each throughout):
+  - editing files without a delivery;
+  - replacing a delivered file with a folder;
+  - removing the worktree;
+  - a malformed line appended to the log;
+  - the log rewritten shorter, then restored.
+- Not run: every check that needs the window (selection, Quick Look, Compare, drags, Check Again, Settings, appearance, keyboard). Computer use was not granted in this session, so these move to the owner's list below. The app-target tests cover their logic.
+
 These stay with the owner:
 - drops into Claude Desktop, Codex and a browser upload field;
 - VoiceOver listening and visual judgment;
