@@ -46,8 +46,7 @@ final class LibraryModel {
     /// False until the first read of the logs finishes.
     private(set) var indexed = false
     /// How each agent's log folder read in the latest run; nil until a run finishes, and after one
-    /// that failed. Unknown record types are kept for the session, since a run reports only those
-    /// of the logs it read.
+    /// that failed.
     private(set) var sources: [Provider: Indexer.Report.Source]?
     /// Why the latest run stopped before reading the logs, or why the library couldn't be read
     /// after it. What the library already showed stays.
@@ -109,6 +108,12 @@ final class LibraryModel {
         indexFailure ?? sources.flatMap(Wording.sourcesLine)
     }
 
+    /// True when reading the logs again may help: a run failed, or a source wasn't read whole.
+    /// Unknown record types are reported, but a reread can't change them.
+    var canReadAgain: Bool {
+        indexFailure != nil || sources?.values.contains(where: \.isIncomplete) == true
+    }
+
     /// Each project once, by its most recently delivered file, most recent first.
     var projects: [Artifact] {
         var seen = Set<String>()
@@ -161,11 +166,7 @@ final class LibraryModel {
                 self.indexed = true
                 switch outcome {
                 case .success(let report):
-                    var sources = report.sources
-                    for (provider, earlier) in self.sources ?? [:] where sources[provider]?.folder == .listed {
-                        sources[provider]?.unknownRecordTypes.merge(earlier.unknownRecordTypes, uniquingKeysWith: max)
-                    }
-                    self.sources = sources
+                    self.sources = report.sources
                 case .failure:
                     self.sources = nil
                 }

@@ -95,9 +95,11 @@ struct ResultsList: View {
                     StatusLabel(mark: .attention, text: trouble).font(.caption).lineLimit(2)
                         .help(trouble)
                     Spacer(minLength: 8)
-                    Button("Try Again") { model.reindex() }
-                        .controlSize(.small)
-                        .help("Read the agent logs again. Settings shows each source.")
+                    if model.canReadAgain {
+                        Button("Try Again") { model.reindex() }
+                            .controlSize(.small)
+                            .help("Read the agent logs again. Settings shows each source.")
+                    }
                 }
                 .padding(.horizontal, 12)
                 .padding(.vertical, 8)
@@ -136,7 +138,7 @@ struct ResultsList: View {
             if !model.indexed {
                 ContentUnavailableView("Reading agent logs…", systemImage: "hourglass",
                                        description: Text("The first read takes a moment. Results appear when it finishes."))
-            } else if let trouble = model.logTrouble {
+            } else if model.canReadAgain, let trouble = model.logTrouble {
                 ContentUnavailableView {
                     Label("Gleaner couldn’t read every agent log", systemImage: "exclamationmark.triangle")
                 } description: {
@@ -153,7 +155,8 @@ struct ResultsList: View {
                 }
             } else {
                 ContentUnavailableView("No delivered files yet", systemImage: "tray",
-                                       description: Text("When an agent names a file in a reply to you, it appears here."))
+                                       description: Text("When an agent names a file in a reply to you, it appears here."
+                                                         + (model.logTrouble.map { "\n\n" + $0 } ?? "")))
             }
         } else if results.isEmpty {
             ContentUnavailableView {

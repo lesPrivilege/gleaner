@@ -111,6 +111,20 @@ import Testing
         #expect(model.logTrouble?.hasPrefix("Indexing failed") == true)
     }
 
+    @Test func unknownRecordTypesAreReportedButNotOfferedForAnotherRead() async throws {
+        try appendLog([#"{"type":"brand-new-record","sessionId":"s1"}"#])
+        let model = LibraryModel(indexer: indexer)
+        try await reindex(model) { model.sources != nil }
+        #expect(model.logTrouble == "Claude Code: read with problems (1 unknown record type)")
+        // Reading again can't change which record types Gleaner knows.
+        #expect(!model.canReadAgain)
+
+        // A log with malformed lines can read whole next time.
+        try appendLog(["{not json"])
+        try await reindex(model) { model.sources?[.claudeCode]?.partialLogs.isEmpty == false }
+        #expect(model.canReadAgain)
+    }
+
     // MARK: Delivered with (D6)
 
     @Test func aFileDeliveredWithAnotherOpensOnItsDeliveryFromThatReply() throws {

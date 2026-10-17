@@ -479,6 +479,20 @@ import Testing
         #expect(report.sources[.claudeCode]?.hasProblems == true)
         #expect(report.sources[.codex]?.hasProblems == false)
     }
+
+    @Test func unknownRecordTypesAreReportedOnEveryRunNotOnlyTheOneThatReadThem() throws {
+        try appendLog([#"{"type":"brand-new-record","sessionId":"s1"}"#])
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        // The log is unchanged, so it isn't read again; the format change is still there.
+        let again = try indexer.run()
+        #expect(again.logsRead == 0)
+        #expect(again.sources[.claudeCode]?.unknownRecordTypes == ["brand-new-record": 1])
+        // So it is after a relaunch.
+        let relaunched = Indexer(
+            registry: try Registry(path: root.appendingPathComponent("support/registry.sqlite").path),
+            store: indexer.store, sources: indexer.sources)
+        #expect(try relaunched.run().sources[.claudeCode]?.unknownRecordTypes == ["brand-new-record": 1])
+    }
 }
 
 private extension String {

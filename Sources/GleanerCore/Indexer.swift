@@ -74,7 +74,8 @@ public final class Indexer: @unchecked Sendable {
             }
 
             public var folder: Folder
-            /// Record types the adapter does not recognize, with counts. Non-empty means the format moved.
+            /// Record types the adapter does not recognize in the folder's logs, with counts, whichever
+            /// run read them. Non-empty means the format moved; reading again can't change it.
             public var unknownRecordTypes: [String: Int] = [:]
             /// Logs with malformed lines. What they name was added and nothing was removed; they are
             /// read again next run.
@@ -86,8 +87,13 @@ public final class Indexer: @unchecked Sendable {
             public var unlistedFolders: [String] = []
 
             /// Listed, but not everything in it could be read or understood.
-            public var hasProblems: Bool {
-                !unknownRecordTypes.isEmpty || !partialLogs.isEmpty || !failures.isEmpty || !unlistedFolders.isEmpty
+            public var hasProblems: Bool { !unknownRecordTypes.isEmpty || isIncomplete }
+
+            /// Something reading again may fix: the folder, a folder in it, or a log couldn't be read
+            /// whole. Unknown record types stay until Gleaner learns them.
+            public var isIncomplete: Bool {
+                if case .unreadable = folder { return true }
+                return !partialLogs.isEmpty || !failures.isEmpty || !unlistedFolders.isEmpty
             }
         }
 
@@ -129,7 +135,9 @@ public final class Indexer: @unchecked Sendable {
         for (provider, url) in files {
             let info = Locator.stat(url.path)
             guard let size = info.size, let mtime = info.modifiedAt else { continue }
-            if try !registry.isUnchanged(logFile: url.path, size: size, mtime: mtime) {
+            if let unknown = try registry.unknownRecordTypes(unchangedLog: url.path, size: size, mtime: mtime) {
+                report.sources[provider]?.unknownRecordTypes.merge(unknown, uniquingKeysWith: +)
+            } else {
                 changed.append((provider, url, size, mtime))
             }
         }
@@ -157,7 +165,10 @@ public final class Indexer: @unchecked Sendable {
                     report.newDeliveries += try registry.transaction {
                         let added = try log.map { try ingest($0, now: now()) } ?? 0
                         // A partial log stays unread, so it is read and reported again next run.
-                        if log?.isComplete ?? true { try registry.markRead(logFile: url.path, size: size, mtime: mtime) }
+                        if log?.isComplete ?? true {
+                            try registry.markRead(logFile: url.path, size: size, mtime: mtime,
+                                                  unknownRecordTypes: log?.unknownRecordTypes ?? [:])
+                        }
                         return added
                     }
                 } catch {

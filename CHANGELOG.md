@@ -10,7 +10,7 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - Admits a file named in a final reply by a link, an image, or a path with a folder; skips line-anchored code references, fenced examples and placeholder paths.
 - Searches requests, replies, session titles, file names and projects; every word must appear in one delivery.
 - Filters by project (the git repository's folder, with worktrees folded in; two projects with one name show their parent folder, and a file outside git says so) and by ten kinds.
-- Tells apart a first index still running, missing log folders, an empty library and no matches. Says per source when logs can't be read or were read with problems, offers Try Again, and keeps showing what it already found.
+- Tells apart a first index still running, missing log folders, an empty library and no matches. Says per source when logs can't be read or were read with problems, offers Try Again when reading again can help, and keeps showing what it already found.
 
 ### Identify the version
 

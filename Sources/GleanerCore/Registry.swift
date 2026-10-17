@@ -8,13 +8,13 @@ public final class Registry: @unchecked Sendable {
     /// Bump when extraction changes what is derived from logs (requests, evidence, admission).
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
     /// at a moment in time, are never rewritten.
-    public static let extractorVersion = 9
+    public static let extractorVersion = 10
 
     public init(path: String) throws {
         db = try Database(path: path)
         try db.execute("""
             CREATE TABLE IF NOT EXISTS log_files (
-                path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL);
+                path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL, unknown_types TEXT);
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY, provider TEXT NOT NULL, title TEXT, cwd TEXT, log_path TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS deliveries (
@@ -37,6 +37,11 @@ public final class Registry: @unchecked Sendable {
         if try !db.rows("PRAGMA table_info(deliveries)").contains(where: { $0["name"] as? String == "repository" }) {
             try db.execute("ALTER TABLE deliveries ADD COLUMN repository TEXT;")
         }
+        // Each read log keeps the record types it held that Gleaner doesn't know, so a format change
+        // is reported on every run, not only by the run that read the log.
+        if try !db.rows("PRAGMA table_info(log_files)").contains(where: { $0["name"] as? String == "unknown_types" }) {
+            try db.execute("ALTER TABLE log_files ADD COLUMN unknown_types TEXT;")
+        }
         let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
         if version != Int64(Self.extractorVersion) {
             try db.execute("DELETE FROM log_files; PRAGMA user_version = \(Self.extractorVersion);")
@@ -45,14 +50,19 @@ public final class Registry: @unchecked Sendable {
 
     public func transaction<T>(_ body: () throws -> T) throws -> T { try db.transaction(body) }
 
-    public func isUnchanged(logFile path: String, size: Int64, mtime: Date) throws -> Bool {
-        let rows = try db.rows("SELECT size, mtime FROM log_files WHERE path = ?", [path])
-        guard let row = rows.first else { return false }
-        return row["size"] as? Int64 == size && row["mtime"] as? Double == mtime.timeIntervalSince1970
+    /// The record types a log held that its adapter didn't recognize, with counts, when the log is
+    /// unchanged since it was read whole; nil when it must be read.
+    public func unknownRecordTypes(unchangedLog path: String, size: Int64, mtime: Date) throws -> [String: Int]? {
+        let rows = try db.rows("SELECT size, mtime, unknown_types FROM log_files WHERE path = ?", [path])
+        guard let row = rows.first, row["size"] as? Int64 == size, row["mtime"] as? Double == mtime.timeIntervalSince1970
+        else { return nil }
+        return (row["unknown_types"] as? String).flatMap { try? JSONDecoder().decode([String: Int].self, from: Data($0.utf8)) } ?? [:]
     }
 
-    public func markRead(logFile path: String, size: Int64, mtime: Date) throws {
-        try db.run("INSERT OR REPLACE INTO log_files (path, size, mtime) VALUES (?, ?, ?)", [path, size, mtime])
+    public func markRead(logFile path: String, size: Int64, mtime: Date, unknownRecordTypes: [String: Int]) throws {
+        let json = String(decoding: try JSONEncoder().encode(unknownRecordTypes), as: UTF8.self)
+        try db.run("INSERT OR REPLACE INTO log_files (path, size, mtime, unknown_types) VALUES (?, ?, ?, ?)",
+                   [path, size, mtime, json])
     }
 
     public func upsert(_ session: SessionInfo) throws {
