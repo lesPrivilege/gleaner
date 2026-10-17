@@ -222,7 +222,7 @@ public final class Indexer: @unchecked Sendable {
                     evidence: candidate.evidence.map {
                         Evidence(line: $0.part.line, syntax: $0.mention.syntax.rawValue,
                                  rawTarget: Redactor.redact($0.mention.rawTarget),
-                                 anchor: $0.mention.anchor.map(Redactor.redact), excerpt: Redactor.redact($0.mention.excerpt))
+                                 anchor: $0.mention.anchor.map(Redactor.redact), excerpt: $0.mention.excerpt)
                     })
                 guard isNew else { continue }
                 try registry.setCapture(capture(candidate.path, deliveredAt: first.part.at, now: now), for: id)
