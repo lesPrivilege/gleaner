@@ -330,12 +330,12 @@ final class LibraryModel {
 
     /// What dragging `result`'s row hands over; nil when the library already knows there is
     /// nothing: the delivery's bytes were never read, or the store holds no copy of them and the
-    /// file was found gone or changed. Decided from what the library holds and this session's
-    /// checks, never by reading the disk, so a row can ask while it is drawn. The drop verifies
+    /// file was found gone or changed. Decided from what the library holds and the newest check of
+    /// the file, never by reading the disk, so a row can ask while it is drawn. The drop verifies
     /// what it hands over.
     func rowHandoff(_ result: SearchResult) -> RowHandoff? {
         let artifact = result.artifact, delivery = delivery(in: result)
-        if let observation = observations[artifact.path] {
+        if let observation = rowObservation(artifact.path) {
             switch artifact.handoff(delivery, now: observation, hasSaved: hasSaved) {
             case .ready(let sha, _, _): return .bytes(sha: sha)
             case .folder: return .folder
@@ -347,10 +347,16 @@ final class LibraryModel {
         return .bytes(sha: sha)
     }
 
-    /// What `result`'s row says beside its date, from what the library holds and this session's
-    /// checks: rows never read the disk while they are drawn, so "changed" waits for a check.
+    /// This session's check of `path`, unless the library has loaded since and found otherwise
+    /// whether the file is on disk: rows go by the newer of the two.
+    private func rowObservation(_ path: String) -> FileObservation? {
+        observations[path].flatMap { ($0.state.kind == .missing) == missing.contains(path) ? $0 : nil }
+    }
+
+    /// What `result`'s row says beside its date, from what the library holds and the newest check
+    /// of the file: rows never read the disk while they are drawn, so "changed" waits for a check.
     func rowStatus(_ result: SearchResult) -> (mark: (Mark, String)?, number: String?) {
-        let artifact = result.artifact, observation = observations[artifact.path]
+        let artifact = result.artifact, observation = rowObservation(artifact.path)
         let changed = observation.map { now in
             // No saved copy is asked about: only the missing case would, and it isn't "changed".
             if case .changed = artifact.onDisk(now, hasSaved: { _ in false }) { true } else { false }

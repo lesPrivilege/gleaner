@@ -301,6 +301,23 @@ import UniformTypeIdentifiers
         #expect(reloaded.dragItem(for: try row(reloaded, "notes.md")) != nil)
     }
 
+    @Test func aRowGoesByTheNewerOfACheckAndALibraryLoad() async throws {
+        indexer.saveLimit = 0 // never saved: the file on disk is the only copy
+        try write("clip c1", to: "out/clip.mov", modified: delivered.addingTimeInterval(9000))
+        try deliver("out/clip.mov")
+        let model = LibraryModel(indexer: indexer)
+        let clip = try artifact(model, "clip.mov")
+        model.selection = clip.path
+        await model.observe(clip)
+        model.selection = nil
+
+        // Removed after that check; the library loads again, as after the agent's next reply, and finds it gone.
+        try FileManager.default.removeItem(at: project.appendingPathComponent("out/clip.mov"))
+        try await reindex(model) { model.missing.contains(clip.path) }
+        #expect(model.rowStatus(try row(model, "clip.mov")).mark?.1 == "Not available · not on disk")
+        #expect(model.dragItem(for: try row(model, "clip.mov")) == nil)
+    }
+
     @Test func aRowHandsOverTheSavedCopyTheDetailWouldWhicheverPathSavedIt() async throws {
         // The same bytes at two paths, too large to have been saved; the person saves the first.
         indexer.saveLimit = 0
