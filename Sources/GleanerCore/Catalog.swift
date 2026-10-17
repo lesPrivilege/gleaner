@@ -586,7 +586,8 @@ extension Catalog {
         public var generation: Int
         /// When the last completed run finished; nil before the first.
         public var scannedAt: Date?
-        /// How each agent's logs read in that run, by provider (`claude-code`, `codex`).
+        /// How each agent's logs read in that run, by provider (`claude-code`, `codex`); empty when
+        /// that run was another version of Gleaner's, while this version reads every log again.
         public var sources: [String: Source]
 
         // `scanned_at` is written as null, not left out, before the first run.

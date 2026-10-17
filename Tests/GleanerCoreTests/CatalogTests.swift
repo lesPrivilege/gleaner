@@ -182,6 +182,23 @@ import Testing
             state: .readWithProblems, unknownFields: ["mode.brandNewField": 1], logsWithoutFinalReply: 1))
     }
 
+    @Test func anUpdatedLibraryGivesNoStatusOfARunByAnotherVersion() throws {
+        try index(at: delivered.addingTimeInterval(20))
+        // As an earlier Gleaner left it: its version, and its last run's status in that version's shape.
+        let earlier = try Database(path: library)
+        try earlier.execute("PRAGMA user_version = \(Registry.extractorVersion - 1)")
+        try earlier.run("UPDATE meta SET value = ? WHERE key = 'sources'", [#"{"claude-code":{"state":"read"}}"#])
+
+        // Gleaner opens it, and will read every log again; until that run ends, the library is read
+        // without that status.
+        _ = try Registry(path: library)
+        let index = try Catalog(home: home).registry.index()
+        #expect(index.sources.isEmpty)
+        #expect(index.generation == 1 && index.scannedAt == delivered.addingTimeInterval(20))
+        try self.index(at: delivered.addingTimeInterval(40))
+        #expect(try Catalog(home: home).registry.index().sources["claude-code"] == Catalog.Source(state: .read))
+    }
+
     @Test func aLibraryNeverScannedSaysSo() throws {
         try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         _ = try Registry(path: library)

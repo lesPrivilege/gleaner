@@ -155,7 +155,12 @@ public final class Registry: @unchecked Sendable {
         if version != Int64(Self.extractorVersion) {
             // No log has this modification time, so every log is read again; each keeps the size
             // it was read at, and whether it lost records, so one that did still removes nothing.
-            try db.execute("UPDATE log_files SET mtime = -1; PRAGMA user_version = \(Self.extractorVersion);")
+            // The last run's status was another version's reading, kept in that version's shape:
+            // none is given until this version's first run ends (`recordRun`).
+            try db.execute("""
+                UPDATE log_files SET mtime = -1; DELETE FROM meta WHERE key = 'sources';
+                PRAGMA user_version = \(Self.extractorVersion);
+                """)
         }
     }
 
