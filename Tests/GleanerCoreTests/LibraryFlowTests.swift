@@ -60,8 +60,8 @@ import Testing
 
     func stamp(_ date: Date) -> String { date.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)) }
 
-    func user(_ text: String, at date: Date) -> String {
-        #"{"type":"user","message":{"role":"user","content":"\#(text)"},"origin":{"kind":"human"},"timestamp":"\#(stamp(date))","cwd":"\#(project.path)","sessionId":"s1"}"#
+    func user(_ text: String, at date: Date, session: String = "s1") -> String {
+        #"{"type":"user","message":{"role":"user","content":"\#(text)"},"origin":{"kind":"human"},"timestamp":"\#(stamp(date))","cwd":"\#(project.path)","sessionId":"\#(session)"}"#
     }
 
     func assistant(_ text: String, at date: Date, cwd: String) -> String {
@@ -701,29 +701,39 @@ import Testing
     }
 
     @Test func aLogWithAssistantRecordsButNoFinalReplyIsReported() throws {
-        // The agent only called a tool: as if the adapter no longer recognized the reply.
-        let toolCall = #"{"type":"assistant","message":{"model":"m","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"make"}}]},"timestamp":"\#(stamp(delivered))","cwd":"\#(project.path)","sessionId":"s2"}"#
-        try ([user("Build it", at: delivered.addingTimeInterval(-60)), toolCall].joined(separator: "\n") + "\n")
-            .write(to: root.appendingPathComponent("claude/-Praxis/session-2.jsonl"), atomically: true, encoding: .utf8)
-
+        // A session whose only turn ends on a tool call: it may still be running, so its log is no
+        // problem yet.
+        let log = root.appendingPathComponent("claude/-Praxis/session-2.jsonl")
+        try String(contentsOf: try fixture("claude-open-turn"), encoding: .utf8).write(to: log, atomically: true, encoding: .utf8)
         func withoutFinalReply(_ report: Indexer.Report) -> [String]? {
             report.sources[.claudeCode]?.logsWithoutFinalReply.map { ($0 as NSString).lastPathComponent }
         }
-        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let open = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(withoutFinalReply(open) == [])
+        #expect(open.sources[.claudeCode]?.hasProblems == false)
+
+        // The next request closes that turn without a final reply: as if the adapter no longer
+        // recognized the reply.
+        try (String(contentsOf: log, encoding: .utf8) + user("Is it uploaded?", at: delivered.addingTimeInterval(60), session: "s-open") + "\n")
+            .write(to: log, atomically: true, encoding: .utf8)
+        let report = try indexer.run(now: { delivered.addingTimeInterval(80) })
         #expect(withoutFinalReply(report) == ["session-2.jsonl"])
         #expect(report.sources[.claudeCode]?.hasProblems == true)
         #expect(withoutFinalReply(try indexer.run()) == ["session-2.jsonl"])
     }
 
     @Test func aReplyWhoseTextTheAdapterCantFindIsReportedAsNoFinalReply() throws {
-        // The format moved: the reply's text is a plain string, or under a key the adapter doesn't read.
+        // The format moved: the reply's text is a plain string, or under a key the adapter doesn't
+        // read. The next request closes the turn.
         let messages = [
             #"{"model":"m","role":"assistant","content":"Built: [app](out/app.dmg)"}"#,
             #"{"model":"m","role":"assistant","blocks":[{"type":"text","text":"Built: [app](out/app.dmg)"}]}"#,
         ]
         for (n, message) in messages.enumerated() {
             let reply = #"{"type":"assistant","message":\#(message),"timestamp":"\#(stamp(delivered))","cwd":"\#(project.path)","sessionId":"s\#(n + 2)"}"#
-            try ([user("Build it", at: delivered.addingTimeInterval(-60)), reply].joined(separator: "\n") + "\n")
+            let (request, next) = (user("Build it", at: delivered.addingTimeInterval(-60), session: "s\(n + 2)"),
+                                   user("Now sign it", at: delivered.addingTimeInterval(10), session: "s\(n + 2)"))
+            try ([request, reply, next].joined(separator: "\n") + "\n")
                 .write(to: root.appendingPathComponent("claude/-Praxis/session-\(n + 2).jsonl"), atomically: true, encoding: .utf8)
         }
         let report = try indexer.run(now: { delivered.addingTimeInterval(20) })

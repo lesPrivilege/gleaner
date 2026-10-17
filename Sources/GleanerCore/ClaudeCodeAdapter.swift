@@ -99,7 +99,10 @@ public enum ClaudeCodeAdapter {
         var reply: [ReplyPart] = []
         var answered = false
 
-        func closeTurn() {
+        /// The log's last turn is answered only once it has a final reply: until then the session
+        /// may still be running, or it ended on a tool call.
+        func closeTurn(last: Bool = false) {
+            if answered, !last || !reply.isEmpty { answeredTurns += 1 }
             if !reply.isEmpty { turns.append(Turn(request: request, parts: reply)) }
             reply = []
             answered = false
@@ -137,10 +140,7 @@ public enum ClaudeCodeAdapter {
                 guard record["isSidechain"] as? Bool != true, message?["model"] as? String != "<synthetic>" else { continue }
                 // The assistant answered, whatever shape its message has: a reply whose text the
                 // adapter can't find shows as a turn without a final reply, not as no turn at all.
-                if !answered {
-                    answeredTurns += 1
-                    answered = true
-                }
+                answered = true
                 guard let blocks = message?["content"] as? [[String: Any]] else { continue }
                 // The agent may have moved into a worktree since the request; relative paths in
                 // the reply are relative to where it is now.
@@ -164,7 +164,7 @@ public enum ClaudeCodeAdapter {
                 break
             }
         }
-        closeTurn()
+        closeTurn(last: true)
 
         return SessionLog(
             session: SessionInfo(

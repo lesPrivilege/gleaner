@@ -123,7 +123,8 @@ public final class Indexer: @unchecked Sendable {
             /// lost. What they name is added, and nothing they no longer name is removed, however
             /// they grow again; reading again can't bring the records back.
             public var shortenedLogs: [String] = []
-            /// Logs with assistant records but no final reply: the adapter may no longer recognize one.
+            /// Logs with assistant records but no final reply, not counting the last turn while it has
+            /// none (the session may still be running): the adapter may no longer recognize one.
             public var logsWithoutFinalReply: [String] = []
             /// Logs whose last complete read found fewer final replies than the one before it: the log
             /// or the adapter changed, and the deliveries only those replies named were removed.

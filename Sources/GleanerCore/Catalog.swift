@@ -639,7 +639,7 @@ extension Catalog {
         public var partialLogs = 0
         /// Logs found shorter than when Gleaner read them: records were lost.
         public var shortenedLogs = 0
-        /// Logs with assistant records but no final reply.
+        /// Logs with assistant records but no final reply, not counting the last turn while it has none.
         public var logsWithoutFinalReply = 0
         /// Logs whose last complete read found fewer final replies than the one before it.
         public var logsWithFewerReplies = 0

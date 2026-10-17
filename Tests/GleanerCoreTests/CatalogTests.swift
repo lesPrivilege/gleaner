@@ -60,8 +60,8 @@ import Testing
 
     func stamp(_ date: Date) -> String { date.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)) }
 
-    func user(_ text: String, at date: Date) -> String {
-        #"{"type":"user","message":{"role":"user","content":"\#(text)"},"origin":{"kind":"human"},"timestamp":"\#(stamp(date))","cwd":"\#(project.path)","sessionId":"s1"}"#
+    func user(_ text: String, at date: Date, session: String = "s1") -> String {
+        #"{"type":"user","message":{"role":"user","content":"\#(text)"},"origin":{"kind":"human"},"timestamp":"\#(stamp(date))","cwd":"\#(project.path)","sessionId":"\#(session)"}"#
     }
 
     func assistant(_ text: String, at date: Date) -> String {
@@ -171,10 +171,11 @@ import Testing
     }
 
     @Test func eachProblemAnAdapterFindsIsCounted() throws {
-        // A field Gleaner doesn't know, and a log whose agent only called a tool.
+        // A field Gleaner doesn't know, and a log whose agent only called a tool before the next request.
         try appendLog([#"{"type":"mode","mode":"plan","sessionId":"s1","brandNewField":true}"#])
         let toolCall = #"{"type":"assistant","message":{"model":"m","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]},"timestamp":"\#(stamp(delivered))","cwd":"\#(project.path)","sessionId":"s2"}"#
-        try ([user("Build it", at: delivered.addingTimeInterval(-60)), toolCall].joined(separator: "\n") + "\n")
+        try ([user("Build it", at: delivered.addingTimeInterval(-60), session: "s2"), toolCall,
+              user("Did it build?", at: delivered, session: "s2")].joined(separator: "\n") + "\n")
             .write(toFile: home.appendingPathComponent(".claude/projects/-Praxis/s2.jsonl").path, atomically: true, encoding: .utf8)
         try index(at: delivered.addingTimeInterval(20))
 
