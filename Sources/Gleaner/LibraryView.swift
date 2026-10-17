@@ -37,19 +37,22 @@ struct ResultsList: View {
         @Bindable var model = model
         let results = model.results
         let repeated = Set(Dictionary(grouping: results, by: \.artifact.name).filter { $0.value.count > 1 }.keys)
-        List(selection: $model.selection) {
-            ForEach(results) { result in
-                ResultRow(result: result, showProject: model.project == nil,
-                          showFolder: repeated.contains(result.artifact.name))
-                    .tag(result.id)
+        // Filters sit above the list, not over it: rows never scroll under the glass controls.
+        VStack(spacing: 0) {
+            filters
+            List(selection: $model.selection) {
+                ForEach(results) { result in
+                    ResultRow(result: result, showProject: model.project == nil,
+                              showFolder: repeated.contains(result.artifact.name))
+                        .tag(result.id)
+                }
             }
+            .onCopyCommand {
+                guard let url = model.selectedHandoffURL, let provider = NSItemProvider(contentsOf: url) else { return [] }
+                return [provider]
+            }
+            .overlay { emptyState(results) }
         }
-        .onCopyCommand {
-            guard let url = model.selectedHandoffURL, let provider = NSItemProvider(contentsOf: url) else { return [] }
-            return [provider]
-        }
-        .safeAreaInset(edge: .top) { filters }
-        .overlay { emptyState(results) }
     }
 
     var filters: some View {
