@@ -81,28 +81,39 @@ enum Wording {
         date?.formatted(date: .abbreviated, time: .shortened) ?? "unknown time"
     }
 
+    /// A delivery's number as every label names it: with "first seen later" when Gleaner first
+    /// read its bytes after the delivery, so they may not be what was delivered (rulings §9).
+    static func number(_ delivery: Delivery) -> String {
+        "\(delivery.number)" + (delivery.capture?.provenance == .firstSeenAfterDelivery ? " (first seen later)" : "")
+    }
+
+    /// Delivery `n` of `artifact`, named as `number(_:)` names it.
+    static func number(_ n: Int, in artifact: Artifact) -> String {
+        artifact.deliveries.first { $0.number == n }.map(number) ?? "\(n)"
+    }
+
     /// "On disk now", from what the check `now` found: only that, with why when it matters.
     static func onDisk(_ status: OnDisk, in artifact: Artifact, now: FileObservation) -> Statement {
         let when = "Checked \(now.checkedAt.formatted(.relative(presentation: .named)))."
         let latest = artifact.latest
         switch status {
         case .same(let n):
-            return Statement(mark: .solid, title: "Same as delivery \(n)", detail: "Hash matches. \(when)")
+            return Statement(mark: .solid, title: "Same as delivery \(number(n, in: artifact))", detail: "Hash matches. \(when)")
         case .unchangedSinceFirstSeen(let seen):
             return Statement(mark: .hollow, title: "Unchanged since Gleaner first saw it",
                              detail: "First seen \(date(seen)), after the delivery. It may not be what was delivered. \(when)")
         case .rolledBack(let k, let latest, nil):
             return Statement(mark: .attention, title: "Rolled back to delivery \(k)",
-                             detail: "The file on disk is delivery \(k) again, not the latest delivery \(latest). \(when)")
+                             detail: "The file on disk is delivery \(k) again, not the latest delivery \(number(latest, in: artifact)). \(when)")
         case .rolledBack(let k, let latest, let seen?):
             return Statement(mark: .attention, title: "Back to what Gleaner first saw for delivery \(k)",
-                             detail: "The file on disk matches the bytes Gleaner first saw for delivery \(k) on \(date(seen)), after that delivery; it is not the latest delivery \(latest). \(when)")
+                             detail: "The file on disk matches the bytes Gleaner first saw for delivery \(k) on \(date(seen)), after that delivery; it is not the latest delivery \(number(latest, in: artifact)). \(when)")
         case .changed(let n) where now.state.kind == .file && latest.sha256 == nil && latest.capture?.isDirectory != true:
             return Statement(mark: .attention, title: "Not among the deliveries Gleaner found",
                              detail: "Gleaner never read delivery \(n)’s bytes, so it can’t tell whether this file is it. \(when)")
         case .changed(let n):
             let what = now.state.kind == .directory ? "A folder is at this path now." : "What is at this path now isn’t among the deliveries Gleaner found."
-            return Statement(mark: .attention, title: "Changed since delivery \(n)", detail: "\(what) \(when)")
+            return Statement(mark: .attention, title: "Changed since delivery \(number(n, in: artifact))", detail: "\(what) \(when)")
         case .missingWithSavedCopy(let n, nil):
             return Statement(mark: .dashed, title: "Not on disk", detail: "Gleaner saved a copy of delivery \(n). \(when)")
         case .missingWithSavedCopy(let n, let seen?):
@@ -143,7 +154,7 @@ enum Wording {
     /// never seen, not a regular file, unreadable, a folder, too large to have been saved, or a
     /// save that failed. `large` says the delivery was over the save limit.
     static func noCopy(_ delivery: Delivery, large: Bool) -> String {
-        let n = delivery.number
+        let n = number(delivery)
         switch delivery.capture?.kind {
         case nil:
             return "Gleaner has no record of delivery \(n)’s bytes."
@@ -165,7 +176,7 @@ enum Wording {
     /// What a drag of `delivery` hands over, from what the check `now` found. When there is
     /// nothing, it says why, and offers only what the panel can do.
     static func handoff(_ plan: Handoff, delivery: Delivery, in artifact: Artifact, now: LocatorState, large: Bool) -> Statement {
-        let n = delivery.number
+        let n = number(delivery)
         switch plan {
         case .ready(_, .original, nil):
             return Statement(mark: .solid, title: "Ready: the file on disk is delivery \(n)",
@@ -178,7 +189,7 @@ enum Wording {
                              detail: "Gleaner first saw these bytes on \(date(seen)), after the delivery. They may not be exactly what was delivered.")
         case .unavailable(let k?, _):
             let firstSeen = artifact.deliveries.first { $0.number == k }?.capture?.provenance == .firstSeenAfterDelivery
-            let again = firstSeen ? "matches what Gleaner first saw for delivery \(k)" : "is delivery \(k) again"
+            let again = firstSeen ? "matches what Gleaner first saw for delivery \(k)" : "is delivery \(number(k, in: artifact)) again"
             return Statement(mark: .attention, title: "Delivery \(n) is no longer available",
                              detail: "The file on disk \(again). \(noCopy(delivery, large: large))")
         case .unavailable(nil, let current):
@@ -238,8 +249,9 @@ enum Wording {
         "Couldn’t open it: \(error.localizedDescription)"
     }
 
-    static func saveFailed(_ error: Error, delivery n: Int) -> String {
-        switch error {
+    static func saveFailed(_ error: Error, delivery: Delivery) -> String {
+        let n = number(delivery)
+        return switch error {
         case ContentStore.Failure.changed:
             "The file changed before Gleaner could save it; it no longer holds delivery \(n)."
         case ContentStore.Failure.unavailable:
@@ -267,7 +279,29 @@ enum Wording {
 
     /// A delivery as one end of a comparison, keeping "first seen later" (SPEC §6).
     static func compareTitle(_ delivery: Delivery) -> String {
-        "Delivery \(delivery.number)" + (delivery.capture?.provenance == .firstSeenAfterDelivery ? " (first seen later)" : "")
+        "Delivery \(number(delivery))"
+    }
+
+    /// The hand-off panel's heading.
+    static func handoffHeading(_ delivery: Delivery) -> String {
+        "Hand off delivery \(number(delivery))"
+    }
+
+    /// The version the drag tile carries, as its caption and its accessible name say it: a
+    /// delivery Gleaner vouches for with these bytes, this delivery, or the current file the
+    /// person chose to hand over instead. `staged` is nil until a copy is ready.
+    static func tileVersion(staged sha: String?, plan: Handoff, delivery: Delivery, in artifact: Artifact) -> String {
+        guard let sha else { return plan == .folder ? "folder as it is now" : "delivery \(number(delivery))" }
+        if let trusted = artifact.deliveries.first(where: { $0.sha256 == sha && $0.isTrusted }) { return "delivery \(trusted.number)" }
+        return sha == delivery.sha256 ? "delivery \(number(delivery))" : "current file · not a found delivery"
+    }
+
+    /// A line of the deliveries list, as VoiceOver reads it. `sameAs` is an earlier delivery with
+    /// the same bytes.
+    static func deliveryLine(_ delivery: Delivery, sameAs: Delivery?) -> String {
+        ["Delivery \(delivery.number)", date(delivery.deliveredAt), provider(delivery.provider),
+         provenanceShort(delivery.capture).1.lowercased(),
+         sameAs.map { "same content as delivery \(number($0))" }].compactMap { $0 }.joined(separator: ", ")
     }
 
     /// Names the bytes on screen and in the drag tile, so the preview never speaks for another version.

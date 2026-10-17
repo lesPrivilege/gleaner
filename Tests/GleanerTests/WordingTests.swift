@@ -97,16 +97,45 @@ import Testing
     }
 
     @Test func aFailedSaveSaysWhyInWords() {
-        #expect(Wording.saveFailed(ContentStore.Failure.changed(expected: "a", found: "b"), delivery: 2)
+        #expect(Wording.saveFailed(ContentStore.Failure.changed(expected: "a", found: "b"), delivery: delivery(2, .file, sha: "a"))
                 == "The file changed before Gleaner could save it; it no longer holds delivery 2.")
         // The path is no longer a regular file, or its bytes couldn't be read.
-        #expect(Wording.saveFailed(ContentStore.Failure.unavailable, delivery: 2)
+        #expect(Wording.saveFailed(ContentStore.Failure.unavailable, delivery: delivery(2, .file, sha: "a"))
                 == "Gleaner couldn’t read delivery 2’s bytes at this path.")
     }
 
     @Test func aLogShorterThanWhenLastReadIsNamedAsSuch() {
         let source = Indexer.Report.Source(folder: .listed, shortenedLogs: ["/logs/a.jsonl"])
         #expect(Wording.sourcesLine([.claudeCode: source]) == "Claude Code: read with problems (1 log shorter than when last read)")
+    }
+
+    // MARK: "First seen later" (A9)
+
+    @Test func statementsNamingADeliveryKeepFirstSeenLater() {
+        let later = delivery(1, .file, sha: "a", provenance: .firstSeenAfterDelivery)
+        let changed = FileObservation(state: state(.file, sha: "c"), checkedAt: delivered)
+        #expect(handoff(later, in: artifact(later), now: changed.state, large: true).title == "Delivery 1 (first seen later) is no longer available")
+        #expect(Wording.onDisk(.changed(since: 1), in: artifact(later), now: changed).title == "Changed since delivery 1 (first seen later)")
+        let gone = state(.missing, git: .lost)
+        #expect(handoff(later, in: artifact(later), now: gone, large: true).title == "Delivery 1 (first seen later) is lost")
+    }
+
+    @Test func everyLabelNamingADeliveryKeepsFirstSeenLater() {
+        let later = delivery(1, .file, sha: "a", provenance: .firstSeenAfterDelivery)
+        let again = delivery(2, .file, sha: "a")
+        let both = artifact(later, again)
+        #expect(Wording.handoffHeading(later) == "Hand off delivery 1 (first seen later)")
+        // The tile names what it carries, before and after its copy is ready.
+        let plan = Handoff.ready(sha: "a", from: .original, firstSeen: delivered)
+        #expect(Wording.tileVersion(staged: nil, plan: plan, delivery: later, in: artifact(later)) == "delivery 1 (first seen later)")
+        #expect(Wording.tileVersion(staged: "a", plan: plan, delivery: later, in: artifact(later)) == "delivery 1 (first seen later)")
+        #expect(Wording.tileVersion(staged: "a", plan: plan, delivery: later, in: both) == "delivery 2")
+        #expect(Wording.tileVersion(staged: "c", plan: .unavailable(alternative: nil, currentSha: "c"), delivery: later, in: both)
+                == "current file · not a found delivery")
+        // The deliveries list, as read aloud.
+        #expect(Wording.deliveryLine(again, sameAs: later).hasSuffix("same content as delivery 1 (first seen later)"))
+        #expect(Wording.saveFailed(ContentStore.Failure.changed(expected: "a", found: "b"), delivery: later)
+                == "The file changed before Gleaner could save it; it no longer holds delivery 1 (first seen later).")
     }
 
     // MARK: The type badge (A17)

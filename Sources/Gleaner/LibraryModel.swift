@@ -405,7 +405,7 @@ final class LibraryModel {
         let result = await Task.detached { Result { try indexer.saveCopy(of: delivery, at: Date()) } }.value
         switch result {
         case .success: artifacts = (try? indexer.registry.artifacts()) ?? artifacts
-        case .failure(let error): actionFailure = (artifact.id, delivery.id, Wording.saveFailed(error, delivery: delivery.number))
+        case .failure(let error): actionFailure = (artifact.id, delivery.id, Wording.saveFailed(error, delivery: delivery))
         }
         await observe(artifact)
     }

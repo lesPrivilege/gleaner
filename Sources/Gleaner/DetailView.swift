@@ -212,7 +212,7 @@ struct HandoffPanel: View {
         let statement = Wording.handoff(plan, delivery: delivery, in: artifact, now: observation.state, large: model.isLarge(delivery))
         let disk = Wording.onDisk(onDisk, in: artifact, now: observation)
         VStack(alignment: .leading, spacing: 12) {
-            Text("Hand off delivery \(delivery.number)").font(.headline)
+            Text(Wording.handoffHeading(delivery)).font(.headline)
             HStack(spacing: 10) {
                 tile
                 Button("Open") { model.openSelected() }
@@ -220,7 +220,7 @@ struct HandoffPanel: View {
                     .help("Open the verified copy in its app (⌘O). ⌘C in the list copies it as a file.")
                 if let ends = diskComparison {
                     Button("Compare with File on Disk") { model.comparison = ends }
-                        .help("Show what changed between delivery \(delivery.number) and the file on disk now.")
+                        .help("Show what changed between delivery \(Wording.number(delivery)) and the file on disk now.")
                 }
                 if canSave {
                     Button("Save a Copy (\(sizeText))") { Task { await model.saveCopy(of: delivery, artifact: artifact) } }
@@ -278,19 +278,20 @@ struct HandoffPanel: View {
         }
         .help(ready == nil ? "Nothing to drag for this version" : "Drag into Finder, a chat, or an upload field")
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Drag \(artifact.name), delivery \(delivery.number)")
+        .accessibilityLabel("Drag \(artifact.name), \(Wording.tileVersion(staged: staged, plan: plan, delivery: delivery, in: artifact))")
         .accessibilityValue(tileCaption)
         .accessibilityHint(ready == nil ? "" : "Drag into another app, or choose File > Open Verified Copy.")
+    }
+
+    /// The bytes ready to drag, when a copy is.
+    var staged: String? {
+        if case .ready(_, let sha) = staging { sha } else { nil }
     }
 
     var tileCaption: String {
         switch staging {
         case .ready(_, let sha):
-            let label = artifact.deliveries.first { $0.sha256 == sha && $0.isTrusted }.map { "delivery \($0.number)" }
-                ?? (sha == delivery.sha256
-                    ? "delivery \(delivery.number)" + (delivery.capture?.provenance == .firstSeenAfterDelivery ? " · first seen later" : "")
-                    : "current file · not a found delivery")
-            return "\(label) · \(sha.prefix(12))…"
+            return "\(Wording.tileVersion(staged: sha, plan: plan, delivery: delivery, in: artifact)) · \(sha.prefix(12))…"
         case .preparing: return "verifying…"
         case .failed(let why, _): return why
         case .idle: return plan == .folder ? "folder as it is now" : "not available"
@@ -301,7 +302,7 @@ struct HandoffPanel: View {
         switch plan {
         case .unavailable(let k?, _):
             if let other = artifact.deliveries.first(where: { $0.number == k }) {
-                Button("Hand Off Delivery \(k) Instead") { model.chosenDelivery = other.id }
+                Button("Hand Off Delivery \(Wording.number(other)) Instead") { model.chosenDelivery = other.id }
             }
         case .unavailable(nil, let current?):
             Button("Hand Off the Current File") { Task { await model.stage(sha: current, artifact: artifact) } }
@@ -424,28 +425,25 @@ struct DeliveriesSection: View {
         return delivery.number < selected.number ? (a, b) : (b, a)
     }
 
+    /// An earlier delivery with the same bytes.
+    func sameAs(_ delivery: Delivery) -> Delivery? {
+        artifact.deliveries.first { $0.number < delivery.number && $0.sha256 != nil && $0.sha256 == delivery.sha256 }
+    }
+
     func spoken(_ delivery: Delivery) -> String {
-        let sameAs = artifact.deliveries.first {
-            $0.number < delivery.number && $0.sha256 != nil && $0.sha256 == delivery.sha256
-        }
-        return ["Delivery \(delivery.number)", Wording.date(delivery.deliveredAt),
-                Wording.provider(delivery.provider),
-                Wording.provenanceShort(delivery.capture).1.lowercased(),
-                sameAs.map { "same content as delivery \($0.number)" }].compactMap { $0 }.joined(separator: ", ")
+        Wording.deliveryLine(delivery, sameAs: sameAs(delivery))
     }
 
     func row(_ delivery: Delivery) -> some View {
         let isSelected = delivery.id == selected.id
         let provenance = Wording.provenanceShort(delivery.capture)
-        let sameAs = artifact.deliveries.first {
-            $0.number < delivery.number && $0.sha256 != nil && $0.sha256 == delivery.sha256
-        }
+        let sameAs = sameAs(delivery)
         return HStack(spacing: 12) {
             Text("Delivery \(delivery.number)").fontWeight(isSelected ? .semibold : .regular)
             Text(Wording.date(delivery.deliveredAt)).foregroundStyle(.secondary)
             Text(Wording.provider(delivery.provider)).foregroundStyle(.secondary)
             Spacer()
-            if let sameAs { Text("same as \(sameAs.number)").foregroundStyle(.secondary) }
+            if let sameAs { Text("same as \(Wording.number(sameAs))").foregroundStyle(.secondary) }
             StatusLabel(mark: provenance.0, text: provenance.1)
         }
         .font(.callout)
