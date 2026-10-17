@@ -84,6 +84,9 @@ enum RequestText {
             t = t.replacingOccurrences(of: "<\(tag)[^>]*>[\\s\\S]*?</\(tag)>", with: " ", options: .regularExpression)
         }
         t = t.replacingOccurrences(of: "<[^>\\n]+>", with: " ", options: .regularExpression)
+        for (entity, character) in [("&lt;", "<"), ("&gt;", ">"), ("&quot;", "\""), ("&#39;", "'"), ("&amp;", "&")] {
+            t = t.replacingOccurrences(of: entity, with: character)
+        }
         t = t.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
             .trimmingCharacters(in: .whitespaces)
         return String(t.prefix(maxLength))

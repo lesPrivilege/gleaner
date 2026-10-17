@@ -53,19 +53,26 @@ public enum Locator {
             return LocatorState(kind: .missing, repositoryRoot: root, git: git)
         }
 
-        let attributes = try? fm.attributesOfItem(atPath: (path as NSString).resolvingSymlinksInPath)
-        let kind: LocatorState.Kind = switch attributes?[.type] as? FileAttributeType {
+        let info = stat(path)
+        return LocatorState(
+            kind: info.kind,
+            size: info.size,
+            modifiedAt: info.modifiedAt,
+            sha256: info.kind == .file ? sha256(path) : nil,
+            repositoryRoot: root,
+            git: root.map { gitState(path, root: $0) } ?? .notInRepo)
+    }
+
+    /// Kind, size, and modification time without reading contents or asking git.
+    public static func stat(_ path: String) -> (kind: LocatorState.Kind, size: Int64?, modifiedAt: Date?) {
+        guard let attributes = try? FileManager.default.attributesOfItem(atPath: (path as NSString).resolvingSymlinksInPath)
+        else { return (.missing, nil, nil) }
+        let kind: LocatorState.Kind = switch attributes[.type] as? FileAttributeType {
         case .typeRegular: .file
         case .typeDirectory: .directory
         default: .special
         }
-        return LocatorState(
-            kind: kind,
-            size: kind == .file ? (attributes?[.size] as? NSNumber)?.int64Value : nil,
-            modifiedAt: attributes?[.modificationDate] as? Date,
-            sha256: kind == .file ? sha256(path) : nil,
-            repositoryRoot: root,
-            git: root.map { gitState(path, root: $0) } ?? .notInRepo)
+        return (kind, kind == .file ? (attributes[.size] as? NSNumber)?.int64Value : nil, attributes[.modificationDate] as? Date)
     }
 
     public static func sha256(_ path: String) -> String? {

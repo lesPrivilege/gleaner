@@ -71,6 +71,13 @@ func fixture(_ name: String) throws -> URL {
         #expect(log.unknownRecordTypes == ["mystery": 1])
     }
 
+    @Test func structuredAnswersAreNotRequests() {
+        #expect(CodexAdapter.isStructuredAnswer(#"[{"questionItemId":"x","answer":"yes"}]"#))
+        #expect(CodexAdapter.isStructuredAnswer("<send_user_message_question_reply>\n[{\"answer\":\"ok\"}]\n</send_user_message_question_reply>"))
+        #expect(!CodexAdapter.isStructuredAnswer("[draft] tighten the intro"))
+        #expect(RequestText.clean("npm test &gt; out.log &amp;&amp; done") == "npm test > out.log && done")
+    }
+
     @Test func subagentThreadsAreSkipped() throws {
         #expect(try adapter.parse(try fixture("codex-subagent")) == nil)
     }

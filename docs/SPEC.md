@@ -170,7 +170,13 @@ Candidates come from the final reply only:
 
 Features recorded per candidate, for later ranking: syntax (link / image / code / bare), line anchor present, target kind (file / directory), extension, exists now.
 
-A line-anchored code reference (`src/foo.swift:42`) is usually a pointer, not a delivery. v0.1 does not decide this by rule until labeled data says how.
+A line-anchored code reference (`src/foo.swift:42`) is usually a pointer, not a delivery.
+
+Provisional admission, until Gate 1 labels replace it: links and images are admitted; inline code and bare paths only when they contain a directory component and no line anchor. This keeps out most code references (`App.tsx`, `src/a.ts:42`) at a cost in recall that Gate 1 will measure.
+
+Answers to an agent's question prompt (Codex sends them as JSON, sometimes wrapped in a tag) are not requests; the previous request stays as context.
+
+Derived fields (request, evidence) are versioned: when extraction changes, logs are reread and those fields refreshed. Captures record what Gleaner saw at a moment and are never rewritten.
 
 ## 10. Search
 
@@ -193,7 +199,7 @@ The index covers, per mention: the delivery excerpt, the user request that start
 - locator resolution rate (real deliveries whose file was found),
 - duplicate rate (same file mentioned repeatedly).
 
-Library work starts only once these numbers are acceptable.
+Library work was meant to start only once these numbers are acceptable. At the user's direction the native library was built before labeling (2026-10-17); its admission rule is provisional (§9), and the Gate 1 numbers still decide it.
 
 **Gate 2 — Artifact usability (Spike B).** With fixed MP4, PDF, Markdown, and HTML-bundle samples: find, preview, detect source change, restore from snapshot, and drag into Finder, Claude Desktop, Codex, and a browser upload field. Show correctly which versions remain available after a worktree is removed.
 

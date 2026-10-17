@@ -7,10 +7,12 @@ let package = Package(
     products: [
         .library(name: "GleanerCore", targets: ["GleanerCore"]),
         .executable(name: "gleaner-spike", targets: ["gleaner-spike"]),
+        .executable(name: "Gleaner", targets: ["Gleaner"]),
     ],
     targets: [
         .target(name: "GleanerCore"),
         .executableTarget(name: "gleaner-spike", dependencies: ["GleanerCore"]),
+        .executableTarget(name: "Gleaner", dependencies: ["GleanerCore"]),
         .testTarget(
             name: "GleanerCoreTests",
             dependencies: ["GleanerCore"],

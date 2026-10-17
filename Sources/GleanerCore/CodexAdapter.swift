@@ -92,7 +92,19 @@ public struct CodexAdapter: Sendable {
         guard let kinds = metadata?["content_item_kinds"] as? [String], kinds.count == content.count else { return nil }
         let texts = zip(kinds, content).compactMap { kind, item in
             kind == "user.text" ? item["text"] as? String : nil
-        }
+        }.filter { !isStructuredAnswer($0) }
         return texts.isEmpty ? nil : texts.joined(separator: "\n")
+    }
+
+    /// Answers to an agent's question prompt arrive as JSON in a user message. They reply to the
+    /// agent rather than state what the user asked for, so the previous request stays as context.
+    static func isStructuredAnswer(_ text: String) -> Bool {
+        // The desktop app wraps the answer in a tag such as <send_user_message_question_reply>.
+        let trimmed = text
+            .replacingOccurrences(of: #"^\s*<[A-Za-z_]+>"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"</[A-Za-z_]+>\s*$"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("[") || trimmed.hasPrefix("{") else { return false }
+        return (try? JSONSerialization.jsonObject(with: Data(trimmed.utf8))) != nil
     }
 }
