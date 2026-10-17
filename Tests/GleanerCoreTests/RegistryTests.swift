@@ -46,6 +46,26 @@ import Testing
         #expect(try registry.artifacts().first?.checkout == Checkout(folder: "/r-feature", repository: "/r"))
     }
 
+    @Test func aMigrationStoppedPartwayIsMadeWholeNextLaunch() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString).sqlite").path
+        try Database(path: path).execute("""
+            CREATE TABLE captures (
+                delivery_id TEXT PRIMARY KEY, sha256 TEXT, size INTEGER, mtime REAL, observed_at REAL NOT NULL,
+                saved_at REAL, provenance TEXT NOT NULL, is_directory INTEGER NOT NULL);
+            INSERT INTO captures VALUES ('file', 'abc', 1, 0, 0, 0, 'at_delivery', 0);
+            CREATE INDEX folders ON captures(is_directory);
+            """)
+        // The index keeps the old column from being dropped, as a lock another copy of Gleaner holds would.
+        #expect(throws: (any Error).self) { try Registry(path: path) }
+        try Database(path: path).execute("DROP INDEX folders")
+
+        let registry = try Registry(path: path)
+        #expect(try !registry.db.rows("PRAGMA table_info(captures)").contains { $0["name"] as? String == "is_directory" })
+        #expect(try registry.db.rows("SELECT kind FROM captures").map { $0["kind"] as? String } == ["file"])
+        try registry.addCapture(Capture(sha256: "def", size: 1, modifiedAt: nil, observedAt: Date(), savedAt: nil,
+                                        provenance: .atDelivery, kind: .file), for: "new")
+    }
+
     @Test func aLibraryFromBeforeCapturesSaidWhatTheyFoundGainsIt() throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString).sqlite").path
         try Database(path: path).execute("""

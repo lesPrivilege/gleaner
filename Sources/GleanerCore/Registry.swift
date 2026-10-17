@@ -27,44 +27,53 @@ public final class Registry: @unchecked Sendable {
                 delivery_id TEXT PRIMARY KEY, sha256 TEXT, size INTEGER, mtime REAL, observed_at REAL NOT NULL,
                 saved_at REAL, provenance TEXT NOT NULL, kind TEXT NOT NULL);
             """)
+        // Each change of several statements is made whole or not at all: a launch that stops partway,
+        // say while another copy of Gleaner holds the library, leaves all of it to the next launch.
+
         // Each delivery names the log it came from: two logs can share a session id.
-        if try !db.rows("PRAGMA table_info(deliveries)").contains(where: { $0["name"] as? String == "log_path" }) {
-            try db.execute("""
-                ALTER TABLE deliveries ADD COLUMN log_path TEXT;
-                UPDATE deliveries SET log_path = (SELECT log_path FROM sessions WHERE sessions.id = deliveries.session_id);
-                """)
+        if try !has("deliveries", "log_path") {
+            try db.transaction {
+                try db.execute("""
+                    ALTER TABLE deliveries ADD COLUMN log_path TEXT;
+                    UPDATE deliveries SET log_path = (SELECT log_path FROM sessions WHERE sessions.id = deliveries.session_id);
+                    """)
+            }
         }
         // Each delivery keeps the repository it was found in: a deleted external worktree leaves
         // nothing on disk that leads back to it.
-        if try !db.rows("PRAGMA table_info(deliveries)").contains(where: { $0["name"] as? String == "repository" }) {
+        if try !has("deliveries", "repository") {
             try db.execute("ALTER TABLE deliveries ADD COLUMN repository TEXT;")
         }
         // And the checkout it was in: once a worktree is removed, the path no longer shows which
         // one held it, or where in the repository's history the file is.
-        if try !db.rows("PRAGMA table_info(deliveries)").contains(where: { $0["name"] as? String == "checkout" }) {
+        if try !has("deliveries", "checkout") {
             try db.execute("ALTER TABLE deliveries ADD COLUMN checkout TEXT;")
         }
         // Each delivery keeps its place in the reply that made it, so the files one reply named are
         // found together, in its order, however many records it took.
-        if try !db.rows("PRAGMA table_info(deliveries)").contains(where: { $0["name"] as? String == "reply_line" }) {
-            try db.execute("ALTER TABLE deliveries ADD COLUMN reply_line INTEGER; ALTER TABLE deliveries ADD COLUMN reply_rank INTEGER;")
+        if try !has("deliveries", "reply_line") {
+            try db.transaction {
+                try db.execute("ALTER TABLE deliveries ADD COLUMN reply_line INTEGER; ALTER TABLE deliveries ADD COLUMN reply_rank INTEGER;")
+            }
         }
         // Each read log keeps the record types it held that Gleaner doesn't know, so a format change
         // is reported on every run, not only by the run that read the log.
-        if try !db.rows("PRAGMA table_info(log_files)").contains(where: { $0["name"] as? String == "unknown_types" }) {
+        if try !has("log_files", "unknown_types") {
             try db.execute("ALTER TABLE log_files ADD COLUMN unknown_types TEXT;")
         }
         // Each capture keeps what was at the path, so one without a hash says why. Before, it kept
         // only whether that was a folder, and a file it couldn't read was recorded as seen.
-        if try !db.rows("PRAGMA table_info(captures)").contains(where: { $0["name"] as? String == "kind" }) {
-            try db.execute("""
-                ALTER TABLE captures ADD COLUMN kind TEXT;
-                UPDATE captures SET
-                    kind = CASE WHEN is_directory = 1 THEN 'directory' WHEN sha256 IS NOT NULL THEN 'file'
-                                WHEN provenance = 'never_observed' THEN 'missing' ELSE 'unreadable' END,
-                    provenance = CASE WHEN is_directory = 0 AND sha256 IS NULL THEN 'never_observed' ELSE provenance END;
-                ALTER TABLE captures DROP COLUMN is_directory;
-                """)
+        if try !has("captures", "kind") {
+            try db.transaction {
+                try db.execute("""
+                    ALTER TABLE captures ADD COLUMN kind TEXT;
+                    UPDATE captures SET
+                        kind = CASE WHEN is_directory = 1 THEN 'directory' WHEN sha256 IS NOT NULL THEN 'file'
+                                    WHEN provenance = 'never_observed' THEN 'missing' ELSE 'unreadable' END,
+                        provenance = CASE WHEN is_directory = 0 AND sha256 IS NULL THEN 'never_observed' ELSE provenance END;
+                    ALTER TABLE captures DROP COLUMN is_directory;
+                    """)
+            }
         }
         let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
         if version != Int64(Self.extractorVersion) {
@@ -72,6 +81,10 @@ public final class Registry: @unchecked Sendable {
             // it was read at, so one that is shorter since still removes nothing.
             try db.execute("UPDATE log_files SET mtime = -1; PRAGMA user_version = \(Self.extractorVersion);")
         }
+    }
+
+    private func has(_ table: String, _ column: String) throws -> Bool {
+        try db.rows("PRAGMA table_info(\(table))").contains { $0["name"] as? String == column }
     }
 
     public func transaction<T>(_ body: () throws -> T) throws -> T { try db.transaction(body) }
