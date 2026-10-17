@@ -180,7 +180,7 @@ Derived fields (request, evidence) are versioned: when extraction changes, logs 
 
 ## 10. Search
 
-When a search term matches the request, session, or reply of an older delivery, the result opens on that delivery, not the newest one.
+A result matches when every search term is found in one delivery's own words (request, session, reply), together with the file name and project; terms from different deliveries do not combine. The result opens on the newest delivery that matched, not the newest delivery, and shows that delivery's date. Changing the query resets a manually chosen delivery to the matched one.
 
 The index covers, per mention: the delivery excerpt, the user request that started the turn, the session title, the project name and cwd, and the file name. The delivery sentence alone usually lacks the topic words the user remembers.
 
