@@ -190,19 +190,18 @@ import Testing
 
     // MARK: Hand-off copies (N2)
 
-    @Test func clearingHandOffCopiesDropsAPreparationAndPreparesTheSelectionAgain() async throws {
+    @Test func clearingHandOffCopiesPreparesTheSelectionAgain() async throws {
         let model = LibraryModel(indexer: indexer)
         let video = try await selectVideo(model)
         let sha = try #require(video.latest.sha256)
+        await model.stage(sha: sha, artifact: video)
+        let cleared = try #require(model.selectedHandoffURL)
         let generation = model.stagingGeneration
-        let preparing = Task { await model.stage(sha: sha, artifact: video) }
-        await Task.yield()
-        #expect(model.staging(for: sha) == .preparing(sha: sha))
         model.clearHandoffCopies()
-        await preparing.value
-        // What was being prepared before the clear is never shown after it; the new generation
-        // makes the detail view prepare the selection again.
-        #expect(model.staging(for: sha) == .idle)
+        // The removed copy is never offered again; the new generation makes the detail view
+        // prepare the selection again.
+        #expect(!FileManager.default.fileExists(atPath: cleared.path))
+        #expect(model.selectedHandoffURL == nil)
         #expect(model.stagingGeneration == generation + 1)
         await model.stage(sha: sha, artifact: video)
         #expect(try text(model.selectedHandoffURL) == "video v2")
