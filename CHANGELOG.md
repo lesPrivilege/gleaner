@@ -34,7 +34,7 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - Hands over a delivered file by its bytes even when a folder now stands at its path, and a delivered folder only while it is still one.
 - Falls back to the saved copy when the file on disk has changed, and labels the current file "Not among the deliveries Gleaner found" when no delivered version is left.
 - Says why a version can't be handed over: never seen, never read, a folder, too large to have been saved, or a save that failed. Offers only actions that exist, and Check Again wherever it advises checking again.
-- Offers a git restore command for a missing file, naming a commit checked to hold it, instead of restoring it. A file committed in a worktree that has since been removed is found in the repository's history, and the command adds the worktree back at that commit.
+- Offers a git restore command for a missing file, naming a commit checked to hold it, instead of restoring it. A file committed in a worktree that has since been removed is found in the repository's history, and the command adds the worktree back at that commit, also when its folder was deleted without git.
 - Open and Save a Copy say why when they fail, beside the button.
 - Show in Finder (⇧⌘R) and Copy Path (⌥⌘C) act on the original location; Show Folder says when the folder is gone too.
 

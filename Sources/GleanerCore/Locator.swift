@@ -55,7 +55,9 @@ public enum Locator {
                 kind: .missing, repositoryRoot: checkout.folder,
                 git: commit.isHead ? .recoverableFromHead : .recoverableFromHistory,
                 restoreCommand: removed
-                    ? "git -C \(quoted(checkout.repository)) worktree add --detach \(quoted(checkout.folder)) \(quoted(commit.sha))"
+                    // `-f` takes back the folder of a worktree deleted without git, which git keeps
+                    // registered; it still refuses a folder that holds anything.
+                    ? "git -C \(quoted(checkout.repository)) worktree add -f --detach \(quoted(checkout.folder)) \(quoted(commit.sha))"
                     : "git --literal-pathspecs -C \(quoted(checkout.folder)) restore --source=\(quoted(commit.sha)) -- \(quoted(rel))")
         }
 

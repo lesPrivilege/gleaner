@@ -103,7 +103,9 @@ import Testing
         #expect(Locator.observe(repo + "/out/never.md").restoreCommand == nil)
     }
 
-    @Test func aRemovedWorktreesCommittedFileIsRestoredFromItsBranch() throws {
+    /// `out/report.md` committed on branch ch3 in a worktree, and the checkout found while the
+    /// worktree is there, as the indexer records it at delivery.
+    func reportCommittedInAWorktree() throws -> (worktree: String, report: String, checkout: Checkout) {
         let worktree = root + "/.claude/worktrees/ch3", report = worktree + "/out/report.md"
         #expect(Locator.run(["-C", root, "worktree", "add", "-q", "-b", "ch3", worktree]).status == 0)
         try "from ch3".write(toFile: report, atomically: true, encoding: .utf8)
@@ -111,9 +113,13 @@ import Testing
         for args in [["add", "out/report.md"], commit + ["report"]] {
             #expect(Locator.run(["-C", worktree] + args).status == 0)
         }
-        // Found while the worktree is there, as the indexer records it at delivery.
         let checkout = try #require(Projects.checkout(path: report))
         #expect(checkout == Checkout(folder: worktree, repository: root))
+        return (worktree, report, checkout)
+    }
+
+    @Test func aRemovedWorktreesCommittedFileIsRestoredFromItsBranch() throws {
+        let (worktree, report, checkout) = try reportCommittedInAWorktree()
         #expect(Locator.run(["-C", root, "worktree", "remove", worktree]).status == 0)
 
         let state = Locator.observe(report, checkout: checkout)
@@ -125,6 +131,17 @@ import Testing
         // Back on disk, it is checked in the checkout holding it now, whatever was recorded.
         try "edited".write(toFile: report, atomically: true, encoding: .utf8)
         #expect(Locator.observe(report, checkout: Checkout(folder: root, repository: root)).git == .modified)
+    }
+
+    @Test func aWorktreeFolderDeletedWithoutGitIsRestoredFromItsBranch() throws {
+        let (worktree, report, checkout) = try reportCommittedInAWorktree()
+        // Deleted as a folder, not with `git worktree remove`: git still has the worktree registered.
+        try FileManager.default.removeItem(atPath: worktree)
+
+        let state = Locator.observe(report, checkout: checkout)
+        #expect(state.git == .recoverableFromHistory)
+        #expect(try sh(["-c", try #require(state.restoreCommand)]) == 0)
+        #expect(try String(contentsOfFile: report, encoding: .utf8) == "from ch3")
     }
 
     @Test func specialFilesAreNeverOpened() {
