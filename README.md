@@ -57,7 +57,7 @@ A delivery Gleaner never saw or never read becomes *first seen later*, once, the
 
 **In the list**, a row carries at most one mark, and only when something needs a look: *Not available* with why (never seen, never read, not on disk, can't be read, not a regular file, a folder is there now, changed), *Not on disk*, *Changed*, or *First seen later*. Drawing the list never reads the disk, so *Changed* appears only for a file Gleaner has checked since it opened. A file delivered more than once shows "Delivery N of M".
 
-**The agents' logs**, in Settings and, when one needs a look, in a line under the list: *Read*; *Read with problems* (unknown record types, logs with malformed lines or shorter than when last read, logs or folders that couldn't be read); *Can't be read*; *Not on this Mac*. Try Again appears when reading again can help, and what Gleaner already found stays shown.
+**The agents' logs**, in Settings and, when one needs a look, in a line under the list: *Read*; *Read with problems* (unknown record types, logs with malformed lines or found shorter than when read before, logs or folders that couldn't be read); *Can't be read*; *Not on this Mac*. Try Again appears when reading again can help, and what Gleaner already found stays shown.
 
 ## Hand-off
 

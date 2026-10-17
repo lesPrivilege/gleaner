@@ -11,7 +11,7 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - Searches requests, replies, session titles, file names and projects; every word must appear in one delivery. A result opens on the newest delivery whose own words matched, and returns to it when the search changes.
 - Filters by project (the git repository's folder, with worktrees folded in, those of a bare repository too; two projects with one name show their parent folder, and a file outside git says so) and by ten kinds. A file in a deleted worktree keeps its project and its worktree after a restart, even when a later reply delivers it again or a reread drops and restores it, and a worktree kept outside its repository is named as one.
 - Tells apart a first index still running, missing log folders, an empty library and no matches. Says per source when logs can't be read or were read with problems, offers Try Again when reading again can help, and keeps showing what it already found.
-- Removes a delivery only when a log read whole no longer names it. A log with malformed lines, or shorter than when Gleaner last read it, removes nothing and is reported. A delivery named again gets back what Gleaner first saw of it.
+- Removes a delivery only when a log read whole no longer names it. A log with malformed lines removes nothing and is reported; a log found shorter than when Gleaner read it lost records, so it removes nothing from then on, however it grows again, and is reported. A delivery named again gets back what Gleaner first saw of it.
 
 ### Identify the version
 

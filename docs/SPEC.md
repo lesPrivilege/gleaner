@@ -180,7 +180,7 @@ Admission for v0.1 is a synthetic rule derived from what a delivery is: a file t
 - Anything inside a fenced code block, or a link written inside inline code, is an example or an instruction, not a hand-off. Fences are read as CommonMark reads them: only a fence of the same character (backtick or tilde) at least as long closes one, and an unclosed fence runs to the end of the reply.
 - A path with a placeholder (`build/<name>.zip`, `out/{id}.md`) names a pattern, not a file.
 
-When a log is reread completely, deliveries it no longer admits are removed from the index. Their captures and saved copies stay, so a delivery the log admits again gets its own capture back. A log with malformed lines removes nothing: what it still names is updated, it is reported as partial, and it is read again on the next run. Neither does a log shorter than when it was last read, even after an extractor change: it lost records, so it is reported as shorter and read again on the next run.
+When a log is reread completely, deliveries it no longer admits are removed from the index. Their captures and saved copies stay, so a delivery the log admits again gets its own capture back. A log with malformed lines removes nothing: what it still names is updated, it is reported as partial, and it is read again on the next run. Neither does a log found shorter than when Gleaner read it, even after an extractor change: it lost records for good, so it removes nothing from then on, however it grows again, and it is reported as found shorter on every run.
 
 Answers to an agent's question prompt (Codex sends them as JSON, sometimes wrapped in a tag) are not requests; the previous request stays as context.
 

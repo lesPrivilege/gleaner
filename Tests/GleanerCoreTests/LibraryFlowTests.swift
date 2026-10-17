@@ -274,10 +274,10 @@ import Testing
     @Test func aMalformedRereadKeepsWhatItCannotReadAndReadsTheLogAgain() throws {
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
         let before = try artifact("demo.mp4").latest.capture
-        // The delivering record is cut off mid-line, as by a rewrite that went wrong.
+        // The delivering record is damaged in place, as by a write that went wrong; the log is no shorter.
         let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
         let lines = try String(contentsOf: log, encoding: .utf8).split(separator: "\n")
-        try ([lines[0], lines[1].prefix(60)].joined(separator: "\n") + "\n").write(to: log, atomically: true, encoding: .utf8)
+        try ([String(lines[0]), lines[1].dropLast() + "!"].joined(separator: "\n") + "\n").write(to: log, atomically: true, encoding: .utf8)
 
         func partialLogs(_ report: Indexer.Report) -> [String]? {
             report.sources[.claudeCode]?.partialLogs.map { ($0 as NSString).lastPathComponent }
@@ -317,6 +317,23 @@ import Testing
         // Still shorter than when it was read whole, next run too.
         #expect(shortenedLogs(try indexer.run()) == ["session-1.jsonl"])
         #expect(try indexer.registry.artifacts().count == 3)
+    }
+
+    @Test func aLogFoundShorterRemovesNothingOnceItGrowsAgain() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        // Replaced by a copy without the delivering reply (a sync or a restore went back), then the
+        // session goes on past the size the log had.
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        let lines = try String(contentsOf: log, encoding: .utf8).split(separator: "\n")
+        try (String(lines[0]) + "\n").write(to: log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { delivered.addingTimeInterval(40) })
+        try appendLog([user(String(repeating: "And one more thing. ", count: 40), at: delivered.addingTimeInterval(60)),
+                       assistant("Noted.", at: delivered.addingTimeInterval(70), cwd: project.path)])
+
+        let report = try indexer.run(now: { delivered.addingTimeInterval(80) })
+        // The records it lost stay lost: it never shows a delivery is gone.
+        #expect(try indexer.registry.artifacts().map(\.name).sorted() == ["build.dmg", "demo.mp4", "report.md"])
+        #expect(report.sources[.claudeCode]?.shortenedLogs.map { ($0 as NSString).lastPathComponent } == ["session-1.jsonl"])
     }
 
     @Test func aLogShorterSinceAnExtractorUpgradeRemovesNothing() throws {

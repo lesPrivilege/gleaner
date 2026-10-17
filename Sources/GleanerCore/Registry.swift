@@ -15,7 +15,7 @@ public final class Registry: @unchecked Sendable {
         db = try Database(path: path)
         try db.execute("""
             CREATE TABLE IF NOT EXISTS log_files (
-                path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL, unknown_types TEXT);
+                path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL, unknown_types TEXT, shortened INTEGER);
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY, provider TEXT NOT NULL, title TEXT, cwd TEXT, log_path TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS deliveries (
@@ -50,6 +50,11 @@ public final class Registry: @unchecked Sendable {
         if try !has("log_files", "unknown_types") {
             try db.execute("ALTER TABLE log_files ADD COLUMN unknown_types TEXT;")
         }
+        // And whether it was ever found shorter than when Gleaner read it: the records it lost stay
+        // lost, however it grows again.
+        if try !has("log_files", "shortened") {
+            try db.execute("ALTER TABLE log_files ADD COLUMN shortened INTEGER;")
+        }
         // Each capture keeps what was at the path, so one without a hash says why. Before, it kept
         // only whether that was a folder, and a file it couldn't read was recorded as seen.
         if try !has("captures", "kind") {
@@ -82,7 +87,7 @@ public final class Registry: @unchecked Sendable {
         let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
         if version != Int64(Self.extractorVersion) {
             // No log has this modification time, so every log is read again; each keeps the size
-            // it was read at, so one that is shorter since still removes nothing.
+            // it was read at, and whether it lost records, so one that did still removes nothing.
             try db.execute("UPDATE log_files SET mtime = -1; PRAGMA user_version = \(Self.extractorVersion);")
         }
     }
@@ -93,24 +98,38 @@ public final class Registry: @unchecked Sendable {
 
     public func transaction<T>(_ body: () throws -> T) throws -> T { try db.transaction(body) }
 
-    /// The record types a log held that its adapter didn't recognize, with counts, when the log is
-    /// unchanged since it was read whole; nil when it must be read.
-    public func unknownRecordTypes(unchangedLog path: String, size: Int64, mtime: Date) throws -> [String: Int]? {
-        let rows = try db.rows("SELECT size, mtime, unknown_types FROM log_files WHERE path = ?", [path])
+    /// What reading a log found, when it is unchanged since it was read whole: the record types its
+    /// adapter didn't recognize, with counts, and whether it had lost records (`markShortened`).
+    /// Nil when it must be read.
+    public func findings(unchangedLog path: String, size: Int64, mtime: Date) throws
+        -> (unknownRecordTypes: [String: Int], shortened: Bool)? {
+        let rows = try db.rows("SELECT size, mtime, unknown_types, shortened FROM log_files WHERE path = ?", [path])
         guard let row = rows.first, row["size"] as? Int64 == size, row["mtime"] as? Double == mtime.timeIntervalSince1970
         else { return nil }
-        return (row["unknown_types"] as? String).flatMap { try? JSONDecoder().decode([String: Int].self, from: Data($0.utf8)) } ?? [:]
+        let unknown = (row["unknown_types"] as? String).flatMap { try? JSONDecoder().decode([String: Int].self, from: Data($0.utf8)) }
+        return (unknown ?? [:], row["shortened"] as? Int64 == 1)
     }
 
-    /// The size a log had when it was last read whole; nil when it never was.
-    public func readSize(logFile path: String) throws -> Int64? {
-        try db.rows("SELECT size FROM log_files WHERE path = ?", [path]).first?["size"] as? Int64
+    /// The size a log had when it was last read whole, and whether it lost records since Gleaner
+    /// first read it; nil when it never was read whole.
+    public func lastRead(logFile path: String) throws -> (size: Int64, shortened: Bool)? {
+        try db.rows("SELECT size, shortened FROM log_files WHERE path = ?", [path]).first.flatMap { row in
+            (row["size"] as? Int64).map { ($0, row["shortened"] as? Int64 == 1) }
+        }
     }
 
+    /// A read log keeps whether it lost records (`markShortened`).
     public func markRead(logFile path: String, size: Int64, mtime: Date, unknownRecordTypes: [String: Int]) throws {
         let json = String(decoding: try JSONEncoder().encode(unknownRecordTypes), as: UTF8.self)
-        try db.run("INSERT OR REPLACE INTO log_files (path, size, mtime, unknown_types) VALUES (?, ?, ?, ?)",
-                   [path, size, mtime, json])
+        try db.run("""
+            INSERT INTO log_files (path, size, mtime, unknown_types) VALUES (?, ?, ?, ?)
+            ON CONFLICT(path) DO UPDATE SET size = excluded.size, mtime = excluded.mtime, unknown_types = excluded.unknown_types
+            """, [path, size, mtime, json])
+    }
+
+    /// Records that a log Gleaner has read was found shorter than then: it lost records, for good.
+    public func markShortened(logFile path: String) throws {
+        try db.run("UPDATE log_files SET shortened = 1 WHERE path = ?", [path])
     }
 
     public func upsert(_ session: SessionInfo) throws {

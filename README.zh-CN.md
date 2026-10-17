@@ -57,7 +57,7 @@ Gleaner 没见过或没读到的交付，会在 Gleaner 第一次读到该文件
 
 **列表中**，每行最多一个标记，只在需要留意时出现：*Not available* 并说明原因（never seen、never read、not on disk、can't be read、not a regular file、a folder is there now、changed），*Not on disk*，*Changed*，或 *First seen later*。绘制列表时从不读取磁盘，所以只有在应用打开后核查过的文件才会标 *Changed*。交付过不止一次的文件显示“Delivery N of M”。
 
-**agent 日志**，见设置（Settings），需要留意时也会在列表下方用一行显示：*Read*；*Read with problems*（有未知的记录类型、有格式错误的行或比上次读时短的日志、读不了的日志或文件夹）；*Can't be read*；*Not on this Mac*。重读可能有用时会出现 Try Again，已经找到的内容照常显示。
+**agent 日志**，见设置（Settings），需要留意时也会在列表下方用一行显示：*Read*；*Read with problems*（有未知的记录类型、有格式错误的行或曾被发现比之前读时短的日志、读不了的日志或文件夹）；*Can't be read*；*Not on this Mac*。重读可能有用时会出现 Try Again，已经找到的内容照常显示。
 
 ## 转交
 

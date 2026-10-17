@@ -80,9 +80,9 @@ public final class Indexer: @unchecked Sendable {
             /// Logs with malformed lines. What they name was added and nothing was removed; they are
             /// read again next run.
             public var partialLogs: [String] = []
-            /// Logs shorter than when they were last read whole: records were lost. What they name
-            /// was added and nothing was removed; they are read again next run, but reading again
-            /// can't bring the records back.
+            /// Logs found shorter than when Gleaner read them, now or on an earlier run: records were
+            /// lost. What they name is added, and nothing they no longer name is removed, however
+            /// they grow again; reading again can't bring the records back.
             public var shortenedLogs: [String] = []
             /// Logs that could not be read or stored, with the reason. Their deliveries stay as they were.
             public var failures: [String] = []
@@ -139,10 +139,11 @@ public final class Indexer: @unchecked Sendable {
         for (provider, url) in files {
             let info = Locator.stat(url.path)
             guard let size = info.size, let mtime = info.modifiedAt else { continue }
-            if let unknown = try registry.unknownRecordTypes(unchangedLog: url.path, size: size, mtime: mtime) {
-                report.sources[provider]?.unknownRecordTypes.merge(unknown, uniquingKeysWith: +)
+            if let found = try registry.findings(unchangedLog: url.path, size: size, mtime: mtime) {
+                report.sources[provider]?.unknownRecordTypes.merge(found.unknownRecordTypes, uniquingKeysWith: +)
+                if found.shortened { report.sources[provider]?.shortenedLogs.append(url.path) }
             } else {
-                let shortened = try registry.readSize(logFile: url.path).map { size < $0 } ?? false
+                let shortened = try registry.lastRead(logFile: url.path).map { $0.shortened || size < $0.size } ?? false
                 changed.append((provider, url, size, mtime, shortened))
             }
         }
@@ -166,14 +167,15 @@ public final class Indexer: @unchecked Sendable {
                 report.sources[provider]?.failures.append("\(url.path): \(error)")
                 continue
             case .success(let log):
-                // A log shorter than when it was last read lost records, so like a malformed one it
-                // can't show that a delivery is gone.
+                // A log shorter than when it was read lost records, so like a malformed one it can't
+                // show that a delivery is gone: not now, and not once it grows again.
                 let complete = log.map { $0.isComplete && !shortened } ?? true
                 do {
                     report.newDeliveries += try registry.transaction {
                         let added = try log.map { try ingest($0, isComplete: complete, now: now()) } ?? 0
-                        // A log not read whole stays unread, so it is read and reported again next run.
-                        if complete {
+                        if shortened { try registry.markShortened(logFile: url.path) }
+                        // A log with malformed lines stays unread, so it is read and reported again next run.
+                        if log?.isComplete ?? true {
                             try registry.markRead(logFile: url.path, size: size, mtime: mtime,
                                                   unknownRecordTypes: log?.unknownRecordTypes ?? [:])
                         }
