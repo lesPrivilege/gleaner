@@ -1,5 +1,6 @@
 import AppKit
 import Testing
+import UniformTypeIdentifiers
 @testable import Gleaner
 @testable import GleanerCore
 
@@ -199,6 +200,73 @@ import Testing
         #expect(model.kind == nil)
         #expect(model.selected?.artifact.path == video.path)
         #expect(model.selected.map(model.delivery(in:))?.id == sibling.id)
+    }
+
+    // MARK: Row drags (A4)
+
+    /// What the app a drag is dropped on receives: the path of its own copy, and the file's text or
+    /// the folder's contents, read before the copy is cleaned up.
+    func dropped(_ provider: NSItemProvider?) async throws -> (path: String, contents: String) {
+        let provider = try #require(provider)
+        let type = try #require(provider.registeredTypeIdentifiers.first)
+        return try await withCheckedThrowingContinuation { continuation in
+            _ = provider.loadFileRepresentation(forTypeIdentifier: type) { url, error in
+                continuation.resume(with: Result {
+                    guard let url else { throw error ?? CocoaError(.fileReadUnknown) }
+                    let contents = try (try? FileManager.default.contentsOfDirectory(atPath: url.path))?.sorted().joined(separator: ",")
+                        ?? String(contentsOf: url, encoding: .utf8)
+                    return (url.path, contents)
+                })
+            }
+        }
+    }
+
+    @Test func aRowDragHandsOverTheVersionTheDetailWould() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try await selectVideo(model)
+        // The selected row: the delivery chosen in the detail, not the one the search matched.
+        model.chosenDelivery = video.deliveries[1].id
+        #expect(try await dropped(model.dragItem(for: try #require(model.selected))).contents == "video v1")
+        // Any other row: the delivery it shows.
+        let notes = try #require(model.results.first { $0.artifact.name == "notes.md" })
+        #expect(try await dropped(model.dragItem(for: notes)).contents == "notes n1")
+    }
+
+    @Test func aFolderRowDragsACopyOfTheFolderAsItIsNow() async throws {
+        let site = project.appendingPathComponent("out/site")
+        try FileManager.default.createDirectory(at: site, withIntermediateDirectories: true)
+        try "home".write(to: site.appendingPathComponent("index.html"), atomically: true, encoding: .utf8)
+        try deliver("out/site")
+        try "about".write(to: site.appendingPathComponent("about.html"), atomically: true, encoding: .utf8)
+
+        let model = LibraryModel(indexer: indexer)
+        let row = try #require(model.results.first { $0.artifact.name == "site" })
+        let drop = try await dropped(model.dragItem(for: row))
+        #expect(drop.contents == "about.html,index.html")
+        // The receiver gets its own copy: a drop never moves the project's folder.
+        #expect(drop.path != site.path)
+        #expect(FileManager.default.fileExists(atPath: site.appendingPathComponent("index.html").path))
+    }
+
+    @Test func aRowWithNothingToHandOverStartsNoDrag() async throws {
+        // Gone before Gleaner first looked: it never read the bytes.
+        try deliver("out/never.mp4")
+        // Too large to have been saved, then rebuilt in place, as a check this session found.
+        indexer.saveLimit = 0
+        try write("build b1", to: "out/app.dmg", modified: delivered.addingTimeInterval(9000))
+        try deliver("out/app.dmg")
+        try write("build b2", to: "out/app.dmg", modified: Date())
+        // Too large to have been saved, then removed.
+        try write("clip c1", to: "out/clip.mov", modified: delivered.addingTimeInterval(9000))
+        try deliver("out/clip.mov")
+        try FileManager.default.removeItem(at: project.appendingPathComponent("out/clip.mov"))
+
+        let model = LibraryModel(indexer: indexer)
+        await model.observe(try artifact(model, "app.dmg"))
+        for name in ["never.mp4", "app.dmg", "clip.mov"] {
+            let row = try #require(model.results.first { $0.artifact.name == name })
+            #expect(model.dragItem(for: row) == nil, "\(name)")
+        }
     }
 
     // MARK: Quick Look (N1)

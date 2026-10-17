@@ -59,11 +59,16 @@ struct ResultsList: View {
             filters
             List(selection: $model.selection) {
                 ForEach(results) { result in
-                    ResultRow(result: result, project: model.project == nil ? model.projectName(result.artifact) : nil,
-                              showFolder: repeated.contains(result.artifact.name),
-                              onDisk: !model.missing.contains(result.artifact.path))
+                    let row = ResultRow(result: result, project: model.project == nil ? model.projectName(result.artifact) : nil,
+                                        showFolder: repeated.contains(result.artifact.name),
+                                        onDisk: !model.missing.contains(result.artifact.path))
                         .tag(result.id)
-                        .onDrag { model.dragItem(for: result) }
+                    // A row with nothing to hand over starts no drag, rather than one that fails at drop.
+                    if model.rowHandoff(result) != nil {
+                        row.onDrag { model.dragItem(for: result) ?? NSItemProvider() }
+                    } else {
+                        row
+                    }
                 }
             }
             .contextMenu(forSelectionType: Artifact.ID.self) { ids in

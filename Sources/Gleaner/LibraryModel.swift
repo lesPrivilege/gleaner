@@ -311,19 +311,69 @@ final class LibraryModel {
         NSPasteboard.general.setString(artifact.path, forType: .string)
     }
 
-    /// A drag from a result row: the matched delivery's bytes, staged and verified only when the
-    /// receiving app asks for them. Decided by that delivery's capture: a file delivery has a hash,
-    /// whatever else the artifact's other deliveries were; a folder delivery has none.
-    func dragItem(for result: SearchResult) -> NSItemProvider {
-        let delivery = result.artifact.deliveries[result.deliveryIndex]
-        guard let sha = delivery.sha256 else { return NSItemProvider() }
-        let store = indexer.store, name = result.artifact.name, source = result.artifact.path
+    /// What a list row hands over: the version the detail pane would, of the delivery the row
+    /// shows (`delivery(in:)`: the chosen one for the selected row, the matched one for any other).
+    enum RowHandoff: Equatable {
+        case bytes(sha: String)
+        /// A delivered folder, as it is now.
+        case folder
+    }
+
+    /// What dragging `result`'s row hands over; nil when the library already knows there is
+    /// nothing: the delivery's bytes were never read, or they weren't saved and the file was found
+    /// gone or changed. Decided from what the library holds and this session's checks, never by
+    /// reading the disk, so a row can ask while it is drawn. The drop verifies what it hands over.
+    func rowHandoff(_ result: SearchResult) -> RowHandoff? {
+        let artifact = result.artifact, delivery = delivery(in: result)
+        // Saved copies as the library records them.
+        let saved = { (sha: String) in artifact.deliveries.contains { $0.sha256 == sha && $0.capture?.savedAt != nil } }
+        if let observation = observations[artifact.path] {
+            switch artifact.handoff(delivery, now: observation, hasSaved: saved) {
+            case .ready(let sha, _, _): return .bytes(sha: sha)
+            case .folder: return .folder
+            default: return nil
+            }
+        }
+        if delivery.capture?.isDirectory == true { return missing.contains(artifact.path) ? nil : .folder }
+        guard let sha = delivery.sha256, !missing.contains(artifact.path) || saved(sha) else { return nil }
+        return .bytes(sha: sha)
+    }
+
+    /// A drag from a result row, handing over what `rowHandoff` says, or nil when there is
+    /// nothing. The receiver gets its own copy, never the original to open in place: a delivery's
+    /// bytes staged and verified only when the receiving app asks for them, or a delivered folder
+    /// as it is then, so a drop never moves a project's file or folder (SPEC §4).
+    func dragItem(for result: SearchResult) -> NSItemProvider? {
+        switch rowHandoff(result) {
+        case nil:
+            return nil
+        case .folder:
+            return Self.folderItem(result.artifact.path)
+        case .bytes(let sha):
+            let store = indexer.store, name = result.artifact.name, source = result.artifact.path
+            let provider = NSItemProvider()
+            provider.suggestedName = name
+            let type = UTType(filenameExtension: (name as NSString).pathExtension) ?? .data
+            provider.registerFileRepresentation(forTypeIdentifier: type.identifier, fileOptions: [], visibility: .all) { done in
+                DispatchQueue.global(qos: .userInitiated).async {
+                    do { done(try store.stage(sha: sha, name: name, source: source), false, nil) } catch { done(nil, false, error) }
+                }
+                return nil
+            }
+            return provider
+        }
+    }
+
+    /// A delivered folder for a drag, as it is when the receiving app asks for it, and only while
+    /// it is still a folder. The receiver gets a copy (no open-in-place), so a drop never moves it.
+    static func folderItem(_ path: String) -> NSItemProvider {
         let provider = NSItemProvider()
-        provider.suggestedName = name
-        let type = UTType(filenameExtension: (name as NSString).pathExtension) ?? .data
-        provider.registerFileRepresentation(forTypeIdentifier: type.identifier, fileOptions: [], visibility: .all) { done in
-            DispatchQueue.global(qos: .userInitiated).async {
-                do { done(try store.stage(sha: sha, name: name, source: source), false, nil) } catch { done(nil, false, error) }
+        provider.suggestedName = (path as NSString).lastPathComponent
+        provider.registerFileRepresentation(forTypeIdentifier: UTType.folder.identifier, fileOptions: [], visibility: .all) { done in
+            if Locator.stat(path).kind == .directory {
+                done(URL(fileURLWithPath: path, isDirectory: true), false, nil)
+            } else {
+                done(nil, false, CocoaError(.fileNoSuchFile))
             }
             return nil
         }

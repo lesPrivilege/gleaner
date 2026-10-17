@@ -274,6 +274,8 @@ struct HandoffPanel: View {
         .opacity(ready == nil ? 0.55 : 1)
         .onDrag {
             guard let ready else { return NSItemProvider() }
+            // A delivered folder is the live one: the receiver gets a copy, never the folder to move.
+            if plan == .folder { return LibraryModel.folderItem(artifact.path) }
             return NSItemProvider(contentsOf: ready) ?? NSItemProvider()
         }
         .help(ready == nil ? "Nothing to drag for this version" : "Drag into Finder, a chat, or an upload field")
