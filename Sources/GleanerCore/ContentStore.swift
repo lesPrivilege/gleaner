@@ -69,7 +69,9 @@ public struct ContentStore: Sendable {
 
     /// An immutable copy of the version `sha`, named `name`, ready to hand to another app.
     /// It is copied from the saved copy when there is one, else from `source`, and handed out only
-    /// if the copy itself hashes to `sha`.
+    /// if the copy itself hashes to `sha`. The copy is made under a name of its own and published
+    /// whole by one rename, so overlapping stages of a version never remove or truncate each
+    /// other's file.
     public func stage(sha: String, name: String, source: String?) throws -> URL {
         let fm = FileManager.default
         let directory = staging.appendingPathComponent(sha)
@@ -85,17 +87,13 @@ public struct ContentStore: Sendable {
             throw Failure.unavailable
         }
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-        if fm.fileExists(atPath: target.path) {
-            try? fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: target.path)
-            try fm.removeItem(at: target)
-        }
-        try fm.copyItem(at: URL(fileURLWithPath: origin).resolvingSymlinksInPath(), to: target)
-        let found = Self.isRegularFile(target) ? Locator.sha256(target.path) ?? "" : ""
-        guard found == sha else {
-            try? fm.removeItem(at: target)
-            throw Failure.changed(expected: sha, found: found)
-        }
-        try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: target.path)
+        let temporary = staging.appendingPathComponent(".incoming-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: temporary) }
+        try fm.copyItem(at: URL(fileURLWithPath: origin).resolvingSymlinksInPath(), to: temporary)
+        let found = Self.isRegularFile(temporary) ? Locator.sha256(temporary.path) ?? "" : ""
+        guard found == sha else { throw Failure.changed(expected: sha, found: found) }
+        try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: temporary.path)
+        guard rename(temporary.path, target.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         return target
     }
 }
