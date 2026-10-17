@@ -673,6 +673,69 @@ import Testing
             store: indexer.store, sources: indexer.sources)
         #expect(try relaunched.run().sources[.claudeCode]?.unknownRecordTypes == ["brand-new-record": 1])
     }
+
+    // MARK: adapter maintenance
+
+    @Test func eachLogRecordsWhatItsReadCounted() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let row = try #require(try indexer.registry.db.rows(
+            "SELECT records, known_records, turns, final_replies, candidates FROM log_files").first)
+        // One request, and one reply naming three files.
+        #expect(["records", "known_records", "turns", "final_replies", "candidates"].map { row[$0] as? Int64 } == [2, 2, 1, 1, 3])
+    }
+
+    @Test func unknownFieldsAreReportedOnEveryRunForTheirOwnSource() throws {
+        try appendLog([#"{"type":"mode","mode":"plan","sessionId":"s1","brandNewField":true}"#])
+        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(report.sources[.claudeCode]?.unknownFields == ["mode.brandNewField": 1])
+        #expect(report.sources[.claudeCode]?.hasProblems == true)
+        // Reading again can't change which fields Gleaner knows.
+        #expect(report.sources[.claudeCode]?.isIncomplete == false)
+        #expect(report.sources[.codex]?.hasProblems == false)
+        // The log is unchanged, so it isn't read again; the new field is still reported, after a relaunch too.
+        #expect(try indexer.run().sources[.claudeCode]?.unknownFields == ["mode.brandNewField": 1])
+        let relaunched = Indexer(
+            registry: try Registry(path: root.appendingPathComponent("support/registry.sqlite").path),
+            store: indexer.store, sources: indexer.sources)
+        #expect(try relaunched.run().sources[.claudeCode]?.unknownFields == ["mode.brandNewField": 1])
+    }
+
+    @Test func aLogWithAssistantRecordsButNoFinalReplyIsReported() throws {
+        // The agent only called a tool: as if the adapter no longer recognized the reply.
+        let toolCall = #"{"type":"assistant","message":{"model":"m","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"make"}}]},"timestamp":"\#(stamp(delivered))","cwd":"\#(project.path)","sessionId":"s2"}"#
+        try ([user("Build it", at: delivered.addingTimeInterval(-60)), toolCall].joined(separator: "\n") + "\n")
+            .write(to: root.appendingPathComponent("claude/-Praxis/session-2.jsonl"), atomically: true, encoding: .utf8)
+
+        func withoutFinalReply(_ report: Indexer.Report) -> [String]? {
+            report.sources[.claudeCode]?.logsWithoutFinalReply.map { ($0 as NSString).lastPathComponent }
+        }
+        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(withoutFinalReply(report) == ["session-2.jsonl"])
+        #expect(report.sources[.claudeCode]?.hasProblems == true)
+        #expect(withoutFinalReply(try indexer.run()) == ["session-2.jsonl"])
+    }
+
+    @Test func aLogWhoseCompleteRereadFindsFewerFinalRepliesIsReported() throws {
+        try appendLog([user("Anything else?", at: delivered.addingTimeInterval(30)),
+                       assistant("Nothing else.", at: delivered.addingTimeInterval(40), cwd: project.path)])
+        _ = try indexer.run(now: { delivered.addingTimeInterval(50) })
+        // The last reply now reads as a tool call: the log is no shorter, but holds one final reply fewer.
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        try String(contentsOf: log, encoding: .utf8)
+            .replacingOccurrences(of: #"{"type":"text","text":"Nothing else."}"#,
+                                  with: #"{"type":"tool_use","id":"t1","name":"Bash","input":{}}"#)
+            .write(to: log, atomically: true, encoding: .utf8)
+
+        func fewerReplies(_ report: Indexer.Report) -> [String]? {
+            report.sources[.claudeCode]?.logsWithFewerReplies.map { ($0 as NSString).lastPathComponent }
+        }
+        let report = try indexer.run(now: { delivered.addingTimeInterval(60) })
+        #expect(fewerReplies(report) == ["session-1.jsonl"])
+        #expect(report.sources[.claudeCode]?.shortenedLogs == [])
+        #expect(report.sources[.claudeCode]?.logsWithoutFinalReply == [])
+        #expect(report.sources[.claudeCode]?.hasProblems == true)
+        #expect(fewerReplies(try indexer.run()) == ["session-1.jsonl"])
+    }
 }
 
 private extension String {
