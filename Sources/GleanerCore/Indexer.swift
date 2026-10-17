@@ -193,13 +193,13 @@ public final class Indexer: @unchecked Sendable {
         var admitted = Set<String>()
         for turn in log.turns {
             for candidate in MentionExtractor.candidates(in: turn) where Admission.admits(candidate) {
-                // A delivery keeps the id it was first given. A later extractor may find the reply's
-                // first mention of the path in another of its records; a new id would drop the
-                // delivery and capture its bytes again, as they are now.
+                // A delivery keeps the id, and the capture, it was first given. A later extractor may
+                // find the reply's first mention of the path in another of its records, or admit it
+                // again after a reread dropped it; a new capture would record the bytes as they are now.
                 let fresh = candidate.id(logPath: log.session.logPath)
                 let known = try ([fresh] + turn.parts.map {
                     DeliveryCandidate.id(logPath: log.session.logPath, line: $0.line, path: candidate.path)
-                }).first(where: registry.hasDelivery)
+                }).first(where: registry.hasCapture)
                 let id = known ?? fresh
                 admitted.insert(id)
                 let isNew = known == nil

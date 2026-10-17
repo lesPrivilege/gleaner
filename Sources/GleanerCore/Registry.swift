@@ -73,8 +73,9 @@ public final class Registry: @unchecked Sendable {
             """, [session.id, session.provider.rawValue, session.title.map(Redactor.redact), session.cwd, session.logPath])
     }
 
-    public func hasDelivery(_ id: String) throws -> Bool {
-        try !db.rows("SELECT 1 FROM deliveries WHERE id = ?", [id]).isEmpty
+    /// True once Gleaner has captured the delivery `id`, whether or not a log still admits it.
+    public func hasCapture(_ id: String) throws -> Bool {
+        try !db.rows("SELECT 1 FROM captures WHERE delivery_id = ?", [id]).isEmpty
     }
 
     /// `repository` is kept once recorded: a later reread may find none, or an unrelated one
@@ -91,15 +92,14 @@ public final class Registry: @unchecked Sendable {
             """, [id, sessionID, logPath, path, deliveredAt, cwd, repository, request.map(Redactor.redact), json])
     }
 
-    /// Removes deliveries a reread log no longer admits, with their captures. They are derived
-    /// from the log and come back if the log admits them again; saved copies stay in the store.
+    /// Removes deliveries a reread log no longer admits. They are derived from the log and come
+    /// back if it admits them again; their captures, which record what Gleaner saw, stay, so a
+    /// delivery admitted again gets its own back. Saved copies stay in the store.
     public func removeDeliveries(logPath: String, except kept: Set<String>) throws {
         let keep = String(decoding: try JSONEncoder().encode(Array(kept)), as: UTF8.self)
-        let stale = """
-            SELECT id FROM deliveries WHERE log_path = ? AND id NOT IN (SELECT value FROM json_each(?))
-            """
-        try db.run("DELETE FROM captures WHERE delivery_id IN (\(stale))", [logPath, keep])
-        try db.run("DELETE FROM deliveries WHERE id IN (\(stale))", [logPath, keep])
+        try db.run("""
+            DELETE FROM deliveries WHERE log_path = ? AND id NOT IN (SELECT value FROM json_each(?))
+            """, [logPath, keep])
     }
 
     public func setCapture(_ capture: Capture, for deliveryID: String) throws {

@@ -347,6 +347,30 @@ import Testing
         #expect(after.latest.evidence.map(\.line) == [5])
     }
 
+    @Test func aDeliveryAdmittedAgainGetsItsOriginalCaptureBack() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let before = try artifact("demo.mp4").latest
+        #expect(before.capture?.provenance == .atDelivery)
+
+        // The reply is reread under a rule that no longer admits the video (a link written inside
+        // inline code), and the file is edited meanwhile.
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        let original = try String(contentsOf: log, encoding: .utf8)
+        try original.replacingOccurrences(of: "[demo](out/demo.mp4)", with: "`[demo](out/demo.mp4)`")
+            .write(to: log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { delivered.addingTimeInterval(60) })
+        #expect(try indexer.registry.artifacts().map(\.name).sorted() == ["build.dmg", "report.md"])
+        try write("video v2, edited after delivery", to: "out/demo.mp4", modified: Date())
+
+        // Admitted again: the same delivery, with what Gleaner saw at delivery, not what is there now.
+        try (original + user("Anything else?", at: delivered.addingTimeInterval(90)) + "\n")
+            .write(to: log, atomically: true, encoding: .utf8)
+        #expect(try indexer.run(now: { delivered.addingTimeInterval(9999) }).newDeliveries == 0)
+        let after = try artifact("demo.mp4")
+        #expect(after.deliveries.map(\.id) == [before.id])
+        #expect(after.latest.capture == before.capture)
+    }
+
     @Test func aFolderInPlaceOfADeliveredFileNeverStandsInForIt() throws {
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
         let fm = FileManager.default
