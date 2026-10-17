@@ -56,7 +56,7 @@ Four core objects. Project is a derived, editable label (from cwd and git reposi
 | Object | Holds |
 |---|---|
 | **Session** | provider, provider session ID, title, cwd, log file location |
-| **Delivery Mention** | the reply excerpt that names the artifact, the raw target as written, the user request that started the turn, position in the log (its own log file and line), `delivered_at` |
+| **Delivery Mention** | the reply excerpt that names the artifact, the raw target as written, the user request that started the turn, position in the log (its own log file and line), its place in the reply (the line where the reply starts, which every file the reply named shares, and the order the reply names them in), `delivered_at` |
 | **Locator** | resolved path, worktree / repository root, git state (`committed`, `modified`, `untracked`, `ignored`, `not_in_repo`; when missing: `recoverable_from_head`, `recoverable_from_history`, `lost`), availability (`file`, `directory`, `special`, `unreadable`, `missing`), last verified time |
 | **Capture** | `observed_at`, sha256, size, optional snapshot reference (`captured_at`), the capture's provenance, and what was at the path (a file, a folder, or, without a hash, nothing, an unreadable file, or not a regular file) |
 

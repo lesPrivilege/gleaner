@@ -208,13 +208,36 @@ import Testing
         let library = Artifact.deliveredWith(try indexer.registry.artifacts())
         let report = try artifact("report.md"), video = try artifact("demo.mp4"), build = try artifact("build.dmg")
 
-        // The report's reply also named the video and the build: their deliveries from that reply,
-        // not the video's later one.
+        // The report's reply also named the video and the build, in that order: their deliveries
+        // from that reply, not the video's later one.
         let siblings = try #require(library[report.latest.id])
-        #expect(siblings.map(\.path) == [build.path, video.path])
-        #expect(siblings.map(\.id) == [build.latest.id, video.deliveries[1].id])
+        #expect(siblings.map(\.path) == [video.path, build.path])
+        #expect(siblings.map(\.id) == [video.deliveries[1].id, build.latest.id])
         // The second reply named the video alone.
         #expect(library[video.latest.id] == nil)
+    }
+
+    @Test func deliveredWithKeepsAReplyTogetherAcrossItsRecords() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        let later = delivered.addingTimeInterval(600)
+        for name in ["summary.md", "notes.md", "chart.png"] {
+            try write("\(name) v1", to: "out/\(name)", modified: later.addingTimeInterval(-30))
+        }
+        // One reply written as two records, seconds apart.
+        try appendLog([
+            user("Write it up", at: later.addingTimeInterval(-60)),
+            assistant("Summary: [summary](out/summary.md)", at: later, cwd: project.path),
+            assistant("Notes: [notes](out/notes.md), and the chart: [chart](out/chart.png)",
+                      at: later.addingTimeInterval(5), cwd: project.path),
+        ])
+        _ = try indexer.run(now: { later.addingTimeInterval(20) })
+        let library = Artifact.deliveredWith(try indexer.registry.artifacts())
+        let summary = try artifact("summary.md"), notes = try artifact("notes.md"), chart = try artifact("chart.png")
+
+        // Every file the reply named, in the order it named them, and nothing from the first reply.
+        #expect(library[notes.latest.id]?.map(\.path) == [summary.path, chart.path])
+        #expect(library[summary.latest.id]?.map(\.path) == [notes.path, chart.path])
+        #expect(library[chart.latest.id]?.map(\.path) == [summary.path, notes.path])
     }
 
     @Test func backfillIsNeverCalledTheDeliveredVersion() throws {

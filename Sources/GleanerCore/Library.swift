@@ -53,6 +53,12 @@ public struct Delivery: Sendable, Identifiable {
     public var number: Int
     public var path: String
     public var deliveredAt: Date?
+    /// The log line of the reply's first record, which every file that reply named shares with its
+    /// log: one reply however many records it took. Nil until a log read before Gleaner recorded it
+    /// is read again, and for good once that log is gone.
+    public var replyLine: Int?
+    /// Where the reply names this file among the files it names, from 0.
+    public var replyRank = 0
     public var provider: Provider
     public var sessionTitle: String?
     public var request: String?
@@ -269,21 +275,22 @@ extension Artifact {
         return .unavailable(alternative: match?.number, currentSha: current)
     }
 
-    /// The other files each reply named, keyed by delivery id, as their deliveries from that reply:
-    /// a sibling delivered again later is still offered as the occurrence that came with this one.
-    /// One reply is one log and one delivery time; every file it named shares both.
+    /// The other files each reply named, keyed by delivery id, as their deliveries from that reply
+    /// in the order it names them: a sibling delivered again later is still offered as the
+    /// occurrence that came with this one.
     public static func deliveredWith(_ artifacts: [Artifact]) -> [Delivery.ID: [Delivery]] {
         var byReply: [String: [Delivery]] = [:]
         for artifact in artifacts {
             for d in artifact.deliveries {
-                guard let at = d.deliveredAt else { continue }
-                byReply["\(d.logPath)|\(at.timeIntervalSince1970)", default: []].append(d)
+                guard let line = d.replyLine else { continue }
+                byReply["\(d.logPath)|\(line)", default: []].append(d)
             }
         }
         var result: [Delivery.ID: [Delivery]] = [:]
         for group in byReply.values where group.count > 1 {
-            for delivery in group {
-                result[delivery.id] = group.filter { $0.id != delivery.id }.sorted { $0.path < $1.path }
+            let ordered = group.sorted { $0.replyRank < $1.replyRank }
+            for delivery in ordered {
+                result[delivery.id] = ordered.filter { $0.id != delivery.id }
             }
         }
         return result

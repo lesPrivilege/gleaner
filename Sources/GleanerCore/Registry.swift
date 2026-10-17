@@ -9,7 +9,7 @@ public final class Registry: @unchecked Sendable {
     /// record types a log holds that Gleaner doesn't know).
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
     /// at a moment in time, are never rewritten.
-    public static let extractorVersion = 11
+    public static let extractorVersion = 12
 
     public init(path: String) throws {
         db = try Database(path: path)
@@ -20,7 +20,8 @@ public final class Registry: @unchecked Sendable {
                 id TEXT PRIMARY KEY, provider TEXT NOT NULL, title TEXT, cwd TEXT, log_path TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS deliveries (
                 id TEXT PRIMARY KEY, session_id TEXT NOT NULL, path TEXT NOT NULL, delivered_at REAL,
-                cwd TEXT, request TEXT, evidence TEXT NOT NULL, log_path TEXT, repository TEXT);
+                cwd TEXT, request TEXT, evidence TEXT NOT NULL, log_path TEXT, repository TEXT,
+                reply_line INTEGER, reply_rank INTEGER);
             CREATE INDEX IF NOT EXISTS deliveries_path ON deliveries(path);
             CREATE TABLE IF NOT EXISTS captures (
                 delivery_id TEXT PRIMARY KEY, sha256 TEXT, size INTEGER, mtime REAL, observed_at REAL NOT NULL,
@@ -37,6 +38,11 @@ public final class Registry: @unchecked Sendable {
         // nothing on disk that leads back to it.
         if try !db.rows("PRAGMA table_info(deliveries)").contains(where: { $0["name"] as? String == "repository" }) {
             try db.execute("ALTER TABLE deliveries ADD COLUMN repository TEXT;")
+        }
+        // Each delivery keeps its place in the reply that made it, so the files one reply named are
+        // found together, in its order, however many records it took.
+        if try !db.rows("PRAGMA table_info(deliveries)").contains(where: { $0["name"] as? String == "reply_line" }) {
+            try db.execute("ALTER TABLE deliveries ADD COLUMN reply_line INTEGER; ALTER TABLE deliveries ADD COLUMN reply_rank INTEGER;")
         }
         // Each read log keeps the record types it held that Gleaner doesn't know, so a format change
         // is reported on every run, not only by the run that read the log.
@@ -98,17 +104,21 @@ public final class Registry: @unchecked Sendable {
     }
 
     /// `repository` is kept once recorded: a later reread may find none, or an unrelated one
-    /// around a deleted worktree.
+    /// around a deleted worktree. `replyLine` and `replyRank` place it in its reply (`Delivery`).
     public func upsertDelivery(id: String, sessionID: String, logPath: String, path: String, deliveredAt: Date?,
-                               cwd: String?, repository: String?, request: String?, evidence: [Evidence]) throws {
+                               replyLine: Int, replyRank: Int, cwd: String?, repository: String?, request: String?,
+                               evidence: [Evidence]) throws {
         let json = String(decoding: try JSONEncoder().encode(evidence), as: UTF8.self)
         try db.run("""
-            INSERT INTO deliveries (id, session_id, log_path, path, delivered_at, cwd, repository, request, evidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET log_path = excluded.log_path, cwd = excluded.cwd,
+            INSERT INTO deliveries (id, session_id, log_path, path, delivered_at, reply_line, reply_rank, cwd, repository,
+                                    request, evidence)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET log_path = excluded.log_path, reply_line = excluded.reply_line,
+                reply_rank = excluded.reply_rank, cwd = excluded.cwd,
                 repository = COALESCE(repository, excluded.repository),
                 request = excluded.request, evidence = excluded.evidence
-            """, [id, sessionID, logPath, path, deliveredAt, cwd, repository, request.map(Redactor.redact), json])
+            """, [id, sessionID, logPath, path, deliveredAt, replyLine, replyRank, cwd, repository,
+                  request.map(Redactor.redact), json])
     }
 
     /// Removes deliveries a reread log no longer admits. They are derived from the log and come
@@ -159,7 +169,7 @@ public final class Registry: @unchecked Sendable {
     /// Every artifact with its deliveries, newest delivery first, artifacts by latest delivery.
     public func artifacts() throws -> [Artifact] {
         let rows = try db.rows("""
-            SELECT d.id, d.path, d.delivered_at, d.cwd, d.repository, d.request, d.evidence,
+            SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.repository, d.request, d.evidence,
                    s.provider, s.title, d.log_path,
                    c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind
             FROM deliveries d JOIN sessions s ON s.id = d.session_id
@@ -188,6 +198,8 @@ public final class Registry: @unchecked Sendable {
             list.append(Delivery(
                 id: row["id"] as! String, number: list.count + 1, path: path,
                 deliveredAt: (row["delivered_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
+                replyLine: (row["reply_line"] as? Int64).map(Int.init),
+                replyRank: (row["reply_rank"] as? Int64).map(Int.init) ?? 0,
                 provider: Provider(rawValue: row["provider"] as? String ?? "") ?? .claudeCode,
                 sessionTitle: row["title"] as? String, request: row["request"] as? String,
                 cwd: row["cwd"] as? String, evidence: evidence,

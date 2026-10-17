@@ -203,7 +203,7 @@ public final class Indexer: @unchecked Sendable {
         var added = 0
         var admitted = Set<String>()
         for turn in log.turns {
-            for candidate in MentionExtractor.candidates(in: turn) where Admission.admits(candidate) {
+            for (rank, candidate) in MentionExtractor.candidates(in: turn).enumerated() where Admission.admits(candidate) {
                 // A delivery keeps the id, and the capture, it was first given. A later extractor may
                 // find the reply's first mention of the path in another of its records, or admit it
                 // again after a reread dropped it; a new capture would record the bytes as they are now.
@@ -217,6 +217,7 @@ public final class Indexer: @unchecked Sendable {
                 let first = candidate.evidence[0]
                 try registry.upsertDelivery(
                     id: id, sessionID: log.session.id, logPath: log.session.logPath, path: candidate.path, deliveredAt: first.part.at,
+                    replyLine: turn.parts[0].line, replyRank: rank,
                     cwd: first.part.cwd, repository: Projects.repository(path: candidate.path, cwd: first.part.cwd),
                     request: turn.request,
                     evidence: candidate.evidence.map {
