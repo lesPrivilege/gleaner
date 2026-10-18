@@ -97,7 +97,7 @@ func fixture(_ name: String, then records: String...) throws -> URL {
         #expect(log.turns.count == 2)
         // The task notification closed the request's turn; its own is the log's last, still open.
         #expect(log.answeredTurns == 1)
-        #expect(log.finalReplies == 1)
+        #expect(log.closedReplies == 1)
     }
 
     @Test func aLastTurnThatEndsOnAToolCallIsNotYetCountedAsAnswered() throws {
@@ -113,7 +113,7 @@ func fixture(_ name: String, then records: String...) throws -> URL {
         let closed = try ClaudeCodeAdapter.parse(try fixture("claude-open-turn", then: next))
         #expect(closed.turns.isEmpty)
         #expect(closed.answeredTurns == 1)
-        #expect(closed.finalReplies == 0)
+        #expect(closed.closedReplies == 0)
     }
 
     @Test func aLastTurnsReplyIsNotYetCounted() throws {
@@ -121,7 +121,7 @@ func fixture(_ name: String, then records: String...) throws -> URL {
         // turn's reply is counted; the reply is still read.
         let split = try ClaudeCodeAdapter.parse(try fixture("claude-split-reply"))
         #expect(split.turns.count == 1)
-        #expect(split.answeredTurns == 0 && split.finalReplies == 0)
+        #expect(split.answeredTurns == 0 && split.closedReplies == 0)
     }
 
     static let redirect = #"{"type":"user","isSidechain":false,"message":{"role":"user","content":"Render the teaser instead"},"origin":{"kind":"human"},"uuid":"u2","timestamp":"2026-07-12T12:01:00.000Z","cwd":"/work/Praxis","sessionId":"s-interrupted"}"#
@@ -134,22 +134,22 @@ func fixture(_ name: String, then records: String...) throws -> URL {
         // the text before the tool call is no answer.
         let left = try ClaudeCodeAdapter.parse(try fixture("claude-interrupted"))
         #expect(left.turns.isEmpty)
-        #expect(left.answeredTurns == 0 && left.finalReplies == 0)
+        #expect(left.answeredTurns == 0 && left.closedReplies == 0)
         #expect(left.unknownRecordTypes.isEmpty && left.unknownFields.isEmpty)
 
         // They ask for something else, which is still running.
         let running = try ClaudeCodeAdapter.parse(try fixture("claude-interrupted", then: Self.redirect, Self.redirectToolCall))
         #expect(running.turns.isEmpty)
-        #expect(running.answeredTurns == 0 && running.finalReplies == 0)
+        #expect(running.answeredTurns == 0 && running.closedReplies == 0)
 
         // It is answered: the reply is read, and counted once the next request closes its turn.
         let answered = try ClaudeCodeAdapter.parse(try fixture(
             "claude-interrupted", then: Self.redirect, Self.redirectToolCall, Self.redirectReply))
         #expect(answered.turns.map(\.request) == ["Render the teaser instead"])
-        #expect(answered.answeredTurns == 0 && answered.finalReplies == 0)
+        #expect(answered.answeredTurns == 0 && answered.closedReplies == 0)
         let closed = try ClaudeCodeAdapter.parse(try fixture(
             "claude-interrupted", then: Self.redirect, Self.redirectToolCall, Self.redirectReply, Self.thanks))
-        #expect(closed.answeredTurns == 1 && closed.finalReplies == 1)
+        #expect(closed.answeredTurns == 1 && closed.closedReplies == 1)
     }
 
     @Test func textBeforeAnInterruptionIsStillRead() throws {
@@ -158,7 +158,7 @@ func fixture(_ name: String, then records: String...) throws -> URL {
         let log = try ClaudeCodeAdapter.parse(try fixture("claude-interrupted-reply"))
         #expect(log.turns.map(\.reply) == ["So far, [the release notes](docs/release-notes.md) cover the import screen and"])
         #expect(log.turns[0].request == "Summarize what changed in the release")
-        #expect(log.answeredTurns == 0 && log.finalReplies == 1)
+        #expect(log.answeredTurns == 0 && log.closedReplies == 1)
         #expect(log.unknownRecordTypes.isEmpty && log.unknownFields.isEmpty)
         // The interruption is not a request.
         let next = #"{"type":"user","isSidechain":false,"message":{"role":"user","content":"Keep going"},"origin":{"kind":"human"},"timestamp":"2026-07-12T13:01:00.000Z","cwd":"/work/Praxis","sessionId":"s-interrupted-reply"}"#
@@ -209,10 +209,10 @@ func fixture(_ name: String, then records: String...) throws -> URL {
         // One turn, with commentary and then the final answer; the inherited answer isn't this thread's.
         #expect(log.turns.count == 1)
         // It is the log's last, still open: not counted yet.
-        #expect(log.answeredTurns == 0 && log.finalReplies == 0)
+        #expect(log.answeredTurns == 0 && log.closedReplies == 0)
         let next = #"{"timestamp":"2026-10-05T05:30:00.000Z","type":"turn_context","payload":{"turn_id":"t2","cwd":"/work/Sealwright"}}"#
         let closed = try #require(try adapter.parse(try fixture("codex-rollout", then: next)))
-        #expect(closed.answeredTurns == 1 && closed.finalReplies == 1)
+        #expect(closed.answeredTurns == 1 && closed.closedReplies == 1)
     }
 
     @Test func aLastTurnWithoutAFinalAnswerIsNotYetCountedAsAnswered() throws {
@@ -227,7 +227,7 @@ func fixture(_ name: String, then records: String...) throws -> URL {
         let closed = try #require(try adapter.parse(try fixture("codex-open-turn", then: next)))
         #expect(closed.turns.isEmpty)
         #expect(closed.answeredTurns == 1)
-        #expect(closed.finalReplies == 0)
+        #expect(closed.closedReplies == 0)
     }
 
     static let redirectContext = #"{"timestamp":"2026-10-05T07:01:00.000Z","type":"turn_context","payload":{"turn_id":"t2","cwd":"/work/Sealwright"}}"#
@@ -240,7 +240,7 @@ func fixture(_ name: String, then records: String...) throws -> URL {
         // The person interrupts the first request and leaves.
         let left = try #require(try adapter.parse(try fixture("codex-interrupted")))
         #expect(left.turns.isEmpty)
-        #expect(left.answeredTurns == 0 && left.finalReplies == 0)
+        #expect(left.answeredTurns == 0 && left.closedReplies == 0)
         #expect(left.unknownRecordTypes.isEmpty && left.unknownFields.isEmpty)
 
         // They ask for something else, which is still running: the aborted turn is closed, and was
@@ -248,17 +248,36 @@ func fixture(_ name: String, then records: String...) throws -> URL {
         let running = try #require(try adapter.parse(try fixture(
             "codex-interrupted", then: Self.redirectContext, Self.redirect, Self.redirectToolCall)))
         #expect(running.turns.isEmpty)
-        #expect(running.answeredTurns == 0 && running.finalReplies == 0)
+        #expect(running.answeredTurns == 0 && running.closedReplies == 0)
 
         // It is answered: the answer is read, and counted once the next turn starts.
         let answered = try #require(try adapter.parse(try fixture(
             "codex-interrupted", then: Self.redirectContext, Self.redirect, Self.redirectToolCall, Self.redirectAnswer)))
         #expect(answered.turns.map(\.request) == ["Fix only the second finding"])
-        #expect(answered.answeredTurns == 0 && answered.finalReplies == 0)
+        #expect(answered.answeredTurns == 0 && answered.closedReplies == 0)
         let closed = try #require(try adapter.parse(try fixture(
             "codex-interrupted", then: Self.redirectContext, Self.redirect, Self.redirectToolCall, Self.redirectAnswer,
             Self.nextContext)))
-        #expect(closed.answeredTurns == 1 && closed.finalReplies == 1)
+        #expect(closed.answeredTurns == 1 && closed.closedReplies == 1)
+    }
+
+    @Test func anAbortMarksTheTurnItNames() throws {
+        // Written after the next turn's context, the event still marks the turn it names: that
+        // turn was not answered, and the next, still running, isn't counted yet.
+        let late = #"{"timestamp":"2026-10-05T07:01:00.500Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"t1","reason":"interrupted"}}"#
+        let running = try #require(try adapter.parse(try fixture(
+            "codex-open-turn", then: Self.redirectContext, late, Self.redirect, Self.redirectToolCall)))
+        #expect(running.answeredTurns == 0)
+        #expect(running.unknownRecordTypes.isEmpty && running.unknownFields.isEmpty)
+        let closed = try #require(try adapter.parse(try fixture(
+            "codex-open-turn", then: Self.redirectContext, late, Self.redirect, Self.redirectToolCall, Self.redirectAnswer,
+            Self.nextContext)))
+        #expect(closed.answeredTurns == 1 && closed.closedReplies == 1)
+
+        // Before the next turn's context, it names the open turn.
+        let early = try #require(try adapter.parse(try fixture(
+            "codex-open-turn", then: late.replacingOccurrences(of: "07:01:00.500", with: "06:00:09.000"), Self.redirectContext)))
+        #expect(early.answeredTurns == 0)
     }
 
     @Test func structuredAnswersAreNotRequests() {

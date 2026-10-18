@@ -194,7 +194,7 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 
 - Each provider is an isolated module that turns its log format into `Session`, turns, user requests, and final replies. The extractor downstream is provider-agnostic.
 - Log formats are undocumented and change. Each adapter ships fixture tests built from real record shapes (sanitized). An unknown record type, or an unknown key in a known one, is counted and reported, never silently dropped into "no deliveries". An adapter change merges only with passing fixture tests and the owner's review (`AGENTS.md`).
-- Each read of a log counts its records, the records of a known type, the closed turns the assistant answered in, the final replies of closed turns, and the candidates the final replies name. A turn is closed once the log holds the next one. The last turn is open and isn't counted: the session may still be running, the text it ends on may yet be followed by a tool call, or it ended on one. A turn the person interrupted was not answered. The source status reports a log whose closed turns have assistant records but no final reply, and a log whose closed turns hold fewer final replies on a complete reread.
+- Each read of a log counts its records, the records of a known type, the closed turns the assistant answered in, its final replies and, among them, those of closed turns, and the candidates every final reply names, the open last turn's too. A turn is closed once the log holds the next one. The last turn is open and isn't counted as answered: the session may still be running, the text it ends on may yet be followed by a tool call, or it ended on one. A turn the person interrupted was not answered. The source status reports a log with assistant records in a closed turn but no final reply anywhere, the open last turn's included, and a log whose closed turns hold fewer final replies on a complete reread.
 - Sub-agent and side-chain transcripts are excluded: they are not replies to the user.
 - A log that disappears (agents prune old transcripts) leaves its deliveries as last derived: they are not re-derived on an extractor change, and their captures and saved copies stay.
 
@@ -214,7 +214,7 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 - Forked threads replay parent messages marked `metadata.inherited_user_message`; skip them.
 - The user request is a `response_item` `message` with role `user` whose `content_item_kinds` include `user.text`, and the record's `timestamp` its time (§5.3). A user message without `content_item_kinds` (older rollouts) is not taken as a request. Codex's attachment header ("# Files mentioned by the user … ## My request:") is dropped: the request is the words after it, or the attachment names when nothing was typed.
 - The final reply is an assistant `message` with `phase == "final_answer"`.
-- A turn starts at a `turn_context`. An `event_msg` of type `turn_aborted` means the person interrupted the turn: it was not answered.
+- A turn starts at a `turn_context`. An `event_msg` of type `turn_aborted` means the person interrupted a turn, the one its `turn_id` names, even once the next turn has started; one that names no turn the log has closed is the open turn's. That turn was not answered.
 - Title from `~/.codex/session_index.jsonl` (`thread_name` by id).
 
 ## 9. Extraction

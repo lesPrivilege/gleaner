@@ -1,21 +1,24 @@
 import Foundation
 
 /// What one read of a log counted: its records, those of a type its adapter knows, the closed turns
-/// the assistant answered in (not the open last turn, nor one the person interrupted), the final
-/// replies of closed turns, and the candidates every final reply names, admitted or not (SPEC §9).
-/// Kept per log, so a format change shows as a count that moves.
+/// the assistant answered in (not the open last turn, nor one the person interrupted), its final
+/// replies (the open last turn's included) and those of closed turns only, and the candidates every
+/// final reply names, admitted or not (SPEC §9). Kept per log, so a format change shows as a count
+/// that moves.
 public struct LogCounts: Sendable, Equatable {
     public var records: Int
     public var knownRecords: Int
     public var turns: Int
     public var finalReplies: Int
+    public var closedReplies: Int
     public var candidates: Int
 
-    public init(records: Int, knownRecords: Int, turns: Int, finalReplies: Int, candidates: Int) {
+    public init(records: Int, knownRecords: Int, turns: Int, finalReplies: Int, closedReplies: Int, candidates: Int) {
         self.records = records
         self.knownRecords = knownRecords
         self.turns = turns
         self.finalReplies = finalReplies
+        self.closedReplies = closedReplies
         self.candidates = candidates
     }
 }
@@ -28,7 +31,7 @@ public struct LogFindings: Sendable, Equatable {
     public var unknownFields: [String: Int] = [:]
     /// Nil when it holds no session (a Codex sub-agent thread), or was read before Gleaner counted.
     public var counts: LogCounts?
-    /// The read found fewer final replies in closed turns than the complete read before it.
+    /// The read found fewer final replies of closed turns than the complete read before it.
     public var fewerReplies = false
     /// Found shorter than when Gleaner read it, now or on an earlier run (`markShortened`).
     public var shortened = false
@@ -42,9 +45,9 @@ public struct LogFindings: Sendable, Equatable {
         self.shortened = shortened
     }
 
-    /// The assistant answered in a closed turn, but the adapter found no final reply in any. The
-    /// last turn is still open: the session may be running, or it ended on a tool call. A turn the
-    /// person interrupted was not answered.
+    /// The assistant answered in a closed turn, but the adapter found no final reply in the log, the
+    /// open last turn's included. That turn isn't counted as answered: the session may be running,
+    /// or it ended on a tool call. A turn the person interrupted was not answered.
     public var lacksFinalReply: Bool { counts.map { $0.turns > 0 && $0.finalReplies == 0 } ?? false }
 }
 
@@ -98,7 +101,7 @@ public final class Registry: @unchecked Sendable {
             CREATE TABLE IF NOT EXISTS log_files (
                 path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL, unknown_types TEXT, shortened INTEGER,
                 unknown_fields TEXT, records INTEGER, known_records INTEGER, turns INTEGER, final_replies INTEGER,
-                candidates INTEGER, fewer_replies INTEGER);
+                candidates INTEGER, fewer_replies INTEGER, closed_replies INTEGER);
             CREATE TABLE IF NOT EXISTS sessions (
                 id TEXT PRIMARY KEY, provider TEXT NOT NULL, title TEXT, cwd TEXT, log_path TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS deliveries (
@@ -179,6 +182,7 @@ public final class Registry: @unchecked Sendable {
                     ALTER TABLE log_files ADD COLUMN known_records INTEGER;
                     ALTER TABLE log_files ADD COLUMN turns INTEGER;
                     ALTER TABLE log_files ADD COLUMN final_replies INTEGER;
+                    ALTER TABLE log_files ADD COLUMN closed_replies INTEGER;
                     ALTER TABLE log_files ADD COLUMN candidates INTEGER;
                     ALTER TABLE log_files ADD COLUMN fewer_replies INTEGER;
                     """)
@@ -274,19 +278,21 @@ public final class Registry: @unchecked Sendable {
         func decoded(_ column: String) -> [String: Int] {
             (row[column] as? String).flatMap { try? JSONDecoder().decode([String: Int].self, from: Data($0.utf8)) } ?? [:]
         }
-        let n = ["records", "known_records", "turns", "final_replies", "candidates"].compactMap { (row[$0] as? Int64).map(Int.init) }
+        let n = ["records", "known_records", "turns", "final_replies", "closed_replies", "candidates"]
+            .compactMap { (row[$0] as? Int64).map(Int.init) }
         return LogFindings(
             unknownRecordTypes: decoded("unknown_types"), unknownFields: decoded("unknown_fields"),
-            counts: n.count == 5 ? LogCounts(records: n[0], knownRecords: n[1], turns: n[2], finalReplies: n[3], candidates: n[4]) : nil,
+            counts: n.count == 6 ? LogCounts(records: n[0], knownRecords: n[1], turns: n[2], finalReplies: n[3],
+                                             closedReplies: n[4], candidates: n[5]) : nil,
             fewerReplies: row["fewer_replies"] as? Int64 == 1, shortened: row["shortened"] as? Int64 == 1)
     }
 
     /// The size a log had when it was last read whole, whether it lost records since Gleaner first
-    /// read it, and the final replies in closed turns that read found (nil when it didn't count
-    /// them so); nil when it never was read whole.
-    public func lastRead(logFile path: String) throws -> (size: Int64, shortened: Bool, finalReplies: Int?)? {
-        try db.rows("SELECT size, shortened, final_replies FROM log_files WHERE path = ?", [path]).first.flatMap { row in
-            (row["size"] as? Int64).map { ($0, row["shortened"] as? Int64 == 1, (row["final_replies"] as? Int64).map(Int.init)) }
+    /// read it, and the final replies of closed turns that read found (nil when it didn't count
+    /// them); nil when it never was read whole.
+    public func lastRead(logFile path: String) throws -> (size: Int64, shortened: Bool, closedReplies: Int?)? {
+        try db.rows("SELECT size, shortened, closed_replies FROM log_files WHERE path = ?", [path]).first.flatMap { row in
+            (row["size"] as? Int64).map { ($0, row["shortened"] as? Int64 == 1, (row["closed_replies"] as? Int64).map(Int.init)) }
         }
     }
 
@@ -296,15 +302,16 @@ public final class Registry: @unchecked Sendable {
         let counts = findings.counts
         try db.run("""
             INSERT INTO log_files (path, size, mtime, unknown_types, unknown_fields, records, known_records, turns,
-                                   final_replies, candidates, fewer_replies)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                   final_replies, closed_replies, candidates, fewer_replies)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(path) DO UPDATE SET size = excluded.size, mtime = excluded.mtime,
                 unknown_types = excluded.unknown_types, unknown_fields = excluded.unknown_fields,
                 records = excluded.records, known_records = excluded.known_records, turns = excluded.turns,
-                final_replies = excluded.final_replies, candidates = excluded.candidates, fewer_replies = excluded.fewer_replies
+                final_replies = excluded.final_replies, closed_replies = excluded.closed_replies,
+                candidates = excluded.candidates, fewer_replies = excluded.fewer_replies
             """, [path, size, mtime, try json(findings.unknownRecordTypes), try json(findings.unknownFields),
-                  counts?.records, counts?.knownRecords, counts?.turns, counts?.finalReplies, counts?.candidates,
-                  findings.fewerReplies ? 1 : 0])
+                  counts?.records, counts?.knownRecords, counts?.turns, counts?.finalReplies, counts?.closedReplies,
+                  counts?.candidates, findings.fewerReplies ? 1 : 0])
     }
 
     /// Records that a log Gleaner has read was found shorter than then: it lost records, for good.

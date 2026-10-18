@@ -88,11 +88,12 @@ public final class Indexer: @unchecked Sendable {
             /// lost. What they name is added, and nothing they no longer name is removed, however
             /// they grow again; reading again can't bring the records back.
             public var shortenedLogs: [String] = []
-            /// Logs whose closed turns have assistant records but no final reply: the adapter may no
-            /// longer recognize one. The last turn is still open (the session may be running), and a
-            /// turn the person interrupted was not answered.
+            /// Logs where the assistant answered in a closed turn but the adapter found no final reply
+            /// anywhere, the open last turn included: it may no longer recognize one. The last turn
+            /// isn't counted as answered (the session may be running), nor is a turn the person
+            /// interrupted.
             public var logsWithoutFinalReply: [String] = []
-            /// Logs whose last complete read found fewer final replies in closed turns than the one
+            /// Logs whose last complete read found fewer final replies of closed turns than the one
             /// before it: the log or the adapter changed, and the deliveries only those replies named
             /// were removed. The open last turn's reply isn't counted: the text it ends on may yet be
             /// followed by a tool call, and is then no reply.
@@ -195,7 +196,7 @@ public final class Indexer: @unchecked Sendable {
         let codex = CodexAdapter(titles: CodexAdapter.loadTitles(
             index: sources.codexHome.appendingPathComponent("session_index.jsonl")))
 
-        var changed: [(Provider, URL, Int64, Date, shortened: Bool, finalReplies: Int?)] = []
+        var changed: [(Provider, URL, Int64, Date, shortened: Bool, closedReplies: Int?)] = []
         for (provider, url) in files {
             let info = Locator.stat(url.path)
             guard let size = info.size, let mtime = info.modifiedAt else { continue }
@@ -203,7 +204,7 @@ public final class Indexer: @unchecked Sendable {
                 report.sources[provider]?.add(found, log: url.path)
             } else {
                 let last = try registry.lastRead(logFile: url.path)
-                changed.append((provider, url, size, mtime, last.map { $0.shortened || size < $0.size } ?? false, last?.finalReplies))
+                changed.append((provider, url, size, mtime, last.map { $0.shortened || size < $0.size } ?? false, last?.closedReplies))
             }
         }
 
@@ -220,7 +221,7 @@ public final class Indexer: @unchecked Sendable {
         }
 
         var reads: [(Read, Provider)] = []
-        for (index, (provider, url, size, mtime, shortened, finalReplies)) in changed.enumerated() {
+        for (index, (provider, url, size, mtime, shortened, closedReplies)) in changed.enumerated() {
             progress(index, changed.count)
             switch parsed[index] {
             case .failure(let error):
@@ -238,13 +239,14 @@ public final class Indexer: @unchecked Sendable {
                         let ingested = try log.map { try ingest($0, isComplete: complete, now: now()) }
                         let counts = log.map {
                             LogCounts(records: $0.records, knownRecords: $0.knownRecords, turns: $0.answeredTurns,
-                                      finalReplies: $0.finalReplies, candidates: ingested?.candidates ?? 0)
+                                      finalReplies: $0.turns.count, closedReplies: $0.closedReplies,
+                                      candidates: ingested?.candidates ?? 0)
                         }
                         let findings = LogFindings(
                             unknownRecordTypes: log?.unknownRecordTypes ?? [:], unknownFields: log?.unknownFields ?? [:],
                             counts: counts,
                             // Only a whole read shows that replies are gone, as it does deliveries.
-                            fewerReplies: complete && (counts?.finalReplies ?? 0) < (finalReplies ?? 0),
+                            fewerReplies: complete && (counts?.closedReplies ?? 0) < (closedReplies ?? 0),
                             shortened: shortened)
                         // With the log's reading, so a session whose walk a quit cut off is walked next run.
                         if let log, let derived {

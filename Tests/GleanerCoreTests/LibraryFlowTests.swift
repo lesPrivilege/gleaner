@@ -442,7 +442,7 @@ import Testing
                 ReplyPart(text: "Check it with: cat \(notes.path)", line: 4, at: delivered, cwd: project.path),
                 ReplyPart(text: "Done: [notes](out/notes.md)", line: 5, at: delivered.addingTimeInterval(1), cwd: project.path),
             ])],
-            records: 5, answeredTurns: 1, finalReplies: 1, unknownRecordTypes: [:], unknownFields: [:], malformedLines: 0)
+            records: 5, answeredTurns: 1, closedReplies: 1, unknownRecordTypes: [:], unknownFields: [:], malformedLines: 0)
         _ = try indexer.ingest(older, isComplete: true, now: delivered.addingTimeInterval(20))
         let before = try artifact("notes.md").latest
         #expect(before.capture?.provenance == .atDelivery)
@@ -713,16 +713,17 @@ import Testing
     @Test func eachLogRecordsWhatItsReadCounted() throws {
         func counts() throws -> [Int64?] {
             let row = try #require(try indexer.registry.db.rows(
-                "SELECT records, known_records, turns, final_replies, candidates FROM log_files").first)
-            return ["records", "known_records", "turns", "final_replies", "candidates"].map { row[$0] as? Int64 }
+                "SELECT records, known_records, turns, final_replies, closed_replies, candidates FROM log_files").first)
+            return ["records", "known_records", "turns", "final_replies", "closed_replies", "candidates"].map { row[$0] as? Int64 }
         }
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
-        // One request, and one reply naming three files. Its turn is the log's last, still open.
-        #expect(try counts() == [2, 2, 0, 0, 3])
+        // One request, and one reply naming three files. Its turn is the log's last, still open: the
+        // reply and what it names are counted, but not as a closed turn's.
+        #expect(try counts() == [2, 2, 0, 1, 0, 3])
         // The next request closes it.
         try appendLog([user("Thanks", at: delivered.addingTimeInterval(30))])
         _ = try indexer.run(now: { delivered.addingTimeInterval(40) })
-        #expect(try counts() == [3, 3, 1, 1, 3])
+        #expect(try counts() == [3, 3, 1, 1, 1, 3])
     }
 
     @Test func unknownFieldsAreReportedOnEveryRunForTheirOwnSource() throws {
@@ -909,17 +910,74 @@ import Testing
         #expect(try artifact("build.dmg").deliveries.count == 2)
     }
 
-    @Test func anUpgradeComparesNoRepliesCountedTheOldWay() throws {
+    @Test func aReplyInTheOpenLastTurnIsAFinalReply() throws {
+        // The request's turn ends on a failed API call, which Claude Code writes as a synthetic
+        // assistant record, so "continue" closes it without a reply. That is answered, and the
+        // session left: its one final reply is in its open last turn, for good.
+        let log = root.appendingPathComponent("claude/-Praxis/session-2.jsonl")
+        let apiError = #"{"type":"assistant","isApiErrorMessage":true,"message":{"model":"<synthetic>","role":"assistant","content":[{"type":"text","text":"API Error: 529 Overloaded"}]},"timestamp":"\#(stamp(delivered.addingTimeInterval(111)))","cwd":"\#(project.path)","sessionId":"s2"}"#
+        try append([user("Rebuild the installer", at: delivered.addingTimeInterval(100), session: "s2"),
+                    toolCall("t1", at: delivered.addingTimeInterval(105), session: "s2"),
+                    toolResult("t1", at: delivered.addingTimeInterval(110), session: "s2"),
+                    apiError,
+                    user("continue", at: delivered.addingTimeInterval(120), session: "s2"),
+                    toolCall("t2", at: delivered.addingTimeInterval(125), session: "s2"),
+                    toolResult("t2", at: delivered.addingTimeInterval(130), session: "s2"),
+                    assistant("Rebuilt [the build](out/build.dmg).", at: delivered.addingTimeInterval(135),
+                              cwd: project.path, session: "s2")], to: log)
+        #expect(alarms(try indexer.run(now: { delivered.addingTimeInterval(140) })) == ([], []))
+        let later = try indexer.run(now: { delivered.addingTimeInterval(3600) })
+        #expect(alarms(later) == ([], []))
+        #expect(later.sources[.claudeCode]?.hasProblems == false)
+    }
+
+    @Test func aCodexAnswerInTheOpenLastTurnIsAFinalReply() throws {
+        // The first turn ends on a tool call without a final answer; the next is answered, and the
+        // thread left.
+        let log = try place("codex-open-turn", at: "codex/sessions/2026/10/05/rollout-continued.jsonl")
+        try append([CodexAdapterTests.redirectContext, CodexAdapterTests.redirect, CodexAdapterTests.redirectToolCall,
+                    CodexAdapterTests.redirectAnswer], to: log)
+        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(alarms(report, .codex) == ([], []))
+        #expect(report.sources[.codex]?.hasProblems == false)
+    }
+
+    func reopened() throws -> Indexer {
+        Indexer(registry: try Registry(path: root.appendingPathComponent("support/registry.sqlite").path),
+                store: indexer.store, sources: indexer.sources)
+    }
+
+    @Test func aLibraryFromBeforeTheCountsCountsEachLogOnItsFirstRead() throws {
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
-        // Before 19 a log's final replies were counted over all its turns, its open last turn's too.
-        try indexer.registry.db.execute("UPDATE log_files SET final_replies = 1; PRAGMA user_version = 18")
-        let upgraded = Indexer(
-            registry: try Registry(path: root.appendingPathComponent("support/registry.sqlite").path),
-            store: indexer.store, sources: indexer.sources)
+        // A library from before 16 kept no counts: nothing is compared until each log is read again.
+        try indexer.registry.db.execute("""
+            ALTER TABLE log_files DROP COLUMN unknown_fields; ALTER TABLE log_files DROP COLUMN records;
+            ALTER TABLE log_files DROP COLUMN known_records; ALTER TABLE log_files DROP COLUMN turns;
+            ALTER TABLE log_files DROP COLUMN final_replies; ALTER TABLE log_files DROP COLUMN closed_replies;
+            ALTER TABLE log_files DROP COLUMN candidates; ALTER TABLE log_files DROP COLUMN fewer_replies;
+            PRAGMA user_version = 15;
+            """)
+        let upgraded = try reopened()
         let report = try upgraded.run(now: { delivered.addingTimeInterval(40) })
         #expect(report.logsRead == 1)
         #expect(alarms(report) == ([], []))
-        #expect(try upgraded.registry.db.rows("SELECT final_replies FROM log_files").map { $0["final_replies"] as? Int64 } == [0])
+        // The log's one reply is in its open last turn.
+        let row = try #require(try upgraded.registry.db.rows("SELECT final_replies, closed_replies FROM log_files").first)
+        #expect([row["final_replies"] as? Int64, row["closed_replies"] as? Int64] == [1, 0])
+    }
+
+    @Test func aLogsReplyCountOutlivesARelaunch() throws {
+        try appendLog([user("Anything else?", at: delivered.addingTimeInterval(30)),
+                       assistant("Nothing else.", at: delivered.addingTimeInterval(40), cwd: project.path),
+                       user("Thanks", at: delivered.addingTimeInterval(45))])
+        _ = try indexer.run(now: { delivered.addingTimeInterval(50) })
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        try String(contentsOf: log, encoding: .utf8)
+            .replacingOccurrences(of: #"{"type":"text","text":"Nothing else."}"#,
+                                  with: #"{"type":"tool_use","id":"t1","name":"Bash","input":{}}"#)
+            .write(to: log, atomically: true, encoding: .utf8)
+        // The app quit and opened again: the count the last read kept is still the one compared.
+        #expect(alarms(try reopened().run(now: { delivered.addingTimeInterval(60) })) == ([], ["session-1.jsonl"]))
     }
 }
 

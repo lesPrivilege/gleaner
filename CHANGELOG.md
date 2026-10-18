@@ -88,7 +88,7 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 
 ### Notice a log format that moved
 
-- Counts each log's records, known records, answered turns, final replies and candidates, and reports in the source status: unknown fields in known record types, logs without a final reply, and logs with fewer replies than before. Only closed turns are counted, so a last turn still under way, or one that ended on a tool call, doesn't count as lacking a final reply, and a log read while the agent was between its text and the tool call after it doesn't count as having fewer replies. A turn you interrupted doesn't count as lacking a final reply. An agent's Sources page lists those logs, and each unknown field with its count, as it lists unknown record types.
+- Counts each log's records, known records, answered turns, final replies and candidates, and reports in the source status: unknown fields in known record types, logs without a final reply, and logs with fewer replies than before. A last turn still under way, or one that ended on a tool call, isn't counted as answered, though a final reply in it is counted; nor is a turn you interrupted. Only closed turns' final replies are compared, so a log read while the agent was between its text and the tool call after it doesn't count as having fewer replies. An agent's Sources page lists those logs, and each unknown field with its count, as it lists unknown record types.
 - Knows Claude Code's `pr-link` record, which holds no reply, instead of reporting it as an unknown record type.
 - An adapter change merges only with passing fixture tests and the owner's review (`AGENTS.md`).
 - The extractor version moves to 16: every log is read once more and counted.
