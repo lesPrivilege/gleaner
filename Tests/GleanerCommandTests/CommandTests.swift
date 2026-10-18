@@ -81,6 +81,19 @@ import Testing
         return try #require(try JSONSerialization.jsonObject(with: run.output) as? [String: Any])
     }
 
+    /// The one JSON object a command wrote when it failed with `status`: its `error` has a kind and
+    /// a message, and the message is on stderr too.
+    func refusal(_ arguments: [String], status: Int32) throws -> [String: Any] {
+        let run = try gleaner(arguments)
+        #expect(run.status == status, "\(arguments): \(run.error)")
+        let json = try #require(try JSONSerialization.jsonObject(with: run.output) as? [String: Any], "\(arguments)")
+        let error = try #require(json["error"] as? [String: Any], "\(arguments)")
+        let message = try #require(error["message"] as? String, "\(arguments)")
+        #expect(error["kind"] is String, "\(arguments)")
+        #expect(!message.isEmpty && run.error.contains(message), "\(arguments): \(run.error)")
+        return json
+    }
+
     func id(_ name: String) throws -> String {
         try #require(try Catalog(home: home).registry.artifacts().first { $0.name == name }?.latest.id)
     }
@@ -229,71 +242,86 @@ import Testing
         try index()
         let summary = try id("summary.md")
         let index = try Catalog(home: home).registry.index()
-        let refusals: [([String], Catalog.Failure, code: String)] = [
+        let refusals: [([String], Catalog.Failure, kind: String)] = [
             (["show", "0123456789"], .notFound("0123456789"), "not_found"),
             (["read", summary], .unavailable(.neverSeen), "unavailable"),
             (["handoff", summary], .unavailable(.neverSeen), "unavailable"),
             (["read", try id("frame.png")], .notText, "not_text"),
         ]
-        for (arguments, failure, code) in refusals {
-            let run = try gleaner(arguments)
-            #expect(run.status == 1, "\(arguments)")
-            #expect(run.error.contains(failure.description), "\(arguments): \(run.error)")
+        for (arguments, failure, kind) in refusals {
             // Still one JSON object: why, beside the index the refusal is evidence of. An id from
             // another library, or one this index hasn't read yet, is not found in it.
-            let json = try #require(try JSONSerialization.jsonObject(with: run.output) as? [String: Any], "\(arguments)")
+            let json = try refusal(arguments, status: 1)
             #expect(Set(json.keys) == ["index", "error"], "\(arguments)")
             let given = json["index"] as? [String: Any]
             #expect(given?["library"] as? String == index.library && given?["generation"] as? Int == 1, "\(arguments)")
             #expect(Set(given?.keys ?? [:].keys) == ["library", "generation", "scanned_at", "sources"], "\(arguments)")
             let error = json["error"] as? [String: Any]
-            #expect(error?["code"] as? String == code && error?["message"] as? String == failure.description, "\(arguments)")
-            #expect(error?["reason"] as? String == (code == "unavailable" ? "never_seen" : nil), "\(arguments)")
+            #expect(error?["kind"] as? String == kind && error?["message"] as? String == failure.description, "\(arguments)")
+            #expect(error?["reason"] as? String == (kind == "unavailable" ? "never_seen" : nil), "\(arguments)")
         }
 
-        // verify answers, and exits 1 when neither the original nor a saved copy holds the bytes.
-        let neither = try gleaner(["verify", summary])
-        #expect(neither.status == 1)
-        let json = try #require(try JSONSerialization.jsonObject(with: neither.output) as? [String: Any])
-        #expect(json["original"] as? Bool == false && json["saved_copy"] as? Bool == false)
+        // verify answers in full, and when neither the original nor a saved copy holds the bytes,
+        // says why and exits 1.
+        let neither = try refusal(["verify", summary], status: 1)
+        #expect(neither["original"] as? Bool == false && neither["saved_copy"] as? Bool == false)
+        #expect((neither["index"] as? [String: Any])?["library"] as? String == index.library)
+        #expect(neither["error"] as? [String: String] == [
+            "kind": "unavailable", "reason": "never_seen", "message": Catalog.Failure.unavailable(.neverSeen).description,
+        ])
+        // While either does, there is no error.
+        #expect(try answer(["verify", try id("notes.md")])["error"] == nil)
+    }
+
+    @Test func aFailureOutsideTheCatalogsWordsExitsOneAsFailed() throws {
+        try index()
+        // Gleaner's caches folder is a file, so no hand-off copy can be written.
+        let caches = home.appendingPathComponent("Library/Caches/Gleaner")
+        try FileManager.default.createDirectory(at: caches.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("not a folder".utf8).write(to: caches)
+        let json = try refusal(["handoff", try id("notes.md")], status: 1)
+        #expect(Set(json.keys) == ["index", "error"])
+        #expect((json["error"] as? [String: Any])?["kind"] as? String == "failed")
     }
 
     @Test func aWrongUsageExitsTwo() throws {
         try index()
         let notes = try id("notes.md")
-        let wrong = [
-            ["frobnicate"],
-            ["find"],
-            ["find", "notes", "--limit", "0"],
-            ["find", "notes", "--kind", "poem"],
-            ["read", notes, "--lines", "two"],
-            ["read", notes, "--lines", "0:2"],
-            ["read", notes, "--lines", "1:2", "--bytes", "0:3"],
-            ["read", notes, "--max", "0"],
+        // Refused before the library is open, or once it is, then with its index.
+        let wrong: [([String], opened: Bool)] = [
+            (["frobnicate"], false),
+            (["find"], false),
+            (["find", "notes", "--limit", "0"], true),
+            (["find", "notes", "--kind", "poem"], false),
+            (["read", notes, "--lines", "two"], false),
+            (["read", notes, "--lines", "0:2"], true),
+            (["read", notes, "--lines", "1:2", "--bytes", "0:3"], false),
+            (["read", notes, "--max", "0"], true),
             // A file, but not a reference.
-            ["verify", project.appendingPathComponent("out/notes.md").path],
+            (["verify", project.appendingPathComponent("out/notes.md").path], false),
         ]
-        for arguments in wrong {
-            let run = try gleaner(arguments)
-            #expect(run.status == 2, "\(arguments): \(run.error)")
-            #expect(run.output.isEmpty, "\(arguments)")
-            #expect(!run.error.isEmpty, "\(arguments)")
+        for (arguments, opened) in wrong {
+            let json = try refusal(arguments, status: 2)
+            #expect(Set(json.keys) == (opened ? ["index", "error"] : ["error"]), "\(arguments)")
+            #expect((json["error"] as? [String: Any])?["kind"] as? String == "usage", "\(arguments)")
         }
     }
 
     @Test func noLibraryOrAnotherVersionExitsThree() throws {
-        let missing = try gleaner(["find", "notes"])
-        #expect(missing.status == 3)
-        #expect(missing.output.isEmpty)
-        #expect(missing.error.contains(Catalog.Failure.noLibrary(library).description))
+        // No library was open, so there is no index to give.
+        let missing = try refusal(["find", "notes"], status: 3)
+        #expect(missing as? [String: [String: String]] == [
+            "error": ["kind": "no_library", "message": Catalog.Failure.noLibrary(library).description],
+        ])
         #expect(!FileManager.default.fileExists(atPath: library))
 
         try index()
         try Database(path: library).execute("PRAGMA user_version = \(Registry.extractorVersion - 1)")
         let before = try bytes(library)
-        let other = try gleaner(["show", "0123456789"])
-        #expect(other.status == 3)
-        #expect(other.error.contains(Catalog.Failure.wrongVersion(library, found: Registry.extractorVersion - 1).description))
+        let other = try refusal(["show", "0123456789"], status: 3)
+        #expect(other as? [String: [String: String]] == [
+            "error": ["kind": "wrong_version", "message": Catalog.Failure.wrongVersion(library, found: Registry.extractorVersion - 1).description],
+        ])
         #expect(try bytes(library) == before)
     }
 

@@ -85,7 +85,7 @@ Gleaner 没见过或没读到的交付，会在 Gleaner 第一次读到该文件
 
 **列表中**，每行最多一个标记，只在需要留意时出现：*Not available* 并说明原因（never seen、never read、not on disk、can't be read、not a regular file、a folder is there now、changed），*Not on disk*，*Changed*，或 *First seen later*。绘制列表时从不读取磁盘，所以只有在应用打开后核查过的文件才会标 *Changed*。交付过不止一次的文件显示“Delivery N of M”。
 
-**agent 日志**，见设置（Settings），需要留意时也会在列表下方用一行显示：*Read*；*Read with problems*（有未知的记录类型、有格式错误的行或曾被发现比之前读时短的日志、读不了的日志或文件夹）；*Can't be read*；*Not on this Mac*。重读可能有用时会出现 Try Again，已经找到的内容照常显示。
+**agent 日志**，见设置（Settings），需要留意时也会在列表下方用一行显示：*Read*；*Read with problems*（有未知的记录类型或字段；有格式错误的行，或曾被发现比之前读时短的日志；有 assistant 记录却没有最终回复的日志，仍在进行的最后一轮不算；最终回复比之前读时少的日志；读不了的日志或文件夹）；*Can't be read*；*Not on this Mac*。重读可能有用时会出现 Try Again，已经找到的内容照常显示。
 
 ## 转交
 
@@ -100,10 +100,30 @@ Gleaner 没见过或没读到的交付，会在 Gleaner 第一次读到该文件
 | Quick Look | 空格或 ⌘Y |
 | 在 Finder 中显示原文件（Show in Finder） | ⇧⌘R |
 | 拷贝原文件路径（Copy Path） | ⌥⌘C |
+| 拷贝交付的引用（Copy Reference） | ⇧⌘C |
 | 检查新交付 | ⌘R |
 | 关闭对比 | Esc |
 
 Show in Finder 和 Copy Path 针对原文件所在位置，那里的文件可能在交付后改过。文件已不在时，Show Folder 打开它原来所在的文件夹；那个文件夹也不在了，就如实说明。复制、打开、Quick Look 和拖拽用的都是核验过的副本。
+
+## gleaner 命令
+
+`gleaner` 让 Mac 上的编码 agent（Claude Code、Codex）自己找到你说的那个文件，选定确切的版本，只读需要的部分，再把这些字节交出去，不必自己翻日志。它从源码构建，与应用放在一起：`swift build -c release --product gleaner` 会生成 `.build/release/gleaner`。发布包里只有应用。
+
+| 命令 | 回答 |
+|---|---|
+| `gleaner find <terms…> [--project P] [--kind K] [--limit N]` | 所有词都匹配的文件，从新到旧，各按匹配到的那次交付列出，并附总数 |
+| `gleaner show <delivery>` | 这次交付及其文件的每次交付、磁盘上的现状、转交时会交出什么，以及交付它的那次要求和回复 |
+| `gleaner read <delivery> [--lines A:B \| --bytes A:B] [--max N]` | 这一版原样字节的文本，不另行指定时最多 16 KB；绝不拿当前文件的字节顶替 |
+| `gleaner resolve <delivery>` | 它的引用：资料库、交付的 id、哈希和路径、提到它的日志行、Gleaner 第一次怎样读到它，以及它的字节现在在哪里 |
+| `gleaner handoff <delivery>` | Gleaner 缓存里这一版的一份只读副本的路径，已按哈希核对 |
+| `gleaner verify <delivery or reference file>` | 原文件、Gleaner 的存档副本，是两者都有、只有其一，还是都没有引用里的字节 |
+
+每条命令向 stdout 写一个 JSON 对象，失败时也一样，写成 `{"error": {"kind": …, "message": …}}`，消息同时写到 stderr。退出码：0 成功；1 找不到、这一版没有字节，或其他失败；2 用法错误；3 没有资料库，或资料库属于另一个版本（打开 Gleaner 即可创建或更新）。`--home <folder>` 读取为另一个主文件夹保存的资料库，与应用的 `-GleanerHome` 相同。
+
+命令从不建索引，以只读方式打开资料库：它按应用最近一次读到的内容回答。每个回答，以及资料库打开之后的每次失败，都带着这份 `index`（资料库、运行过几次、最近一次何时结束、各 agent 的日志读得怎样），所以过时或不完整的索引给出的空结果，不会被当成什么都没交付的证据。打开 Gleaner 就能更新它。命令从不写入资料库或项目文件夹；`handoff` 只写它的副本，放在 Gleaner 的缓存里。
+
+在应用里，**Copy Reference**（⇧⌘C，位于 Edit 菜单，以及列表行和交付行的右键菜单）把一次交付的引用按 `gleaner resolve` 给出的样子拷贝下来，可以贴给 agent。**Show in Log** 在 Finder 中选中会话日志，详情栏给出提到这个文件的那条回复所在的行。`gleaner://delivery/<id>` 链接会打开 Gleaner 并定位到那次交付；链接指向的交付不在这个资料库里时，如实说明。
 
 ## 交付的认定
 
@@ -144,9 +164,11 @@ swift test                      # fixture 测试
 
 - `Sources/GleanerCore`：各 agent 的日志适配器（Claude Code、Codex）、提及抽取、文件定位、脱敏、索引库（SQLite）、内容库（存档副本与核验过的转交副本）、索引器、日志监视，以及状态判断（`Library.swift`）。
 - `Sources/Gleaner`：macOS 应用（SwiftUI、AppKit、Quick Look）。
+- `Sources/gleaner-cli`：`gleaner` 命令，以 JSON 给出 catalog 的回答。
 - `Sources/gleaner-spike`：Spike A，只读地抽取本地日志，输出一份标注表。
-- `Tests/GleanerCoreTests`：用脱敏后的日志记录结构写成的 fixture 测试，以及整个流程的测试（并发编辑、删除 worktree、回滚、补读旧日志、核验后转交）。
+- `Tests/GleanerCoreTests`：用脱敏后的日志记录结构写成的 fixture 测试，整个流程的测试（并发编辑、删除 worktree、回滚、补读旧日志、核验后转交），以及 catalog 的查询。
 - `Tests/GleanerTests`：在合成的资料库上检验应用的判断（点一下落在哪次交付上，Quick Look、Compare 和拖拽用的是哪份字节）及其措辞。
+- `Tests/GleanerCommandTests`：像 agent 的 shell 那样运行构建好的 `gleaner`：检验它的 JSON、退出码，以及它既不写资料库也不写项目。
 
 v0.1 的设计决定见 [docs/SPEC.md](docs/SPEC.md)，设计探索与裁决见 [docs/design/](docs/design/README.md)。
 

@@ -47,18 +47,19 @@ public struct Catalog: Sendable {
 
 extension Catalog {
     /// The artifacts whose words match every term (SPEC §10), newest first, each by the delivery
-    /// the search matched; at most `limit` of them. `project` names a project by its folder, or by
-    /// its name as shown or plain.
+    /// the search matched; at most `limit` of them. `project` names a project by its folder, in any
+    /// form an agent may have it (`/private/tmp/app/` is `/tmp/app`), or by its name as shown or plain.
     public func find(_ terms: [String], project: String? = nil, kind: Artifact.Kind? = nil, limit: Int = 20) throws -> Found {
         guard limit > 0 else { throw Failure.usage("The limit must be at least 1.") }
         let tokens = terms.joined(separator: " ").lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+        let folder = project.flatMap { $0.hasPrefix("/") ? Paths.standard($0) : nil }
         let index = try registry.index()
         let artifacts = try registry.artifacts()
         let names = Projects.names(artifacts.map(\.projectFolder))
         let matches = artifacts.compactMap { artifact -> (Artifact, Int)? in
             let place = Project(artifact, names: names)
             let inProject = project.map { wanted in
-                wanted == place.folder || [place.name, artifact.project].contains { $0.caseInsensitiveCompare(wanted) == .orderedSame }
+                folder == place.folder || [place.name, artifact.project].contains { $0.caseInsensitiveCompare(wanted) == .orderedSame }
             } ?? true
             guard inProject, kind == nil || artifact.kind == kind, let match = artifact.match(tokens) else { return nil }
             return (artifact, match)
@@ -193,7 +194,7 @@ extension Catalog {
 
     /// Hashes the original and Gleaner's saved copy again, and says which, if either, still holds
     /// the delivery's bytes; its reference says where they are from the same hashes. Neither means
-    /// there are no bytes for that version now (exit 1).
+    /// there are no bytes for that version now: the answer says why (exit 1).
     public func verify(_ id: String) throws -> Verified {
         let (_, artifact, delivery) = try lookup(id)
         let index = try registry.index()
@@ -204,7 +205,8 @@ extension Catalog {
         reference.availability = original ? Availability(state: .original)
             : savedCopy ? Availability(state: .savedCopy)
             : Availability(state: .unavailable, reason: reason(delivery))
-        return Verified(index: index, reference: reference, original: original, savedCopy: savedCopy)
+        return Verified(index: index, reference: reference, original: original, savedCopy: savedCopy,
+                        error: original || savedCopy ? nil : .unavailable(reason(delivery)))
     }
 
     /// `verify(_:)` for the delivery a kept reference names, which must be of this library.
@@ -285,11 +287,15 @@ extension Catalog {
         case changed
         /// What was asked can't be answered as asked: a range, a limit.
         case usage(String)
+        /// Anything else that stopped an answer, with what it was: the library couldn't be queried,
+        /// or a hand-off copy couldn't be written.
+        case failed(String)
 
-        /// 1: not found, or no bytes for that version; 2: usage; 3: no library, or the wrong version.
+        /// 1: not found, no bytes for that version, or another failure; 2: usage; 3: no library, or
+        /// the wrong version.
         public var exitCode: Int32 {
             switch self {
-            case .notFound, .otherLibrary, .unavailable, .notText, .changed: 1
+            case .notFound, .otherLibrary, .unavailable, .notText, .changed, .failed: 1
             case .usage: 2
             case .noLibrary, .unreadableLibrary, .wrongVersion: 3
             }
@@ -315,11 +321,13 @@ extension Catalog {
                 "The bytes changed, or couldn’t be read, while Gleaner read them. Try again."
             case .usage(let message):
                 message
+            case .failed(let what):
+                "Gleaner couldn’t answer: \(what)"
             }
         }
 
         /// Which failure it is, as an answer names it.
-        public var code: String {
+        public var kind: String {
             switch self {
             case .noLibrary: "no_library"
             case .unreadableLibrary: "unreadable_library"
@@ -330,15 +338,16 @@ extension Catalog {
             case .notText: "not_text"
             case .changed: "changed"
             case .usage: "usage"
+            case .failed: "failed"
             }
         }
 
-        private enum CodingKeys: CodingKey { case code, message, reason }
+        private enum CodingKeys: CodingKey { case kind, message, reason }
 
-        /// As an answer writes it: its code, what it says, and for unavailable, why.
+        /// As an answer writes it: its kind, what it says, and for unavailable, why.
         public func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
-            try container.encode(code, forKey: .code)
+            try container.encode(kind, forKey: .kind)
             try container.encode(description, forKey: .message)
             if case .unavailable(let reason) = self { try container.encode(reason, forKey: .reason) }
         }
@@ -569,23 +578,27 @@ extension Catalog {
     }
 
     /// `verify`'s answer: which bytes still hash to the reference's.
-    public struct Verified: Codable, Sendable {
+    public struct Verified: Encodable, Sendable {
         public var index: Index
         public var reference: Reference
         /// The file at the reference's path.
         public var original: Bool
         /// Gleaner's saved copy.
         public var savedCopy: Bool
+        /// Set, and the command exits 1, when neither holds the bytes: there are none for that
+        /// version now, and this says why.
+        public var error: Failure?
     }
 
-    /// The answer when there is none about a delivery (exit 1): why, beside the index the refusal is
-    /// evidence of. A delivery not found in a stale or partial index, or by an id from another
-    /// library, may yet be found where it is.
+    /// The answer when there is none (exits 1, 2 and 3): why, beside the index the refusal is
+    /// evidence of when a library was open. A delivery not found in a stale or partial index, or by
+    /// an id from another library, may yet be found where it is.
     public struct Refused: Encodable, Sendable {
-        public var index: Index
+        /// Nil, and left out, when no library was open: it couldn't be, or the refusal came first.
+        public var index: Index?
         public var error: Failure
 
-        public init(index: Index, error: Failure) {
+        public init(index: Index?, error: Failure) {
             self.index = index
             self.error = error
         }
@@ -639,7 +652,7 @@ extension Catalog {
         public var partialLogs = 0
         /// Logs found shorter than when Gleaner read them: records were lost.
         public var shortenedLogs = 0
-        /// Logs with assistant records but no final reply.
+        /// Logs with assistant records but no final reply, not counting the last turn while it has none.
         public var logsWithoutFinalReply = 0
         /// Logs whose last complete read found fewer final replies than the one before it.
         public var logsWithFewerReplies = 0

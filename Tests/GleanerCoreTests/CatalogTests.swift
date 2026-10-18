@@ -60,8 +60,8 @@ import Testing
 
     func stamp(_ date: Date) -> String { date.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)) }
 
-    func user(_ text: String, at date: Date) -> String {
-        #"{"type":"user","message":{"role":"user","content":"\#(text)"},"origin":{"kind":"human"},"timestamp":"\#(stamp(date))","cwd":"\#(project.path)","sessionId":"s1"}"#
+    func user(_ text: String, at date: Date, session: String = "s1") -> String {
+        #"{"type":"user","message":{"role":"user","content":"\#(text)"},"origin":{"kind":"human"},"timestamp":"\#(stamp(date))","cwd":"\#(project.path)","sessionId":"\#(session)"}"#
     }
 
     func assistant(_ text: String, at date: Date) -> String {
@@ -171,10 +171,11 @@ import Testing
     }
 
     @Test func eachProblemAnAdapterFindsIsCounted() throws {
-        // A field Gleaner doesn't know, and a log whose agent only called a tool.
+        // A field Gleaner doesn't know, and a log whose agent only called a tool before the next request.
         try appendLog([#"{"type":"mode","mode":"plan","sessionId":"s1","brandNewField":true}"#])
         let toolCall = #"{"type":"assistant","message":{"model":"m","role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]},"timestamp":"\#(stamp(delivered))","cwd":"\#(project.path)","sessionId":"s2"}"#
-        try ([user("Build it", at: delivered.addingTimeInterval(-60)), toolCall].joined(separator: "\n") + "\n")
+        try ([user("Build it", at: delivered.addingTimeInterval(-60), session: "s2"), toolCall,
+              user("Did it build?", at: delivered, session: "s2")].joined(separator: "\n") + "\n")
             .write(toFile: home.appendingPathComponent(".claude/projects/-Praxis/s2.jsonl").path, atomically: true, encoding: .utf8)
         try index(at: delivered.addingTimeInterval(20))
 
@@ -292,6 +293,8 @@ import Testing
         #expect(try catalog.find([], kind: .image).results.map(\.reference.name) == ["poster.svg", "frame.png"])
         #expect(try catalog.find([], project: "praxis").total == 4)
         #expect(try catalog.find([], project: project.path).total == 4)
+        // The folder as an agent working in it records it: under /private, with a slash at the end.
+        #expect(try catalog.find([], project: LogWatcher.resolved(project.path) + "/").total == 4)
         #expect(try catalog.find([], project: "Courtwork").total == 0)
         #expect(throws: Catalog.Failure.self) { try catalog.find([], limit: 0) }
     }
@@ -485,7 +488,7 @@ import Testing
         let catalog = try catalog()
         let notes = try id("notes.md", in: catalog)
         let both = try catalog.verify(notes)
-        #expect(both.original && both.savedCopy)
+        #expect(both.original && both.savedCopy && both.error == nil)
         #expect(both.reference.availability == Catalog.Availability(state: .original))
 
         // A reference kept as JSON, as `resolve` writes it and Copy Reference copies it, or its
@@ -509,6 +512,8 @@ import Testing
         let neither = try catalog.verify(try id("build.dmg", in: catalog))
         #expect(!neither.original && !neither.savedCopy)
         #expect(neither.reference.availability == Catalog.Availability(state: .unavailable, reason: .tooLargeToHaveBeenSaved))
+        // There are no bytes for that version now: the answer says why, as a refusal would.
+        #expect(neither.error == .unavailable(.tooLargeToHaveBeenSaved))
     }
 
     @Test func verifySaysWhereTheBytesAreAsItsHashesFoundThem() throws {

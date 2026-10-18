@@ -85,7 +85,7 @@ The three without a saved copy go on with what the latest check found: the file 
 
 **In the list**, a row carries at most one mark, and only when something needs a look: *Not available* with why (never seen, never read, not on disk, can't be read, not a regular file, a folder is there now, changed), *Not on disk*, *Changed*, or *First seen later*. Drawing the list never reads the disk, so *Changed* appears only for a file Gleaner has checked since it opened. A file delivered more than once shows "Delivery N of M".
 
-**The agents' logs**, in Settings and, when one needs a look, in a line under the list: *Read*; *Read with problems* (unknown record types, logs with malformed lines or found shorter than when read before, logs or folders that couldn't be read); *Can't be read*; *Not on this Mac*. Try Again appears when reading again can help, and what Gleaner already found stays shown.
+**The agents' logs**, in Settings and, when one needs a look, in a line under the list: *Read*; *Read with problems* (unknown record types or fields; logs with malformed lines, or found shorter than when read before; logs with assistant records but no final reply, where a last turn still under way doesn't count; logs with fewer final replies than when read before; logs or folders that couldn't be read); *Can't be read*; *Not on this Mac*. Try Again appears when reading again can help, and what Gleaner already found stays shown.
 
 ## Hand-off
 
@@ -100,10 +100,30 @@ When neither the file nor a saved copy holds the version, Gleaner says why it ha
 | Quick Look | Space or ⌘Y |
 | Show the original in Finder | ⇧⌘R |
 | Copy the original's path | ⌥⌘C |
+| Copy the delivery's reference (Copy Reference) | ⇧⌘C |
 | Check for new deliveries | ⌘R |
 | Close a comparison | Esc |
 
 Show in Finder and Copy Path act on the original location, which may have changed since delivery. When the file is gone, Show Folder opens the folder it was in, or says that folder is gone too. Copy, Open, Quick Look and drag use the verified copy.
+
+## The gleaner command
+
+`gleaner` lets a coding agent on your Mac (Claude Code, Codex) find the file you mean, select its exact version, read only what it needs, and hand those bytes on, without reading logs itself. It is built from source, beside the app: `swift build -c release --product gleaner` puts it at `.build/release/gleaner`. The release zip holds only the app.
+
+| Command | Answers |
+|---|---|
+| `gleaner find <terms…> [--project P] [--kind K] [--limit N]` | The files whose words match every term, newest first, each by the delivery that matched, with the total |
+| `gleaner show <delivery>` | That delivery with every delivery of its file, the file on disk now, what handing it on would give, and the request and reply that delivered it |
+| `gleaner read <delivery> [--lines A:B \| --bytes A:B] [--max N]` | The text of that version's exact bytes, at most 16 KB unless asked; never the current file's bytes in their place |
+| `gleaner resolve <delivery>` | Its reference: the library, the delivery's id, its hash and path, the log line that named it, how Gleaner first read it, and where its bytes are now |
+| `gleaner handoff <delivery>` | The path of a read-only copy of that version in Gleaner's caches, checked by hash |
+| `gleaner verify <delivery or reference file>` | Whether the original, Gleaner's saved copy, both or neither still hold the reference's bytes |
+
+Each command writes one JSON object to stdout, and so does each failure, as `{"error": {"kind": …, "message": …}}` with the message on stderr too. Exit codes: 0 success; 1 not found, no bytes for that version, or another failure; 2 usage; 3 no library, or a library of another version (open Gleaner to make or update it). `--home <folder>` reads the library kept for another home folder, as the app's `-GleanerHome` does.
+
+The command never indexes, and opens the library read-only: it answers from what the app last read. Every answer, and every failure once the library is open, carries that `index` (the library, how many runs it has had, when the last one finished, and how each agent's logs read), so an empty answer from a stale or partial index is not taken as proof that nothing was delivered. Open Gleaner to bring it up to date. The command never writes the library or a project folder; `handoff` writes only its copy, in Gleaner's caches.
+
+From the app, **Copy Reference** (⇧⌘C, in the Edit menu and in a row's or a delivery's context menu) copies a delivery's reference as `gleaner resolve` gives it, to paste to an agent. **Show in Log** selects the session log in Finder, and the detail pane gives the line of the reply that named the file. A `gleaner://delivery/<id>` link opens Gleaner on that delivery, and says so when the link names no delivery in this library.
 
 ## What counts as a delivery
 
@@ -144,9 +164,11 @@ swift test                      # fixture tests
 
 - `Sources/GleanerCore`: provider adapters (Claude Code, Codex), mention extraction, locator, redaction, the registry (SQLite), the content store (saved copies, verified hand-off copies), the indexer, the log watcher, and the status logic (`Library.swift`).
 - `Sources/Gleaner`: the macOS app (SwiftUI and AppKit, Quick Look).
+- `Sources/gleaner-cli`: the `gleaner` command, the catalog's answers as JSON.
 - `Sources/gleaner-spike`: Spike A, read-only extraction over local logs that writes a labeling sheet.
-- `Tests/GleanerCoreTests`: fixture tests built from sanitized record shapes, and the library flow (concurrent edits, deleted worktrees, rollback, backfill, verified staging).
+- `Tests/GleanerCoreTests`: fixture tests built from sanitized record shapes, the library flow (concurrent edits, deleted worktrees, rollback, backfill, verified staging), and the catalog's queries.
 - `Tests/GleanerTests`: the app's decisions on a synthetic library (which delivery a click lands on, which bytes Quick Look, Compare and a drag use) and its wording.
+- `Tests/GleanerCommandTests`: the built `gleaner` run as an agent's shell runs it: its JSON, its exit codes, and that it writes neither the library nor the project.
 
 The decisions behind v0.1 are in [docs/SPEC.md](docs/SPEC.md); the design exploration and its rulings are in [docs/design/](docs/design/README.md).
 

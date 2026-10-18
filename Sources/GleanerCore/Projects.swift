@@ -105,7 +105,7 @@ public enum Projects {
         guard let common = try? String(contentsOfFile: gitDir + "/commondir", encoding: .utf8) else { return worktree }
         var commonDir = common.trimmingCharacters(in: .whitespacesAndNewlines)
         if !commonDir.hasPrefix("/") { commonDir = (gitDir as NSString).appendingPathComponent(commonDir) }
-        commonDir = (commonDir as NSString).standardizingPath
+        commonDir = Paths.standard(commonDir)
         return (commonDir as NSString).lastPathComponent.hasPrefix(".") ? (commonDir as NSString).deletingLastPathComponent : commonDir
     }
 
