@@ -154,15 +154,17 @@ public struct ContentStore: Sendable {
         let hashed = Identity(temporary)
         let found = hashed != nil ? Locator.sha256(temporary.path) ?? "" : ""
         guard found == sha else { throw Failure.changed(expected: sha, found: found) }
-        try preparations.lock.withLock {
+        // Published and read under the lock clearing and other stages take, so what is read is this
+        // copy. The rename may stamp a new change time; the inode and the bytes' modification time
+        // say it is still the file hashed.
+        let published = try preparations.lock.withLock {
             try fm.createDirectory(at: directory, withIntermediateDirectories: true)
             guard rename(temporary.path, target.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            return Identity(target)
         }
-        // The rename may stamp a new change time; the inode and the bytes' modification time say it
-        // is still the file hashed.
-        guard let published = Identity(target), let hashed, published.inode == hashed.inode,
-              published.size == hashed.size, published.modified == hashed.modified,
-              published.modifiedNanos == hashed.modifiedNanos else { throw Failure.changed(expected: sha, found: "") }
+        guard let published, let hashed, published.inode == hashed.inode, published.size == hashed.size,
+              published.modified == hashed.modified, published.modifiedNanos == hashed.modifiedNanos
+        else { throw Failure.changed(expected: sha, found: "") }
         return Prepared(url: target, sha: sha, identity: published)
     }
 }
