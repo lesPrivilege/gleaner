@@ -38,16 +38,18 @@ The span runs from each request to the last reply answering it. The time between
 
 A file whose dates fall inside a session's span shows only that it **appeared or changed during** that session, in that workspace. It does not prove that the session made it. Parallel sessions, copied files and background jobs all fall inside spans too. The owner's case shows discovery coverage (459 of 461 files were found), not how accurate the attribution is.
 
-A file's dates can also be set. A copy that keeps them (`cp -p`, `rsync -a`, Finder, an archive) carries older dates into the workspace, and they would fall inside an old session's span. The inode's change time can't be set back, so a file whose inode last changed after the stretch its date falls in isn't placed there.
+A file's dates can also be set. A copy that keeps them (`cp -p`, `rsync -a`, Finder, an archive) carries older dates into the workspace, and they would fall inside an old session's span. The inode's change time can't be set back, so a file whose inode last changed after the stretch its date falls in isn't placed there. The cost is a miss, never a false claim: anything that rewrites the inode later also moves that time, including a new permission, a rename, or an extended attribute such as the last-used date some apps write when a file is opened. A session read soon after it works, as the log watcher reads it, is unaffected. One first read long afterwards misses the files changed that way since. In the owner's series none were: no file's change time moved after the session.
 
 So Gleaner keeps two kinds of evidence and never turns one into the other:
 - **Handed over.** A final reply named the file. This is a delivery, as today, with its capture.
 - **Observed.** The file appeared during the span (its creation date falls inside it) or changed during it (its modification date does). This is a candidate:
   - Gleaner records it the first time it sees it and never rewrites it;
   - a later session's observation is added beside it;
-  - the person's corrections ("not from this session", "same work as…") are appended, never applied as edits.
+  - the person's corrections ("not from this session", "goes with this work") are appended, never applied as edits.
 
 Both kinds show in one window, where the person can relate them. A candidate is never labeled "made by" the session or treated as handed over.
+
+**Admission.** No file enters the library on its own; only a reply that hands it over, or the person, admits it. A candidate stays where it was observed, under its session in its project. It isn't searched, counted or queued for review. Keeping one is the person's admission, appended like any correction and undone the same way.
 
 **Reading.** Discovery reads metadata only: names, sizes, dates and file identity. Bytes are read when the person acts on a file: when they mark it, hand it on, compare it or open a version. A 742 MB video is listed without being read.
 
@@ -67,7 +69,7 @@ Type, stem and folder help order and group a list. They never decide whether a f
 - **Folders.** The outline keeps the workspace's own layout. A folder with many observed files of one kind folds into one row with its count ("out/voice · 211 files"), which opens on demand.
 - **Stems.** Files in one folder whose names share a stem before their extensions or role suffixes are shown together: `ep00.mp4` beside `ep00.mix.wav`, `ep00.narration.wav` and `ep00.inputs.json`; `ov-4x3.svg` beside `ov-4x3.png`. Showing them together claims nothing: not that one was made from the other, nor that they are one work.
 
-What evidence can't join, the person joins once. That `00-overview`, `ep00` and `ov` are one episode is the owner's knowledge, not the log's. The correction is kept and can be undone. A model may later propose such joins, citing evidence, for the person to accept. That waits for the evaluation the owner gates.
+What evidence can't group, the person groups once, into **work units**: a series, an episode, a chapter, a demo. A work unit sits between a project and its works and may span folders, repositories and sessions. It nests once, so a series holds episodes. That `00-overview`, `ep00` and `ov` are one episode is the owner's knowledge, not the log's. It puts three different works into one work unit. It is not a same-work join: a video, its narration and its cover are not versions of one another, and none takes another's revisions or review. The grouping is kept and can be undone. A model may later propose groupings, citing evidence, for the person to accept. That waits for the evaluation the owner gates.
 
 ## The four states
 
@@ -75,7 +77,7 @@ Kept apart, as the owner set them:
 
 - **Generated:** handed over in a session, or observed appearing or changing during one (which, when, which agent). These are two evidences, said as such.
 - **On this Mac:** the file is there and readable now.
-- **Reviewed:** the person's mark on these bytes (their hash, the time, an optional note).
+- **Reviewed:** the person's verdict on these bytes: approved, changes requested or rejected, with their hash, the time and an optional note. Approving a file that is uncommitted in a worktree says that it may not reopen once its folder is gone.
 - **Published:** the person's mark on these bytes (the hash, the time, an optional place or link).
 
 A mark stays when the file changes, and the item says "Changed since review". None of the four implies another.
@@ -92,13 +94,14 @@ Each shape an adapter knows keeps a sanitized fixture line from a real log and t
    - For each session, its workspace and span, and the files that appeared or changed during it, kept as candidates beside deliveries.
    - Metadata only; bytes are read on the person's action.
    - Tests on synthetic sessions in several kinds of work: a video series, a report, a slide deck, a data analysis, and a code change.
-2. **The window.**
-   - **In a project:** what each session handed over and what was observed during it, by folder, with crowded folders folded and stems shown together.
-   - **In the detail:** "Handed over in" and "Appeared during" or "Changed during", and the four states with the Reviewed and Published marks.
-   - **Reading:** the Reviewed and Published marks, hand-on and comparison read the bytes then.
-3. **Live capture.** FSEvents on a session's workspace while its log is being written.
-4. **Written-by evidence.** Structured write records from the adapters, with sanitized fixtures from the owner's session.
-5. **Acceptance.** The owner's series, reviewed episode by episode without the conversation or Finder.
+2. **Bundles.** A reply that hands over a folder hands over what is in it. Its files are listed with "Handed over in" evidence, stronger than "Appeared during", by metadata, and each is versioned when the person acts on it.
+3. **Work units and the window.**
+   - **In a project:** work units first (a series, then its episodes), then what each session handed over and what was observed during it, by folder, with crowded folders folded and stems shown together. Candidates stay under their session until kept.
+   - **In a work unit's detail:** its works played, heard and shown in place, each with "Handed over in", "Appeared during" or "Changed during", its versions, and the four states.
+   - **Review:** the Reviewed verdict and the Published mark. They, hand-on and comparison read the bytes then. The review queue is a saved view of the library (delivered or new revisions awaiting review), not a second library.
+4. **Live capture.** FSEvents on a session's workspace while its log is being written.
+5. **Written-by evidence.** Structured write records from the adapters, with sanitized fixtures from the owner's session.
+6. **Acceptance.** The owner's series, reviewed episode by episode without the conversation or Finder.
 
 ## Layer 1, as built
 
