@@ -412,4 +412,39 @@ import Testing
         #expect(Workspace.root(of: plain.path) == plain.path)
         #expect(Workspace.root(of: home.path + "/Projects/gone") == nil)
     }
+
+    // MARK: the synthetic home
+
+    /// `scripts/acceptance-home.py <home> capture`, read as the app reads it with `-GleanerHome`.
+    @Test func theSyntheticHomesCapturePhase() throws {
+        let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("scripts/acceptance-home.py")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        process.arguments = ["-I", script.path, home.path, "capture"]
+        process.standardOutput = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+        let indexer = Indexer(
+            registry: try Registry(path: root.appendingPathComponent("home.sqlite").path),
+            store: ContentStore(objects: root.appendingPathComponent("home-objects"), staging: root.appendingPathComponent("home-staging")),
+            sources: LogSources(claudeProjects: home.appendingPathComponent(".claude/projects"), codexHome: home.appendingPathComponent(".codex")))
+        indexer.home = home.path
+        _ = try indexer.run()
+
+        let series = home.path + "/work/series"
+        let organization = Organization(artifacts: try indexer.registry.artifacts(), observations: try indexer.registry.observations())
+        // The reply named only the folder; what was made in it is observed beside it.
+        #expect(organization.works.map(\.latest.path) == [series + "/out"])
+        let byTitle = Dictionary(grouping: try indexer.registry.observations(), by: { $0.sessionTitle ?? "" })
+        #expect(byTitle["Reading list series, episode 0"]?.count == 49)
+        #expect(Set(byTitle["Series covers"]?.map(\.path) ?? []) == [series + "/covers/ov-4x3.svg", series + "/covers/ov-4x3.png"])
+        #expect(organization.candidate(series + "/notes/plan.md") == nil)
+        #expect(organization.candidate(series + "/episodes/00-overview/notes/outline.md")?.latest.kind == .appeared)
+        #expect(organization.candidate(series + "/out/ep00.mp4")?.latest.size == 65 << 20)
+        let rows = Listing.rows(organization.candidates(in: series).map(Listing.Entry.candidate))
+        #expect(rows.contains { if case .folded(let folder, .media, let lines) = $0 { folder == series + "/out/voice" && lines.count == 40 } else { false } })
+        #expect(rows.contains { if case .together("ep00", let members) = $0 { members.count == 4 } else { false } })
+    }
 }
