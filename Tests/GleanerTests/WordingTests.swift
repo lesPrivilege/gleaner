@@ -169,7 +169,7 @@ import Testing
 
     func observed(_ kind: Observed.Kind, title: String?) -> Observed {
         Observed(path: "/p/out/voice/line-1.wav", kind: kind, logPath: "/logs/s.jsonl", sessionID: "s", provider: .claudeCode,
-                 sessionTitle: title, span: DateInterval(start: delivered, duration: 3600), workspace: "/p", size: 1,
+                 sessionTitle: title, stretch: DateInterval(start: delivered, duration: 3600), workspace: "/p", size: 1,
                  createdAt: delivered.addingTimeInterval(60), modifiedAt: delivered.addingTimeInterval(120), device: 1, inode: 1,
                  repository: nil, checkout: nil, observedAt: delivered)
     }
@@ -180,7 +180,7 @@ import Testing
         #expect(appeared.mark == .observed && changed.mark == .observed)
         #expect(appeared.title == "Appeared during Reading list series")
         #expect(changed.title == "Changed during an untitled conversation")
-        #expect(appeared.detail.hasPrefix("Its creation date, \(Wording.date(delivered.addingTimeInterval(60))), falls while Reading list series ran"))
+        #expect(appeared.detail.hasPrefix("Its creation date, \(Wording.date(delivered.addingTimeInterval(60))), falls while Reading list series was working"))
         #expect(changed.detail.hasPrefix("Its modification date, \(Wording.date(delivered.addingTimeInterval(120))),"))
         for statement in [appeared, changed] {
             #expect(!statement.title.lowercased().contains("made") && !statement.detail.lowercased().contains("made"))

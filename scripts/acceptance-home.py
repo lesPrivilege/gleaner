@@ -16,12 +16,13 @@ after delivery, and an appendix delivered from a client-a session, so Gleaner fi
 client-a/app until the person moves it.
 
 Phase capture (on its own or after the others) adds `work/series`, outside git, for what is
-observed rather than handed over (docs/design/capture.md): a session from three hours ago to an
-hour ago whose reply names only the folder `out/`, while its files, media, images, data, code and
-a nested note, were created inside its span; forty voice lines in one folder, enough to fold; a
-plan created before the span and changed after it, which no session observes; and a second
-session in the same workspace whose span overlaps the first, so the covers made in the overlap
-are observed by both. Its logs are dated as an agent's are, created with their first record.
+observed rather than handed over (docs/design/capture.md): a session asked three hours ago that
+answers once its files are written, whose reply names only the folder `out/`, while its files,
+media, images, data, code and a nested note, are dated inside its span; forty voice lines in one
+folder, enough to fold; a plan created and changed the day before, which no session observes;
+and a second session in the same workspace, asked two hours ago, so the covers dated after that
+are observed by both. A file's dates can be set back but its inode change time can't, so each
+session answers after its files are written, as a session that wrote them would.
 
 Phase initial delivers:
 - Claude Code: CJK Markdown, a PNG, a symlink, a folder and an HTML page inside it, a
@@ -77,7 +78,7 @@ def codex_delivery(thread, cwd, request, paths, provider='magpie', model='moonsh
 
 
 def claude_session(log, session, cwd, title, request, reply, start, end):
-    """A Claude Code session asked at `start` and answering at `end`, its log dated as an agent's is."""
+    """A Claude Code session asked at `start` and answering at `end`."""
     stamp = lambda t: t.isoformat().replace('+00:00', 'Z')
     base = dict(sessionId=session, cwd=str(cwd))
     log.parent.mkdir(parents=True, exist_ok=True)
@@ -86,7 +87,6 @@ def claude_session(log, session, cwd, title, request, reply, start, end):
         f.write(json.dumps(dict(base, type='assistant', timestamp=stamp(end),
                                 message={'model': 'claude-fable-5', 'content': [{'type': 'text', 'text': reply}]})) + '\n')
         f.write(json.dumps(dict(type='custom-title', sessionId=session, customTitle=title)) + '\n')
-    dated(log, start, end)
 
 
 def dated(path, created, modified):
@@ -246,13 +246,15 @@ elif phase == 'capture':
     made('covers/ov-4x3.svg', 70, b'<svg xmlns="http://www.w3.org/2000/svg" width="4" height="3"/>\n')
     png(series / 'covers' / 'ov-4x3.png', (90, 60, 30))
     dated(series / 'covers' / 'ov-4x3.png', at(75), at(75))
-    # Created a day before, changed after both sessions ended: outside every span.
-    made('notes/plan.md', -24 * 60, b'# Plan\n', changed=170)
+    # Created and changed the day before: outside every span.
+    made('notes/plan.md', -48 * 60, b'# Plan\n', changed=-24 * 60)
 
+    # Both answer now, once every file above is written.
+    answered = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0) + datetime.timedelta(seconds=1)
     claude_session(claude / 'series' / 'series.jsonl', 'series', series, 'Reading list series, episode 0',
-                   'Render episode 0 with its narration and covers', 'Everything is in [out](out/).', at(0), at(120))
+                   'Render episode 0 with its narration and covers', 'Everything is in [out](out/).', at(0), answered)
     claude_session(claude / 'series' / 'series-covers.jsonl', 'series-covers', series, 'Series covers',
-                   'Draw the 4:3 cover', 'The covers are ready.', at(60), at(150))
+                   'Draw the 4:3 cover', 'The covers are ready.', at(60), answered)
 
 else:
     raise SystemExit(__doc__)

@@ -489,19 +489,21 @@ enum Wording {
     /// What was observed of a file during a conversation, in the three tiers (window-polish.md,
     /// Fewer words): the observed mark; "Appeared during …" or "Changed during …"; and the sentence
     /// saying what that shows and what it doesn't. Never "made": a date in a span doesn't say who
-    /// wrote the file, nor, for a modification date, that its contents changed.
+    /// wrote the file, nor, for a modification date, that its contents changed. The time shown is
+    /// the stretch the date falls in, from a request to the last reply answering it, not the whole
+    /// conversation, which may have been resumed days later.
     static func observed(_ observation: Observed) -> Statement {
         let during = session(observation.sessionTitle)
-        let span = observation.span.map { " (\(($0.start..<$0.end).formatted(date: .abbreviated, time: .shortened)))" } ?? ""
+        let stretch = observation.stretch.map { " (\(($0.start..<$0.end).formatted(date: .abbreviated, time: .shortened)))" } ?? ""
         let place = "in \(tilde(observation.workspace))"
         return switch observation.kind {
         case .appeared:
             Statement(mark: .observed, title: "Appeared during \(during)",
-                      detail: "Its creation date, \(date(observation.createdAt)), falls while \(during) ran\(span), \(place). "
+                      detail: "Its creation date, \(date(observation.createdAt)), falls while \(during) was working\(stretch), \(place). "
                           + "That says when it appeared, not who wrote it. Gleaner hasn’t read its contents.")
         case .changed:
             Statement(mark: .observed, title: "Changed during \(during)",
-                      detail: "Its modification date, \(date(observation.modifiedAt)), falls while \(during) ran\(span), \(place). "
+                      detail: "Its modification date, \(date(observation.modifiedAt)), falls while \(during) was working\(stretch), \(place). "
                           + "That says when it was last written, not who wrote it or what changed. Gleaner hasn’t read its contents.")
         }
     }

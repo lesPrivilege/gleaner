@@ -10,7 +10,8 @@ import Testing
     let root: URL
     let series: URL
     let indexer: Indexer
-    let t0 = Date(timeIntervalSince1970: 1_792_281_600)
+    /// Half an hour ago: the files, written now, are written while both sessions work.
+    let t0 = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 - 30 * 60).rounded(.down))
 
     init() throws {
         let fm = FileManager.default
@@ -43,7 +44,7 @@ import Testing
         try FileManager.default.setAttributes([.modificationDate: minutes(m)], ofItemAtPath: url.path)
     }
 
-    /// A session in the series folder; its log dated as an agent's is.
+    /// A session in the series folder.
     func session(_ id: String, title: String, from start: Double, to end: Double, reply: String) throws {
         func record(_ object: [String: Any]) throws -> String { String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self) }
         let stamp = { (m: Double) in self.minutes(m).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)) }
@@ -56,8 +57,6 @@ import Testing
         ]
         let log = root.appendingPathComponent("claude/series/\(id).jsonl")
         try (lines.joined(separator: "\n") + "\n").write(to: log, atomically: false, encoding: .utf8)
-        try FileManager.default.setAttributes([.creationDate: minutes(start)], ofItemAtPath: log.path)
-        try FileManager.default.setAttributes([.modificationDate: minutes(end)], ofItemAtPath: log.path)
     }
 
     func relaunch() -> LibraryModel { LibraryModel(indexer: indexer) }

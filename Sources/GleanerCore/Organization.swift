@@ -114,8 +114,10 @@ public struct Organization: Sendable {
     private var placements: [String: Placement] = [:]
     private var derivedNames: [String: String] = [:]
 
+    /// `observed` holds each file observed during sessions, newest first (`Candidate.files`), made
+    /// once when the observations load rather than each time the person corrects something.
     /// `missing` holds the paths last found gone from disk.
-    public init(artifacts: [Artifact], observations: [Observed] = [], corrections: [Correction] = [],
+    public init(artifacts: [Artifact], observed: [Candidate] = [], corrections: [Correction] = [],
                 projects userProjects: [UserProject] = [], missing: Set<String> = []) {
         self.corrections = corrections
         self.userProjects = userProjects
@@ -219,21 +221,21 @@ public struct Organization: Sendable {
 
         // What was observed: beside a handed-over file's deliveries, else a candidate in the project
         // its repository or workspace gives, shown inside another as its works are.
-        let detached = Set(corrections.filter { $0.kind == .notFromSession }.map { $0.subject + "\n" + $0.target })
+        let detached = Dictionary(grouping: corrections.filter { $0.kind == .notFromSession }, by: \.subject)
+            .mapValues { Set($0.map(\.target)) }
         var candidates: [Candidate] = []
-        for (path, list) in Dictionary(grouping: observations, by: \.path) {
-            let list = list.filter { !detached.contains(path + "\n" + $0.logPath) }
-                .sorted { $0.modifiedAt != $1.modifiedAt ? $0.modifiedAt > $1.modifiedAt : $0.logPath < $1.logPath }
-            guard !list.isEmpty else { continue }
-            if workIndex[path] != nil {
-                observedDeliveries[path] = list
+        for file in observed {
+            guard let file = detached[file.path].map({ logs in file.keeping { !logs.contains($0.logPath) } }) ?? file else { continue }
+            if workIndex[file.path] != nil {
+                observedDeliveries[file.path] = file.observations
             } else {
-                var candidate = Candidate(path: path, observations: list)
+                var candidate = file
                 candidate.project = resolve(candidate.projectFolder).key
                 candidates.append(candidate)
             }
         }
-        candidates.sort { $0.date != $1.date ? $0.date > $1.date : $0.path < $1.path }
+        // A file detached from, or hidden with, its latest session moves.
+        candidates.sort(by: Candidate.newestFirst)
         self.candidates = candidates
         for (index, candidate) in candidates.enumerated() { candidateIndex[candidate.path] = index }
     }

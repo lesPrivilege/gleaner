@@ -70,9 +70,10 @@ final class LibraryModel {
             reorganize()
         }
     }
-    /// What Gleaner observed appearing or changing during sessions, whichever agent's: candidates
-    /// beside the deliveries, never deliveries (docs/design/capture.md).
-    private var observed: [Observed] = []
+    /// Each file Gleaner observed appearing or changing during sessions, whichever agent's, with its
+    /// observations: candidates beside the deliveries, never deliveries (docs/design/capture.md).
+    /// Grouped by file once per load, off the main thread after a run.
+    private var observed: [Candidate] = []
     /// Projects and works as the person sees them: what Gleaner found, with their corrections.
     private(set) var organization = Organization(artifacts: [])
     /// The person's corrections and projects, read from the library; kept apart from what Gleaner found.
@@ -168,7 +169,7 @@ final class LibraryModel {
         corrections = (try? indexer.registry.corrections()) ?? []
         userProjects = (try? indexer.registry.userProjects()) ?? []
         sourcesOff = (try? indexer.registry.sourcesOff()) ?? []
-        observed = (try? indexer.registry.observations()) ?? []
+        observed = Candidate.files((try? indexer.registry.observations()) ?? [])
         library = (try? indexer.registry.artifacts()) ?? []
         artifacts = Self.shown(library, without: sourcesOff)
         siblings = Artifact.deliveredWith(artifacts)
@@ -179,8 +180,8 @@ final class LibraryModel {
 
     private func reorganize() {
         // An agent turned off has its observations hidden with its deliveries.
-        let observations = sourcesOff.isEmpty ? observed : observed.filter { !sourcesOff.contains($0.provider) }
-        organization = Organization(artifacts: artifacts, observations: observations, corrections: corrections,
+        let observed = sourcesOff.isEmpty ? observed : observed.compactMap { $0.keeping { !sourcesOff.contains($0.provider) } }
+        organization = Organization(artifacts: artifacts, observed: observed, corrections: corrections,
                                     projects: userProjects, missing: missing)
         organizationVersion += 1
         if indexed { updateStatus() }
@@ -338,12 +339,15 @@ final class LibraryModel {
                     Task { @MainActor [weak self] in self?.progress = total > 0 && done < total ? (done, total) : nil }
                 })
             }
-            let library = Swift.Result { (try indexer.registry.artifacts(), try indexer.registry.observations()) }
+            // The library loads on every run, which looks again at what is on disk; the observations
+            // only when the run recorded one, since nothing else changes them.
+            let recorded = (try? outcome.get()).map { $0.newObservations > 0 } ?? true
+            let library = Swift.Result { (try indexer.registry.artifacts(), recorded ? Candidate.files(try indexer.registry.observations()) : nil) }
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 if case .success(let (artifacts, observed)) = library {
                     // Set first: the library's change reorganizes with them.
-                    self.observed = observed
+                    if let observed { self.observed = observed }
                     self.library = artifacts
                 }
                 self.progress = nil
@@ -653,7 +657,7 @@ final class LibraryModel {
 
     /// The session whose log is `logPath`, as its observations name it.
     func sessionName(_ logPath: String) -> String {
-        Wording.session(observed.first { $0.logPath == logPath }?.sessionTitle)
+        Wording.session(observed.lazy.flatMap(\.observations).first { $0.logPath == logPath }?.sessionTitle)
     }
 
     /// Undoes decisions made together, such as moving every file of a work. With `following`,

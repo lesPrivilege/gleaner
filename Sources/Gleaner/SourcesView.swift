@@ -115,6 +115,8 @@ struct AgentSourcePage: View {
                 ProblemSection(title: "Unlisted Folders", footer: "Their logs went unread; what they delivered stays.", paths: source.unlistedFolders)
                 ProblemSection(title: "Workspaces Walked in Part", footer: "Files there may be missing from what Gleaner observed during sessions. Deliveries aren’t affected.",
                                paths: source.workspaceProblems)
+                ProblemSection(title: "Workspaces Not Walked", footer: "Nothing is observed in these. Gleaner doesn’t walk the home folder, its Library, system or hidden folders, or the agents’ logs, and can’t walk a folder that’s gone.",
+                               paths: source.unwalkedWorkspaces, isProblem: false)
                 if !source.unknownRecordTypes.isEmpty {
                     Section {
                         ForEach(source.unknownRecordTypes.sorted { $0.key < $1.key }, id: \.key) { type, count in
@@ -171,6 +173,8 @@ struct ProblemSection: View {
     var title: String
     var footer: String
     var paths: [String]
+    /// False for a list that explains rather than warns.
+    var isProblem = true
 
     var body: some View {
         if !paths.isEmpty {
@@ -189,7 +193,7 @@ struct ProblemSection: View {
                 }
             } header: {
                 HStack(spacing: Space.xs + 2) {
-                    GlyphView(glyph: .warning, size: 12).foregroundStyle(Palette.attention)
+                    if isProblem { GlyphView(glyph: .warning, size: 12).foregroundStyle(Palette.attention) }
                     Text("\(title) (\(paths.count))")
                 }
             } footer: {

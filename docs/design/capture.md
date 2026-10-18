@@ -29,14 +29,16 @@ Every agent session, whatever the provider and whatever the work, gives three th
 | | What | From |
 |---|---|---|
 | **Intent** | The requests, and the files a final reply hands over | The adapter, as now |
-| **Span** | The workspace (Git root, or the working folder) and the session's time span | The adapter, as now: the records' folders and times |
+| **Span** | The workspace (Git root, or the working folder) and the session's time span | The adapter: the records' folders, and the times of each request and its replies |
 | **Observations** | The files that appeared or changed in the workspace during the span | Gleaner, from the disk's metadata, with no provider code |
 
-The first layer needs no change to any adapter. The span runs from the first record's time to the last's. The workspace is where the records say the agent worked.
+The span runs from each request to the last reply answering it. The time between a reply and the next request is left out: a conversation resumed days later wasn't working in between, and the person's own edits then aren't its. The workspace is where the records say the agent worked. The first layer's one adapter change is the request's time, a key the request's record already carries.
 
 ## Two kinds of evidence, kept apart
 
 A file whose dates fall inside a session's span shows only that it **appeared or changed during** that session, in that workspace. It does not prove that the session made it. Parallel sessions, copied files and background jobs all fall inside spans too. The owner's case shows discovery coverage (459 of 461 files were found), not how accurate the attribution is.
+
+A file's dates can also be set. A copy that keeps them (`cp -p`, `rsync -a`, Finder, an archive) carries older dates into the workspace, and they would fall inside an old session's span. The inode's change time can't be set back, so a file whose inode last changed after the stretch its date falls in isn't placed there.
 
 So Gleaner keeps two kinds of evidence and never turns one into the other:
 - **Handed over.** A final reply named the file. This is a delivery, as today, with its capture.
@@ -50,11 +52,11 @@ Both kinds show in one window, where the person can relate them. A candidate is 
 **Reading.** Discovery reads metadata only: names, sizes, dates and file identity. Bytes are read when the person acts on a file: when they mark it, hand it on, compare it or open a version. A 742 MB video is listed without being read.
 
 **Skipped:**
-- sessions whose workspace is the home folder or a system folder;
+- sessions whose workspace is the home folder or a system folder, a hidden folder, or the agents' logs or Gleaner's own library, so Gleaner never observes transcripts or itself;
 - `.git` and hidden folders;
-- the dependency and build caches tools leave (`node_modules`, `.build`, `__pycache__`, `.venv`, `DerivedData`, `target`, `dist`).
+- the dependency caches tools leave (`node_modules`, `__pycache__`, `DerivedData`; `.build` and `.venv` are hidden), and folders their tool marked as a cache with a `CACHEDIR.TAG` file (Cargo's `target`).
 
-These skips are structural. No file type is excluded: a script may itself be the deliverable.
+These skips are structural. No file type is excluded: a script may itself be the deliverable. No output folder is excluded by its name either: `dist` or `build` may hold what was asked for.
 
 ## Order and grouping, without fitting
 
@@ -100,15 +102,38 @@ Each shape an adapter knows keeps a sanitized fixture line from a real log and t
 
 ## Layer 1, as built
 
-Built on `feat/capture`, 2026-10-19. [SPEC §5.3](../SPEC.md) is the contract. Where it differs from the chapter above, or settles what the chapter left open:
+Built on `feat/capture`, 2026-10-19, and revised after its review the same day. [SPEC §5.3](../SPEC.md) is the contract. Where it differs from the chapter above, or settles what the chapter left open:
 
-- **The span's ends.** The adapters give times for reply records only, so "the first record's time" is the log file's creation date, which that record's write set, bounded by the first reply for a log copied later. The span ends at the last reply, not at the log's last write: an agent may append to an old log, a title set days later for one, which would stretch the span over days. A session without a reply ends at the log's last write. No adapter changed; work after a final reply, and an interrupted turn, may fall outside the span.
-- **Who opens a kind.** A person opens documents, images, audio and video, pages, models, installers and folders; a program reads code, data and formats Gleaner can't place.
+- **The span** is a list of stretches, one per request: from the request's record to the last reply answering it, a minute either side, joined where they meet. A reply to a task notification answers the request before it, so a background job between the two is inside; one still running after the last reply to its request is not. A session without a reply time has no span: an interrupted turn and a title appended later give none. The first build ran one span from the log file's creation date to the last reply, and a conversation resumed days later covered the days between. The owner's case was counted against the whole session (459 of 461 files); stretches may place fewer of its files.
+- **The adapters changed** for this, and only for this: each turn carries `requestAt`, the `timestamp` of the human request's record (Claude Code) or of the typed user message (Codex), kept with the request by a reply to a task notification. Both keys sit on records the adapters already read, and the fixtures already carried them. Under `AGENTS.md`, this merges only with the owner's review.
+- **The inode change time** (`st_ctime`) is read with the other dates, and a file is placed in a stretch only when its inode last changed before that stretch ended. A copy keeping older dates is left out, whether the session is read for the first time (the extractor bump, a fresh library) or again. So is a file renamed or given new permissions after its stretch: Gleaner misses it rather than claims it. Hence "That says when it appeared" stands in the window's words.
+- **When a workspace is walked.** A session's span, workspaces and the folders not walked are recorded with its log's reading. It waits to be walked when its span or workspaces moved, or when its last walk came before its span ended. It is marked walked only once its observations are recorded, so a quit or a failed write leaves it waiting, and the next run walks it whether or not its log changed. A log read again for a title, or reread every run for a malformed line, walks nothing once its session is walked. The window reloads the observations only when a run recorded one, and groups them by file then, off the main thread, so a correction doesn't regroup them.
+- **Not walked, and why.** The workspace's own name is checked too, so a session in `~/.claude` or `~/.codex` walks nothing. So is a workspace that is, holds or is inside the agents' log folders, Gleaner's saved copies or its hand-off copies, or that holds its registry. Inside the home's Library only `Mobile Documents` (iCloud Drive) and `CloudStorage` are walked. Each check compares the folder as the disk has it, links followed and case as on disk (`realpath`), so `/Volumes/Macintosh HD` is `/`. A walk doesn't enter a folder on another volume. Each folder a session worked in and that isn't walked is kept with its reason (gone, or which skip), and Sources lists them apart from the problems.
+- **Output folders.** `dist` and `target` were in the chapter's list of caches. A folder's name is no better evidence than a file's type: `dist` is where a build puts what it made. Only `node_modules`, `__pycache__` and `DerivedData` are skipped by name. A folder holding `CACHEDIR.TAG`, which Cargo writes into `target`, is skipped by that mark, read by name only. The owner may rule otherwise.
+- **Another spelling of a delivered file.** When a workspace is walked, the paths delivered by the sessions in it, and any delivered path under it in any case, are looked up by device and inode. A walked file that is one of them is observed under the delivered name, beside its delivery, not as a second file.
+- **Storage.** Observations are keyed by path, then log, in a table without row ids. The session's id is kept once, with its span. Each session's observations are written as its matches are found.
+- **Who opens a kind.** A person opens documents, images, audio and video, pages, models, installers and folders. A program reads code, data and formats Gleaner can't place. Each extension's kind is looked up once.
 - **Crowded** is twelve or more observed files of one kind in one folder. What was handed over never folds.
 - **A stem** is the name before its first dot, compared without case, so dotted roles (`ep00.mix.wav`) share it. A hyphen isn't read as a role: `ov-4x3` and `ov-3x4` stay apart.
-- **Hidden files** are observed; only hidden folders are skipped, as the skips above say.
-- **A project with candidates and no delivery** isn't added to the sidebar's projects yet; `Organization.candidates(in:)` lists any project's candidates, and the window decides in layer 2.
+- **Hidden files** are observed. Only hidden folders are skipped, as the skips above say.
+- **A project with candidates and no delivery** isn't added to the sidebar's projects yet. `Organization.candidates(in:)` lists any project's candidates, and the window decides in layer 2.
 - **The observed mark** is the kit's unverified one, a line to an open circle, in secondary ink.
-- **The extractor version** moved to 15, since spans are derived from the logs: every log is read once more, and each session's workspace observed.
+- **The extractor version** moved to 15, since spans are derived from the logs. Every log is read once more, and each session's workspace observed as the disk is now.
 
-Checked: `swift test`. `ObservationTests` reads synthetic sessions in five kinds of work (a video series whose reply names only a folder, with three hundred segments; a report with Markdown, a PDF and charts; a slide deck; a data analysis; a code change in a Git repository), and checks a reread, a later session editing a file, two overlapping sessions, the home folder, the walk's bound, that discovery reads no bytes (access times stay where they were set), a delivered file with its observation beside it, corrections appended and undone, and `scripts/acceptance-home.py <home> capture`. `ListingTests` checks the order, the fold and stems; `ObservingTests` the model; `WordingTests` the words.
+Checked: `swift test`.
+- `AdapterTests` checks each turn's request time against both fixtures.
+- `ObservationTests` reads synthetic sessions in five kinds of work: a video series whose reply names only a folder, with three hundred segments; a report with Markdown, a PDF and charts; a slide deck; a data analysis; a code change in a Git repository. It also checks:
+  - a reread, a later session editing a file, two overlapping sessions;
+  - stretches, and a conversation resumed days later;
+  - a copy keeping its dates, on a first and a later reading;
+  - a session walked again only when its span moves;
+  - observations that couldn't be recorded, recorded next run;
+  - the home folder, its Library, hidden folders, the agents' logs and Gleaner's library, and the home through a link or in another case;
+  - `CACHEDIR.TAG` and `dist`;
+  - a delivered file named in another case;
+  - the walk's bound, and that discovery reads no bytes (access times stay where they were set);
+  - a delivered file with its observation beside it;
+  - corrections appended and undone;
+  - `scripts/acceptance-home.py <home> capture`.
+- `ListingTests` checks the order, the fold and stems.
+- `ObservingTests` checks the model, and `WordingTests` the words.

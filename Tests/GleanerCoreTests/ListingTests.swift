@@ -12,7 +12,7 @@ import Testing
         let date = t0.addingTimeInterval(minutes * 60)
         return .candidate(Candidate(path: path, observations: [Observed(
             path: path, kind: .appeared, logPath: "/logs/s.jsonl", sessionID: "s", provider: .claudeCode, sessionTitle: nil,
-            span: nil, workspace: "/w", size: 1, createdAt: date, modifiedAt: date, device: 1, inode: 1,
+            workspace: "/w", size: 1, createdAt: date, modifiedAt: date, device: 1, inode: 1,
             repository: nil, checkout: nil, observedAt: date)]))
     }
 

@@ -52,6 +52,7 @@ public struct CodexAdapter: Sendable {
         var cwd: String?
         var model: String?
         var request: String?
+        var requestAt: Date?
         var turns: [Turn] = []
 
         for (line, record) in file.records {
@@ -75,11 +76,14 @@ public struct CodexAdapter: Sendable {
                 let content = payload["content"] as? [[String: Any]] ?? []
                 switch payload["role"] as? String {
                 case "user":
-                    if let text = Self.userText(payload, content: content) { request = RequestText.clean(text) }
+                    if let text = Self.userText(payload, content: content) {
+                        request = RequestText.clean(text)
+                        requestAt = Timestamp.parse(record["timestamp"])
+                    }
                 case "assistant" where payload["phase"] as? String == "final_answer":
                     let text = content.compactMap { $0["text"] as? String }.joined(separator: "\n\n")
                     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
-                    turns.append(Turn(request: request, parts: [ReplyPart(
+                    turns.append(Turn(request: request, requestAt: requestAt, parts: [ReplyPart(
                         text: text, line: line, at: Timestamp.parse(record["timestamp"]), cwd: cwd)], model: model))
                 default:
                     break
