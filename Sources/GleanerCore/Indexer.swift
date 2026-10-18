@@ -162,7 +162,7 @@ public final class Indexer: @unchecked Sendable {
 
         public var logsRead = 0
         public var newDeliveries = 0
-        /// Every provider, whether or not its folder is there.
+        /// Every provider the run read, whether or not its folder is there; one turned off isn't read.
         public var sources: [Provider: Source] = [:]
     }
 
@@ -263,8 +263,9 @@ public final class Indexer: @unchecked Sendable {
             }
         }
         progress(changed.count, changed.count)
-        // A result read from the library is evidence only within this run (query-core "Freshness").
-        try registry.recordRun(finishedAt: now(), sources: report.sources)
+        // A result read from the library is evidence only within this run (query-core "Freshness"),
+        // which names the agents it didn't read.
+        try registry.recordRun(finishedAt: now(), sources: report.sources, off: Set(Provider.allCases).subtracting(providers))
         return report
     }
 

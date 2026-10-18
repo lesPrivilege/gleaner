@@ -136,6 +136,20 @@ public struct Artifact: Sendable, Identifiable {
         return artifact
     }
 
+    /// The order the library lists files in: newest delivery first, then by path.
+    public static func newerFirst(_ a: Artifact, _ b: Artifact) -> Bool {
+        let (x, y) = (a.latest.deliveredAt ?? .distantPast, b.latest.deliveredAt ?? .distantPast)
+        return x != y ? x > y : a.path < b.path
+    }
+
+    /// The library as Gleaner shows it while the agents `off` are turned off in Sources
+    /// (`Registry.sourcesOff`): without their deliveries, and without the files left with none.
+    /// The app and the query core both show it so.
+    public static func shown(_ library: [Artifact], without off: Set<Provider>) -> [Artifact] {
+        guard !off.isEmpty else { return library }
+        return library.compactMap { $0.keeping { !off.contains($0.provider) } }.sorted(by: newerFirst)
+    }
+
     /// The project's name, its folder's. Two projects can share one.
     public var project: String { Projects.name(projectFolder) }
 

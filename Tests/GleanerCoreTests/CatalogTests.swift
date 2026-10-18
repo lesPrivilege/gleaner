@@ -33,9 +33,10 @@ import Testing
     var library: String { support.appendingPathComponent("registry.sqlite").path }
     var log: String { home.appendingPathComponent(".claude/projects/-Praxis/s1.jsonl").path }
 
-    /// Indexes the home as the app does, then closes the library, as quitting the app would.
+    /// Indexes the home as the app does, reading the logs of the agents that are on (`providers`),
+    /// then closes the library, as quitting the app would.
     @discardableResult
-    func index(at date: Date) throws -> Indexer.Report {
+    func index(at date: Date, providers: Set<Provider> = Set(Provider.allCases)) throws -> Indexer.Report {
         try FileManager.default.createDirectory(at: support, withIntermediateDirectories: true)
         let indexer = Indexer(
             registry: try Registry(path: library),
@@ -44,7 +45,7 @@ import Testing
             sources: LogSources(claudeProjects: home.appendingPathComponent(".claude/projects"),
                                 codexHome: home.appendingPathComponent(".codex")))
         indexer.saveLimit = 64 // notes.md and frame.png are saved; build.dmg is tracked by hash only
-        return try indexer.run(now: { date })
+        return try indexer.run(providers: providers, now: { date })
     }
 
     func write(_ data: Data, to relative: String, modified: Date) throws {
@@ -198,6 +199,42 @@ import Testing
         #expect(index.generation == 1 && index.scannedAt == delivered.addingTimeInterval(20))
         try self.index(at: delivered.addingTimeInterval(40))
         #expect(try Catalog(home: home).registry.index().sources["claude-code"] == Catalog.Source(state: .read))
+    }
+
+    @Test func anAgentTurnedOffIsNamedAndItsDeliveriesAreLeftOut() throws {
+        try index(at: delivered.addingTimeInterval(20))
+        let notes = try id("notes.md", in: try catalog())
+
+        // Turned off in Sources, which starts no run: from then on the index names it, and its
+        // deliveries are left out, as the app hides them.
+        try Registry(path: library).setSource(.claudeCode, on: false, at: delivered.addingTimeInterval(30))
+        let off = try catalog()
+        #expect(try off.registry.index().sources["claude-code"] == Catalog.Source(state: .off))
+        #expect(try off.registry.index().sources["codex"]?.state == .absent)
+        let none = try off.find(["notes"])
+        #expect(none.total == 0 && none.index.sources["claude-code"]?.state == .off)
+        #expect(throws: Catalog.Failure.sourceOff(notes, .claudeCode)) { try off.show(notes) }
+        #expect(throws: Catalog.Failure.sourceOff(notes, .claudeCode)) { try off.verify(notes) }
+        #expect(Catalog.Failure.sourceOff(notes, .claudeCode).exitCode == 1)
+        #expect(Catalog.Failure.sourceOff(notes, .claudeCode).kind == "source_off")
+
+        // The app's next run reads only the agents that are on, and names the one it didn't read.
+        try index(at: delivered.addingTimeInterval(40), providers: [.codex])
+        let run = try catalog().registry.index()
+        #expect(run.generation == 2 && run.scannedAt == delivered.addingTimeInterval(40))
+        #expect(run.sources == ["claude-code": Catalog.Source(state: .off), "codex": Catalog.Source(state: .absent)])
+        // With every agent off, a run reads nothing and says so of each.
+        try index(at: delivered.addingTimeInterval(50), providers: [])
+        #expect(try catalog().registry.index().sources == ["claude-code": Catalog.Source(state: .off), "codex": Catalog.Source(state: .off)])
+
+        // On again: its deliveries are answered from what the library holds, and its logs are named
+        // as unread until a run reads them.
+        try Registry(path: library).setSource(.claudeCode, on: true, at: delivered.addingTimeInterval(60))
+        #expect(try catalog().find(["notes"]).total == 3)
+        #expect(try catalog().show(notes).reference.delivery == notes)
+        #expect(try catalog().registry.index().sources["claude-code"]?.state == .off)
+        try index(at: delivered.addingTimeInterval(70))
+        #expect(try catalog().registry.index().sources["claude-code"] == Catalog.Source(state: .read))
     }
 
     @Test func aLibraryNeverScannedSaysSo() throws {

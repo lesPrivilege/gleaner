@@ -10,6 +10,7 @@ Not part of 0.1.0: these changes come after it is tagged.
 - Writes one JSON object to stdout for every answer and every failure, `{"error": {"kind", "message"}}` for a failure, with the message on stderr too. Exits 0 on success; 1 when not found, when there are no bytes for that version, or on another failure; 2 on wrong usage; 3 when there is no library, or one of another version.
 - Never indexes: it opens the app's library read-only, and refuses one that is missing, of another version, or can't be opened to read, saying to open Gleaner. Every answer, and every failure once the library is open, carries the index it is evidence of (the library, its runs, when the last finished, how each agent's logs read), so an empty answer from a stale or partial index isn't taken for absence. `--home` reads the library kept for another home folder.
 - `read` gives the text of a version's exact bytes, at most 16 KB unless asked, by `--lines` or `--bytes`: from the saved copy whenever there is one, from the original only while it still holds them, in one pass however large the file. `handoff` stages a read-only copy checked by hash, in Gleaner's caches. `verify` checks a delivery, or a reference kept as `resolve` wrote it, by the delivery it names.
+- Answers from the library as the app shows it. An agent turned off in Sources is `off` in the index, and its deliveries are left out; one asked for by id is refused as `source_off` (exit 1).
 - `find --project` takes a project's name or its folder, `/private` or not.
 
 ### gleaner mcp

@@ -273,10 +273,11 @@ public final class Registry: @unchecked Sendable {
 
     public func transaction<T>(_ body: () throws -> T) throws -> T { try writing { try db.transaction(body) } }
 
-    /// Records a completed run of the indexer: one more generation, when it finished, and how each
-    /// agent's logs read.
-    public func recordRun(finishedAt date: Date, sources: [Provider: Indexer.Report.Source]) throws {
-        let status = Dictionary(uniqueKeysWithValues: sources.map { ($0.key.rawValue, Catalog.Source($0.value)) })
+    /// Records a completed run of the indexer: one more generation, when it finished, how the logs
+    /// of each agent it read read, and the agents it didn't read because they are turned off (`off`).
+    public func recordRun(finishedAt date: Date, sources: [Provider: Indexer.Report.Source], off: Set<Provider>) throws {
+        var status = Dictionary(uniqueKeysWithValues: sources.map { ($0.key.rawValue, Catalog.Source($0.value)) })
+        for provider in off { status[provider.rawValue] = Catalog.Source(state: .off) }
         let json = String(decoding: try Catalog.encoder.encode(status), as: UTF8.self)
         try transaction {
             try db.run("""
@@ -288,19 +289,24 @@ public final class Registry: @unchecked Sendable {
         }
     }
 
-    /// The library's namespace and its last completed run (`recordRun`).
+    /// The library's namespace and its last completed run (`recordRun`), with each agent turned off
+    /// now as `off`: turning one off starts no run, and its deliveries are left out at once.
     public func index() throws -> Catalog.Index {
         var meta: [String: Any] = [:]
         for row in try db.rows("SELECT key, value FROM meta") {
             if let key = row["key"] as? String { meta[key] = row["value"] }
         }
         guard let library = meta["library"] as? String else { throw Database.Failure(description: "the library has no id") }
-        let sources = try (meta["sources"] as? String).map {
+        var sources = try (meta["sources"] as? String).map {
             try Catalog.decoder.decode([String: Catalog.Source].self, from: Data($0.utf8))
+        } ?? [:]
+        // None until this version's first run ends: the status stays empty until then.
+        if !sources.isEmpty {
+            for provider in try sourcesOff() { sources[provider.rawValue] = Catalog.Source(state: .off) }
         }
         return Catalog.Index(
             library: library, generation: (meta["generation"] as? Int64).map(Int.init) ?? 0,
-            scannedAt: (meta["scanned_at"] as? Double).map(Date.init(timeIntervalSince1970:)), sources: sources ?? [:])
+            scannedAt: (meta["scanned_at"] as? Double).map(Date.init(timeIntervalSince1970:)), sources: sources)
     }
 
     /// What reading a log found, when it is unchanged since it was read whole. Nil when it must be read.
@@ -517,9 +523,6 @@ public final class Registry: @unchecked Sendable {
         let artifacts = byPath.map { path, deliveries in
             Artifact(path: path, deliveries: deliveries.reversed(), repository: repositories[path], checkout: checkouts[path])
         }
-        return artifacts.sorted {
-            let (a, b) = ($0.latest.deliveredAt ?? .distantPast, $1.latest.deliveredAt ?? .distantPast)
-            return a != b ? a > b : $0.path < $1.path
-        }
+        return artifacts.sorted(by: Artifact.newerFirst)
     }
 }

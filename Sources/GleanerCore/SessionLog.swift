@@ -3,6 +3,14 @@ import Foundation
 public enum Provider: String, Sendable, CaseIterable {
     case claudeCode = "claude-code"
     case codex
+
+    /// The agent's name, as the app and the query core say it.
+    public var name: String {
+        switch self {
+        case .claudeCode: "Claude Code"
+        case .codex: "Codex"
+        }
+    }
 }
 
 public struct SessionInfo: Sendable {

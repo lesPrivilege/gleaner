@@ -26,7 +26,7 @@ If this host offers Gleaner's MCP tools (`gleaner_find`, `gleaner_show`, `gleane
 
 ## Reading an answer
 
-Every answer carries `index`: the `library`, its `generation` (how many times Gleaner has read the logs; 0 means not yet), `scanned_at` (when it last finished) and `sources`, where `claude-code` and `codex` each have a `state`: `read`, `read_with_problems`, `unreadable` or `absent`. `sources` is empty until this version of Gleaner has finished reading the logs once: before the first run, and after Gleaner is updated, while it reads them all again. An answer holds only within that index.
+Every answer carries `index`: the `library`, its `generation` (how many times Gleaner has read the logs; 0 means not yet), `scanned_at` (when it last finished) and `sources`, where `claude-code` and `codex` each have a `state`: `read`, `read_with_problems`, `unreadable`, `absent` or `off`. `off` means the person turned that agent off in Gleaner's Sources: its logs aren't read, and its deliveries are left out of every answer. `sources` is empty until this version of Gleaner has finished reading the logs once: before the first run, and after Gleaner is updated, while it reads them all again. An answer holds only within that index.
 
 A delivery comes as `reference`:
 - `delivery`: its id, within `library`.
@@ -52,7 +52,7 @@ To choose:
 - Every file one reply delivered matches that reply's words. Prefer the result whose `name`, `kind` and `request` fit what the person described.
 - When one result fits, take it. When several fit equally well, list them briefly (name, project, date, request) and ask which one; don't choose for the person.
 - When nothing listed fits but `truncated` is true, the file may be among the matches left out. Narrow the search (more words, `--project`, `--kind`) or raise `--limit` until the answer isn't truncated.
-- When `total` is 0, or the answer lists every match and none fits, try other or fewer words, without `--project` or `--kind`, and read each answer as above. If nothing fits still, report what the index shows: no match in Gleaner's library as of `scanned_at`, naming any source whose state isn't `read`. When `generation` is 0 or `sources` is empty, say instead that Gleaner hasn't finished reading the logs, so its library can't show yet whether it holds the file. Never say the file was never delivered: Gleaner knows only the logs it has read, and it reads new ones while the app is open.
+- When `total` is 0, or the answer lists every match and none fits, try other or fewer words, without `--project` or `--kind`, and read each answer as above. If nothing fits still, report what the index shows: no match in Gleaner's library as of `scanned_at`, naming any source whose state isn't `read`; for `off`, say that the person turned that agent off in Gleaner's Sources, so its deliveries weren't searched. When `generation` is 0 or `sources` is empty, say instead that Gleaner hasn't finished reading the logs, so its library can't show yet whether it holds the file. Never say the file was never delivered: Gleaner knows only the logs it has read, and it reads new ones while the app is open.
 - A file delivered more than once: `show` lists every delivery in `deliveries`, newest first, each with its `number` (1 is the oldest) and `delivered_at`. Take the one the person means (the version from a given day, the one before a change); otherwise keep the one `find` matched.
 
 ## Open in Gleaner
@@ -63,7 +63,7 @@ To show the person a delivery in Gleaner, where they can preview it, compare it 
 open "gleaner://delivery/<delivery>"
 ```
 
-Gleaner opens on that delivery, or says that its library has none with that id. If `open` finds no application for the link, Gleaner isn't installed on this Mac; say so.
+Gleaner opens on that delivery, or says that its library has none with that id, or that the delivery's agent is off in Sources; then tell the person they can turn it on there. If `open` finds no application for the link, Gleaner isn't installed on this Mac; say so.
 
 ## Hand off
 
@@ -88,6 +88,7 @@ Tell the person what you handed on: the file's name, its delivery's date (and nu
 A failure is `{"error": {"kind", "message"}, "index"}`, with `index` once the library was open.
 - **Exit 1**, nothing for that delivery:
   - `not_found`: this library has no delivery with that id. Check the id, or `find` again; a delivery made after `scanned_at` is there once Gleaner has read its log.
+  - `source_off`: the delivery is from an agent the person turned off in Gleaner's Sources. Tell them; turning it on there makes its deliveries available again.
   - `other_library`: the reference comes from another library.
   - `unavailable`: there are no bytes for that version. Tell the person why, from `reason`.
   - `not_text`: `read` takes text only. Use `handoff` and give the path.

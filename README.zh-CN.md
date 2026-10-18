@@ -136,7 +136,7 @@ ln -s "$PWD/.build/release/gleaner" /usr/local/bin/gleaner
 
 每条命令向 stdout 写一个 JSON 对象，失败时也一样，写成 `{"error": {"kind": …, "message": …}}`，消息同时写到 stderr。退出码：0 成功；1 找不到、这一版没有字节，或其他失败；2 用法错误；3 没有资料库，或资料库属于另一个版本（打开 Gleaner 即可创建或更新）。`--home <folder>` 读取为另一个主文件夹保存的资料库，与应用的 `-GleanerHome` 相同。
 
-命令从不建索引，以只读方式打开资料库：它按应用最近一次读到的内容回答。每个回答，以及资料库打开之后的每次失败，都带着这份 `index`（资料库、运行过几次、最近一次何时结束、各 agent 的日志读得怎样），所以过时或不完整的索引给出的空结果，不会被当成什么都没交付的证据。打开 Gleaner 就能更新它。命令从不写入资料库或项目文件夹；`handoff` 只写它的副本，放在 Gleaner 的缓存里。
+命令从不建索引，以只读方式打开资料库：它按应用最近一次读到的内容回答。每个回答，以及资料库打开之后的每次失败，都带着这份 `index`（资料库、运行过几次、最近一次何时结束、各 agent 的日志读得怎样，或已关闭），所以过时或不完整的索引给出的空结果，不会被当成什么都没交付的证据。打开 Gleaner 就能更新它。它按应用呈现的样子回答：在 Sources 里关掉的 agent 在这份索引里记为 `off`，它的交付不在回答里。命令从不写入资料库或项目文件夹；`handoff` 只写它的副本，放在 Gleaner 的缓存里。
 
 **给 agent 的宿主用。** `gleaner mcp` 通过 stdio，把同样的六个调用作为 MCP 工具提供：`gleaner_find`、`gleaner_show`、`gleaner_read`、`gleaner_resolve`、`gleaner_handoff` 和 `gleaner_verify`。参数与命令同名（`lines` 和 `bytes` 写成 `"A:B"`；命令接收引用文件的地方，`gleaner_verify` 接收交付的 id，或以对象形式给出的引用），回答是同样的 JSON，既作为结构化内容，也作为文本。失败时是一个工具错误，带着同样的 `{"error", "index"}` 对象。服务端不保留状态：每次调用都以只读方式打开资料库，stdout 上只写协议消息。Gleaner 从不自行注册到任何宿主。要把它加到 Claude Code，范围由你选定（默认是 local；`--scope user` 用于你的所有项目，`--scope project` 通过项目的 `.mcp.json` 共享）：
 
@@ -169,7 +169,7 @@ ln -s "$PWD/extensions/gleaner" ~/.agents/skills/gleaner   # Codex 和 DeepSeek 
 
 放在项目自己的 `.claude/skills` 或 `.agents/skills` 文件夹里也可以。skill 默认 `gleaner` 在 PATH 上，否则由你告诉 agent 它在哪里。
 
-在应用里，**Copy Reference**（⇧⌘C，位于 Edit 菜单、详情栏的 ⋯ 菜单，以及列表行和版本行的右键菜单）把一次交付的引用按 `gleaner resolve` 给出的样子拷贝下来，可以贴给 agent。**Show in Log**（位于 File 菜单、⋯ 菜单和同样的右键菜单）在 Finder 中选中会话日志；More Info 给出提到这个文件的那条回复所在的行。显示日志并不是恢复对话：恢复对话用 Copy Resume Command。`gleaner://delivery/<id>` 链接会打开 Gleaner 并定位到那次交付；链接指向的交付不在这个资料库里时，如实说明。
+在应用里，**Copy Reference**（⇧⌘C，位于 Edit 菜单、详情栏的 ⋯ 菜单，以及列表行和版本行的右键菜单）把一次交付的引用按 `gleaner resolve` 给出的样子拷贝下来，可以贴给 agent。**Show in Log**（位于 File 菜单、⋯ 菜单和同样的右键菜单）在 Finder 中选中会话日志；More Info 给出提到这个文件的那条回复所在的行。显示日志并不是恢复对话：恢复对话用 Copy Resume Command。`gleaner://delivery/<id>` 链接会打开 Gleaner 并定位到那次交付；链接指向的交付不在这个资料库里，或它的 agent 在 Sources 里已关闭时，如实说明。
 
 ## 交付的认定
 

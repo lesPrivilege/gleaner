@@ -47,14 +47,15 @@ public struct Catalog: Sendable {
 
 extension Catalog {
     /// The artifacts whose words match every term (SPEC §10), newest first, each by the delivery
-    /// the search matched; at most `limit` of them. `project` names a project by its folder, in any
-    /// form an agent may have it (`/private/tmp/app/` is `/tmp/app`), or by its name as shown or plain.
+    /// the search matched; at most `limit` of them. The library is the app's: without the agents
+    /// turned off. `project` names a project by its folder, in any form an agent may have it
+    /// (`/private/tmp/app/` is `/tmp/app`), or by its name as shown or plain.
     public func find(_ terms: [String], project: String? = nil, kind: Artifact.Kind? = nil, limit: Int = 20) throws -> Found {
         guard limit > 0 else { throw Failure.usage("The limit must be at least 1.") }
         let tokens = terms.joined(separator: " ").lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
         let folder = project.flatMap { $0.hasPrefix("/") ? Paths.standard($0) : nil }
         let index = try registry.index()
-        let artifacts = try registry.artifacts()
+        let artifacts = try shown().artifacts
         let names = Projects.names(artifacts.map(\.projectFolder))
         let matches = artifacts.compactMap { artifact -> (Artifact, Int)? in
             let place = Project(artifact, names: names)
@@ -215,13 +216,21 @@ extension Catalog {
         return try verify(kept.delivery)
     }
 
-    /// Every artifact, and the one holding the delivery `id`.
+    /// Every artifact shown, and the one holding the delivery `id`. A delivery of an agent turned
+    /// off is there, but not shown: it is refused as the app refuses a link to it.
     private func lookup(_ id: String) throws -> (artifacts: [Artifact], artifact: Artifact, delivery: Delivery) {
-        let artifacts = try registry.artifacts()
+        let (artifacts, library) = try shown()
         for artifact in artifacts {
             if let delivery = artifact.deliveries.first(where: { $0.id == id }) { return (artifacts, artifact, delivery) }
         }
+        if let hidden = library.lazy.flatMap(\.deliveries).first(where: { $0.id == id }) { throw Failure.sourceOff(id, hidden.provider) }
         throw Failure.notFound(id)
+    }
+
+    /// The library as the app shows it (`Artifact.shown`), and all of it.
+    private func shown() throws -> (artifacts: [Artifact], library: [Artifact]) {
+        let library = try registry.artifacts()
+        return (Artifact.shown(library, without: try registry.sourcesOff()), library)
     }
 
     /// The file as it is now, checked on each call.
@@ -277,6 +286,9 @@ extension Catalog {
         case wrongVersion(String, found: Int)
         /// No delivery has this id in this library.
         case notFound(String)
+        /// The delivery is in this library, from an agent the person turned off in Gleaner's
+        /// Sources: like the app, the catalog leaves its deliveries out.
+        case sourceOff(String, Provider)
         /// A kept reference is of the library named, not this one: its delivery id names nothing here.
         case otherLibrary(String)
         /// Gleaner holds none of the version's bytes now.
@@ -295,7 +307,7 @@ extension Catalog {
         /// the wrong version.
         public var exitCode: Int32 {
             switch self {
-            case .notFound, .otherLibrary, .unavailable, .notText, .changed, .failed: 1
+            case .notFound, .sourceOff, .otherLibrary, .unavailable, .notText, .changed, .failed: 1
             case .usage: 2
             case .noLibrary, .unreadableLibrary, .wrongVersion: 3
             }
@@ -311,6 +323,8 @@ extension Catalog {
                 "The Gleaner library at \(path) is version \(found); this reads version \(Registry.extractorVersion). Open Gleaner to update it."
             case .notFound(let id):
                 "No delivery \(id) in this library."
+            case .sourceOff(let id, let provider):
+                "Delivery \(id) is from \(provider.name), which is off in Gleaner’s Sources. Turn it on there to use its deliveries."
             case .otherLibrary(let library):
                 "The reference is of another Gleaner library, \(library). A delivery id names a delivery only in its own library."
             case .unavailable(let reason):
@@ -333,6 +347,7 @@ extension Catalog {
             case .unreadableLibrary: "unreadable_library"
             case .wrongVersion: "wrong_version"
             case .notFound: "not_found"
+            case .sourceOff: "source_off"
             case .otherLibrary: "other_library"
             case .unavailable: "unavailable"
             case .notText: "not_text"
@@ -606,7 +621,7 @@ extension Catalog {
 
     /// What an answer is evidence of (query-core "Freshness"): the library, and its last completed
     /// run. An empty answer is not evidence of absence before the first run (generation 0), from a
-    /// stale run, or for a source that couldn't be read or was read with problems.
+    /// stale run, or for a source that couldn't be read, was read with problems, or is off.
     public struct Index: Codable, Equatable, Sendable {
         /// The namespace of every delivery id.
         public var library: String
@@ -614,8 +629,9 @@ extension Catalog {
         public var generation: Int
         /// When the last completed run finished; nil before the first.
         public var scannedAt: Date?
-        /// How each agent's logs read in that run, by provider (`claude-code`, `codex`); empty when
-        /// that run was another version of Gleaner's, while this version reads every log again.
+        /// How each agent's logs read in that run, by provider (`claude-code`, `codex`), and each
+        /// agent turned off then or now as `off`; empty when that run was another version of
+        /// Gleaner's, while this version reads every log again.
         public var sources: [String: Source]
 
         // `scanned_at` is written as null, not left out, before the first run.
@@ -639,6 +655,9 @@ extension Catalog {
             case read
             /// Listed, but not everything in it could be read or understood.
             case readWithProblems = "read_with_problems"
+            /// Turned off in Gleaner's Sources, now or when that run read the logs: its logs weren't
+            /// read, and while it is off its deliveries are left out of every answer.
+            case off
         }
 
         public var state: State

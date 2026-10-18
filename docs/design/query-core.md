@@ -26,9 +26,11 @@ The indexer writes a `meta` table, key → value:
 - `library`: a random UUID, written once when the library is created. It is the namespace of every reference.
 - `generation`: incremented by each completed run.
 - `scanned_at`: when the last run finished.
-- `sources`: the last run's per-source status (absent / unreadable / read with problems, with counts) as JSON.
+- `sources`: the last run's per-source status (absent / unreadable / read with problems, with counts; off for an agent turned off in Sources, which the run didn't read) as JSON.
 
 Every response carries `index: {library, generation, scanned_at, sources}`. A result is evidence only within that scope. An empty result from a stale or partial index is not evidence of absence, and the response says which sources were incomplete.
+
+The catalog answers from the library as the app shows it. An agent turned off in Sources is `off` in `index.sources` from that moment, since turning it off starts no run, and its deliveries are left out of every answer; one asked for by id is refused as `source_off`. Turned on again, it stays `off` until the next run ends, while its deliveries are answered from what the library held.
 
 ## Identity in every result
 
@@ -72,7 +74,7 @@ Arguments are parsed with `swift-argument-parser`.
 - **Reasons.** `availability` is `{state, reason}`. `state` is `original`, `saved_copy` or `none`. `reason`, given only with `none`, is one of `never_seen`, `not_a_regular_file`, `unreadable`, `folder`, `too_large_to_have_been_saved`, `save_failed` or `saved_copy_missing`. An `unavailable` failure gives its `reason` from the same list. `provenance.state` is `at_delivery`, `first_seen_after_delivery` or `never_observed`, and `show`'s `handoff.action` is `ready`, `unavailable`, `restore_from_git`, `lost` or `folder`.
 - **Ranges.** `read --lines A:B` selects lines A through B, counted from 1, both included. `--bytes A:B` selects bytes from offset A up to B, counted from 0, B excluded. Whichever is asked, the answer's `range` is byte offsets into the version, `[start, end]` with the end excluded, so a cut selection goes on from its end. `size` is the version's length in bytes. A cut never splits a UTF-8 character.
 - **Failures.** Exits 1, 2 and 3 write `{"error": {"kind", "message"}, "index"}`, with `index` only when a library was open, so a not-found carries the index it is evidence of. The message is written to stderr too. The kinds are:
-  - exit 1: `not_found`, `other_library`, `unavailable` (with `reason`), `not_text`, `changed`, and `failed` for anything else that stopped the answer, with what it was;
+  - exit 1: `not_found`, `source_off`, `other_library`, `unavailable` (with `reason`), `not_text`, `changed`, and `failed` for anything else that stopped the answer, with what it was;
   - exit 2: `usage`;
   - exit 3: `no_library`, `unreadable_library` and `wrong_version`.
 - **verify.** It answers in full either way. When neither the original nor the saved copy holds the bytes, the answer also carries `error` (`unavailable`, with `reason`), and the command exits 1.

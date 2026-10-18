@@ -44,7 +44,7 @@ enum Staging: Equatable {
 final class LibraryModel {
     /// Every delivery the library holds, whichever agent's.
     private var library: [Artifact] = [] {
-        didSet { artifacts = Self.shown(library, without: sourcesOff) }
+        didSet { artifacts = Artifact.shown(library, without: sourcesOff) }
     }
     /// The agents whose logs the person turned off: not read, not watched, not shown.
     private(set) var sourcesOff: Set<Provider> = []
@@ -140,7 +140,7 @@ final class LibraryModel {
         userProjects = (try? indexer.registry.userProjects()) ?? []
         sourcesOff = (try? indexer.registry.sourcesOff()) ?? []
         library = (try? indexer.registry.artifacts()) ?? []
-        artifacts = Self.shown(library, without: sourcesOff)
+        artifacts = Artifact.shown(library, without: sourcesOff)
         siblings = Artifact.deliveredWith(artifacts)
         missing = Self.missing(artifacts)
         saved = Self.saved(artifacts, in: indexer.store)
@@ -268,12 +268,6 @@ final class LibraryModel {
         }
     }
 
-    /// The library without `off`'s deliveries, and without the files left with none.
-    private static func shown(_ library: [Artifact], without off: Set<Provider>) -> [Artifact] {
-        guard !off.isEmpty else { return library }
-        return library.compactMap { $0.keeping { !off.contains($0.provider) } }
-    }
-
     /// Turns an agent's logs on or off (`Registry.setSource`). On again, they are read at once.
     func setSource(_ provider: Provider, on: Bool) async {
         let registry: Registry
@@ -284,7 +278,7 @@ final class LibraryModel {
         }
         guard case .success(let off) = stored else { return }
         sourcesOff = off
-        artifacts = Self.shown(library, without: off)
+        artifacts = Artifact.shown(library, without: off)
         if watcher != nil || on { watch() }
         if on { reindex() }
         announce("\(Wording.provider(provider)) \(on ? "on" : "off")")

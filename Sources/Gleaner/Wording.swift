@@ -444,7 +444,7 @@ enum Wording {
     }
 
     static func provider(_ provider: Provider) -> String {
-        provider == .codex ? "Codex" : "Claude Code"
+        provider.name
     }
 
     /// One agent's log folder as last read (SPEC §8): not on this Mac, unreadable, read with
