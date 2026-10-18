@@ -203,4 +203,42 @@ import Testing
         }
         #expect(try await handedOver("b request").bytes == "B BYTES")
     }
+
+    /// A reply Gleaner never captured, with a time of its own, rewritten into the place of a reply
+    /// written at its other time: it doesn't take that reply's bytes by the place.
+    @Test func aNewReplyWithATimeOfItsOwnNeverTakesACaptureAtItsPlace() async throws {
+        let y = try record("user", "y request", then) + record("assistant", "[report](report.md)", then)
+        try writeFile("Y BYTES", then)
+        try y.write(to: log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { then.addingTimeInterval(1) })
+        let x = try record("user", "x request", then) + record("assistant", "[report](report.md)", then)
+            + record("assistant", "All done.", then.addingTimeInterval(5))
+        try writeFile("X BYTES", then.addingTimeInterval(1))
+        try (x + y).write(to: log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { then.addingTimeInterval(9999) })
+        let taken = try await handedOver("x request")
+        #expect(taken.bytes != "Y BYTES" || taken.delivery.capture?.provenance != .atDelivery)
+    }
+
+    /// A reply whose records carry no time, at a place another reply's capture holds, gets an id of
+    /// its own once, and keeps it as the log grows.
+    @Test func aReplyWithoutTimesKeepsTheIdItWasGiven() async throws {
+        let b = try record("user", "b request", then) + record("assistant", "[report](report.md)", then)
+        try writeFile("B BYTES", then)
+        try b.write(to: log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { then.addingTimeInterval(1) })
+        let a = try record("user", "a request", nil) + record("assistant", "[report](report.md)", nil)
+        try writeFile("A BYTES", then.addingTimeInterval(2))
+        var text = a + b
+        try text.write(to: log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { then.addingTimeInterval(3) })
+        let first = try await handedOver("a request").delivery.id
+        for n in 1...3 {
+            try writeFile("A BYTES CHANGED \(n)", then.addingTimeInterval(Double(10 * n)))
+            text += try record("user", "more \(n)", then.addingTimeInterval(Double(10 * n)))
+            try text.write(to: log, atomically: true, encoding: .utf8)
+            #expect(try indexer.run(now: { then.addingTimeInterval(Double(10 * n + 1)) }).newDeliveries == 0)
+            #expect(try await handedOver("a request").delivery.id == first)
+        }
+    }
 }

@@ -49,24 +49,24 @@ extension Registry {
     @discardableResult
     public func addProject(named name: String, at date: Date, moving subjects: [String]) throws -> UserProject {
         let project = UserProject(key: "user:" + UUID().uuidString, name: name, createdAt: date)
-        try db.transaction {
+        try writing { try db.transaction {
             try db.run("INSERT INTO projects (key, name, created_at) VALUES (?, ?, ?)", [project.key, name, date])
             try record(.project, subjects: subjects, target: project.key, at: date)
-        }
+        } }
         return project
     }
 
     public func renameProject(_ key: String, to name: String) throws {
-        try db.run("UPDATE projects SET name = ? WHERE key = ?", [name, key])
+        try writing { try db.run("UPDATE projects SET name = ? WHERE key = ?", [name, key]) }
     }
 
     /// Removes a project the person made, with every correction that put work or projects in it:
     /// that work goes back to where Gleaner would put it. No file is touched.
     public func removeProject(_ key: String) throws {
-        try db.transaction {
+        try writing { try db.transaction {
             try db.run("DELETE FROM corrections WHERE kind IN ('project', 'combine') AND target = ?", [key])
             try db.run("DELETE FROM projects WHERE key = ?", [key])
-        }
+        } }
     }
 
     public func corrections() throws -> [Correction] {
@@ -85,7 +85,7 @@ extension Registry {
 
     /// The same decision for each of `subjects`, made whole or not at all.
     public func correct(_ kind: Correction.Kind, subjects: [String], target: String, at date: Date) throws {
-        try db.transaction { try record(kind, subjects: subjects, target: target, at: date) }
+        try writing { try db.transaction { try record(kind, subjects: subjects, target: target, at: date) } }
     }
 
     private func record(_ kind: Correction.Kind, subjects: [String], target: String, at date: Date) throws {
@@ -106,16 +106,16 @@ extension Registry {
 
     /// Undoes several decisions, made whole or not at all.
     public func undo(_ corrections: [Correction.ID]) throws {
-        try db.transaction { for id in corrections { try undo(id) } }
+        try writing { try db.transaction { for id in corrections { try db.run("DELETE FROM corrections WHERE id = ?", [id]) } } }
     }
 
     public func undo(_ correction: Correction.ID) throws {
-        try db.run("DELETE FROM corrections WHERE id = ?", [correction])
+        try undo([correction])
     }
 
     /// Undoes every correction and removes the projects the person made: the library is organized
     /// as Gleaner found it. No file is touched.
     public func undoAllCorrections() throws {
-        try db.transaction { try db.execute("DELETE FROM corrections; DELETE FROM projects;") }
+        try writing { try db.transaction { try db.execute("DELETE FROM corrections; DELETE FROM projects;") } }
     }
 }

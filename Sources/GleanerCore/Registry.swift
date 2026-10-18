@@ -6,6 +6,33 @@ public final class Registry: @unchecked Sendable {
     let db: Database
     /// The library file, for another connection to it (`LibraryModel` writes corrections over one).
     public let path: String
+    /// One write at a time to a library file, whichever connection makes it: a log's reading and a
+    /// person's correction take turns, so a correction waits for the log being read, not for every
+    /// log after it, and two connections never meet SQLite's busy timeout.
+    let gate: DispatchSemaphore
+
+    private static let gates = Gates()
+
+    private final class Gates: @unchecked Sendable {
+        let lock = NSLock()
+        var byPath: [String: DispatchSemaphore] = [:]
+
+        func gate(_ path: String) -> DispatchSemaphore {
+            lock.withLock {
+                if let gate = byPath[path] { return gate }
+                let gate = DispatchSemaphore(value: 1)
+                byPath[path] = gate
+                return gate
+            }
+        }
+    }
+
+    /// Runs `body` holding the library's write gate.
+    func writing<T>(_ body: () throws -> T) throws -> T {
+        gate.wait()
+        defer { gate.signal() }
+        return try body()
+    }
 
     /// Bump when extraction changes what is derived from logs (requests, evidence, admission, the
     /// record types a log holds that Gleaner doesn't know).
@@ -15,6 +42,7 @@ public final class Registry: @unchecked Sendable {
 
     public init(path: String) throws {
         self.path = path
+        gate = Self.gates.gate(URL(fileURLWithPath: path).standardizedFileURL.path)
         db = try Database(path: path)
         try db.execute("""
             CREATE TABLE IF NOT EXISTS log_files (
@@ -99,7 +127,10 @@ public final class Registry: @unchecked Sendable {
         // found by its id, as before.
         if try !has("captures", "reply_times") {
             try db.transaction {
-                try db.execute("ALTER TABLE captures ADD COLUMN log_path TEXT; ALTER TABLE captures ADD COLUMN path TEXT; ALTER TABLE captures ADD COLUMN reply_times TEXT;")
+                for column in ["log_path", "path"] where try !has("captures", column) {
+                    try db.execute("ALTER TABLE captures ADD COLUMN \(column) TEXT;")
+                }
+                try db.execute("ALTER TABLE captures ADD COLUMN reply_times TEXT;")
                 for row in try db.rows("SELECT id, log_path, path, delivered_at FROM deliveries") {
                     try db.run("UPDATE captures SET log_path = ?, path = ?, reply_times = ? WHERE delivery_id = ?",
                                [row["log_path"] as? String, row["path"] as? String,
@@ -134,7 +165,7 @@ public final class Registry: @unchecked Sendable {
         try db.rows("PRAGMA table_info(\(table))").contains { $0["name"] as? String == column }
     }
 
-    public func transaction<T>(_ body: () throws -> T) throws -> T { try db.transaction(body) }
+    public func transaction<T>(_ body: () throws -> T) throws -> T { try writing { try db.transaction(body) } }
 
     /// What reading a log found, when it is unchanged since it was read whole: the record types its
     /// adapter didn't recognize, with counts, and whether it had lost records (`markShortened`).

@@ -273,6 +273,9 @@ public final class Indexer: @unchecked Sendable {
         }
         for id in placed where !taken.contains(id) {
             guard let recorded = try registry.captureTimes(id), recorded.isSubset(of: times) else { continue }
+            // Recording only times other replies share, it may be another reply's: a reply with a
+            // time of its own doesn't take it by its place.
+            if !recorded.isEmpty, !own.isEmpty, recorded.isDisjoint(with: own) { continue }
             if recorded.isEmpty { try registry.place(capture: id, logPath: logPath, path: candidate.path, times: times) }
             return id
         }
@@ -285,7 +288,9 @@ public final class Indexer: @unchecked Sendable {
             let id = DeliveryCandidate.id(logPath: logPath, line: candidate.evidence[0].part.line, path: candidate.path, distinct: "\(n)")
             guard !taken.contains(id) else { continue }
             guard let recorded = try registry.captureTimes(id) else { return id }
-            if !recorded.isEmpty, recorded.isSubset(of: times) { return id }
+            // Only this loop gives these ids: one recording this reply's times, or none for a reply
+            // without times, is the one it gave this reply before.
+            if recorded.isSubset(of: times), !recorded.isEmpty || times.isEmpty { return id }
         }
     }
 

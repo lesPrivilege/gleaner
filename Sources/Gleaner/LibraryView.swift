@@ -78,7 +78,6 @@ struct Sidebar: View {
         let place = Binding<Place?>(get: { model.place }, set: { if let place = $0 { model.place = place } })
         List(selection: place) {
             Label("All Deliveries", systemImage: "tray.full")
-                .badge(model.organization.works.count)
                 .tag(Place.all)
             Section("Projects") {
                 ForEach(model.projects) { project in
@@ -178,8 +177,8 @@ struct ListHandoff: ViewModifier {
                     // The file the row shows and drags, which may be an earlier one of the work's.
                     let artifact = model.result(for: work).map(model.file(in:)) ?? work.latest
                     if id == model.selection {
-                        Button("Open Verified Copy") { model.openSelected() }.disabled(model.selectedHandoffURL == nil)
-                        Button("Quick Look") { model.toggleQuickLook() }.disabled(model.selectedHandoffURL == nil)
+                        Button("Open Verified Copy") { model.openSelected() }.disabled(!model.canHandOver)
+                        Button("Quick Look") { model.toggleQuickLook() }.disabled(!model.canHandOver)
                         Divider()
                     }
                     Button(model.missing.contains(artifact.path) ? "Show Folder in Finder" : "Show in Finder") { model.reveal(artifact) }
@@ -189,7 +188,7 @@ struct ListHandoff: ViewModifier {
                 }
             }
             .onKeyPress(.space) {
-                guard model.selectedHandoffURL != nil || model.isQuickLookOpen else { return .ignored }
+                guard model.canHandOver || model.isQuickLookOpen else { return .ignored }
                 model.toggleQuickLook()
                 return .handled
             }

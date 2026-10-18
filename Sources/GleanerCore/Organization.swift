@@ -75,7 +75,7 @@ public struct Organization: Sendable {
             /// The later file first came with the bytes the earlier one last had, and the earlier
             /// one is gone from its path: it may have been renamed or moved.
             case moved
-            /// In one folder, with names that differ only by a version mark (`v1`, `draft`, `final`, a date).
+            /// In one folder, with names that differ only by a version mark (`v2`, `draft`, `final`, `(1)`).
             case versionName
         }
 
@@ -223,9 +223,10 @@ public struct Organization: Sendable {
 
     public func placement(of work: Work) -> Placement { placements[work.id] ?? .found }
 
-    /// The person's decisions joining the work's files, oldest first.
+    /// The person's decisions joining the work's files, oldest first, also those through a file no
+    /// longer in the library, so each can be undone.
     public func links(of work: Work) -> [Correction] {
-        corrections.filter { $0.kind == .sameWork && work.contains($0.subject) && work.contains($0.target) }
+        corrections.filter { $0.kind == .sameWork && (work.contains($0.subject) || work.contains($0.target)) }
     }
 
     /// The joins Gleaner suggests for the work, to an earlier or a later file.
@@ -244,12 +245,17 @@ public struct Organization: Sendable {
     /// Gleaner doesn't offer the next likeliest instead. Each file's search looks back from it
     /// among files sorted by date, so a folder of hundreds of versions costs little.
     static func suggest(works: [Work], workIndex: [String: Int], corrections: [Correction], missing: Set<String>) -> [Suggestion] {
-        let rejected = Set(corrections.filter { $0.kind == .notSameWork }.map {
-            min($0.subject, $0.target) + "\n" + max($0.subject, $0.target)
-        })
         func first(_ file: Artifact) -> Date { file.deliveries.last?.deliveredAt ?? .distantPast }
         func last(_ file: Artifact) -> Date { file.latest.deliveredAt ?? .distantPast }
         let files = works.flatMap(\.files)
+        // Not the Same ends suggestions for the later file of the two, and between their works.
+        let byPath = Dictionary(files.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
+        var declined = Set<String>(), apartWorks = Set<[Int]>()
+        for c in corrections where c.kind == .notSameWork {
+            guard let a = byPath[c.subject], let b = byPath[c.target] else { continue }
+            declined.insert(first(a) > first(b) ? a.path : b.path)
+            if let x = workIndex[a.path], let y = workIndex[b.path] { apartWorks.insert([min(x, y), max(x, y)]) }
+        }
         // Empty files share one hash and say nothing about where a file came from.
         var bySha: [String: [Artifact]] = [:], byName: [String: [Artifact]] = [:]
         for file in files {
@@ -260,7 +266,7 @@ public struct Organization: Sendable {
         for key in byName.keys { byName[key]!.sort { first($0) < first($1) } }
         func apart(_ a: Artifact, _ b: Artifact) -> Bool {
             guard let x = workIndex[a.path], let y = workIndex[b.path] else { return false }
-            return x != y && works[x].project == works[y].project
+            return x != y && works[x].project == works[y].project && !apartWorks.contains([min(x, y), max(x, y)])
         }
         /// The nearest file before `date` in `group` (sorted by `key`) that passes `ok`.
         func nearest(in group: [Artifact], before date: Date, by key: (Artifact) -> Date, _ ok: (Artifact) -> Bool) -> Artifact? {
@@ -269,7 +275,7 @@ public struct Organization: Sendable {
             return group[..<low].reversed().prefix(64).first(where: ok)
         }
         var suggestions: [Suggestion] = []
-        for later in files {
+        for later in files where !declined.contains(later.path) {
             let arrived = first(later)
             let moved = (later.deliveries.last?.sha256).flatMap { bySha[$0] }.flatMap { group in
                 nearest(in: group, before: arrived, by: last) { missing.contains($0.path) && apart($0, later) }
@@ -278,7 +284,7 @@ public struct Organization: Sendable {
                 nearest(in: group, before: arrived, by: first) { $0.name != later.name && apart($0, later) }
             }
             let (earlier, reason): (Artifact?, Suggestion.Reason) = moved != nil ? (moved, .moved) : (renamed, .versionName)
-            guard let earlier, !rejected.contains(min(earlier.path, later.path) + "\n" + max(earlier.path, later.path)) else { continue }
+            guard let earlier else { continue }
             suggestions.append(Suggestion(earlier: earlier.path, later: later.path, reason: reason))
         }
         return suggestions

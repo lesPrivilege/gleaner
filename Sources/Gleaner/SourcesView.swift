@@ -26,7 +26,7 @@ struct SourcesList: View {
             }
             Section("Library") {
                 Label("Your Corrections", systemImage: "arrow.uturn.backward")
-                    .badge(model.corrections.count + model.userProjects.count)
+                    .badge(model.correctionGroups.count + model.userProjects.count)
                     .tag(SourcePage.corrections)
                 Label("Storage", systemImage: "internaldrive")
                     .tag(SourcePage.storage)

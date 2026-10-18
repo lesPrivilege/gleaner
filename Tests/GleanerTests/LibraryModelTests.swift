@@ -471,6 +471,30 @@ import UniformTypeIdentifiers
         #expect(model.actionFailure(video, video.latest) == Wording.preparedCopyChanged)
     }
 
+    @Test func spaceAndTheMenusPrepareAChangedCopyAgainAndSaySo() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try await replacedCopy(model)
+        #expect(model.selectedHandoffURL == nil)
+        #expect(model.canHandOver)
+        let generation = model.stagingGeneration
+        model.toggleQuickLook()
+        #expect(model.stagingGeneration == generation + 1)
+        #expect(model.actionFailure(video, video.latest) == Wording.preparedCopyChanged)
+    }
+
+    @Test func theTileHandsOverTheCurrentFileThePersonChose() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try await selectVideo(model)
+        // Delivery 1's bytes are neither on disk nor saved: the current file is offered instead.
+        try FileManager.default.removeItem(at: indexer.store.objectURL(try #require(video.deliveries[2].sha256)))
+        model.chosenDelivery = video.deliveries[2].id
+        await model.observe(video)
+        let plan = try #require(model.selectedHandoff).plan
+        guard case .unavailable(_, let current?) = plan else { Issue.record("expected the current file offered, got \(plan)"); return }
+        await model.stage(sha: current, artifact: video)
+        #expect(try await dropped(model.tileItem(plan, artifact: video)).contents == "video v2")
+    }
+
     @Test func aCopyRemovedOrWrittenToIsPreparedAgainToo() async throws {
         let model = LibraryModel(indexer: indexer)
         let video = try await selectVideo(model)

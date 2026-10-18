@@ -37,7 +37,7 @@ struct GleanerApp: App {
                 Divider()
                 Button("Open Verified Copy") { model?.openSelected() }
                     .keyboardShortcut("o")
-                    .disabled(model?.selectedHandoffURL == nil)
+                    .disabled(model?.canHandOver != true)
                 Button("Show in Finder") { if let model, let result = model.selected { model.reveal(model.file(in: result)) } }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(model?.selected == nil)
@@ -48,7 +48,7 @@ struct GleanerApp: App {
             CommandGroup(after: .toolbar) {
                 Button("Quick Look") { model?.toggleQuickLook() }
                     .keyboardShortcut("y")
-                    .disabled(model?.selectedHandoffURL == nil)
+                    .disabled(model?.canHandOver != true)
             }
             CommandGroup(replacing: .appSettings) {
                 Button("Sources and Storage…") { model?.place = .sources }

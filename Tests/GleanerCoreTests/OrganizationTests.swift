@@ -158,4 +158,21 @@ import Testing
         try reopened.undoAllCorrections()
         #expect(try reopened.corrections().isEmpty)
     }
+
+    @Test func notTheSameForOneFileOfAWorkEndsTheSuggestionForTheWork() {
+        let a = file("/w/r/deck-v1.key", [(1, "x")]), b = file("/w/r/deck-v2.key", [(2, "y")]), c = file("/w/r/deck-v3.key", [(3, "z")])
+        let joined = correction(.sameWork, b.path, c.path)
+        let before = Organization(artifacts: [a, b, c], corrections: [joined])
+        let work = before.work(containing: c.path)!
+        #expect(!before.suggestions(for: work).isEmpty)
+        let after = Organization(artifacts: [a, b, c], corrections: [joined, correction(.notSameWork, a.path, b.path, at: 1)])
+        #expect(after.suggestions(for: after.work(containing: c.path)!).isEmpty)
+    }
+
+    @Test func aJoinThroughAGoneFileCanStillBeUndone() {
+        let draft = file("/w/r/report-draft.md", [(1, "d")]), final = file("/w/r/report-final.md", [(3, "f")])
+        let org = Organization(artifacts: [draft, final], corrections: [
+            correction(.sameWork, draft.path, "/w/r/report-v2.md"), correction(.sameWork, "/w/r/report-v2.md", final.path, at: 1)])
+        #expect(org.links(of: org.works[0]).count == 2)
+    }
 }

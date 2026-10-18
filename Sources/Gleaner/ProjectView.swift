@@ -87,7 +87,7 @@ struct ProjectHeader: View {
                 HStack(spacing: 6) {
                     Text("Also shows \(combined.name), which you put inside it \(Wording.date(combined.correction.madeAt)).")
                         .font(.caption).foregroundStyle(.secondary)
-                    Button("Show Apart") { Task { await model.undo(combined.correction) } }.controlSize(.mini)
+                    Button("Show Apart") { Task { await model.undo(combined.correction, following: false) } }.controlSize(.mini)
                 }
             }
             let recent = project.works.prefix(3)

@@ -217,4 +217,23 @@ import Testing
         model.query = "deck"
         #expect(model.place == .all)
     }
+
+    /// Decisions made while logs are read one after another, and two made together, are all kept.
+    @Test func correctionsDuringBackToBackReadsAndTogetherAreAllKept() async throws {
+        try renamedReport()
+        let model = relaunch()
+        let suggestion = try #require(model.organization.suggestions.first)
+        let deck = try #require(model.organization.work(containing: board.appendingPathComponent("slides/deck.key").path))
+        let registry = indexer.registry
+        let reading = Task.detached {
+            let end = Date().addingTimeInterval(1.5)
+            while Date() < end { try? registry.transaction { Thread.sleep(forTimeInterval: 0.02) } }
+        }
+        async let joined: Void = model.join(suggestion.earlier, suggestion.later)
+        async let moved: Void = model.move(deck, toNewProject: "Slides")
+        _ = await (joined, moved)
+        await reading.value
+        #expect(model.correctionFailure == nil)
+        #expect(Set(relaunch().corrections.map(\.kind)) == [.sameWork, .project])
+    }
 }

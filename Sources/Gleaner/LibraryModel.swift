@@ -148,6 +148,12 @@ final class LibraryModel {
     private func reorganize() {
         organization = Organization(artifacts: artifacts, corrections: corrections, projects: userProjects, missing: missing)
         organizationVersion += 1
+        if indexed { updateStatus() }
+    }
+
+    /// The subtitle: what the library holds, as organized now.
+    private func updateStatus() {
+        status = Wording.library(works: organization.works.count, deliveries: artifacts.map(\.deliveries.count).reduce(0, +))
     }
 
     /// Bumped with each rebuilt organization, so a listing made before is never reused after.
@@ -249,6 +255,7 @@ final class LibraryModel {
                 self.progress = nil
                 self.indexed = true
                 self.lastRead = Date()
+                self.updateStatus()
                 switch outcome {
                 case .success(let report):
                     self.sources = report.sources
@@ -260,7 +267,6 @@ final class LibraryModel {
                 case (_, .failure(let error)): "Gleaner couldn’t read its library: \(error)"
                 default: nil
                 }
-                self.status = Wording.library(works: self.organization.works.count, deliveries: self.artifacts.map(\.deliveries.count).reduce(0, +))
                 self.indexing = false
                 if self.pending { self.pending = false; self.reindex() }
             }
@@ -371,17 +377,20 @@ final class LibraryModel {
         return registry
     }
 
-    /// Records a decision off the main thread, waiting for a read in progress if it must, then
+    /// Decisions are recorded one at a time, in the order they were made.
+    private let correctionQueue = DispatchQueue(label: "gleaner.corrections", qos: .userInitiated)
+
+    /// Records a decision off the main thread, after the log being read if there is one, then
     /// shows the library with it; or says why it couldn't be recorded, and leaves the library as
     /// it was.
     @discardableResult
     private func correcting<T: Sendable>(_ change: @escaping @Sendable (Registry) throws -> T) async -> T? {
         let outcome: Result<(T, [Correction], [UserProject]), Error>
         do {
-            let registry = try correctionsStore()
-            outcome = await Task.detached(priority: .userInitiated) {
-                Result { (try change(registry), try registry.corrections(), try registry.userProjects()) }
-            }.value
+            let registry = try correctionsStore(), queue = correctionQueue
+            outcome = await withCheckedContinuation { done in
+                queue.async { done.resume(returning: Result { (try change(registry), try registry.corrections(), try registry.userProjects()) }) }
+            }
         } catch {
             outcome = .failure(error)
         }
@@ -399,39 +408,40 @@ final class LibraryModel {
     }
 
     /// Shows the work holding `path` where it now is: selected, in its project when the window
-    /// shows a project.
-    private func follow(_ path: String) {
-        guard let work = organization.work(containing: path) else { return }
+    /// shows a project. Not when the person went elsewhere while the decision was recorded.
+    private func follow(_ path: String, from before: (Place, Work.ID?)) {
+        guard place == before.0, selection == before.1, let work = organization.work(containing: path) else { return }
         if case .project(let key) = place, key != work.project { place = .project(work.project) }
         selection = work.id
     }
 
     /// Puts the work, every one of its files, in the project `key`.
     func move(_ work: Work, to key: String) async {
-        let paths = work.files.map(\.path)
+        let paths = work.files.map(\.path), before = (place, selection)
         await correcting { try $0.correct(.project, subjects: paths, target: key, at: Date()) }
-        follow(work.id)
+        follow(work.id, from: before)
     }
 
     /// Makes a project of the person's own and puts the work in it.
     func move(_ work: Work, toNewProject name: String) async {
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines), paths = work.files.map(\.path)
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines), paths = work.files.map(\.path), before = (place, selection)
         guard !name.isEmpty else { return }
         await correcting { try $0.addProject(named: name, at: Date(), moving: paths) }
-        follow(work.id)
+        follow(work.id, from: before)
     }
 
     /// Gleaner puts the work back where it found it.
     func undoMove(_ work: Work) async {
-        let moves = corrections.filter { $0.kind == .project && work.contains($0.subject) }.map(\.id)
+        let moves = corrections.filter { $0.kind == .project && work.contains($0.subject) }.map(\.id), before = (place, selection)
         await correcting { try $0.undo(moves) }
-        follow(work.id)
+        follow(work.id, from: before)
     }
 
     /// The two files are versions of one work, from now on and after every reread.
     func join(_ a: String, _ b: String) async {
+        let before = (place, selection)
         await correcting { try $0.correct(.sameWork, subject: a, target: b, at: Date()) }
-        follow(a)
+        follow(a, from: before)
     }
 
     /// The two files are not one work: Gleaner stops suggesting it.
@@ -439,15 +449,16 @@ final class LibraryModel {
         await correcting { try $0.correct(.notSameWork, subject: a, target: b, at: Date()) }
     }
 
-    /// Undoes decisions made together, such as moving every file of a work.
-    func undo(_ corrections: [Correction]) async {
-        let ids = corrections.map(\.id), selected = selection
+    /// Undoes decisions made together, such as moving every file of a work. With `following`,
+    /// the window follows the selected work to where it now is.
+    func undo(_ corrections: [Correction], following: Bool = true) async {
+        let ids = corrections.map(\.id), before = (place, selection)
         await correcting { try $0.undo(ids) }
-        if let selected { follow(selected) }
+        if following, let selected = before.1 { follow(selected, from: before) }
     }
 
-    func undo(_ correction: Correction) async {
-        await undo([correction])
+    func undo(_ correction: Correction, following: Bool = true) async {
+        await undo([correction], following: following)
     }
 
     func undoAllCorrections() async {
@@ -676,10 +687,19 @@ final class LibraryModel {
     /// receiver asks for them (`handoffItem`), with the copy prepared again meanwhile.
     func tileItem(_ plan: Handoff, artifact: Artifact) -> NSItemProvider {
         if plan == .folder { return Self.folderItem(artifact.path) }
-        guard case .ready(let sha, _, _) = plan else { return NSItemProvider() }
+        // The delivery's bytes, or the current file the person chose to hand over instead.
+        guard let sha = plan.sha else { return NSItemProvider() }
         if case .ready(let url, _) = staging(for: sha) { return NSItemProvider(contentsOf: url) ?? NSItemProvider() }
         prepareAgain()
         return handoffItem(sha: sha, artifact: artifact)
+    }
+
+    /// True when the selection has something to open, look at or copy now, or a copy that changed
+    /// and is prepared again when asked: menus and keys stay on for it, and say why it waits.
+    var canHandOver: Bool {
+        if selectedHandoffURL != nil { return true }
+        if case .ready = staging, selectedHandoff != nil { return true }
+        return false
     }
 
     /// When the copy shown as ready was changed outside Gleaner: prepares it again, and says so where

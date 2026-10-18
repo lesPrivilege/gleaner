@@ -5,7 +5,7 @@ Opus, 2026-10-18, after an independent completion review of main `3a89888`. The 
 This chapter is the contract the app now keeps. It supersedes, where they differ:
 - rulings §2's deferral of reassigning projects, its project menu beside the kind filter, §6's "no customization beyond filters" and §7a's menu placement: projects are a sidebar, and the person can move work, make projects and join files;
 - review-rulings C4, "the project label is not editable": a project the person made has the name they give it, and a derived one keeps its folder's;
-- structure.md's "Inferred lineage" and "manual groups" stays: Gleaner still never infers lineage, but it may now *suggest* a join with its reason, which only the person can make; projects of one's own are the one manual grouping, chosen because the review asked for correctable associations. This is the "person's explicit link" that structure.md left cross-path lineage waiting for. Its project timeline, placed on the project menu, now belongs in the project's outline when PR #4 is rebased.
+- structure.md's "Inferred lineage" and "manual groups" stays: Gleaner still never infers lineage, but it may now *suggest* a join with its reason, which only the person can make; projects of one's own are the one manual grouping, chosen because the review asked for correctable associations. This is the "person's explicit link" that structure.md left cross-path lineage waiting for. Its project timeline was placed on the project menu, and review-rulings C12 moved it to the List menu; with the menu gone, it belongs in the project's outline when PR #4 is rebased.
 
 ## The objects the person sees
 
@@ -24,7 +24,7 @@ Each file gets at most one suggestion, for the nearest file before it that it ma
 
 ## Corrections
 
-A correction is the person's decision, kept apart from what Gleaner observed (review-rulings §3, foundation 2): its own tables (`corrections`, `projects`) in the library, written over a connection of their own so a log being read never holds them up for long or takes them with it. Foundation 2 keys a derived record by delivery, input hash, producer and version; a correction is about a file or a project, not one delivery or one set of bytes, so it is keyed by the file's path (the app's artifact identity, SPEC §5) or the project, and its producer is always the person. No correction changes a delivery, a capture, a hash or a status. Reading the logs again, a new extractor version and a relaunch all keep them.
+A correction is the person's decision, kept apart from what Gleaner observed (review-rulings §3, foundation 2): its own tables (`corrections`, `projects`) in the library, written one at a time over a connection of their own. Every write to the library, a log's reading or a correction, takes its turn at one gate, so a correction waits for the log being read, not for every log after it, and is never taken back with that log's transaction. Foundation 2 keys a derived record by delivery, input hash, producer and version; a correction is about a file or a project, not one delivery or one set of bytes, so it is keyed by the file's path (the app's artifact identity, SPEC §5) or the project, and its producer is always the person. No correction changes a delivery, a capture, a hash or a status. Reading the logs again, a new extractor version and a relaunch all keep them.
 
 | Decision | Scope | Undo |
 |---|---|---|
