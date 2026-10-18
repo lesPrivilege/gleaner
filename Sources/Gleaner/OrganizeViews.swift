@@ -39,7 +39,7 @@ struct WorkSection: View {
                         HStack(spacing: 6) {
                             TypeBadge(artifact: file)
                             Text(file.name).font(.callout)
-                            Text("· \(Wording.count(file.deliveries.count, "delivery", "deliveries")) · \(file.folder)")
+                            Text("· \(Wording.count(file.deliveries.count, "delivery", "deliveries"))" + (file.folder == "." ? "" : " · \(file.folder)"))
                                 .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         }
                     }
