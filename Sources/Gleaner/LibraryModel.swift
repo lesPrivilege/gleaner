@@ -264,17 +264,22 @@ final class LibraryModel {
     /// The works the window lists, newest first: in the project shown, of the kind chosen, matching the search.
     var results: [SearchResult] {
         let tokens = tokens
-        let project: String? = if case .project(let key) = place { key } else { nil }
-        return organization.works.compactMap { work in
-            guard kind == nil || work.kind == kind, project == nil || work.project == project,
-                  let matched = work.match(tokens, project: organization.projectName(work.project)) else { return nil }
-            return SearchResult(work: work, matched: matched)
-        }
+        return organization.works.compactMap { result(for: $0, tokens: tokens) }
     }
 
+    /// The work as the list shows it, or nil when the place, kind or search leaves it out.
+    private func result(for work: Work, tokens: [String]) -> SearchResult? {
+        if case .project(let key) = place, work.project != key { return nil }
+        guard kind == nil || work.kind == kind,
+              let matched = work.match(tokens, project: organization.projectName(work.project)) else { return nil }
+        return SearchResult(work: work, matched: matched)
+    }
+
+    /// The selected work, as the list shows it: looked up, not found by listing every work, since
+    /// the detail asks for it many times each time it is drawn.
     var selected: SearchResult? {
-        guard let selection else { return nil }
-        return results.first { $0.work.contains(selection) }
+        guard let selection, let work = organization.work(containing: selection) else { return nil }
+        return result(for: work, tokens: tokens)
     }
 
     func delivery(in result: SearchResult) -> Delivery {
