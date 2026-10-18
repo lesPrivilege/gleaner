@@ -79,3 +79,8 @@ Each check runs against a synthetic home, never the person's library:
 - **Open.** `open -a build/Gleaner.app "gleaner://delivery/<id>"`, aimed at the instance running on the synthetic home so that no other copy of Gleaner could take the link, was delivered to that instance, and started no other. What the window then showed was not seen: this session had neither screen recording nor accessibility access. The app tests cover the link's parsing and selection.
 - **Sandbox.** As in "In a sandboxed shell" above.
 - The instance was then quit.
+
+**Rechecked on 2026-10-18**, the command built at `465b17a`, on a copy of a command-test home:
+- `gleaner_verify` given a file's path answered `not_found`, taking the path for an id, and given the file's JSON answered as `verify` on the file does; `gleaner_find` refused `words` and took `terms`.
+- `find release --limit 1` gave `total` 4, `truncated` true and one result; `--limit 4` listed all four, `truncated` false.
+- With the `sources` row deleted, as opening an updated Gleaner does until its first run ends, `find` gave `sources` `{}` beside generation 1 and the old `scanned_at`.
