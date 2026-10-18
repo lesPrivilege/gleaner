@@ -14,9 +14,12 @@ The path from a green `main` to a downloadable, notarized `Gleaner-0.1.0.zip`. S
   - Space and ⌘Y open Quick Look on the selection; picking another delivery or changing the search closes it unless the same bytes stay selected; Space again closes it;
   - right-click a result: each item acts on that result;
   - Compare two deliveries, an image pair, and a delivery against a changed file on disk;
-  - a file under "Delivered with" opens on its delivery from that reply;
-  - Settings shows how each log folder read and Read Again rereads them; clearing hand-off copies prepares the selection's copy again;
-  - VoiceOver reads a result row, a delivery row and the drag tile as one sentence each;
+  - a file under "Delivered With" opens on its delivery from that reply;
+  - Sources (⌘,) shows how each log folder read and Read Again rereads them; Storage's Clear prepares the selection's copy again;
+  - a project opens on its outline; Join, Keep Apart, Move to Project…, Put Back and Show Apart act as their help says, survive a relaunch, ⌘Z takes back a join, a keep-apart and a move, and Corrections undoes each and Undo All all of them;
+  - the toolbar's Sources button opens the popover; each switch turns its agent off and on, hiding and showing its deliveries, and survives a relaunch; Codex through Magpie shows `magpie` and the model on its page;
+  - each ⓘ opens its sentence by click and by keyboard; the sidebar's marks turn white on a focused selection and follow the sidebar icon size; the file at the top of the detail shows the grab pointer and drags;
+  - VoiceOver reads a result row, a version row and the file at the top of the detail as one sentence each, and the agents' marks by name;
   - quit and relaunch: search and filters come back.
 - [ ] `CHANGELOG.md`: give 0.1.0 its date.
 

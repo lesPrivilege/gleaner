@@ -26,15 +26,16 @@ struct ComparePane: View {
                 Text("\(label(from)) → \(label(to))")
                     .font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
                 Spacer()
-                Button("Close Comparison") { model.comparison = nil }
+                Button("Done") { model.comparison = nil }
                     .keyboardShortcut(.cancelAction)
+                    .help("Close the comparison (Esc)")
             }
             Group {
                 switch content {
                 case nil:
                     ProgressView().frame(maxWidth: .infinity, minHeight: 120)
                 case .text(.limited(let reason))?:
-                    note(reason + " Read either exact version on its own.")
+                    note(reason, mark: .na)
                 case .text(let outcome)?:
                     Text(outcome.summary).font(.caption).foregroundStyle(.secondary)
                     if case .rows(let rows) = outcome, rows.contains(where: { $0.kind != .context }) { DiffRows(rows: rows) }
@@ -45,15 +46,13 @@ struct ComparePane: View {
                     }
                 case .bytes(let a, let b)?:
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(a.sha == b.sha ? "Same content" : "These bytes differ").font(.callout.weight(.semibold))
+                        Text(a.sha == b.sha ? "Same content" : "Different bytes").font(.callout.weight(.semibold))
                         bytesLine(from, a)
                         bytesLine(to, b)
-                        Text("Gleaner compares text line by line and images side by side; for these files it compares size and hash.")
-                            .font(.caption).foregroundStyle(.secondary)
                     }
                 case .failed(let reason)?:
                     HStack {
-                        note(reason)
+                        note(reason, mark: .failed)
                         Button("Check Again") {
                             model.comparison = nil
                             Task { await model.checkAgain(artifact) }
@@ -63,10 +62,10 @@ struct ComparePane: View {
                 }
             }
         }
-        .padding(12)
+        .padding(Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color(nsColor: .separatorColor)))
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Color(nsColor: .separatorColor)))
         .task(id: request) {
             let result = await Task.detached(priority: .userInitiated) {
                 Comparison.load(request.from, request.to, kind: request.kind)
@@ -84,8 +83,8 @@ struct ComparePane: View {
 
     func label(_ end: Comparison.End) -> String { "\(end.source) · \(end.sha.prefix(8))" }
 
-    func note(_ text: String) -> some View {
-        StatusLabel(mark: .hollow, text: text).font(.callout).foregroundStyle(.secondary)
+    func note(_ text: String, mark: Mark) -> some View {
+        StatusLabel(mark: mark, text: text).font(.callout)
     }
 
     func bytesLine(_ end: Comparison.End, _ bytes: Comparison.Bytes) -> some View {
@@ -99,7 +98,7 @@ struct ComparePane: View {
                 Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 280)
                 Text("\(end.title) · \(Int(image.size.width))×\(Int(image.size.height))").font(.caption).foregroundStyle(.secondary)
             } else {
-                note("\(end.title) can’t be shown as an image.")
+                note("\(end.title) can’t be shown as an image", mark: .na)
             }
         }
         .frame(maxWidth: .infinity)

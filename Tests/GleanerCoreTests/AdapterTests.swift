@@ -42,6 +42,12 @@ func fixture(_ name: String, then record: String) throws -> URL {
         #expect(log.turns[1].reply == "The subtitle pass is in `output/subs.srt`.")
     }
 
+    /// The model the provider answered with, from the reply's own records.
+    @Test func theModelBehindAReply() {
+        #expect(log.turns.map(\.model) == ["claude-fable-5", "claude-fable-5"])
+        #expect(log.session.modelProvider == nil)
+    }
+
     @Test func replyCwdFollowsTheAgent() {
         #expect(log.turns[0].cwd == "/work/Praxis/.claude/worktrees/w1")
         #expect(log.turns[1].cwd == "/work/Praxis")
@@ -147,6 +153,13 @@ func fixture(_ name: String, then record: String) throws -> URL {
         let closed = try #require(try adapter.parse(try fixture("codex-open-turn", then: next)))
         #expect(closed.turns.isEmpty)
         #expect(closed.answeredTurns == 1)
+    }
+
+    /// The provider is the session's, from its meta; the model the turn's, from its context.
+    @Test func theProviderAndModelBehindAReply() throws {
+        let log = try #require(try adapter.parse(try fixture("codex-rollout")))
+        #expect(log.session.modelProvider == "openai")
+        #expect(log.turns[0].model == "gpt-5-codex")
     }
 
     @Test func structuredAnswersAreNotRequests() {

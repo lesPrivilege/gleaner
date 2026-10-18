@@ -36,7 +36,7 @@ In v0.1:
 - Delivery extraction from user-facing final replies.
 - Registry of sessions, deliveries (mentions) and captures in SQLite. Locator state (git, availability) is recomputed when a file is checked, not stored.
 - Content-addressed snapshots under a size policy.
-- Library window: search, preview (Quick Look, text, Markdown), compare versions, reveal in Finder, copy path, drag out.
+- Library window: projects and the works in each, search, preview (Quick Look, text, Markdown), compare versions, reveal in Finder, copy path, drag out, and a Sources page for what Gleaner reads, the person's corrections and what it keeps (§5.1a).
 
 Deferred: review states and approvals, comments, Work Units, MCP or `artifact://` resolvers, agent-initiated submission, remote-agent handoff, cross-device sync, cloud deliveries (ChatGPT, claude.ai), automatic HTML dependency bundling, Claude Code hooks as a capture path, runtime extensions and model reasoning (§14), release groups (§15).
 
@@ -51,7 +51,7 @@ The core is a library (`GleanerCore`), not logic inside the UI, so that the Spik
 
 ## 5. Data model
 
-Four core objects. Project is a derived label (from cwd and git repository), not a stored entity with its own lifecycle.
+Four core objects, recorded from the logs and the files. Projects and works, which the person sees and may correct, are built over them (§5.1a).
 
 | Object | Holds |
 |---|---|
@@ -60,7 +60,7 @@ Four core objects. Project is a derived label (from cwd and git repository), not
 | **Locator** | resolved path, worktree / repository root, git state (`committed`, `modified`, `untracked`, `ignored`, `not_in_repo`; when missing: `recoverable_from_head`, `recoverable_from_history`, `lost`), availability (`file`, `directory`, `special`, `unreadable`, `missing`), last verified time |
 | **Capture** | `observed_at`, sha256, size, optional snapshot reference (`captured_at`), the capture's provenance, and what was at the path (a file, a folder, or, without a hash, nothing, an unreadable file, or not a regular file) |
 
-Artifact identity in v0.1 is the path. A renamed or moved file appears as a separate artifact; re-linking is deferred, and Gleaner never guesses identity across paths. A project is the git repository holding the file (every worktree folds into its repository), else the one its cwd belongs to, else the folder name (rulings §2). Projects are told apart by the repository's main folder (for a bare repository, its own folder, named without `.git`) and shown by its name. Each delivery records, with its capture, the repository it resolved to and the checkout it was in (the main folder or a worktree's own folder), only while the file's folder is there to show them. The record outlives a reread that drops the delivery, and the earliest one wins over any later resolution: a deleted worktree keeps its project and its name, and a file committed on its branch is still looked up in the repository's history at its path within that checkout. A delivery never resolved stays explicitly outside any repository.
+Artifact identity in v0.1 is the path. A renamed or moved file appears as a separate artifact until the person joins it to the work it continues (§5.1a); Gleaner never joins files across paths by itself. Paths keep one spelling whether or not they exist: `/private/var`, `/private/tmp` and `/private/etc` read as `/var`, `/tmp` and `/etc`, and the folder an agent worked in is compared in that spelling. A project is the git repository holding the file (every worktree folds into its repository), else the one its cwd belongs to, else the folder name (rulings §2). Projects are told apart by the repository's main folder (for a bare repository, its own folder, named without `.git`) and shown by its name. Each delivery records, with its capture, the repository it resolved to and the checkout it was in (the main folder or a worktree's own folder), only while the file's folder is there to show them. The record outlives a reread that drops the delivery, and the earliest one wins over any later resolution: a deleted worktree keeps its project and its name, and a file committed on its branch is still looked up in the repository's history at its path within that checkout. A delivery never resolved stays explicitly outside any repository.
 
 ### 5.1 Time semantics
 
@@ -81,6 +81,14 @@ A capture with a hash is never rewritten. A file that is there but cannot be ope
 Gleaner never labels a file "latest" unconditionally. It shows the time of the last verification.
 
 When the latest delivery's capture is `first_seen_after_delivery`, the on-disk status reads "unchanged since first seen", never "same as delivery N". A match with a capture made after delivery is not a match with the delivery.
+
+### 5.1a Projects, works and corrections
+
+What the person navigates is built over the four objects, never stored in them (review-rulings §3, foundation 2; `docs/design/projects-and-works.md`):
+
+- **Project:** the one derived above, or one the person made. The person can move a work into another project, and show a derived project inside another. Each work says why it is in its project.
+- **Work:** a file, or several files the person said are versions of one work. Its revisions are its files' deliveries, numbered per file. Gleaner may suggest a join, with its reason (the later file first came, after the earlier one's last delivery, with the bytes that one last had, and that one is no longer at its path; or the two names in one folder differ only by a version mark such as `v2` or `final`, never a date or a bare number), and never joins files itself.
+- **Corrections** are kept in their own tables. They never change a delivery, a capture or a status; rereading the logs and relaunching keep them; each can be undone, and all can be undone at once.
 
 ### 5.2 Versions
 
@@ -106,7 +114,7 @@ Same bytes do not imply the same logical artifact.
 - Folders are listed but not versioned: preview, Open and drag use the folder as it is now, only while the path is still a folder, and the UI says so.
 - A delivered symlink is captured by the file it points to; the link itself is never copied, and the target's permissions are never changed.
 - **Hand-off copies** (`~/Library/Caches/Gleaner/handoff`, read-only files) and the **version store** are separate. Hand-off copies are disposable; clearing them keeps the one on the clipboard, which a paste still reads, and a saved copy that backs a version is never removed by cleaning caches.
-- A drag hands over an immutable, verified copy, never the live source path. Gleaner copies the chosen version's bytes (from the saved copy when there is one, else from the source while it still matches) to a staging file, hashes the staged file, and hands it over only if the hash equals the version's. The detail's tile prepares its copy when the delivery is selected, so the preview shows the same bytes; a list row prepares its copy at drop. A copy prepared earlier is hashed again before it is reused. Handing over the source path itself would only guarantee the content at the moment of the check; an agent or editor may change it before the receiver reads it.
+- A drag hands over an immutable, verified copy, never the live source path. Gleaner copies the chosen version's bytes (from the saved copy when there is one, else from the source while it still matches) to a staging file, hashes the staged file, and hands it over only if the hash equals the version's. The detail's tile prepares its copy when the delivery is selected, so the preview shows the same bytes, and the text preview shows the text read once that copy was verified; a list row prepares its copy at drop. A copy already there is hashed again before it is reused. Gleaner keeps the identity a prepared copy had when it was hashed (its inode, size, and modification and change times), and the tile, ⌘C, Open and Quick Look use the copy only while it is still that file: a write, a replacement or a removal changes it, and the copy is then made and hashed again. Once a file is handed to another app, what that app reads from it later is beyond Gleaner's check. Handing over the source path itself would only guarantee the content at the moment of the check; an agent or editor may change it before the receiver reads it.
 - Which bytes back the chosen version:
 
 | Situation | Drag behavior |
@@ -182,7 +190,7 @@ Admission for v0.1 is a synthetic rule derived from what a delivery is: a file t
 - Anything inside a fenced code block, or a link written inside inline code, is an example or an instruction, not a hand-off. Fences are read as CommonMark reads them: only a fence of the same character (backtick or tilde) at least as long closes one, and an unclosed fence runs to the end of the reply.
 - A path with a placeholder (`build/<name>.zip`, `out/{id}.md`) names a pattern, not a file.
 
-When a log is reread completely, deliveries it no longer admits are removed from the index. Their captures and saved copies stay, so a delivery the log admits again gets its own capture back. A log with malformed lines removes nothing: what it still names is updated, it is reported as partial, and it is read again on the next run. Neither does a log found shorter than when Gleaner read it, even after an extractor change: it lost records for good, so it removes nothing from then on, however it grows again, and it is reported as found shorter on every run.
+When a log is reread completely, deliveries it no longer admits are removed from the index. Their captures and saved copies stay, so a delivery the log admits again gets its own capture back. A capture belongs to its reply, not to a line: it records the log, the file and the times of the reply's records, and a reread finds a reply's capture by a time no other reply naming the file has, so a log rewritten with its replies moved keeps each reply's bytes, and so does a reply that grew. A reply whose times other replies share, or that has none, is found by its place in the log, as before, but never takes a capture that records a time it doesn't have; when its place is held, it is captured anew under an id of its own that later reads find again. A log with malformed lines removes nothing: what it still names is updated, it is reported as partial, and it is read again on the next run. Neither does a log found shorter than when Gleaner read it, even after an extractor change: it lost records for good, so it removes nothing from then on, however it grows again, and it is reported as found shorter on every run.
 
 Answers to an agent's question prompt (Codex sends them as JSON, sometimes wrapped in a tag) are not requests; the previous request stays as context.
 

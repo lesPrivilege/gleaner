@@ -1,7 +1,8 @@
 import GleanerCore
 import SwiftUI
 
-/// Renders `MarkdownBlock`s. Links open only when clicked.
+/// Renders `MarkdownBlock`s at their full height; whoever shows them decides whether they scroll.
+/// Links open only when clicked.
 struct MarkdownPreview: View {
     let blocks: [MarkdownBlock]
 
@@ -10,16 +11,13 @@ struct MarkdownPreview: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                    view(block)
-                }
+        VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
+                view(block)
             }
-            .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
         }
+        .textSelection(.enabled)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder
@@ -44,7 +42,7 @@ struct MarkdownPreview: View {
             ScrollView(.horizontal) {
                 Text(text).font(.system(.callout, design: .monospaced)).padding(10)
             }
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: Radius.tag))
         case .table(let rows):
             // Cells wrap to the pane's width; a horizontal scroll view would give them unbounded
             // width and mis-measure wrapped rows.
@@ -62,7 +60,7 @@ struct MarkdownPreview: View {
             }
             .font(.callout)
             .padding(10)
-            .overlay(RoundedRectangle(cornerRadius: 6).strokeBorder(Color(nsColor: .separatorColor)))
+            .overlay(RoundedRectangle(cornerRadius: Radius.tag).strokeBorder(Color(nsColor: .separatorColor)))
         case .rule:
             Divider()
         }

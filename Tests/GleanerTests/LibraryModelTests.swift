@@ -90,6 +90,30 @@ import UniformTypeIdentifiers
         #expect(done())
     }
 
+    // MARK: Sources the person turns off
+
+    /// Off, an agent's deliveries leave the window, its logs aren't read, and nothing is removed;
+    /// the choice is kept with the library, and on again shows everything.
+    @Test func aSourceTurnedOffHidesItsDeliveriesAndKeepsThem() async throws {
+        let model = LibraryModel(indexer: indexer)
+        #expect(model.artifacts.count == 2)
+        #expect(model.models(of: .claudeCode).map(\.model) == ["m"])
+        await model.setSource(.claudeCode, on: false)
+        #expect(model.sourcesOff == [.claudeCode])
+        #expect(model.artifacts.isEmpty)
+        // Its logs aren't read, so nothing it delivered is touched.
+        let report = try indexer.run(providers: [.codex])
+        #expect(report.sources[.claudeCode] == nil)
+        #expect(try indexer.registry.artifacts().count == 2)
+        // Counted still, from the library.
+        #expect(model.models(of: .claudeCode).first?.deliveries == 4)
+        // A library opened again keeps the choice.
+        #expect(LibraryModel(indexer: indexer).artifacts.isEmpty)
+        await model.setSource(.claudeCode, on: true)
+        #expect(model.sourcesOff.isEmpty)
+        #expect(model.artifacts.count == 2)
+    }
+
     // MARK: Reading the logs (N3)
 
     @Test func aFailedReadKeepsShowingTheLibrary() async throws {
@@ -181,7 +205,7 @@ import UniformTypeIdentifiers
         let chart = try artifact(model, "chart.png")
         model.reveal(chart)
         #expect(model.selection == chart.path)
-        #expect(model.actionFailure(chart, chart.latest) == "Its folder isn’t on disk either: \(folder.path)")
+        #expect(model.actionFailure(chart, chart.latest) == "Its folder is gone too: \(folder.path)")
     }
 
     @Test func showFolderStopsSayingTheFolderIsGoneOnceACheckFindsTheFile() async throws {
@@ -219,7 +243,7 @@ import UniformTypeIdentifiers
         model.selection = notes.path
         model.select(sibling)
         #expect(model.kind == nil)
-        #expect(model.selected?.artifact.path == video.path)
+        #expect(model.selected.map(model.file(in:))?.path == video.path)
         #expect(model.selected.map(model.delivery(in:))?.id == sibling.id)
     }
 
@@ -249,7 +273,7 @@ import UniformTypeIdentifiers
         model.chosenDelivery = video.deliveries[1].id
         #expect(try await dropped(model.dragItem(for: try #require(model.selected))).contents == "video v1")
         // Any other row: the delivery it shows.
-        let notes = try #require(model.results.first { $0.artifact.name == "notes.md" })
+        let notes = try #require(model.results.first { $0.work.name == "notes.md" })
         #expect(try await dropped(model.dragItem(for: notes)).contents == "notes n1")
     }
 
@@ -261,7 +285,7 @@ import UniformTypeIdentifiers
         try "about".write(to: site.appendingPathComponent("about.html"), atomically: true, encoding: .utf8)
 
         let model = LibraryModel(indexer: indexer)
-        let row = try #require(model.results.first { $0.artifact.name == "site" })
+        let row = try #require(model.results.first { $0.work.name == "site" })
         let drop = try await dropped(model.dragItem(for: row))
         #expect(drop.contents == "about.html,index.html")
         // The receiver gets its own copy: a drop never moves the project's folder.
@@ -285,7 +309,7 @@ import UniformTypeIdentifiers
         let model = LibraryModel(indexer: indexer)
         await model.observe(try artifact(model, "app.dmg"))
         for name in ["never.mp4", "app.dmg", "clip.mov"] {
-            let row = try #require(model.results.first { $0.artifact.name == name })
+            let row = try #require(model.results.first { $0.work.name == name })
             #expect(model.dragItem(for: row) == nil, "\(name)")
         }
     }
@@ -293,7 +317,7 @@ import UniformTypeIdentifiers
     // MARK: List rows (A3, A9, A10)
 
     func row(_ model: LibraryModel, _ name: String) throws -> SearchResult {
-        try #require(model.results.first { $0.artifact.name == name })
+        try #require(model.results.first { $0.work.name == name })
     }
 
     @Test func aRowMarksWhatTheLibraryHoldsAndWhatThisSessionChecked() async throws {
@@ -335,7 +359,7 @@ import UniformTypeIdentifiers
         // Removed after that check; the library loads again, as after the agent's next reply, and finds it gone.
         try FileManager.default.removeItem(at: project.appendingPathComponent("out/clip.mov"))
         try await reindex(model) { model.missing.contains(clip.path) }
-        #expect(model.rowStatus(try row(model, "clip.mov")).mark?.1 == "Not available · not on disk")
+        #expect(model.rowStatus(try row(model, "clip.mov")).mark?.1 == "Unavailable · not on disk")
         #expect(model.dragItem(for: try row(model, "clip.mov")) == nil)
     }
 
@@ -370,7 +394,7 @@ import UniformTypeIdentifiers
         await model.observe(notes)
         guard case .unavailable? = model.selectedHandoff?.plan else { Issue.record("expected no copy"); return }
         #expect(model.dragItem(for: try row(model, "notes.md")) == nil)
-        #expect(model.rowStatus(try row(model, "notes.md")).mark?.1 == "Not available · changed")
+        #expect(model.rowStatus(try row(model, "notes.md")).mark?.1 == "Unavailable · changed")
     }
 
     @Test func aRowWithNothingToHandOverSaysWhy() async throws {
@@ -385,9 +409,9 @@ import UniformTypeIdentifiers
 
         let model = LibraryModel(indexer: indexer)
         await model.observe(try artifact(model, "app.dmg"))
-        #expect(model.rowStatus(try row(model, "never.mp4")).mark?.1 == "Not available · never seen")
-        #expect(model.rowStatus(try row(model, "app.dmg")).mark?.1 == "Not available · changed")
-        #expect(model.rowStatus(try row(model, "clip.mov")).mark?.1 == "Not available · not on disk")
+        #expect(model.rowStatus(try row(model, "never.mp4")).mark?.1 == "Unavailable · never seen")
+        #expect(model.rowStatus(try row(model, "app.dmg")).mark?.1 == "Unavailable · changed")
+        #expect(model.rowStatus(try row(model, "clip.mov")).mark?.1 == "Unavailable · not on disk")
     }
 
     // MARK: Quick Look (N1)
@@ -425,6 +449,110 @@ import UniformTypeIdentifiers
         #expect(model.quickLookURL == shown)
         await preparing.value
         #expect(model.quickLookURL == shown)
+    }
+
+    // MARK: A prepared copy is checked again where it is used (A2)
+
+    /// The selected video's copy prepared, then replaced in the cache with other bytes, as an app
+    /// that owns the cache folder could.
+    func replacedCopy(_ model: LibraryModel) async throws -> Artifact {
+        let video = try await selectVideo(model)
+        await model.stage(sha: try #require(video.latest.sha256), artifact: video)
+        try "CHANGED CACHE".write(to: try #require(model.selectedHandoffURL), atomically: true, encoding: .utf8)
+        return video
+    }
+
+    @Test func aReplacedCopyIsOfferedNowhereUntilItIsPreparedAgain() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try await replacedCopy(model)
+        let sha = try #require(video.latest.sha256)
+        model.isQuickLookOpen = true
+        // The tile, Open, ⌘C and Quick Look all go by the copy being the file Gleaner hashed.
+        #expect(!model.isPreparedIntact)
+        #expect(model.staging(for: sha) == .preparing(sha: sha))
+        #expect(model.selectedHandoffURL == nil)
+        #expect(model.quickLookURL == nil)
+        let generation = model.stagingGeneration
+        #expect(model.copyItem() == nil)
+        #expect(model.stagingGeneration == generation + 1)
+        // Prepared again, as the detail view does: the selected bytes, under the file's name.
+        await model.stage(sha: sha, artifact: video)
+        #expect(model.isPreparedIntact)
+        #expect(try await dropped(model.copyItem()).contents == "video v2")
+        #expect(try String(contentsOf: try #require(model.selectedHandoffURL), encoding: .utf8) == "video v2")
+    }
+
+    @Test func theTileChecksTheCopyWhenTheDragStartsAndOpenSaysWhyNothingOpened() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try await replacedCopy(model)
+        let sha = try #require(video.latest.sha256)
+        let plan = try #require(model.selectedHandoff).plan
+        // Drawn while the copy was intact; dragged after it changed: the receiver gets the version.
+        #expect(try await dropped(model.tileItem(plan, artifact: video)).contents == "video v2")
+        await model.stage(sha: sha, artifact: video)
+        try "CHANGED AGAIN".write(to: try #require(model.selectedHandoffURL), atomically: true, encoding: .utf8)
+        model.openSelected()
+        #expect(model.actionFailure(video, video.latest) == Wording.preparedCopyChanged)
+    }
+
+    @Test func spaceAndTheMenusPrepareAChangedCopyAgainAndSaySo() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try await replacedCopy(model)
+        #expect(model.selectedHandoffURL == nil)
+        #expect(model.canHandOver)
+        let generation = model.stagingGeneration
+        model.toggleQuickLook()
+        #expect(model.stagingGeneration == generation + 1)
+        #expect(model.actionFailure(video, video.latest) == Wording.preparedCopyChanged)
+    }
+
+    @Test func theTileHandsOverTheCurrentFileThePersonChose() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try await selectVideo(model)
+        // Delivery 1's bytes are neither on disk nor saved: the current file is offered instead.
+        try FileManager.default.removeItem(at: indexer.store.objectURL(try #require(video.deliveries[2].sha256)))
+        model.chosenDelivery = video.deliveries[2].id
+        await model.observe(video)
+        let plan = try #require(model.selectedHandoff).plan
+        guard case .unavailable(_, let current?) = plan else { Issue.record("expected the current file offered, got \(plan)"); return }
+        await model.stage(sha: current, artifact: video)
+        #expect(try await dropped(model.tileItem(plan, artifact: video)).contents == "video v2")
+    }
+
+    @Test func aCopyRemovedOrWrittenToIsPreparedAgainToo() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try await selectVideo(model)
+        let sha = try #require(video.latest.sha256)
+        await model.stage(sha: sha, artifact: video)
+        let url = try #require(model.selectedHandoffURL)
+        try FileManager.default.removeItem(at: url)
+        #expect(model.selectedHandoffURL == nil)
+        await model.stage(sha: sha, artifact: video)
+        let again = try #require(model.selectedHandoffURL)
+        // Written in place, keeping its size and modification date: its change time tells.
+        let modified = try FileManager.default.attributesOfItem(atPath: again.path)[.modificationDate] as! Date
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: again.path)
+        try Data("video v9".utf8).write(to: again)
+        try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: again.path)
+        #expect(model.selectedHandoffURL == nil)
+    }
+
+    @Test func theRowDragHandsOverTheSelectedBytesWhenThePreparedCopyWasReplaced() async throws {
+        let model = LibraryModel(indexer: indexer)
+        _ = try await replacedCopy(model)
+        #expect(try await dropped(model.dragItem(for: try #require(model.selected))).contents == "video v2")
+    }
+
+    @Test func thePreviewShowsTheTextThatWasVerified() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let notes = try artifact(model, "notes.md")
+        model.selection = notes.path
+        await model.observe(notes)
+        let sha = try #require(notes.latest.sha256)
+        await model.stage(sha: sha, artifact: notes)
+        try "CHANGED CACHE".write(to: try #require(model.selectedHandoffURL), atomically: true, encoding: .utf8)
+        #expect(model.preparedText(for: sha)?.text == "notes n1")
+        #expect(model.preparedText(for: try #require(try artifact(model, "demo.mp4").latest.sha256)) == nil)
     }
 
     // MARK: Compare (D3)
@@ -536,14 +664,14 @@ import UniformTypeIdentifiers
         let model = LibraryModel(indexer: indexer)
         let video = try artifact(model, "demo.mp4"), first = video.deliveries[2]
         // The detail pane names the line of the reply that delivered it.
-        #expect(Wording.logLine(first) == "Line 2 of the session log")
-        #expect(Wording.logLine(video.latest) == "Line 6 of the session log")
+        #expect(Wording.logLine(first) == "Line 2")
+        #expect(Wording.logLine(video.latest) == "Line 6")
 
         // The agent removed the log. Pressed on a delivery that isn't shown: it is shown, and says why.
         try FileManager.default.removeItem(atPath: first.logPath)
         model.revealLog(first)
         #expect(model.selected.map(model.delivery(in:))?.id == first.id)
-        #expect(model.actionFailure(video, first) == "The session log is no longer on disk: \(first.logPath)")
+        #expect(model.actionFailure(video, first) == "The session log is gone: \(first.logPath)")
     }
 
     @Test func aLinkNamesOneDelivery() throws {
@@ -599,6 +727,21 @@ import UniformTypeIdentifiers
         model.open(try #require(URL(string: spoof)))
         #expect(model.selection == notes.path)
         #expect(model.linkFailure == "Gleaner opens links to a delivery, gleaner://delivery/ and its id. This link isn’t one: \(spoof)")
+    }
+
+    /// The library holds it, but its agent is off in Sources: the link says so, not that it doesn't exist.
+    @Test func aLinkToADeliveryOfAnAgentTurnedOffSaysWhyItIsHidden() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let notes = try artifact(model, "notes.md")
+        await model.setSource(notes.latest.provider, on: false)
+        model.open(try #require(URL(string: "gleaner://delivery/\(notes.latest.id)")))
+        #expect(model.selection == nil)
+        #expect(model.linkFailure == "This delivery is from Claude Code, which is off in Sources. Turn it on to show its deliveries.")
+
+        await model.setSource(notes.latest.provider, on: true)
+        model.open(try #require(URL(string: "gleaner://delivery/\(notes.latest.id)")))
+        #expect(model.linkFailure == nil)
+        #expect(model.selected.map(model.delivery(in:))?.id == notes.latest.id)
     }
 
     // MARK: Check Again (A7)

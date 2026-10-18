@@ -79,9 +79,10 @@ extension DeliveryCandidate {
         Self.id(logPath: logPath, line: evidence[0].part.line, path: path)
     }
 
-    /// The id of a delivery of `path` whose first mention is in the reply record at `line`.
-    static func id(logPath: String, line: Int, path: String) -> String {
-        let key = "\(logPath)\n\(line)\n\(path)"
+    /// The id of a delivery of `path` whose first mention is in the reply record at `line`. With
+    /// `distinct`, the id for when that one already belongs to another reply's capture.
+    static func id(logPath: String, line: Int, path: String, distinct: String? = nil) -> String {
+        let key = "\(logPath)\n\(line)\n\(path)" + (distinct.map { "\n" + $0 } ?? "")
         return SHA256.hash(data: Data(key.utf8)).prefix(10).map { String(format: "%02x", $0) }.joined()
     }
 }
@@ -182,10 +183,13 @@ public final class Indexer: @unchecked Sendable {
         self.sources = sources
     }
 
-    public func run(now: () -> Date = Date.init, progress: (Int, Int) -> Void = { _, _ in }) throws -> Report {
+    /// Reads the logs of `providers`; the others are neither listed nor read, so nothing they
+    /// delivered is touched.
+    public func run(providers: Set<Provider> = Set(Provider.allCases), now: () -> Date = Date.init,
+                    progress: (Int, Int) -> Void = { _, _ in }) throws -> Report {
         var report = Report()
         var files: [(Provider, URL)] = []
-        for provider in Provider.allCases {
+        for provider in Provider.allCases where providers.contains(provider) {
             let (source, logs) = sources.logs(provider)
             report.sources[provider] = source
             files += logs.map { (provider, $0) }
@@ -272,21 +276,27 @@ public final class Indexer: @unchecked Sendable {
         var added = 0
         var candidates = 0
         var admitted = Set<String>()
-        for turn in log.turns {
+        let turns = log.turns.map { turn in
             let found = MentionExtractor.candidates(in: turn)
             candidates += found.count
-            for (rank, candidate) in found.enumerated() where Admission.admits(candidate) {
-                // A delivery keeps the id, and the capture, it was first given. A later extractor may
-                // find the reply's first mention of the path in another of its records, or admit it
-                // again after a reread dropped it; a new capture would record the bytes as they are now.
-                let fresh = candidate.id(logPath: log.session.logPath)
-                let known = try ([fresh] + turn.parts.map {
-                    DeliveryCandidate.id(logPath: log.session.logPath, line: $0.line, path: candidate.path)
-                }).first(where: registry.hasCapture)
-                let id = known ?? fresh
-                admitted.insert(id)
-                let isNew = known == nil
+            return (turn, found.enumerated().filter { Admission.admits($0.element) })
+        }
+        // Record times two replies naming the same file share: they don't tell those replies apart.
+        var seen: [String: Set<Double>] = [:], shared: [String: Set<Double>] = [:]
+        for (turn, admissible) in turns {
+            let times = Turn.times(turn)
+            for (_, candidate) in admissible {
+                shared[candidate.path, default: []].formUnion(times.intersection(seen[candidate.path] ?? []))
+                seen[candidate.path, default: []].formUnion(times)
+            }
+        }
+        for (turn, admissible) in turns {
+            for (rank, candidate) in admissible {
                 let first = candidate.evidence[0]
+                let id = try deliveryID(of: candidate, in: turn, logPath: log.session.logPath, taken: admitted,
+                                        shared: shared[candidate.path] ?? [])
+                admitted.insert(id)
+                let isNew = try !registry.hasCapture(id)
                 try registry.upsertDelivery(
                     id: id, sessionID: log.session.id, logPath: log.session.logPath, path: candidate.path, deliveredAt: first.part.at,
                     replyLine: turn.parts[0].line, replyRank: rank, cwd: first.part.cwd, request: turn.request,
@@ -294,10 +304,12 @@ public final class Indexer: @unchecked Sendable {
                         Evidence(line: $0.part.line, syntax: $0.mention.syntax.rawValue,
                                  rawTarget: Redactor.redact($0.mention.rawTarget),
                                  anchor: $0.mention.anchor.map(Redactor.redact), excerpt: $0.mention.excerpt)
-                    })
+                    },
+                    model: turn.model)
                 if isNew {
                     let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
-                    try registry.addCapture(captured, for: id)
+                    try registry.addCapture(captured, for: id, logPath: log.session.logPath, path: candidate.path,
+                                            replyTimes: Turn.times(turn))
                     // Gleaner's first read of the file for an earlier delivery whose bytes it never had.
                     if captured.sha256 != nil { try registry.complete(capturesOf: candidate.path, with: captured) }
                     added += 1
@@ -312,6 +324,48 @@ public final class Indexer: @unchecked Sendable {
         }
         if isComplete { try registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
         return (added, candidates)
+    }
+
+    /// A delivery keeps the id, and the capture, it was first given: a new capture would record the
+    /// bytes as they are now. A capture records the times of its reply's records, and the reply
+    /// finds it by a time no other reply naming the file has, wherever the reply sits in the log
+    /// now: a later extractor may find the reply's first mention in another record, a reread may
+    /// admit it again after dropping it, a rewritten log may move it, and the reply may have grown.
+    /// A reply whose times other replies share (`shared`), or that has none, is found by its place,
+    /// as before Gleaner kept the times, but never takes a capture recording a time it doesn't have.
+    /// `taken` holds the ids other replies in the log were given in this read.
+    func deliveryID(of candidate: DeliveryCandidate, in turn: Turn, logPath: String, taken: Set<String>,
+                    shared: Set<Double>) throws -> String {
+        let times = Turn.times(turn)
+        let own = times.subtracting(shared)
+        let fresh = candidate.id(logPath: logPath)
+        let placed = [fresh] + turn.parts.map { DeliveryCandidate.id(logPath: logPath, line: $0.line, path: candidate.path) }
+        if !own.isEmpty {
+            let mine = try registry.captures(logPath: logPath, path: candidate.path)
+                .filter { !taken.contains($0.id) && !$0.times.isDisjoint(with: own) }
+            if let capture = mine.first(where: { placed.contains($0.id) }) ?? mine.first { return capture.id }
+        }
+        for id in placed where !taken.contains(id) {
+            guard let recorded = try registry.captureTimes(id), recorded.isSubset(of: times) else { continue }
+            // Recording only times other replies share, it may be another reply's: a reply with a
+            // time of its own doesn't take it by its place.
+            if !recorded.isEmpty, !own.isEmpty, recorded.isDisjoint(with: own) { continue }
+            if recorded.isEmpty { try registry.place(capture: id, logPath: logPath, path: candidate.path, times: times) }
+            return id
+        }
+        if !taken.contains(fresh), try registry.captureTimes(fresh) == nil { return fresh }
+        // The reply's place is held by another reply's capture: it gets an id of its own, the same
+        // on every read while its place and times stay.
+        var n = 0
+        while true {
+            n += 1
+            let id = DeliveryCandidate.id(logPath: logPath, line: candidate.evidence[0].part.line, path: candidate.path, distinct: "\(n)")
+            guard !taken.contains(id) else { continue }
+            guard let recorded = try registry.captureTimes(id) else { return id }
+            // Only this loop gives these ids: one recording this reply's times, or none for a reply
+            // without times, is the one it gave this reply before.
+            if recorded.isSubset(of: times), !recorded.isEmpty || times.isEmpty { return id }
+        }
     }
 
     /// Over the save limit: tracked by hash, and saved only when the person asks (SPEC §6). A
@@ -383,5 +437,12 @@ private final class Slots<T>: @unchecked Sendable {
     subscript(index: Int) -> T {
         get { lock.withLock { values[index]! } }
         set { lock.withLock { values[index] = newValue } }
+    }
+}
+
+extension Turn {
+    /// The times of a reply's records, in seconds since 1970, as captures record them.
+    static func times(_ turn: Turn) -> Set<Double> {
+        Set(turn.parts.compactMap { $0.at?.timeIntervalSince1970 })
     }
 }

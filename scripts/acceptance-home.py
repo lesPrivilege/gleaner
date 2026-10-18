@@ -9,6 +9,12 @@ nothing outside <home> is read or written. Run `initial`, look, then `second` (a
 delivery of guide.md and diagram.png), then `changed` (files edited without a delivery,
 replace.txt turned into a folder, the atlas-feature worktree removed).
 
+Phases board, board-revise and board-final (after initial, each read by the app before the
+next) add a non-code project, `work/board`, outside git: a report revised at one path and then
+renamed, a chart revised and then saved under a versioned name, a slide deck, a PDF brief deleted
+after delivery, and an appendix delivered from a client-a session, so Gleaner files it under
+client-a/app until the person moves it.
+
 Phase initial delivers:
 - Claude Code: CJK Markdown, a PNG, a symlink, a folder and an HTML page inside it, a
   65 MiB sparse file (tracked by hash only), a long text file and a FIFO;
@@ -35,21 +41,24 @@ def links(paths):
     return '\n'.join(f'[{pathlib.Path(p).name}]({p})' for p in paths)
 
 
-def claude_delivery(log, session, cwd, request, paths):
+def claude_delivery(log, session, cwd, request, paths, model='claude-fable-5'):
     base = dict(sessionId=session, cwd=str(cwd), timestamp=now())
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open('a') as f:
         f.write(json.dumps(dict(base, type='user', origin={'kind': 'human'}, message={'content': request}), ensure_ascii=False) + '\n')
-        f.write(json.dumps(dict(base, type='assistant', message={'content': [{'type': 'text', 'text': links(paths)}]}), ensure_ascii=False) + '\n')
+        f.write(json.dumps(dict(base, type='assistant', message={'model': model, 'content': [{'type': 'text', 'text': links(paths)}]}), ensure_ascii=False) + '\n')
 
 
-def codex_delivery(thread, cwd, request, paths):
+def codex_delivery(thread, cwd, request, paths, provider='magpie', model='moonshot/kimi-k2.5'):
     day = datetime.date.today()
     log = codex / 'sessions' / f'{day:%Y}' / f'{day:%m}' / f'{day:%d}' / f'rollout-{day}-{thread}.jsonl'
     log.parent.mkdir(parents=True, exist_ok=True)
     at = now()
     with log.open('a') as f:
-        for payload, kind in ((dict(id=thread, cwd=str(cwd), thread_source='user'), 'session_meta'),
+        # Codex through a local gateway, as Magpie routes it: the provider names the gateway, the
+        # model its catalog reference.
+        for payload, kind in ((dict(id=thread, cwd=str(cwd), thread_source='user', model_provider=provider), 'session_meta'),
+                              (dict(turn_id='t1', cwd=str(cwd), model=model), 'turn_context'),
                               (dict(type='message', role='user', content=[dict(type='input_text', text=request)],
                                     internal_chat_message_metadata_passthrough=dict(content_item_kinds=['user.text'])), 'response_item'),
                               (dict(type='message', role='assistant', phase='final_answer',
@@ -71,6 +80,21 @@ def png(path, rgb):
         return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
     path.write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 1, 1, 8, 2, 0, 0, 0))
                      + chunk(b'IDAT', zlib.compress(b'\0' + bytes(rgb))) + chunk(b'IEND', b''))
+
+
+def pdf(path, text):
+    stream = f'BT /F1 24 Tf 72 720 Td ({text}) Tj ET'.encode()
+    objects = [b'<< /Type /Catalog /Pages 2 0 R >>', b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+               b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>',
+               b'<< /Length %d >>\nstream\n' % len(stream) + stream + b'\nendstream',
+               b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>']
+    body, offsets = b'%PDF-1.4\n', []
+    for n, o in enumerate(objects, 1):
+        offsets.append(len(body))
+        body += b'%d 0 obj\n' % n + o + b'\nendobj\n'
+    xref = len(body)
+    body += b'xref\n0 %d\n0000000000 65535 f \n' % (len(objects) + 1) + b''.join(b'%010d 00000 n \n' % o for o in offsets)
+    path.write_bytes(body + b'trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n' % (len(objects) + 1, xref))
 
 
 def sparse(path, header):
@@ -141,6 +165,34 @@ elif phase == 'changed':
         (out / 'replace.txt').mkdir()
         (out / 'replace.txt' / 'unrelated.txt').write_text('not the saved delivery')
     git(work / 'atlas', 'worktree', 'remove', '--force', str(work / 'atlas-feature'))
+
+elif phase == 'board':
+    board, log = work / 'board', claude / 'board' / 'board.jsonl'
+    (board / 'charts').mkdir(parents=True)
+    (board / 'slides').mkdir()
+    (board / 'report.md').write_text('# Board report\n\nRevenue grew 12%.\n\n## Risks\nDraft one.\n')
+    png(board / 'charts' / 'revenue.png', (200, 40, 40))
+    (board / 'slides' / 'board-deck.pptx').write_bytes(b'PK synthetic deck, not a real presentation\n')
+    pdf(board / 'brief.pdf', 'Board brief')
+    claude_delivery(log, 'board', board, 'Draft the board report, the revenue chart, the deck and a one-page brief',
+                    [board / n for n in ('report.md', 'charts/revenue.png', 'slides/board-deck.pptx', 'brief.pdf')])
+
+elif phase == 'board-revise':
+    board, log = work / 'board', claude / 'board' / 'board.jsonl'
+    (board / 'report.md').write_text('# Board report\n\nRevenue grew 12%, ahead of plan.\n\n## Risks\nTightened.\n')
+    png(board / 'charts' / 'revenue.png', (40, 80, 200))
+    claude_delivery(log, 'board', board, 'Tighten the report and recolor the chart', [board / 'report.md', board / 'charts' / 'revenue.png'])
+
+elif phase == 'board-final':
+    board, log = work / 'board', claude / 'board' / 'board.jsonl'
+    (board / 'report.md').rename(board / 'board-report-final.md')
+    claude_delivery(log, 'board', board, 'Name the report as the final board version', [board / 'board-report-final.md'])
+    png(board / 'charts' / 'revenue-v2.png', (40, 160, 80))
+    claude_delivery(log, 'board', board, 'Keep the old chart and save a v2 with the new palette', [board / 'charts' / 'revenue-v2.png'])
+    (board / 'brief.pdf').unlink()
+    (board / 'appendix.md').write_text('# Board appendix\n\nNumbers behind the chart.\n')
+    claude_delivery(claude / 'client-a-app' / 'client-a.jsonl', 'client-a', work / 'client-a' / 'app',
+                    'Export the board appendix', [board / 'appendix.md'], model='deepseek-v4-flash')
 
 else:
     raise SystemExit(__doc__)

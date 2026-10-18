@@ -99,14 +99,16 @@ public enum ClaudeCodeAdapter {
         var request: String?
         var turnCwd: String?
         var reply: [ReplyPart] = []
+        var replyModel: String?
         var answered = false
 
         /// The log's last turn is answered only once it has a final reply: until then the session
         /// may still be running, or it ended on a tool call.
         func closeTurn(last: Bool = false) {
             if answered, !last || !reply.isEmpty { answeredTurns += 1 }
-            if !reply.isEmpty { turns.append(Turn(request: request, parts: reply)) }
+            if !reply.isEmpty { turns.append(Turn(request: request, parts: reply, model: replyModel)) }
             reply = []
+            replyModel = nil
             answered = false
         }
 
@@ -151,12 +153,15 @@ public enum ClaudeCodeAdapter {
                     switch block["type"] as? String {
                     case "tool_use":
                         reply = []
+                        replyModel = nil
                     case "text":
                         if let text = block["text"] as? String,
                            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             reply.append(ReplyPart(
                                 text: text, line: line, at: Timestamp.parse(record["timestamp"]),
                                 cwd: turnCwd ?? sessionCwd))
+                            // The model the provider answered with, for the reply's last record.
+                            replyModel = message?["model"] as? String ?? replyModel
                         }
                     default:
                         break

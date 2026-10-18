@@ -2,6 +2,8 @@
 
 **Ruled:** see [rulings](rulings.md) for the alternatives adopted, deferred and declined, and the order of work.
 
+**Built after the completion review (2026-10-18):** [projects, works and sources](projects-and-works.md), the contract the window now keeps for logical work, corrections, opening actions and source management.
+
 Draft reference for Opus, grounded in public source at [`79d724d1228a4b748572958dcbdd22aa6b7da142`](https://github.com/lesPrivilege/gleaner/tree/79d724d1228a4b748572958dcbdd22aa6b7da142), 2026-10-17. These are alternatives for improving an already useful small product, not an adopted architecture or implementation plan.
 
 **Project is the primary affiliation. The next round should reduce presentation burden and make movement between levels coherent.** Several agents, conversations, repositories and worktrees can contribute to one project. Global results retain that context; storage entities do not each need a navigation destination. People should reach original evidence and exact selected bytes without reading process noise or moving originals. Keep ordinary interface words stable and any provider integrations thin around the independent local core.
