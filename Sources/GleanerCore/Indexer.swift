@@ -209,9 +209,9 @@ public final class Indexer: @unchecked Sendable {
             (turn, MentionExtractor.candidates(in: turn).enumerated().filter { Admission.admits($0.element) })
         }
         // Record times two replies naming the same file share: they don't tell those replies apart.
-        var seen: [String: Set<Date>] = [:], shared: [String: Set<Date>] = [:]
+        var seen: [String: Set<Double>] = [:], shared: [String: Set<Double>] = [:]
         for (turn, candidates) in turns {
-            let times = Set(turn.parts.compactMap(\.at))
+            let times = Turn.times(turn)
             for (_, candidate) in candidates {
                 shared[candidate.path, default: []].formUnion(times.intersection(seen[candidate.path] ?? []))
                 seen[candidate.path, default: []].formUnion(times)
@@ -235,7 +235,7 @@ public final class Indexer: @unchecked Sendable {
                 if isNew {
                     let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
                     try registry.addCapture(captured, for: id, logPath: log.session.logPath, path: candidate.path,
-                                            replyTimes: Set(turn.parts.compactMap(\.at)))
+                                            replyTimes: Turn.times(turn))
                     // Gleaner's first read of the file for an earlier delivery whose bytes it never had.
                     if captured.sha256 != nil { try registry.complete(capturesOf: candidate.path, with: captured) }
                     added += 1
@@ -261,8 +261,8 @@ public final class Indexer: @unchecked Sendable {
     /// as before Gleaner kept the times, but never takes a capture recording a time it doesn't have.
     /// `taken` holds the ids other replies in the log were given in this read.
     func deliveryID(of candidate: DeliveryCandidate, in turn: Turn, logPath: String, taken: Set<String>,
-                    shared: Set<Date>) throws -> String {
-        let times = Set(turn.parts.compactMap(\.at))
+                    shared: Set<Double>) throws -> String {
+        let times = Turn.times(turn)
         let own = times.subtracting(shared)
         let fresh = candidate.id(logPath: logPath)
         let placed = [fresh] + turn.parts.map { DeliveryCandidate.id(logPath: logPath, line: $0.line, path: candidate.path) }
@@ -358,5 +358,12 @@ private final class Slots<T>: @unchecked Sendable {
     subscript(index: Int) -> T {
         get { lock.withLock { values[index]! } }
         set { lock.withLock { values[index] = newValue } }
+    }
+}
+
+extension Turn {
+    /// The times of a reply's records, in seconds since 1970, as captures record them.
+    static func times(_ turn: Turn) -> Set<Double> {
+        Set(turn.parts.compactMap { $0.at?.timeIntervalSince1970 })
     }
 }

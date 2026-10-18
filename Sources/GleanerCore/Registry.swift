@@ -103,7 +103,7 @@ public final class Registry: @unchecked Sendable {
                 for row in try db.rows("SELECT id, log_path, path, delivered_at FROM deliveries") {
                     try db.run("UPDATE captures SET log_path = ?, path = ?, reply_times = ? WHERE delivery_id = ?",
                                [row["log_path"] as? String, row["path"] as? String,
-                                (row["delivered_at"] as? Double).map { Self.times([Date(timeIntervalSince1970: $0)]) }, row["id"] as? String])
+                                (row["delivered_at"] as? Double).map { Self.times([$0]) }, row["id"] as? String])
                 }
             }
         }
@@ -183,8 +183,8 @@ public final class Registry: @unchecked Sendable {
     }
 
     /// The captures made for `path` from the log at `logPath`, with the times of the records of the
-    /// reply each was made for (empty when it records none).
-    public func captures(logPath: String, path: String) throws -> [(id: String, times: Set<Date>)] {
+    /// reply each was made for, in seconds since 1970 (empty when it records none).
+    public func captures(logPath: String, path: String) throws -> [(id: String, times: Set<Double>)] {
         try db.rows("SELECT delivery_id, reply_times FROM captures WHERE log_path = ? AND path = ? ORDER BY delivery_id",
                     [logPath, path]).compactMap { row in
             (row["delivery_id"] as? String).map { ($0, Self.times(row["reply_times"] as? String)) }
@@ -194,24 +194,25 @@ public final class Registry: @unchecked Sendable {
     /// The times of the records of the reply a delivery's capture was made for: nil when there is no
     /// capture, empty for one that records none (made before Gleaner kept them, or for records that
     /// carry no time), tied to its reply only by its id.
-    public func captureTimes(_ id: String) throws -> Set<Date>? {
+    public func captureTimes(_ id: String) throws -> Set<Double>? {
         guard let row = try db.rows("SELECT reply_times FROM captures WHERE delivery_id = ?", [id]).first else { return nil }
         return Self.times(row["reply_times"] as? String)
     }
 
     /// Records the reply a capture that records none belongs to (`captureTimes`).
-    public func place(capture id: String, logPath: String, path: String, times: Set<Date>) throws {
+    public func place(capture id: String, logPath: String, path: String, times: Set<Double>) throws {
         try db.run("UPDATE captures SET log_path = ?, path = ?, reply_times = ? WHERE delivery_id = ? AND reply_times IS NULL",
                    [logPath, path, Self.times(times), id])
     }
 
-    /// Times as stored: each one's exact seconds, so they read back equal.
-    static func times(_ times: Set<Date>) -> String? {
-        times.isEmpty ? nil : times.map { String($0.timeIntervalSince1970) }.sorted().joined(separator: " ")
+    /// Times as stored: each one's seconds since 1970, written so they read back as the same
+    /// number. They stay numbers: a Date made again from one can differ in its last bit.
+    static func times(_ times: Set<Double>) -> String? {
+        times.isEmpty ? nil : times.map { String($0) }.sorted().joined(separator: " ")
     }
 
-    static func times(_ text: String?) -> Set<Date> {
-        Set((text ?? "").split(separator: " ").compactMap { Double($0) }.map(Date.init(timeIntervalSince1970:)))
+    static func times(_ text: String?) -> Set<Double> {
+        Set((text ?? "").split(separator: " ").compactMap { Double($0) })
     }
 
     /// `replyLine` and `replyRank` place it in its reply (`Delivery`).
@@ -239,7 +240,7 @@ public final class Registry: @unchecked Sendable {
     /// Records what Gleaner first saw of a delivery's bytes, with the reply it was made for: the
     /// log, the file, and the times of the reply's records. A delivery has one capture; it is
     /// never replaced, only completed once when it has no hash (`complete(capturesOf:with:)`).
-    public func addCapture(_ capture: Capture, for deliveryID: String, logPath: String, path: String, replyTimes: Set<Date>) throws {
+    public func addCapture(_ capture: Capture, for deliveryID: String, logPath: String, path: String, replyTimes: Set<Double>) throws {
         try db.run("""
             INSERT INTO captures (delivery_id, sha256, size, mtime, observed_at, saved_at, provenance, kind, log_path, path, reply_times)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

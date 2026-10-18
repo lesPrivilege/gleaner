@@ -77,6 +77,11 @@ import Testing
         model.reindex()
         try await Self.until { model.indexed }
 
+        // Each phase was read before the next: every board file's deliveries kept their own bytes.
+        let boardFiles = model.organization.works.flatMap(\.files).filter { $0.path.contains("/work/board/") }
+        #expect(boardFiles.count == 7)
+        #expect(boardFiles.allSatisfy { $0.deliveries.allSatisfy { $0.sha256 != nil && $0.capture?.provenance == .atDelivery } })
+        #expect(Set(try #require(boardFiles.first { $0.name == "revenue.png" }).deliveries.map(\.sha256)).count == 2)
         try await shot("all-deliveries")
         let board = try #require(model.projects.first { $0.name == "board" })
         model.place = .project(board.key)

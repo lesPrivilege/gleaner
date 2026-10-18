@@ -12,7 +12,8 @@ import Testing
     let file: URL
     let log: URL
     let indexer: Indexer
-    let then = Date(timeIntervalSince1970: 1_792_281_600)
+    // Fractional, as real logs have them: a time that doesn't read back exactly fails these tests.
+    let then = Date(timeIntervalSince1970: 1_792_281_600.4075909)
 
     init() throws {
         let fm = FileManager.default

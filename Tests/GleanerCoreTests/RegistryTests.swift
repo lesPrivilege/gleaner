@@ -116,7 +116,7 @@ import Testing
         let path = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString).sqlite").path
         let registry = try Registry(path: path)
         try registry.addCapture(Capture(sha256: "abc", size: 1, modifiedAt: nil, observedAt: Date(), savedAt: nil, provenance: .atDelivery, kind: .file),
-                                for: "d", logPath: "/l.jsonl", path: "/private/tmp/p/report.md", replyTimes: [Date(timeIntervalSince1970: 1)])
+                                for: "d", logPath: "/l.jsonl", path: "/private/tmp/p/report.md", replyTimes: [1])
         try registry.record(repository: "/private/var/x/app", checkout: "/private/var/x/app", of: "d")
         try registry.db.execute("PRAGMA user_version = 12")
         let reopened = try Registry(path: path)
