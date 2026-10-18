@@ -84,3 +84,8 @@ Each check runs against a synthetic home, never the person's library:
 - `gleaner_verify` given a file's path answered `not_found`, taking the path for an id, and given the file's JSON answered as `verify` on the file does; `gleaner_find` refused `words` and took `terms`.
 - `find release --limit 1` gave `total` 4, `truncated` true and one result; `--limit 4` listed all four, `truncated` false.
 - With the `sources` row deleted, as opening an updated Gleaner does until its first run ends, `find` gave `sources` `{}` beside generation 1 and the old `scanned_at`.
+
+**Inside Claude Code on 2026-10-18**, the command built at `7ed0e10`, the same home as the [MCP adapter's run](mcp-adapter.md#verification): `claude -p` (2.1.302, Opus 5.5) in an empty folder whose `.claude/skills/gleaner` links to `extensions/gleaner`, with no MCP server, none of the person's own settings, and on PATH a `gleaner` that runs the release command with `--home` on the synthetic home:
+- The session listed the skill as `gleaner`. Asked for "the recovery guide's first version" and to hand it off, it invoked the skill, ran its example, `gleaner find recovery guide --kind document` (five documents), then `show` and `handoff` on guide.md's delivery 1.
+- It said this was the only delivery of guide.md, and gave the copy's path, the delivery's date, id and request, pasting none of the file. The copy has the delivery's hash.
+- Neither run chose among versions: after `initial`, guide.md has one delivery.

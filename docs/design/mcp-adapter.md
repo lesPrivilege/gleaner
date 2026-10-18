@@ -38,3 +38,9 @@ Gleaner never edits another tool's configuration.
 Each check runs against a synthetic home, never the person's library:
 - **Protocol, without a model:** the command tests run the built `gleaner mcp` over stdio, as a host does, on the synthetic home they build for the command: initialize, tools/list, and each tool's answer and refusal, compared with the command's own JSON for the same call.
 - **Inside a host:** one Claude Code session with `--mcp-config` pointing at a synthetic home from `scripts/acceptance-home.py` asks for a known delivery. This makes model calls, so it runs only with the owner's go-ahead.
+
+**Run on 2026-10-18**, the command built at `7ed0e10`, in Claude Code 2.1.302 (`claude -p`, Opus 5.5) with `--mcp-config` naming only `gleaner mcp --home <home>`, `--strict-mcp-config`, and none of the person's own settings, on a home after `initial`, read to generation 1:
+- Asked for "the recovery guide's first version" and to hand it off, the session called `gleaner_find` with `terms` `["recovery", "guide"]`, which listed all nine files of that reply, then `gleaner_show` and `gleaner_handoff` on guide.md's delivery.
+- It took delivery 1, the only delivery of guide.md, and said so. The hand-off copy is read-only, and its hash is the delivery's `sha256`.
+- It gave the copy's path, the delivery's date and request, and that latest.md has the same hash. No call was refused.
+- Claude Code deferred the six tools behind its tool search, so the session loaded them before the first call.
