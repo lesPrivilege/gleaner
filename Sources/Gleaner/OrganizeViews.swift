@@ -21,7 +21,8 @@ struct WorkSection: View {
         } content: {
             HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                 Label {
-                    Text(model.projectName(work)).fontWeight(.semibold)
+                    // The mark says the project's origin; the name needs no words for it.
+                    Text(organization.projectName(work.project)).fontWeight(.semibold)
                 } icon: {
                     GlyphView(glyph: Wording.projectGlyph(project?.origin ?? .folder), size: 16).foregroundStyle(Palette.mark)
                 }

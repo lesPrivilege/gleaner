@@ -10,6 +10,18 @@ struct SearchResult: Identifiable {
     var id: Work.ID { work.id }
 }
 
+/// A row of a list: a work, or one of its revisions (a delivery) listed under it.
+enum OutlineRow: Hashable {
+    case work(Work.ID)
+    case revision(Work.ID, Delivery.ID)
+
+    var work: Work.ID {
+        switch self {
+        case .work(let id), .revision(let id, _): id
+        }
+    }
+}
+
 /// Where the library window is: every delivery, one project, or what Gleaner reads and keeps.
 enum Place: Hashable {
     case all
@@ -100,6 +112,9 @@ final class LibraryModel {
     }
     /// Set when the person picks a delivery; otherwise the delivery the search matched.
     var chosenDelivery: Delivery.ID?
+    /// Works the person opened or closed in a list this session, wherever it is listed; the rest
+    /// follow `opensByDefault`.
+    var disclosed: [Work.ID: Bool] = [:]
     /// Two exact versions shown in place of the preview, older first.
     var comparison: (from: Comparison.End, to: Comparison.End)?
     var progress: (done: Int, total: Int)?
@@ -369,6 +384,58 @@ final class LibraryModel {
     /// The file a result shows and hands over: the one holding the delivery it shows.
     func file(in result: SearchResult) -> Artifact {
         result.work.file(of: delivery(in: result))
+    }
+
+    // MARK: The outline
+
+    /// Whether a list shows the work's revisions under it. A work with one has nothing to show.
+    func isOpen(_ work: Work) -> Bool {
+        work.deliveries.count > 1 && (disclosed[work.id] ?? opensByDefault)
+    }
+
+    /// A project's outline opens each work on its revisions, since each is a step the person may
+    /// return to (a draft, a revision, the final), except in a git repository: agents revise code
+    /// quickly, the newest revision is the one picked up, and the repository's folders already
+    /// guide. Lists of what arrived, every delivery and search results, keep works closed.
+    var opensByDefault: Bool {
+        guard query.isEmpty, let project = currentProject else { return false }
+        return project.origin != .repository
+    }
+
+    /// The selected row: the revision shown, while its work is open; otherwise the work. Choosing a
+    /// row shows what it names, as choosing a delivery under Versions does; choosing the row
+    /// already selected changes nothing.
+    var outlineSelection: OutlineRow? {
+        get {
+            guard let selection, let work = organization.work(containing: selection) else { return selection.map(OutlineRow.work) }
+            if let chosen = chosenDelivery, isOpen(work), work.deliveries.contains(where: { $0.id == chosen }) {
+                return .revision(work.id, chosen)
+            }
+            return .work(work.id)
+        }
+        set {
+            guard newValue != outlineSelection else { return }
+            switch newValue {
+            case nil:
+                selection = nil
+            case .work(let id):
+                selection = id
+                chosenDelivery = nil
+            case .revision(let id, let delivery):
+                selection = id
+                chosenDelivery = delivery
+            }
+        }
+    }
+
+    /// The file and delivery a row names: a revision's own, or what its work's row shows.
+    func target(_ row: OutlineRow) -> (artifact: Artifact, delivery: Delivery)? {
+        guard let work = organization.work(containing: row.work) else { return nil }
+        if case .revision(_, let id) = row, let delivery = work.deliveries.first(where: { $0.id == id }) {
+            return (work.file(of: delivery), delivery)
+        }
+        let result = result(for: work) ?? SearchResult(work: work, matched: work.deliveries[0])
+        return (file(in: result), delivery(in: result))
     }
 
     func hasSaved(_ sha: String) -> Bool { saved.contains(sha) }
@@ -694,7 +761,11 @@ final class LibraryModel {
     /// the file, never by reading the disk, so a row can ask while it is drawn. The drop verifies
     /// what it hands over.
     func rowHandoff(_ result: SearchResult) -> RowHandoff? {
-        let artifact = file(in: result), delivery = delivery(in: result)
+        rowHandoff(file(in: result), delivery(in: result))
+    }
+
+    /// What dragging a row naming `delivery` of `artifact` hands over, as `rowHandoff(_:)` decides it.
+    func rowHandoff(_ artifact: Artifact, _ delivery: Delivery) -> RowHandoff? {
         if let observation = rowObservation(artifact.path) {
             switch artifact.handoff(delivery, now: observation, hasSaved: hasSaved) {
             case .ready(let sha, _, _): return .bytes(sha: sha)
@@ -731,10 +802,15 @@ final class LibraryModel {
     /// bytes staged and verified only when the receiving app asks for them, or a delivered folder
     /// as it is then, so a drop never moves a project's file or folder (SPEC §4).
     func dragItem(for result: SearchResult) -> NSItemProvider? {
-        switch rowHandoff(result) {
+        dragItem(file(in: result), delivery(in: result))
+    }
+
+    /// A drag from a row naming `delivery` of `artifact`: a revision's row hands over its own bytes.
+    func dragItem(_ artifact: Artifact, _ delivery: Delivery) -> NSItemProvider? {
+        switch rowHandoff(artifact, delivery) {
         case nil: nil
-        case .folder: Self.folderItem(file(in: result).path)
-        case .bytes(let sha): handoffItem(sha: sha, artifact: file(in: result))
+        case .folder: Self.folderItem(artifact.path)
+        case .bytes(let sha): handoffItem(sha: sha, artifact: artifact)
         }
     }
 

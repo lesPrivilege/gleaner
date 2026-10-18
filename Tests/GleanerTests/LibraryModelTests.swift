@@ -326,7 +326,8 @@ import UniformTypeIdentifiers
         // The notes were first read after their delivery; the video is its latest delivery.
         #expect(model.rowStatus(try row(model, "notes.md")).mark?.1 == "First seen later")
         #expect(model.rowStatus(try row(model, "demo.mp4")).mark == nil)
-        #expect(model.rowStatus(try row(model, "demo.mp4")).number == "Delivery 3 of 3")
+        // Its newest: the row's count says how many there are, so no number repeats it.
+        #expect(model.rowStatus(try row(model, "demo.mp4")).number == nil)
 
         // Edited on disk: rows don't read the disk, so it is marked only once a check finds it.
         try write("video v3, edited", to: "out/demo.mp4", modified: Date())

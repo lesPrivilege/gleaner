@@ -86,6 +86,19 @@ import Testing
         let board = try #require(model.projects.first { $0.name == "board" })
         model.place = .project(board.key)
         try await shot("board-outline")
+        // The detail with nothing selected offers the newest work here.
+        try await tall("no-selection-next-step")
+        // A revision chosen in the outline is the one the detail shows.
+        let chart = try work("revenue.png")
+        model.outlineSelection = .revision(chart.id, try #require(chart.deliveries.last).id)
+        #expect(model.delivery(in: try #require(model.selected)).number == 1)
+        try await show(chart, delivery: chart.deliveries.last)
+        try await shot("outline-chart-first-revision")
+        // Closed, its row stands for it, still showing that revision.
+        model.disclosed[chart.id] = false
+        #expect(model.outlineSelection == .work(chart.id))
+        try await shot("outline-chart-closed")
+        model.disclosed[chart.id] = nil
 
         let final = try work("board-report-final.md")
         try await show(final)
@@ -156,6 +169,23 @@ import Testing
         await model.setSource(.codex, on: true)
         model.sourcePage = .corrections
         try await shot("sources-corrections")
+
+        // A project of your own left empty offers to bring work in.
+        await model.move(try work("board-deck.pptx"), toNewProject: "Annual review")
+        let yours = try #require(model.projects.first { $0.name == "Annual review" })
+        await model.undoMove(try work("board-deck.pptx"))
+        model.place = .project(yours.key)
+        try await shot("empty-project-next-step")
+        let moveHere = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 460, height: 440),
+                             styleMask: [.borderless], backing: .buffered, defer: false)
+        moveHere.isReleasedWhenClosed = false
+        moveHere.contentView = NSHostingView(rootView: MoveHereSheet(project: try #require(model.organization.project(yours.key)))
+            .environment(model).background(Color(nsColor: .windowBackgroundColor)))
+        moveHere.orderBack(nil)
+        step += 1
+        try await Self.snapshot(moveHere, to: out.appendingPathComponent(String(format: "%02d-move-here-sheet.png", step)))
+        moveHere.close()
+        await model.remove(try #require(model.organization.project(yours.key)))
 
         model.place = .project(board.key)
         try await show(try work("board-report-final.md"))

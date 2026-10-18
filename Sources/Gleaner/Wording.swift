@@ -333,14 +333,15 @@ enum Wording {
     }
 
     /// What a list row says beside the date of the delivery it shows (rulings §5): at most one
-    /// mark, only when something needs a look, and the delivery's number when the file has several.
+    /// mark, only when something needs a look, and the delivery's number when it is not the file's
+    /// newest: the row's count already says how many there are.
     /// `now` is what is at the path as far as the library knows without reading the disk (a check
     /// this session, or gone when the library loaded), nil when neither says; `changed` is true
     /// when a check this session found bytes no delivery had. "First seen later" is the mark when
     /// nothing else needs a look, and otherwise stays with the number.
     static func row(_ delivery: Delivery, latest: Int, now: LocatorState.Kind?, changed: Bool, available: Bool)
         -> (mark: (Mark, String)?, number: String?) {
-        let number = latest > 1 ? "Delivery \(delivery.number) of \(latest)" : nil
+        let number = delivery.number != latest ? "Delivery \(delivery.number) of \(latest)" : nil
         let attention: (Mark, String)? = if !available {
             (.attention, "Unavailable · " + unavailable(delivery, now: now))
         } else if now == .missing {

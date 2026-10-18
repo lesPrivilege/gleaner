@@ -1,8 +1,10 @@
 import GleanerCore
 import SwiftUI
 
-/// One project, to enter and resume: what it is and what arrived last, the joins Gleaner suggests,
-/// then every work by the folder it is in, as the project's own folders lay them out.
+/// One project as an outline, to enter and resume: the project at its head (what it is, and what
+/// arrived last), the joins Gleaner suggests, then its works by the folder each is in, as the
+/// project's own folders lay them out, and each work's revisions under it. Works and revisions are
+/// newest first, as everywhere in the window; folders keep the project's own layout.
 struct ProjectOutline: View {
     @Environment(LibraryModel.self) private var model
     var project: Organization.Project
@@ -17,8 +19,8 @@ struct ProjectOutline: View {
         let order = folders.keys.sorted { a, b in a.isEmpty != b.isEmpty ? a.isEmpty : a.localizedStandardCompare(b) == .orderedAscending }
         let suggestions = model.organization.suggestions(in: project)
         VStack(spacing: 0) {
-            FilterBar()
-            List(selection: $model.selection) {
+            FilterBar(named: false)
+            List(selection: $model.outlineSelection) {
                 Section { ProjectHeader(project: project).listRowSeparator(.hidden) }
                 if !suggestions.isEmpty {
                     Section {
@@ -38,25 +40,21 @@ struct ProjectOutline: View {
                     }
                 }
                 ForEach(order, id: \.self) { folder in
-                    Section(Wording.folder(folder)) {
-                        ForEach(folders[folder]!.sorted { $0.work.name.localizedStandardCompare($1.work.name) == .orderedAscending }) { result in
-                            let row = ResultRow(result: result, file: model.file(in: result), delivery: model.delivery(in: result),
-                                                project: nil, showFolder: false, status: model.rowStatus(result),
-                                                placement: model.organization.placement(of: result.work))
-                                .tag(result.id)
-                            if model.rowHandoff(result) != nil {
-                                row.onDrag { model.dragItem(for: result) ?? NSItemProvider() }
-                            } else {
-                                row
-                            }
+                    let works = folders[folder]!
+                    Section {
+                        ForEach(works) { result in
+                            WorkEntry(result: result, placement: model.organization.placement(of: result.work))
                         }
+                    } header: {
+                        FolderHeader(name: Wording.folder(folder), count: works.count)
                     }
                 }
             }
             .modifier(ListHandoff())
+            .modifier(FollowsSelection())
             .overlay {
                 if project.works.isEmpty {
-                    EmptyState(title: "No Work Yet", glyph: .person, description: "Use Move to Project… in a file’s detail.")
+                    EmptyProject(project: project)
                 } else if results.isEmpty {
                     ContentUnavailableView {
                         Label("No \(model.kind.map(Wording.kindName) ?? "Works")", systemImage: "line.3.horizontal.decrease.circle")
