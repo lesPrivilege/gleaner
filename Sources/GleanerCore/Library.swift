@@ -69,6 +69,10 @@ public struct Delivery: Sendable, Identifiable {
     public var evidence: [Evidence]
     public var logPath: String
     public var capture: Capture?
+    /// The model that wrote the reply, and the provider the agent sent it to, as the log names them
+    /// (`Turn.model`, `SessionInfo.modelProvider`); nil when it doesn't.
+    public var model: String? = nil
+    public var modelProvider: String? = nil
 
     public var sha256: String? { capture?.sha256 }
     /// Bytes Gleaner can vouch for as this delivery's.

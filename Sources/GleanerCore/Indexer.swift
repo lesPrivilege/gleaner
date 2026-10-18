@@ -231,7 +231,8 @@ public final class Indexer: @unchecked Sendable {
                         Evidence(line: $0.part.line, syntax: $0.mention.syntax.rawValue,
                                  rawTarget: Redactor.redact($0.mention.rawTarget),
                                  anchor: $0.mention.anchor.map(Redactor.redact), excerpt: $0.mention.excerpt)
-                    })
+                    },
+                    model: turn.model)
                 if isNew {
                     let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
                     try registry.addCapture(captured, for: id, logPath: log.session.logPath, path: candidate.path,

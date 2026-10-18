@@ -38,7 +38,7 @@ public final class Registry: @unchecked Sendable {
     /// record types a log holds that Gleaner doesn't know).
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
     /// at a moment in time, are never rewritten.
-    public static let extractorVersion = 13
+    public static let extractorVersion = 14
 
     public init(path: String) throws {
         self.path = path
@@ -139,6 +139,10 @@ public final class Registry: @unchecked Sendable {
             }
         }
         try db.execute("CREATE INDEX IF NOT EXISTS captures_reply ON captures(log_path, path);")
+        // Each delivery keeps the model that wrote its reply, and each session the provider its
+        // agent sent requests to, as the log names them: filled when the logs are read again.
+        if try !has("deliveries", "model") { try db.execute("ALTER TABLE deliveries ADD COLUMN model TEXT;") }
+        if try !has("sessions", "model_provider") { try db.execute("ALTER TABLE sessions ADD COLUMN model_provider TEXT;") }
         let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
         // Paths under /private/var, /private/tmp and /private/etc were kept in whichever spelling
         // the disk gave at the time; they now have one (`standardPath`).
@@ -203,9 +207,11 @@ public final class Registry: @unchecked Sendable {
 
     public func upsert(_ session: SessionInfo) throws {
         try db.run("""
-            INSERT INTO sessions (id, provider, title, cwd, log_path) VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(id) DO UPDATE SET title = COALESCE(excluded.title, title), cwd = COALESCE(excluded.cwd, cwd), log_path = excluded.log_path
-            """, [session.id, session.provider.rawValue, session.title.map(Redactor.redact), session.cwd, session.logPath])
+            INSERT INTO sessions (id, provider, title, cwd, log_path, model_provider) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET title = COALESCE(excluded.title, title), cwd = COALESCE(excluded.cwd, cwd), log_path = excluded.log_path,
+                model_provider = COALESCE(excluded.model_provider, model_provider)
+            """, [session.id, session.provider.rawValue, session.title.map(Redactor.redact), session.cwd, session.logPath,
+                  session.modelProvider.map(Redactor.redact)])
     }
 
     /// True once Gleaner has captured the delivery `id`, whether or not a log still admits it.
@@ -248,14 +254,17 @@ public final class Registry: @unchecked Sendable {
 
     /// `replyLine` and `replyRank` place it in its reply (`Delivery`).
     public func upsertDelivery(id: String, sessionID: String, logPath: String, path: String, deliveredAt: Date?,
-                               replyLine: Int, replyRank: Int, cwd: String?, request: String?, evidence: [Evidence]) throws {
+                               replyLine: Int, replyRank: Int, cwd: String?, request: String?, evidence: [Evidence],
+                               model: String? = nil) throws {
         let json = String(decoding: try JSONEncoder().encode(evidence), as: UTF8.self)
         try db.run("""
-            INSERT INTO deliveries (id, session_id, log_path, path, delivered_at, reply_line, reply_rank, cwd, request, evidence)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO deliveries (id, session_id, log_path, path, delivered_at, reply_line, reply_rank, cwd, request, evidence, model)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET log_path = excluded.log_path, reply_line = excluded.reply_line,
-                reply_rank = excluded.reply_rank, cwd = excluded.cwd, request = excluded.request, evidence = excluded.evidence
-            """, [id, sessionID, logPath, path, deliveredAt, replyLine, replyRank, cwd, request.map(Redactor.redact), json])
+                reply_rank = excluded.reply_rank, cwd = excluded.cwd, request = excluded.request, evidence = excluded.evidence,
+                model = excluded.model
+            """, [id, sessionID, logPath, path, deliveredAt, replyLine, replyRank, cwd, request.map(Redactor.redact), json,
+                  model.map(Redactor.redact)])
     }
 
     /// Removes deliveries a reread log no longer admits. They are derived from the log and come
@@ -315,8 +324,8 @@ public final class Registry: @unchecked Sendable {
     /// Every artifact with its deliveries, newest delivery first, artifacts by latest delivery.
     public func artifacts() throws -> [Artifact] {
         let rows = try db.rows("""
-            SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.request, d.evidence,
-                   s.provider, s.title, d.log_path, d.session_id, s.cwd AS session_cwd,
+            SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.request, d.evidence, d.model,
+                   s.provider, s.title, d.log_path, d.session_id, s.cwd AS session_cwd, s.model_provider,
                    c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind, c.repository, c.checkout
             FROM deliveries d JOIN sessions s ON s.id = d.session_id
             LEFT JOIN captures c ON c.delivery_id = d.id
@@ -357,7 +366,8 @@ public final class Registry: @unchecked Sendable {
                 sessionID: row["session_id"] as? String ?? "", sessionCwd: row["session_cwd"] as? String,
                 sessionTitle: row["title"] as? String, request: row["request"] as? String,
                 cwd: row["cwd"] as? String, evidence: evidence,
-                logPath: row["log_path"] as? String ?? "", capture: capture))
+                logPath: row["log_path"] as? String ?? "", capture: capture,
+                model: row["model"] as? String, modelProvider: row["model_provider"] as? String))
             byPath[path] = list
         }
         let artifacts = byPath.map { path, deliveries in

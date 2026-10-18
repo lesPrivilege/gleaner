@@ -43,10 +43,12 @@ public enum ClaudeCodeAdapter {
         var request: String?
         var turnCwd: String?
         var reply: [ReplyPart] = []
+        var replyModel: String?
 
         func closeTurn() {
-            if !reply.isEmpty { turns.append(Turn(request: request, parts: reply)) }
+            if !reply.isEmpty { turns.append(Turn(request: request, parts: reply, model: replyModel)) }
             reply = []
+            replyModel = nil
         }
 
         for (line, record) in file.records {
@@ -87,12 +89,15 @@ public enum ClaudeCodeAdapter {
                     switch block["type"] as? String {
                     case "tool_use":
                         reply = []
+                        replyModel = nil
                     case "text":
                         if let text = block["text"] as? String,
                            !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             reply.append(ReplyPart(
                                 text: text, line: line, at: Timestamp.parse(record["timestamp"]),
                                 cwd: turnCwd ?? sessionCwd))
+                            // The model the provider answered with, for the reply's last record.
+                            replyModel = message["model"] as? String ?? replyModel
                         }
                     default:
                         break
