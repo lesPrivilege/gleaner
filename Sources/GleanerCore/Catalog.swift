@@ -48,27 +48,32 @@ public struct Catalog: Sendable {
 extension Catalog {
     /// The artifacts whose words match every term (SPEC §10), newest first, each by the delivery
     /// the search matched; at most `limit` of them. The library is the app's: without the agents
-    /// turned off. `project` names a project by its folder, in any form an agent may have it
-    /// (`/private/tmp/app/` is `/tmp/app`), or by its name as shown or plain.
+    /// turned off, and each file in the project the app shows it in, after the person's
+    /// corrections. `project` names that project by its name as shown, or a derived one by its
+    /// folder, in any form an agent may have it (`/private/tmp/app/` is `/tmp/app`); the project
+    /// Gleaner found a file in, by its folder or name, finds it too, wherever the person put it.
     public func find(_ terms: [String], project: String? = nil, kind: Artifact.Kind? = nil, limit: Int = 20) throws -> Found {
         guard limit > 0 else { throw Failure.usage("The limit must be at least 1.") }
         let tokens = terms.joined(separator: " ").lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
         let folder = project.flatMap { $0.hasPrefix("/") ? Paths.standard($0) : nil }
         let index = try registry.index()
         let artifacts = try shown().artifacts
-        let names = Projects.names(artifacts.map(\.projectFolder))
-        let matches = artifacts.compactMap { artifact -> (Artifact, Int)? in
-            let place = Project(artifact, names: names)
+        let organization = try organize(artifacts)
+        let matches = artifacts.compactMap { artifact -> (Artifact, Project, Int)? in
+            let place = self.project(of: artifact, in: organization)
             let inProject = project.map { wanted in
-                folder == place.folder || [place.name, artifact.project].contains { $0.caseInsensitiveCompare(wanted) == .orderedSame }
+                if let folder, folder == place.folder || folder == artifact.projectFolder { return true }
+                return [place.name, organization.projectName(artifact.projectFolder), artifact.project]
+                    .contains { $0.caseInsensitiveCompare(wanted) == .orderedSame }
             } ?? true
-            guard inProject, kind == nil || artifact.kind == kind, let match = artifact.match(tokens) else { return nil }
-            return (artifact, match)
+            guard inProject, kind == nil || artifact.kind == kind, let match = artifact.matches(tokens, project: place.name)
+            else { return nil }
+            return (artifact, place, match.index)
         }
-        let results = matches.prefix(limit).map { artifact, match in
+        let results = matches.prefix(limit).map { artifact, place, match in
             let delivery = artifact.deliveries[match]
             return Hit(reference: reference(delivery, of: artifact, now: check(artifact), library: index.library),
-                       project: Project(artifact, names: names), kind: artifact.kind,
+                       project: place, kind: artifact.kind,
                        deliveredAt: delivery.deliveredAt, request: Self.excerpt(delivery.request))
         }
         return Found(index: index, total: matches.count, truncated: matches.count > limit, results: Array(results))
@@ -85,7 +90,7 @@ extension Catalog {
             number: delivery.number, deliveredAt: delivery.deliveredAt, request: delivery.request,
             reply: delivery.evidence.first?.excerpt,
             handoff: Plan(artifact.handoff(delivery, now: now, hasSaved: store.has), in: artifact, now: now),
-            project: Project(artifact, names: Projects.names(artifacts.map(\.projectFolder))), kind: artifact.kind,
+            project: project(of: artifact, in: try organize(artifacts)), kind: artifact.kind,
             deliveries: artifact.deliveries.map {
                 Version(reference: reference($0, of: artifact, now: now, library: index.library),
                         number: $0.number, deliveredAt: $0.deliveredAt)
@@ -231,6 +236,20 @@ extension Catalog {
     private func shown() throws -> (artifacts: [Artifact], library: [Artifact]) {
         let library = try registry.artifacts()
         return (Artifact.shown(library, without: try registry.sourcesOff()), library)
+    }
+
+    /// Projects and works as the app shows them: what Gleaner found, with the person's corrections.
+    private func organize(_ artifacts: [Artifact]) throws -> Organization {
+        Organization(artifacts: artifacts, corrections: try registry.corrections(), projects: try registry.userProjects())
+    }
+
+    /// The project the app shows `artifact` in. The organization holds every artifact it was made
+    /// from, each in a work in a project; one it doesn't hold is where Gleaner found it.
+    func project(of artifact: Artifact, in organization: Organization) -> Project {
+        guard let work = organization.work(containing: artifact.path), let project = organization.project(work.project) else {
+            return Project(name: artifact.project, folder: artifact.projectFolder)
+        }
+        return Project(name: project.name, folder: project.folder)
     }
 
     /// The file as it is now, checked on each call.
@@ -470,11 +489,19 @@ extension Catalog {
         public var reason: Reason?
     }
 
-    /// The project a file belongs to: the name it is shown by, with its parent folder's when two
-    /// share it, and the folder that tells it apart (SPEC §5).
+    /// The project the app shows a file in, after the person's corrections: the name it is shown
+    /// by, with its parent folder's when two derived ones share it, and the folder that tells a
+    /// derived one apart (SPEC §5).
     public struct Project: Codable, Equatable, Sendable {
         public var name: String
-        public var folder: String
+        /// Nil, written as null, for a project the person made.
+        public var folder: String?
+
+        public func encode(to encoder: Encoder) throws {
+            var container = encoder.container(keyedBy: CodingKeys.self)
+            try container.encode(name, forKey: .name)
+            try container.encode(folder, forKey: .folder)
+        }
     }
 
     /// `find`'s answer: how many artifacts matched, and the first of them.
@@ -697,13 +724,6 @@ extension Catalog.Source {
         logsWithFewerReplies = source.logsWithFewerReplies.count
         failures = source.failures.count
         unlistedFolders = source.unlistedFolders.count
-    }
-}
-
-extension Catalog.Project {
-    init(_ artifact: Artifact, names: [String: String]) {
-        name = names[artifact.projectFolder] ?? artifact.project
-        folder = artifact.projectFolder
     }
 }
 

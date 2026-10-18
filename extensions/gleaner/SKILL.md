@@ -40,13 +40,13 @@ A delivery comes as `reference`:
 
 ## Find
 
-Run `find` with a few distinctive words from what the person said: the topic, the file's name, the project. A file matches only when every word appears in one delivery (its request, reply or session title) or in the file's name or project, so leave out words that only describe ("the", "file", "earlier"). `--project` takes a project's name, as results give it in `project.name` or as the repository's folder is named, or the project's `folder`; a worktree belongs to its repository's project. `--kind` is one of `document`, `image`, `media`, `web`, `code`, `data`, `model`, `build`, `folder` or `other`. For "the recovery guide you wrote me":
+Run `find` with a few distinctive words from what the person said: the topic, the file's name, the project. A file matches only when every word appears in one delivery (its request, reply or session title) or in the file's name or project, so leave out words that only describe ("the", "file", "earlier"). `--project` takes the project Gleaner shows a file in, which the person may have reorganized: its name, as results give it in `project.name`, or its `folder`. The repository or folder the file was made in, by its name or path, finds the file too, wherever the person put it; a worktree belongs to its repository. `--kind` is one of `document`, `image`, `media`, `web`, `code`, `data`, `model`, `build`, `folder` or `other`. For "the recovery guide you wrote me":
 
 ```
 gleaner find recovery guide --kind document
 ```
 
-Each of `results` is one file, newest first, given by the delivery that matched: its `reference`, `project` (`name` and `folder`), `kind`, `delivered_at` and `request`. `total` counts every match, and `truncated` says whether `--limit` left some out.
+Each of `results` is one file, newest first, given by the delivery that matched: its `reference`, `project` (`name`, and `folder`, null for a project the person made), `kind`, `delivered_at` and `request`. `total` counts every match, and `truncated` says whether `--limit` left some out.
 
 To choose:
 - Every file one reply delivered matches that reply's words. Prefer the result whose `name`, `kind` and `request` fit what the person described.

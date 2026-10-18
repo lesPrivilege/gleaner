@@ -336,6 +336,33 @@ import Testing
         #expect(throws: Catalog.Failure.self) { try catalog.find([], limit: 0) }
     }
 
+    @Test func eachFileIsInTheProjectTheAppShowsItIn() throws {
+        try index(at: delivered.addingTimeInterval(20))
+        let notesPath = try #require(try catalog().registry.artifacts().first { $0.name == "notes.md" }?.path)
+        let notes = try id("notes.md", in: try catalog())
+        let found = Catalog.Project(name: "Praxis", folder: project.path)
+
+        // The person moves the notes into a project of their own.
+        try Registry(path: library).addProject(named: "Board meeting", at: delivered.addingTimeInterval(30), moving: [notesPath])
+        let catalog = try catalog()
+        let board = Catalog.Project(name: "Board meeting", folder: nil)
+        let moved = try catalog.find([], project: "board meeting")
+        #expect(moved.results.map(\.reference.name) == ["notes.md"])
+        #expect(moved.results.first?.project == board)
+        #expect(try catalog.show(notes).project == board)
+        // Its name is searched as the app searches it.
+        #expect(try catalog.find(["board", "notes"]).results.map(\.reference.name) == ["notes.md"])
+        // The project Gleaner found it in still finds it, by name or folder; the others stay there.
+        #expect(try catalog.find([], project: "Praxis").total == 3)
+        #expect(try catalog.find([], project: project.path).total == 3)
+        #expect(try catalog.find([], kind: .image).results.map(\.project) == [found])
+
+        // A project the person made has no folder: written as null.
+        let json = try JSONSerialization.jsonObject(with: Catalog.encoder.encode(moved)) as? [String: Any]
+        let place = (json?["results"] as? [[String: Any]])?.first?["project"] as? [String: Any]
+        #expect(place?["name"] as? String == "Board meeting" && place?["folder"] is NSNull)
+    }
+
     @Test func showGivesEveryDeliveryThePlanAndTheEvidence() throws {
         try index(at: delivered.addingTimeInterval(20))
         let second = delivered.addingTimeInterval(3600)
