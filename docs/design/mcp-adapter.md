@@ -35,6 +35,6 @@ Gleaner never edits another tool's configuration.
 
 ## Verification
 
-Each check runs against a synthetic home from `scripts/acceptance-home.py`, never the person's library:
-- **Protocol, without a model:** the command tests run the built `gleaner mcp` over stdio, as a host does: initialize, tools/list, and each tool's answer and refusal, compared with the command's own JSON for the same call.
-- **Inside a host:** one Claude Code session with `--mcp-config` pointing at the synthetic home asks for a known delivery. This makes model calls, so it runs only with the owner's go-ahead.
+Each check runs against a synthetic home, never the person's library:
+- **Protocol, without a model:** the command tests run the built `gleaner mcp` over stdio, as a host does, on the synthetic home they build for the command: initialize, tools/list, and each tool's answer and refusal, compared with the command's own JSON for the same call.
+- **Inside a host:** one Claude Code session with `--mcp-config` pointing at a synthetic home from `scripts/acceptance-home.py` asks for a known delivery. This makes model calls, so it runs only with the owner's go-ahead.
