@@ -22,84 +22,84 @@ Gleaner 0.1.0 需要 macOS 15 或更高版本。这是早期版本：哪些文�
 
 侧栏列出 All Deliveries、每个项目和 Sources。项目指存放该文件的 git 仓库，同一仓库的各个 worktree 无论放在哪里都归在一起；不在 git 里的，取 agent 工作时所在的文件夹，并注明“outside git”。两个项目同名时还会显示上级文件夹；文件在 worktree 里时，标出是哪个 worktree。在项目里搜索，只搜这个项目。结果上方的菜单按类型筛选，共十种：Documents、Images、Video & Audio、Web Pages、Code、Data、3D & CAD、Builds & Archives、Folders、Other。界面目前只有英文，本文提到界面文字时照录原文。
 
-详情栏依次是预览、一行说明当前显示的是哪份字节、用来拖出文件的转交卡片，以及交付这个文件的那次要求和回复。Markdown 直接在应用内渲染，其他格式多数用 Quick Look 预览。**Deliveries** 列出同一路径的每次交付，一次一行；选中一行，预览和转交卡片一起切换。**Compare** 显示两次交付之间，或某次交付与磁盘上当前文件之间的差异：文本逐行对比，图片并排显示，其他格式比较大小和哈希。两个版本只差换行符或末尾换行时，Compare 会如实说明。
+详情栏仿照 Finder 的预览栏：最上面是文件本身，带着它自己的图标，可以拖出或打开；一行说明它带的是哪份字节、Gleaner 是否核验过；然后是预览；再是 **Information**：你的要求、交付这个文件的那次回复、agent（用它自己的标志）和会话、时间、磁盘上的现状，以及位置。Markdown 直接在应用内渲染，其他格式多数用 Quick Look 预览。**Versions** 列出同一路径的每次交付，一次一行；选中一行，文件、预览和转交一起切换。一切如常的状态只显示一个标记；需要留意的用一两个词说明，完整的句子在 ⓘ 后面。**More Info** 保留路径、哈希和会话日志。**Compare** 显示两次交付之间，或某次交付与磁盘上当前文件之间的差异：文本逐行对比，图片并排显示，其他格式比较大小和哈希。两个版本只差换行符或末尾换行时，Compare 会如实说明。
 
 ## 项目与作品
 
-打开一个项目，先看到它的概览：它是什么、为什么归在这里，最近交付的作品，Gleaner 建议合并的文件，再按所在文件夹列出每件作品。一件作品是一个文件，或你确认属于同一件作品的几个文件，比如从 draft 改名为 final 的报告；详情里列出每个文件的每次交付。Gleaner 从不自行合并文件，只在有可查证的理由时提出建议：后一个文件带着前一个文件最后的同样字节出现，而前一个已经不在原来的路径；或者同一文件夹里两个名字只差一个版本标记（`v2`、`rev 3`、`draft`、`final`、`(1)`；日期或单纯的数字表示另一份文件）。选 **Same Work** 或 **Not the Same**；选了 Not the Same 之后，Gleaner 不再为那个文件提出建议。
+打开一个项目，先看到它的概览：它是什么、为什么归在这里，最近交付的作品，Gleaner 建议合并的文件，再按所在文件夹列出每件作品。一件作品是一个文件，或你确认属于同一件作品的几个文件，比如从 draft 改名为 final 的报告；详情里列出每个文件的每次交付。Gleaner 从不自行合并文件，只在有可查证的理由时提出建议：后一个文件带着前一个文件最后的同样字节出现，而前一个已经不在原来的路径；或者同一文件夹里两个名字只差一个版本标记（`v2`、`rev 3`、`draft`、`final`、`(1)`；日期或单纯的数字表示另一份文件）。选 **Join** 或 **Keep Apart**；选了 Keep Apart 之后，Gleaner 不再为那个文件提出建议。Edit › Undo 可以撤销一次合并、一次 Keep Apart 或一次移动。
 
-作品详情里的 **Where This Belongs** 说明它为什么归在这个项目（文件所在的仓库、agent 工作时所在的仓库，或 git 之外的文件夹），并提供 **Move to Project…**（移到另一个项目，或你新建的项目）和 **Join With Another File…**。侧栏里项目的菜单可以把一个推导出的项目显示在另一个项目之内。这些决定只改变 Gleaner 的呈现方式，不改动任何文件、交付或状态；重新读取日志也会保留。**Sources → Your Corrections** 逐条列出，每条可 Undo，也可 Undo All。
+作品详情里的 **Project** 说明它为什么归在这个项目（文件所在的仓库、agent 工作时所在的仓库，或 git 之外的文件夹），并提供 **Move to Project…**（移到另一个项目，或你新建的项目）和 **Join With Another File…**。侧栏里项目的菜单可以把一个推导出的项目显示在另一个项目之内。这些决定只改变 Gleaner 的呈现方式，不改动任何文件、交付或状态；重新读取日志也会保留。**Sources → Corrections** 逐条列出，每条可 Undo，也可 Undo All。
 
-回复下方的 **Copy Resume Command** 复制 `claude --resume <id>` 或 `codex resume <id>`，连同进入会话起始文件夹的 `cd`，在终端里继续那次会话。只在会话日志和那个文件夹都还在时提供；否则那一行说明为什么无法继续。**Delivered with** 能到达那次回复提到的每个文件。
+会话旁边的 **Copy Resume Command** 复制 `claude --resume <id>` 或 `codex resume <id>`，连同进入会话起始文件夹的 `cd`，在终端里继续那次会话。只在会话日志和那个文件夹都还在时提供；否则它会说明为什么无法继续。**Delivered With** 能到达那次回复提到的每个文件。
 
 ## 状态
 
 Gleaner 只陈述自己核查过的事：文件在不在、能不能读、哈希、git 状态。回复里的说法，如“测试通过”“最终版”，作为 agent 的原话引用，不会变成状态。文件在那里却读不了，绝不会被说成不在、改过或读到过。
 
-**Gleaner 第一次怎样读到每次交付**，见 Deliveries 列表和 Details：
+**Gleaner 第一次怎样读到每次交付**，见 Versions（用标记表示，例外用文字说明）和 More Info：
 
 | 状态 | 含义 |
 |---|---|
-| Seen at delivery | 回复后十分钟内读到文件，且此后文件未被修改 |
-| First seen later | 交付之后才第一次读到，例如补读旧日志时；可能与交付时不同。凡是标出这次交付编号的地方，都带着“first seen later” |
+| Seen at delivery (filled dot) | 回复后十分钟内读到文件，且此后文件未被修改 |
+| First seen later (hollow dot) | 交付之后才第一次读到，例如补读旧日志时；可能与交付时不同。凡是标出这次交付编号的地方，都带着“first seen later” |
 | Never seen | Gleaner 第一次查看时，这个路径上什么都没有 |
 | Never read | Gleaner 第一次查看时路径上有东西，却读不了：打不开的文件（例如没有权限），或者不是普通文件（管道、套接字或设备） |
 
 Gleaner 没见过或没读到的交付，会在 Gleaner 第一次读到该文件时补记为 *first seen later*，只补一次。读到过的字节不会再被改写。
 
-**On disk now**（磁盘上的现状），见转交区，选中文件时核查：
+**On Disk**（磁盘上的现状），见 Information，选中文件时核查：
 
 | 状态 | 含义 |
 |---|---|
 | Same as delivery N | 磁盘上的文件与第 N 次交付哈希一致 |
-| Unchanged since Gleaner first saw it | 文件与最新一次交付一致，但那次交付的字节是交付之后才第一次读到的 |
-| Changed since delivery N | 路径上现在的东西（一个文件，或者原本交付文件的地方换成了文件夹）与任何一次交付都不一致 |
-| Rolled back to delivery N | 磁盘上的文件回到了较早的第 N 次交付，而不是最新一次 |
-| Back to what Gleaner first saw for delivery N | 磁盘上的文件与较早的第 N 次交付一致，但那次的字节是交付之后才第一次读到的 |
-| Not among the deliveries Gleaner found | 路径上有文件，但 Gleaner 从未读到最新一次交付，无法判断是不是它 |
-| Folder on disk | 交付的文件夹，显示它现在的样子；文件夹不分版本 |
-| Not a regular file | 管道、套接字或设备；Gleaner 不会打开它 |
-| Can't be read | 路径上有东西，但 Gleaner 打不开或读不了，无法判断是哪一版 |
+| As first seen | 文件与最新一次交付一致，但那次交付的字节是交付之后才第一次读到的 |
+| Changed | 路径上现在的东西（一个文件，或者原本交付文件的地方换成了文件夹）与任何一次交付都不一致 |
+| Back to delivery N | 磁盘上的文件回到了较早的第 N 次交付，而不是最新一次 |
+| Back to delivery N as first seen | 磁盘上的文件与较早的第 N 次交付一致，但那次的字节是交付之后才第一次读到的 |
+| Can't verify | 路径上有文件，但 Gleaner 从未读到最新一次交付，无法判断是不是它 |
+| Folder | 交付的文件夹，显示它现在的样子；文件夹不分版本 |
+| Not a file | 管道、套接字或设备；Gleaner 不会打开它 |
+| Can't read | 路径上有东西，但 Gleaner 打不开或读不了，无法判断是哪一版 |
 | Not on disk | 文件已不在磁盘上；有存档副本时提供副本，git 历史里该路径还有文件时注明 |
 | Lost | 文件不在，没有存档副本，git 里这个路径也查不到；交付记录保留 |
 
-**转交**（Hand-off），见转交区顶部，针对你选的那次交付：
+**转交**（Hand-off），见文件名下方，针对你选的那次交付：
 
 | 状态 | 含义 |
 |---|---|
-| Ready: the file on disk is delivery N | 磁盘上的文件与这次交付哈希一致；拖出的是 Gleaner 复制后核对过的副本 |
-| Ready: Gleaner's saved copy of delivery N | 磁盘上的文件已不是这次交付；拖出的是 Gleaner 的存档副本，按哈希核对过 |
-| Ready, with a caveat | 这些字节是交付之后才第一次读到的，可能与交付时不同 |
-| Delivery N is no longer available | 磁盘上的文件和存档副本现在都没有这次交付的字节，或交付的文件夹已不再是文件夹。Gleaner 说明为什么没有副本；磁盘上的文件是另一次交付时提供那一次，否则在“Not among the deliveries Gleaner found”的标注下提供当前文件 |
+| Verified · file on disk | 磁盘上的文件与这次交付哈希一致；拖出的是 Gleaner 复制后核对过的副本 |
+| Verified · saved copy | 磁盘上的文件已不是这次交付；拖出的是 Gleaner 的存档副本，按哈希核对过 |
+| First seen later | 这些字节是交付之后才第一次读到的，可能与交付时不同 |
+| Delivery N is no longer available | 磁盘上的文件和存档副本现在都没有这次交付的字节，或交付的文件夹已不再是文件夹。Gleaner 说明为什么没有副本；磁盘上的文件是另一次交付时提供那一次，否则在“not a found delivery”的标注下提供当前文件 |
 | Delivery N isn't available | Gleaner 从没见过或没读到这次交付的字节 |
 | Delivery N isn't available now | 路径上有东西，但 Gleaner 读不了 |
-| Restore it from git first | 文件已不在，git 历史里这个路径还有文件；Gleaner 给出一条由你执行的命令 |
+| Restore from git first | 文件已不在，git 历史里这个路径还有文件；Gleaner 给出一条由你执行的命令 |
 | Delivery N is lost | 文件已不在，没有存档副本，git 里这个路径也查不到；交付记录保留 |
 | Folder | 交付的文件夹，按它现在的样子交出 |
 
-**存储**（Storage），见 Details，说明这次交付的字节存在哪里：
+**副本**（Copy），见 More Info，说明这次交付的字节存在哪里：
 
 | 状态 | 含义 |
 |---|---|
 | Saved copy | Gleaner 存有这次交付的字节 |
 | Saved copy of what Gleaner first saw | Gleaner 存有它在交付之后第一次读到的字节 |
-| Not saved · too large to have been saved | 超过 64 MB，且没有用 Save a Copy 存档 |
-| Not saved · saving it failed | Gleaner 读到了文件，但没能存下副本 |
-| Saved copy no longer in Gleaner's store | Gleaner 存过副本，但它的存储里已经没有了 |
-| Not saved · Gleaner never read it | Gleaner 从没见过或没读到这次交付的字节 |
-| Folder · not versioned | 交付的文件夹；Gleaner 不存副本 |
+| Not saved: too large | 超过 64 MB，且没有用 Save a Copy 存档 |
+| Not saved: saving failed | Gleaner 读到了文件，但没能存下副本 |
+| Saved copy gone from Gleaner's store | Gleaner 存过副本，但它的存储里已经没有了 |
+| Not saved: never read | Gleaner 从没见过或没读到这次交付的字节 |
+| Folder: not versioned | 交付的文件夹；Gleaner 不存副本 |
 
 没有存档副本的三种情况，后面接着最近一次核查的结果：磁盘上的文件仍是它（按哈希核对）、不在磁盘上、磁盘上的文件读不了，或磁盘上的文件已不是它。
 
-**列表中**，每行最多一个标记，只在需要留意时出现：*Not available* 并说明原因（never seen、never read、not on disk、can't be read、not a regular file、a folder is there now、changed），*Not on disk*，*Changed*，或 *First seen later*。绘制列表时从不读取磁盘，所以只有在应用打开后核查过的文件才会标 *Changed*。交付过不止一次的文件显示“Delivery N of M”。
+**列表中**，每行最多一个标记，只在需要留意时出现：*Unavailable* 并说明原因（never seen、never read、not on disk、can't read、not a file、a folder now、changed），*Not on disk*，*Changed*，或 *First seen later*。绘制列表时从不读取磁盘，所以只有在应用打开后核查过的文件才会标 *Changed*。交付过不止一次的文件显示“Delivery N of M”。
 
-**agent 日志**，见 Sources（⌘,），需要留意时也会在列表下方用一行显示：*Read*；*Read with problems*（有未知的记录类型、有格式错误的行或曾被发现比之前读时短的日志、读不了的日志或文件夹）；*Can't be read*；*Not on this Mac*。重读可能有用时会出现 Try Again，已经找到的内容照常显示。
+**agent 日志**，见 Sources（⌘,）、Sources 行末的三角标记，需要留意时也会在列表下方用一行显示：*Read*；*Read with problems*（有未知的记录类型、有格式错误的行或比之前更短的日志、读不了的日志或文件夹）；*Can't read*；*Not on this Mac*。重读可能有用时会出现 Try Again，已经找到的内容照常显示。
 
 ## 转交
 
-把详情栏里的转交卡片，或列表中的一行，拖进 Finder、聊天窗口或上传框。列表中的一行交出的版本与详情栏一致：选中的文件交出你选的那次交付，其他行交出匹配到的那次。对方拿到的是一份副本：Gleaner 复制后重新计算哈希，与所选版本一致才交出，原文件不会被移动，核对之后的改动也混不进来。磁盘上的文件已经变了，就交出存档副本。交付的文件夹按它现在的样子以副本交出，而且只在它仍是文件夹时。
+把详情栏顶部的文件，或列表中的一行，拖进 Finder、聊天窗口或上传框。列表中的一行交出的版本与详情栏一致：选中的文件交出你选的那次交付，其他行交出匹配到的那次。对方拿到的是一份副本：Gleaner 复制后重新计算哈希，与所选版本一致才交出，原文件不会被移动，核对之后的改动也混不进来。磁盘上的文件已经变了，就交出存档副本。交付的文件夹按它现在的样子以副本交出，而且只在它仍是文件夹时。
 
-文件和存档副本都没有这一版时，Gleaner 会说明为什么手里没有它的字节：从没见过或没读到，那次交付的是文件夹，文件太大没有存档，存档失败，或者存过的副本已不在它的存储里。磁盘上的文件是另一次交付时，提供那一次；否则，只要读得了路径上的文件，就只在“Not among the deliveries Gleaner found”的标注下提供它。无可交出的行拖不起来。文件已不在、但 git 里还有时，Gleaner 给出一条由你执行的命令，指明一个核实过包含该文件的提交：从那个提交 `git restore`，或者对已删除的 worktree，在那个提交上 `git worktree add`。Gleaner 自己从不执行。凡是 Gleaner 建议再查一次的地方，**Check Again** 都会当场核查文件并重新准备副本。
+文件和存档副本都没有这一版时，Gleaner 会说明为什么手里没有它的字节：从没见过或没读到，那次交付的是文件夹，文件太大没有存档，存档失败，或者存过的副本已不在它的存储里。磁盘上的文件是另一次交付时，提供那一次；否则，只要读得了路径上的文件，就只在“not a found delivery”的标注下提供它。无可交出的行拖不起来。文件已不在、但 git 里还有时，Gleaner 给出一条由你执行的命令，指明一个核实过包含该文件的提交：从那个提交 `git restore`，或者对已删除的 worktree，在那个提交上 `git worktree add`。Gleaner 自己从不执行。凡是 Gleaner 建议再查一次的地方，**Check Again** 都会当场核查文件并重新准备副本。
 
 | 操作 | 快捷键 |
 |---|---|
@@ -109,6 +109,7 @@ Gleaner 没见过或没读到的交付，会在 Gleaner 第一次读到该文件
 | 在 Finder 中显示原文件（Show in Finder） | ⇧⌘R |
 | 拷贝原文件路径（Copy Path） | ⌥⌘C |
 | 检查新交付 | ⌘R |
+| 撤销一次 Join、Keep Apart 或移动 | ⌘Z |
 | 关闭对比 | Esc |
 
 Show in Finder 和 Copy Path 针对原文件所在位置，那里的文件可能在交付后改过。文件已不在时，Show Folder 打开它原来所在的文件夹；那个文件夹也不在了，就如实说明。复制、打开、Quick Look 和拖拽用的都是核验过的副本。
