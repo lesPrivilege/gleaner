@@ -14,6 +14,8 @@ let package = Package(
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.8.2"),
         .package(url: "https://github.com/modelcontextprotocol/swift-sdk", from: "0.12.1"),
+        // Logging, which the SDK's Transport names, by the URL the SDK gives, so that the two resolve as one.
+        .package(url: "https://github.com/apple/swift-log.git", from: "1.16.1"),
     ],
     targets: [
         .target(name: "GleanerCore"),
@@ -23,6 +25,7 @@ let package = Package(
                 "GleanerCore",
                 .product(name: "ArgumentParser", package: "swift-argument-parser"),
                 .product(name: "MCP", package: "swift-sdk"),
+                .product(name: "Logging", package: "swift-log"),
             ]
         ),
         .executableTarget(name: "gleaner-spike", dependencies: ["GleanerCore"]),

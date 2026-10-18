@@ -8,7 +8,8 @@ import Testing
 extension CommandTests {
     // MARK: helpers
 
-    /// The host's side of a session: one request at a time, each answered before the next.
+    /// The host's side of a session: one request at a time, each answered before the next, unless
+    /// it posts them.
     final class Host {
         private let process = Process()
         private let input = Pipe(), output = Pipe(), error = Pipe()
@@ -50,30 +51,41 @@ extension CommandTests {
             }
         }
 
-        /// The server's response to `method`.
-        func request(_ method: String, _ params: [String: Any]? = nil) throws -> [String: Any] {
+        /// Sends a request for `method` without waiting for its response, and gives its id.
+        func post(_ method: String, _ params: [String: Any]? = nil) throws -> Int {
             id += 1
             var message: [String: Any] = ["jsonrpc": "2.0", "id": id, "method": method]
             message["params"] = params
             try send(message)
+            return id
+        }
+
+        /// The server's response to `method`.
+        func request(_ method: String, _ params: [String: Any]? = nil) throws -> [String: Any] {
+            let id = try post(method, params)
             let response = try receive()
             #expect(response["id"] as? Int == id, "\(method)")
             return response
         }
 
+        /// What a host says of itself in initialize, asking for `version`.
+        static func introduction(_ version: String = "2025-11-25") -> [String: Any] {
+            ["protocolVersion": version, "capabilities": [:], "clientInfo": ["name": "gleaner-tests", "version": "0"]]
+        }
+
         /// Starts the session as a host does: initialize, asking for `version`, then initialized.
         @discardableResult
         func initialize(_ version: String = "2025-11-25") throws -> [String: Any] {
-            let response = try request("initialize", [
-                "protocolVersion": version, "capabilities": [:], "clientInfo": ["name": "gleaner-tests", "version": "0"],
-            ])
+            let response = try request("initialize", Self.introduction(version))
             try send(["jsonrpc": "2.0", "method": "notifications/initialized"])
             return try #require(response["result"] as? [String: Any], "\(response)")
         }
 
-        /// Closes stdin, as a host does to end the session, and waits for the server to exit. Only
-        /// JSON-RPC messages are on its stdout, and nothing is on its stderr.
-        func close() throws {
+        /// Closes stdin, as a host does to end the session, and waits for the server to exit: the
+        /// messages it wrote that weren't received. Only JSON-RPC messages are on its stdout, and
+        /// nothing is on its stderr.
+        @discardableResult
+        func close() throws -> [[String: Any]] {
             input.fileHandleForWriting.closeFile()
             var rest = pending + output.fileHandleForReading.readDataToEndOfFile()
             let errors = String(decoding: error.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
@@ -81,19 +93,22 @@ extension CommandTests {
             deadline.cancel()
             #expect(process.terminationReason == .exit && process.terminationStatus == 0, "\(errors)")
             #expect(errors.isEmpty, "\(errors)")
-            var written = lines
+            var unread: [Data] = []
             while let newline = rest.firstIndex(of: UInt8(ascii: "\n")) {
-                written.append(Data(rest[..<newline]))
+                unread.append(Data(rest[..<newline]))
                 rest = Data(rest[(newline + 1)...])
             }
             #expect(rest.isEmpty, "a line without its newline: \(String(decoding: rest, as: UTF8.self))")
-            for line in written {
-                let message = (try? JSONSerialization.jsonObject(with: line)) as? [String: Any] ?? [:]
+            let messages = (lines + unread).map { line in
+                ((try? JSONSerialization.jsonObject(with: line)) as? [String: Any] ?? [:], line)
+            }
+            for (message, line) in messages {
                 let response = message["id"] != nil && (message["result"] != nil) != (message["error"] != nil)
                 let notification = message["method"] is String
                 #expect(message["jsonrpc"] as? String == "2.0" && (response || notification),
                         "not a JSON-RPC message: \(String(decoding: line, as: UTF8.self))")
             }
+            return messages.suffix(unread.count).map(\.0)
         }
     }
 
@@ -124,6 +139,16 @@ extension CommandTests {
     func same(_ one: Any?, _ other: Any?) -> Bool {
         guard let one = one as? NSObject, let other = other as? NSObject else { return one == nil && other == nil }
         return one.isEqual(other)
+    }
+
+    /// Delivers `bytes` as out/`name`, in a later turn of the session, before the home is indexed.
+    func deliver(_ bytes: Data, as name: String) throws {
+        try write(bytes, to: "out/\(name)", modified: delivered.addingTimeInterval(-30))
+        let log = try FileHandle(forWritingTo: logs.appendingPathComponent("s1.jsonl"))
+        log.seekToEndOfFile()
+        log.write(Data((user("Write \(name)", at: delivered.addingTimeInterval(5)) + "\n"
+            + assistant("Here: [\(name)](out/\(name))", at: delivered.addingTimeInterval(10)) + "\n").utf8))
+        log.closeFile()
     }
 
     /// `json` without what each call checks anew: when the file on disk was checked.
@@ -161,6 +186,55 @@ extension CommandTests {
         try Host(home: home).close()
         let host = try Host(home: home)
         try host.initialize()
+        try host.close()
+    }
+
+    @Test func mcpAnswersEachRequestBeforeItEnds() throws {
+        let find: [String: Any] = ["name": "gleaner_find", "arguments": ["terms": ["notes"]]]
+        // A call, and stdin closed right after it.
+        let late = try Host(home: home)
+        try late.initialize()
+        let call = try late.post("tools/call", find)
+        #expect(try late.close().map { $0["id"] as? Int } == [call])
+
+        // A whole session written at once.
+        let eager = try Host(home: home)
+        let opened = try eager.post("initialize", Host.introduction())
+        try eager.send(["jsonrpc": "2.0", "method": "notifications/initialized"])
+        let asked = try [opened, eager.post("tools/list"), eager.post("tools/call", find)]
+        #expect(try eager.close().compactMap { $0["id"] as? Int }.sorted() == asked)
+
+        // A call the host cancels is answered all the same: each is short, and once begun runs to
+        // its end, as the protocol lets a server do.
+        let cancelled = try Host(home: home)
+        try cancelled.initialize()
+        let withdrawn = try cancelled.post("tools/call", find)
+        try cancelled.send(["jsonrpc": "2.0", "method": "notifications/cancelled", "params": ["requestId": withdrawn]])
+        #expect(try cancelled.close().map { $0["id"] as? Int } == [withdrawn])
+    }
+
+    @Test func mcpWritesEachMessageWhole() throws {
+        // Calls asked for together, as a host may ask for read-only ones, each answered with far
+        // more than a pipe holds.
+        try deliver(Data(String(repeating: "0123456789abcde\n", count: 1 << 14).utf8), as: "large.txt")
+        try index()
+        let large = try id("large.txt")
+        let expected = try command(["read", large, "--max", "\(1 << 20)"])
+        #expect(expected.status == 0 && expected.output.utf8.count > 1 << 18)
+        let host = try Host(home: home)
+        try host.initialize()
+        let asked = try (0..<4).map { _ in
+            try host.post("tools/call", ["name": "gleaner_read", "arguments": ["delivery": large, "max": 1 << 20]])
+        }
+        // Each line one message, the answer to one of them.
+        var answered: [Int] = []
+        for _ in asked {
+            let response = try host.receive()
+            answered.append(try #require(response["id"] as? Int))
+            let content = (response["result"] as? [String: Any])?["content"] as? [[String: Any]]
+            #expect((content?.first?["text"] as? String).map { $0 + "\n" } == expected.output)
+        }
+        #expect(answered.sorted() == asked)
         try host.close()
     }
 
@@ -229,12 +303,7 @@ extension CommandTests {
         // A text whose bytes read as a data URL, which the SDK's JSON values would write back in
         // another form, so its answer comes as its text block alone.
         let inline = "data:,café au lait\n"
-        try write(Data(inline.utf8), to: "out/inline.txt", modified: delivered.addingTimeInterval(-30))
-        let log = try FileHandle(forWritingTo: logs.appendingPathComponent("s1.jsonl"))
-        log.seekToEndOfFile()
-        log.write(Data((user("Write it inline", at: delivered.addingTimeInterval(5)) + "\n"
-            + assistant("Inline: [inline](out/inline.txt)", at: delivered.addingTimeInterval(10)) + "\n").utf8))
-        log.closeFile()
+        try deliver(Data(inline.utf8), as: "inline.txt")
         try index()
         let before = try bytes(library), files = try projectFiles()
 

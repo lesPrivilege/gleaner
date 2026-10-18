@@ -1,6 +1,7 @@
 import ArgumentParser
 import Foundation
 import GleanerCore
+import Logging
 import MCP
 
 extension Gleaner {
@@ -31,9 +32,88 @@ extension Gleaner {
                 }
                 return try CallTool.Result(tool.answer(call.arguments ?? [:], from: library))
             }
-            try await server.start(transport: StdioTransport())
+            try await server.start(transport: Stdio())
             await server.waitUntilCompleted()
         }
+    }
+}
+
+/// The SDK's stdio transport, with each message written whole and the session ended only once
+/// each request read is answered. In the SDK (0.12.1), `StdioTransport.send` waits out a full pipe
+/// partway through a message while the server writes another answer, each in a task of its own;
+/// and the server's session ends when stdin does, answered or not.
+actor Stdio: Transport {
+    private let stdio = StdioTransport()
+    private let (messages, passOn) = AsyncThrowingStream<Data, Error>.makeStream()
+    /// The requests read and not yet answered.
+    private var unanswered: Set<ID> = []
+    private var ended = false
+    /// The last message given to write, which the next waits for.
+    private var writing: Task<Void, Error>?
+
+    nonisolated var logger: Logger { stdio.logger }
+
+    func connect() async throws {
+        try await stdio.connect()
+        let incoming = await stdio.receive()
+        Task { await take(incoming) }
+    }
+
+    func disconnect() async {
+        await stdio.disconnect()
+        passOn.finish()
+    }
+
+    func receive() -> AsyncThrowingStream<Data, Error> { messages }
+
+    func send(_ message: Data) async throws {
+        let previous = writing
+        let write = Task { [stdio] in
+            _ = await previous?.result
+            try await stdio.send(message)
+        }
+        writing = write
+        // Answered once written, or once writing it failed.
+        defer {
+            if let response = try? JSONDecoder().decode(Response<Untyped>.self, from: message) {
+                unanswered.remove(response.id)
+            }
+            endWhenAnswered()
+        }
+        try await write.value
+    }
+
+    /// Passes on each message stdin brings, noting each request as the server reads one: what
+    /// doesn't read as a response. A cancellation isn't passed on, so that each request is
+    /// answered: each call is short, and the protocol lets a server finish one it can't stop.
+    private func take(_ incoming: AsyncThrowingStream<Data, Error>) async {
+        let decoder = JSONDecoder()
+        do {
+            for try await message in incoming {
+                if let cancel = try? decoder.decode(Message<CancelledNotification>.self, from: message),
+                   cancel.method == CancelledNotification.name { continue }
+                if (try? decoder.decode(Response<Untyped>.self, from: message)) == nil,
+                   let request = try? decoder.decode(Request<Untyped>.self, from: message) {
+                    unanswered.insert(request.id)
+                }
+                passOn.yield(message)
+            }
+        } catch {
+            // Stdin couldn't be read: the session ends as when it closes.
+        }
+        ended = true
+        endWhenAnswered()
+    }
+
+    private func endWhenAnswered() {
+        if ended && unanswered.isEmpty { passOn.finish() }
+    }
+
+    /// Any message, its params and result as JSON values, as the server reads one.
+    private enum Untyped: MCP.Method {
+        static let name = ""
+        typealias Parameters = Value
+        typealias Result = Value
     }
 }
 
