@@ -4,14 +4,45 @@ import Foundation
 /// captured of each delivery's bytes, and where. Excerpts are stored redacted; whole logs never are.
 public final class Registry: @unchecked Sendable {
     let db: Database
+    /// The library file, for another connection to it (`LibraryModel` writes corrections over one).
+    public let path: String
+    /// One write at a time to a library file, whichever connection makes it: a log's reading and a
+    /// person's correction take turns, so a correction waits for the log being read, not for every
+    /// log after it, and two connections never meet SQLite's busy timeout.
+    let gate: DispatchSemaphore
+
+    private static let gates = Gates()
+
+    private final class Gates: @unchecked Sendable {
+        let lock = NSLock()
+        var byPath: [String: DispatchSemaphore] = [:]
+
+        func gate(_ path: String) -> DispatchSemaphore {
+            lock.withLock {
+                if let gate = byPath[path] { return gate }
+                let gate = DispatchSemaphore(value: 1)
+                byPath[path] = gate
+                return gate
+            }
+        }
+    }
+
+    /// Runs `body` holding the library's write gate.
+    func writing<T>(_ body: () throws -> T) throws -> T {
+        gate.wait()
+        defer { gate.signal() }
+        return try body()
+    }
 
     /// Bump when extraction changes what is derived from logs (requests, evidence, admission, the
     /// record types a log holds that Gleaner doesn't know).
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
     /// at a moment in time, are never rewritten.
-    public static let extractorVersion = 12
+    public static let extractorVersion = 13
 
     public init(path: String) throws {
+        self.path = path
+        gate = Self.gates.gate(URL(fileURLWithPath: path).standardizedFileURL.path)
         db = try Database(path: path)
         try db.execute("""
             CREATE TABLE IF NOT EXISTS log_files (
@@ -24,7 +55,11 @@ public final class Registry: @unchecked Sendable {
             CREATE INDEX IF NOT EXISTS deliveries_path ON deliveries(path);
             CREATE TABLE IF NOT EXISTS captures (
                 delivery_id TEXT PRIMARY KEY, sha256 TEXT, size INTEGER, mtime REAL, observed_at REAL NOT NULL,
-                saved_at REAL, provenance TEXT NOT NULL, kind TEXT NOT NULL, repository TEXT, checkout TEXT);
+                saved_at REAL, provenance TEXT NOT NULL, kind TEXT NOT NULL, repository TEXT, checkout TEXT,
+                log_path TEXT, path TEXT, reply_times TEXT);
+            CREATE TABLE IF NOT EXISTS projects (key TEXT PRIMARY KEY, name TEXT NOT NULL, created_at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS corrections (
+                id INTEGER PRIMARY KEY, kind TEXT NOT NULL, subject TEXT NOT NULL, target TEXT NOT NULL, made_at REAL NOT NULL);
             """)
         // Each change of several statements is made whole or not at all: a launch that stops partway,
         // say while another copy of Gleaner holds the library, leaves all of it to the next launch.
@@ -84,7 +119,41 @@ public final class Registry: @unchecked Sendable {
                 }
             }
         }
+        // Each capture keeps the reply it was made for: its log, its file and the times of the
+        // reply's records. A delivery's id comes from where its reply sat in the log, so a log
+        // rewritten with its replies moved would hand one reply's capture to another; the reply
+        // finds its own capture by these instead. Filled from each delivery's row (the time of the
+        // record that named the file); a capture whose delivery a reread dropped has none and is
+        // found by its id, as before.
+        if try !has("captures", "reply_times") {
+            try db.transaction {
+                for column in ["log_path", "path"] where try !has("captures", column) {
+                    try db.execute("ALTER TABLE captures ADD COLUMN \(column) TEXT;")
+                }
+                try db.execute("ALTER TABLE captures ADD COLUMN reply_times TEXT;")
+                for row in try db.rows("SELECT id, log_path, path, delivered_at FROM deliveries") {
+                    try db.run("UPDATE captures SET log_path = ?, path = ?, reply_times = ? WHERE delivery_id = ?",
+                               [row["log_path"] as? String, row["path"] as? String,
+                                (row["delivered_at"] as? Double).map { Self.times([$0]) }, row["id"] as? String])
+                }
+            }
+        }
+        try db.execute("CREATE INDEX IF NOT EXISTS captures_reply ON captures(log_path, path);")
         let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
+        // Paths under /private/var, /private/tmp and /private/etc were kept in whichever spelling
+        // the disk gave at the time; they now have one (`standardPath`).
+        if version < 13 {
+            try db.transaction {
+                for (table, key, columns) in [("captures", "delivery_id", ["path", "repository", "checkout"]), ("deliveries", "id", ["path"])] {
+                    for column in columns {
+                        for row in try db.rows("SELECT \(key) AS key, \(column) AS value FROM \(table) WHERE \(column) LIKE '/private/%'") {
+                            guard let value = row["value"] as? String, standardPath(value) != value else { continue }
+                            try db.run("UPDATE \(table) SET \(column) = ? WHERE \(key) = ?", [standardPath(value), row["key"] as? String])
+                        }
+                    }
+                }
+            }
+        }
         if version != Int64(Self.extractorVersion) {
             // No log has this modification time, so every log is read again; each keeps the size
             // it was read at, and whether it lost records, so one that did still removes nothing.
@@ -96,7 +165,7 @@ public final class Registry: @unchecked Sendable {
         try db.rows("PRAGMA table_info(\(table))").contains { $0["name"] as? String == column }
     }
 
-    public func transaction<T>(_ body: () throws -> T) throws -> T { try db.transaction(body) }
+    public func transaction<T>(_ body: () throws -> T) throws -> T { try writing { try db.transaction(body) } }
 
     /// What reading a log found, when it is unchanged since it was read whole: the record types its
     /// adapter didn't recognize, with counts, and whether it had lost records (`markShortened`).
@@ -144,6 +213,39 @@ public final class Registry: @unchecked Sendable {
         try !db.rows("SELECT 1 FROM captures WHERE delivery_id = ?", [id]).isEmpty
     }
 
+    /// The captures made for `path` from the log at `logPath`, with the times of the records of the
+    /// reply each was made for, in seconds since 1970 (empty when it records none).
+    public func captures(logPath: String, path: String) throws -> [(id: String, times: Set<Double>)] {
+        try db.rows("SELECT delivery_id, reply_times FROM captures WHERE log_path = ? AND path = ? ORDER BY delivery_id",
+                    [logPath, path]).compactMap { row in
+            (row["delivery_id"] as? String).map { ($0, Self.times(row["reply_times"] as? String)) }
+        }
+    }
+
+    /// The times of the records of the reply a delivery's capture was made for: nil when there is no
+    /// capture, empty for one that records none (made before Gleaner kept them, or for records that
+    /// carry no time), tied to its reply only by its id.
+    public func captureTimes(_ id: String) throws -> Set<Double>? {
+        guard let row = try db.rows("SELECT reply_times FROM captures WHERE delivery_id = ?", [id]).first else { return nil }
+        return Self.times(row["reply_times"] as? String)
+    }
+
+    /// Records the reply a capture that records none belongs to (`captureTimes`).
+    public func place(capture id: String, logPath: String, path: String, times: Set<Double>) throws {
+        try db.run("UPDATE captures SET log_path = ?, path = ?, reply_times = ? WHERE delivery_id = ? AND reply_times IS NULL",
+                   [logPath, path, Self.times(times), id])
+    }
+
+    /// Times as stored: each one's seconds since 1970, written so they read back as the same
+    /// number. They stay numbers: a Date made again from one can differ in its last bit.
+    static func times(_ times: Set<Double>) -> String? {
+        times.isEmpty ? nil : times.map { String($0) }.sorted().joined(separator: " ")
+    }
+
+    static func times(_ text: String?) -> Set<Double> {
+        Set((text ?? "").split(separator: " ").compactMap { Double($0) })
+    }
+
     /// `replyLine` and `replyRank` place it in its reply (`Delivery`).
     public func upsertDelivery(id: String, sessionID: String, logPath: String, path: String, deliveredAt: Date?,
                                replyLine: Int, replyRank: Int, cwd: String?, request: String?, evidence: [Evidence]) throws {
@@ -166,14 +268,15 @@ public final class Registry: @unchecked Sendable {
             """, [logPath, keep])
     }
 
-    /// Records what Gleaner first saw of a delivery's bytes. A delivery has one capture; it is
+    /// Records what Gleaner first saw of a delivery's bytes, with the reply it was made for: the
+    /// log, the file, and the times of the reply's records. A delivery has one capture; it is
     /// never replaced, only completed once when it has no hash (`complete(capturesOf:with:)`).
-    public func addCapture(_ capture: Capture, for deliveryID: String) throws {
+    public func addCapture(_ capture: Capture, for deliveryID: String, logPath: String, path: String, replyTimes: Set<Double>) throws {
         try db.run("""
-            INSERT INTO captures (delivery_id, sha256, size, mtime, observed_at, saved_at, provenance, kind)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO captures (delivery_id, sha256, size, mtime, observed_at, saved_at, provenance, kind, log_path, path, reply_times)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [deliveryID, capture.sha256, capture.size, capture.modifiedAt, capture.observedAt, capture.savedAt,
-                  capture.provenance.rawValue, capture.kind.rawValue])
+                  capture.provenance.rawValue, capture.kind.rawValue, logPath, path, Self.times(replyTimes)])
     }
 
     /// True when a delivery of `path` has a capture without a hash that a read could complete:
@@ -213,7 +316,7 @@ public final class Registry: @unchecked Sendable {
     public func artifacts() throws -> [Artifact] {
         let rows = try db.rows("""
             SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.request, d.evidence,
-                   s.provider, s.title, d.log_path,
+                   s.provider, s.title, d.log_path, d.session_id, s.cwd AS session_cwd,
                    c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind, c.repository, c.checkout
             FROM deliveries d JOIN sessions s ON s.id = d.session_id
             LEFT JOIN captures c ON c.delivery_id = d.id
@@ -251,6 +354,7 @@ public final class Registry: @unchecked Sendable {
                 replyLine: (row["reply_line"] as? Int64).map(Int.init),
                 replyRank: (row["reply_rank"] as? Int64).map(Int.init) ?? 0,
                 provider: Provider(rawValue: row["provider"] as? String ?? "") ?? .claudeCode,
+                sessionID: row["session_id"] as? String ?? "", sessionCwd: row["session_cwd"] as? String,
                 sessionTitle: row["title"] as? String, request: row["request"] as? String,
                 cwd: row["cwd"] as? String, evidence: evidence,
                 logPath: row["log_path"] as? String ?? "", capture: capture))

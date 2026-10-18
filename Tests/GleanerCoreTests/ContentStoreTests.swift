@@ -104,4 +104,19 @@ import Testing
         #expect(try String(contentsOf: copies[0], encoding: .utf8) == "one")
         #expect(!fm.fileExists(atPath: copies[1].path))
     }
+
+    @Test func aCopyMadeWritableIsReadOnlyAgainWhenPreparedAgain() throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("brief.pdf")
+        try Data("brief".utf8).write(to: file)
+        let sha = try #require(Locator.sha256(file.path))
+        let store = ContentStore(objects: root.appendingPathComponent("objects"), staging: root.appendingPathComponent("handoff"))
+        let first = try store.prepare(sha: sha, name: "brief.pdf", source: file.path)
+        try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: first.url.path)
+        #expect(!store.isIntact(first))
+        let again = try store.prepare(sha: sha, name: "brief.pdf", source: file.path)
+        #expect(permissions(again.url) == 0o444)
+        #expect(store.isIntact(again))
+    }
 }

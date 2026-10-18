@@ -139,7 +139,7 @@ public enum Locator {
     }
 
     /// One word for any POSIX shell, whatever `value` holds.
-    static func quoted(_ value: String) -> String {
+    public static func quoted(_ value: String) -> String {
         "'" + value.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 

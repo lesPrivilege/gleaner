@@ -37,27 +37,25 @@ struct GleanerApp: App {
                 Divider()
                 Button("Open Verified Copy") { model?.openSelected() }
                     .keyboardShortcut("o")
-                    .disabled(model?.selectedHandoffURL == nil)
-                Button("Show in Finder") { if let a = model?.selected?.artifact { model?.reveal(a) } }
+                    .disabled(model?.canHandOver != true)
+                Button("Show in Finder") { if let model, let result = model.selected { model.reveal(model.file(in: result)) } }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(model?.selected == nil)
-                Button("Copy Path") { if let a = model?.selected?.artifact { model?.copyPath(a) } }
+                Button("Copy Path") { if let model, let result = model.selected { model.copyPath(model.file(in: result)) } }
                     .keyboardShortcut("c", modifiers: [.command, .option])
                     .disabled(model?.selected == nil)
             }
             CommandGroup(after: .toolbar) {
                 Button("Quick Look") { model?.toggleQuickLook() }
                     .keyboardShortcut("y")
-                    .disabled(model?.selectedHandoffURL == nil)
+                    .disabled(model?.canHandOver != true)
+            }
+            CommandGroup(replacing: .appSettings) {
+                Button("Sources and Storage…") { model?.place = .sources }
+                    .keyboardShortcut(",")
             }
             CommandGroup(replacing: .help) {
                 Button("Gleaner Help") { NSWorkspace.shared.open(URL(string: "https://github.com/lesPrivilege/gleaner#readme")!) }
-            }
-        }
-
-        Settings {
-            if let model {
-                SettingsView().environment(model)
             }
         }
     }

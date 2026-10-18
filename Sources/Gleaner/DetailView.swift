@@ -10,7 +10,8 @@ struct DetailView: View {
     var result: SearchResult
 
     var body: some View {
-        let artifact = result.artifact
+        let work = result.work
+        let artifact = model.file(in: result)
         let delivery = model.delivery(in: result)
         let observation = model.observations[artifact.path]
         let onDisk = observation.map { artifact.onDisk($0, hasSaved: model.hasSaved) }
@@ -19,7 +20,7 @@ struct DetailView: View {
 
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                header(artifact)
+                header(work, artifact)
                 if let comparison = model.comparison {
                     ComparePane(artifact: artifact, from: comparison.from, to: comparison.to)
                 } else {
@@ -31,9 +32,10 @@ struct DetailView: View {
                     ProgressView("Checking the file…").controlSize(.small)
                 }
                 ReplySection(artifact: artifact, delivery: delivery)
-                if artifact.deliveries.count > 1 {
-                    DeliveriesSection(artifact: artifact, selected: delivery)
+                if work.deliveries.count > 1 {
+                    DeliveriesSection(work: work, selected: delivery)
                 }
+                WorkSection(work: work)
                 DetailsSection(artifact: artifact, delivery: delivery, observation: observation)
             }
             .padding(24)
@@ -43,6 +45,8 @@ struct DetailView: View {
             model.clearStaging()
             await model.observe(artifact)
         }
+        // A ready copy another app changed is prepared again, whenever the view looks at it.
+        .task(id: model.isPreparedIntact) { model.prepareAgain() }
         .task(id: "\(artifact.id)|\(delivery.id)|\(observation?.checkedAt.timeIntervalSince1970 ?? 0)|\(model.stagingGeneration)") {
             if case .ready(let sha, _, _) = plan {
                 await model.stage(sha: sha, artifact: artifact)
@@ -52,11 +56,17 @@ struct DetailView: View {
         }
     }
 
-    func header(_ artifact: Artifact) -> some View {
+    func header(_ work: Work, _ artifact: Artifact) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(artifact.name).font(.title2.weight(.semibold)).textSelection(.enabled)
-            Text(([model.projectName(artifact), artifact.inWorktree ? artifact.place : nil] as [String?]).compactMap { $0 }.joined(separator: " · "))
+            Text(([model.projectName(work), artifact.inWorktree ? artifact.place : nil] as [String?]).compactMap { $0 }.joined(separator: " · "))
                 .font(.callout).foregroundStyle(.secondary)
+            if work.files.count > 1 {
+                Text("One work in \(work.files.count) files: " + work.files.map(\.name).joined(separator: " → "))
+                    .font(.callout).foregroundStyle(.secondary).lineLimit(2)
+            }
+            // What this work may be is said with what it is, before its bytes.
+            ForEach(model.organization.suggestions(for: work)) { SuggestionView(suggestion: $0, from: work).padding(.top, 6) }
         }
     }
 }
@@ -111,6 +121,7 @@ extension Staging {
 
 /// The selected version's bytes, with one line saying exactly which bytes they are.
 struct PreviewPane: View {
+    @Environment(LibraryModel.self) private var model
     var artifact: Artifact
     var delivery: Delivery
     var plan: Handoff?
@@ -122,7 +133,7 @@ struct PreviewPane: View {
         case (_, .ready(let url, _)): url
         default: nil
         }
-        let text = url.flatMap(TextPreview.load)
+        let text = plan == .folder ? nil : model.preparedText(for: staging.sha)
         let caption = Wording.bytesCaption(plan, staged: staging.sha, delivery: delivery)
         VStack(alignment: .leading, spacing: 6) {
             ZStack {
@@ -161,10 +172,10 @@ struct PreviewPane: View {
 struct TextPreview: View {
     var text: String
 
-    static let textTypes: Set<String> = ["md", "markdown", "txt", "json", "tsv", "csv", "log", "yaml", "yml", "toml", "swift", "py", "js", "ts"]
-    static let limit = 64 << 10
+    nonisolated static let textTypes: Set<String> = ["md", "markdown", "txt", "json", "tsv", "csv", "log", "yaml", "yml", "toml", "swift", "py", "js", "ts"]
+    nonisolated static let limit = 64 << 10
 
-    static func load(_ url: URL) -> (text: String, truncated: Bool)? {
+    nonisolated static func load(_ url: URL) -> (text: String, truncated: Bool)? {
         guard textTypes.contains(url.pathExtension.lowercased()),
               let handle = try? FileHandle(forReadingFrom: url),
               let data = try? handle.read(upToCount: limit + 1) else { return nil }
@@ -273,10 +284,9 @@ struct HandoffPanel: View {
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(ready == nil ? Color(nsColor: .separatorColor) : Palette.selection.opacity(0.6)))
         .opacity(ready == nil ? 0.55 : 1)
         .onDrag {
-            guard let ready else { return NSItemProvider() }
-            // A delivered folder is the live one: the receiver gets a copy, never the folder to move.
-            if plan == .folder { return LibraryModel.folderItem(artifact.path) }
-            return NSItemProvider(contentsOf: ready) ?? NSItemProvider()
+            // Decided now, not when the tile was drawn: the copy may have changed since.
+            guard ready != nil else { return NSItemProvider() }
+            return model.tileItem(plan, artifact: artifact)
         }
         .help(ready == nil ? "Nothing to drag for this version" : "Drag into Finder, a chat, or an upload field")
         .accessibilityElement(children: .ignore)
@@ -360,12 +370,16 @@ struct HandoffPanel: View {
     }
 }
 
-/// Why this file is here: the request and the reply that handed it over, and what else that
-/// reply named.
+/// Why this file is here: the request and the reply that handed it over, what else that reply
+/// named, and how to go back to the conversation.
 struct ReplySection: View {
     @Environment(LibraryModel.self) private var model
     var artifact: Artifact
     var delivery: Delivery
+    @State private var showsAll = false
+
+    /// Siblings listed before "Show All".
+    static let shown = 6
 
     var body: some View {
         let others = model.siblings[delivery.id] ?? []
@@ -385,29 +399,108 @@ struct ReplySection: View {
                     .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
             }
             if !others.isEmpty {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("Delivered with:").font(.caption).foregroundStyle(.secondary)
-                    ForEach(others.prefix(6)) { other in
-                        Button((other.path as NSString).lastPathComponent) { model.select(other) }
-                            .buttonStyle(.link).font(.caption)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Delivered with (\(others.count)):").font(.caption).foregroundStyle(.secondary)
+                    FlowLayout(spacing: 10) {
+                        ForEach(showsAll ? others : Array(others.prefix(Self.shown))) { other in
+                            Button((other.path as NSString).lastPathComponent) { model.select(other) }
+                                .buttonStyle(.link).font(.caption)
+                                .help(Wording.siblingHelp(other))
+                        }
+                        if others.count > Self.shown {
+                            Button(showsAll ? "Show Fewer" : "Show All \(others.count)") { showsAll.toggle() }
+                                .buttonStyle(.link).font(.caption.weight(.semibold))
+                        }
                     }
-                    if others.count > 6 { Text("and \(others.count - 6) more").font(.caption).foregroundStyle(.secondary) }
                 }
             }
+            ConversationRow(delivery: delivery)
         }
+        .onChange(of: delivery.id) { showsAll = false }
     }
 }
 
-/// One line per delivery; picking one switches the preview and the hand-off together.
+/// Going back to the conversation: a command to copy where the agent documents one and the
+/// conversation can still be resumed, else why not. Gleaner never opens a log as if it were it.
+struct ConversationRow: View {
+    @Environment(LibraryModel.self) private var model
+    var delivery: Delivery
+    @State private var copied = false
+
+    var body: some View {
+        let resume = model.resume(delivery)
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text("Conversation:").font(.caption).foregroundStyle(.secondary)
+            switch resume {
+            case .command(let command):
+                Text(command).font(.system(.caption, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                    .textSelection(.enabled)
+                Button(copied ? "Copied" : "Copy Resume Command") {
+                    model.copy(command)
+                    copied = true
+                }
+                .controlSize(.small)
+                .help(Wording.resumeHelp(delivery.provider))
+            default:
+                Text(Wording.resume(resume)).font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        .onChange(of: delivery.id) { copied = false }
+    }
+}
+
+/// Lays its views out in rows, wrapping to the width it is given.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        var width: CGFloat = 0, height: CGFloat = 0
+        for (index, row) in rows(subviews, width: proposal.width ?? .infinity).enumerated() {
+            let sizes = row.map { $0.sizeThatFits(.unspecified) }
+            let rowWidth: CGFloat = sizes.reduce(0) { $0 + $1.width } + CGFloat(row.count - 1) * spacing
+            width = max(width, rowWidth)
+            height += (sizes.map(\.height).max() ?? 0) + (index > 0 ? spacing / 2 : 0)
+        }
+        return CGSize(width: min(width, proposal.width ?? width), height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var y = bounds.minY
+        for row in rows(subviews, width: bounds.width) {
+            var x = bounds.minX
+            let height = row.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+            for view in row {
+                let size = view.sizeThatFits(.unspecified)
+                view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+                x += size.width + spacing
+            }
+            y += height + spacing / 2
+        }
+    }
+
+    private func rows(_ subviews: Subviews, width: CGFloat) -> [[LayoutSubview]] {
+        var rows: [[LayoutSubview]] = [[]], x: CGFloat = 0
+        for view in subviews {
+            let w = view.sizeThatFits(.unspecified).width
+            if x > 0, x + w > width { rows.append([]); x = 0 }
+            rows[rows.count - 1].append(view)
+            x += w + spacing
+        }
+        return rows.filter { !$0.isEmpty }
+    }
+}
+
+/// One line per delivery of the work, across its files; picking one switches the preview and the
+/// hand-off together.
 struct DeliveriesSection: View {
     @Environment(LibraryModel.self) private var model
-    var artifact: Artifact
+    var work: Work
     var selected: Delivery
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Deliveries").font(.headline)
-            ForEach(artifact.deliveries) { delivery in
+            ForEach(work.deliveries) { delivery in
                 HStack(spacing: 8) {
                     Button { model.chosenDelivery = delivery.id } label: { row(delivery) }
                         .buttonStyle(.plain)
@@ -426,30 +519,44 @@ struct DeliveriesSection: View {
     /// This delivery against the selected one, older first, when both versions can be read and differ.
     func ends(_ delivery: Delivery) -> (from: Comparison.End, to: Comparison.End)? {
         guard delivery.id != selected.id, delivery.sha256 != selected.sha256,
-              let a = model.compareEnd(delivery, artifact: artifact),
-              let b = model.compareEnd(selected, artifact: artifact) else { return nil }
-        return delivery.number < selected.number ? (a, b) : (b, a)
+              let a = model.compareEnd(delivery, artifact: work.file(of: delivery), named: work.files.count > 1),
+              let b = model.compareEnd(selected, artifact: work.file(of: selected), named: work.files.count > 1) else { return nil }
+        let older = (delivery.deliveredAt ?? .distantPast) < (selected.deliveredAt ?? .distantPast)
+        return older ? (a, b) : (b, a)
     }
 
-    /// An earlier delivery with the same bytes.
+    /// An earlier delivery of the same file with the same bytes; another file's is named with its name.
     func sameAs(_ delivery: Delivery) -> Delivery? {
-        artifact.deliveries.first { $0.number < delivery.number && $0.sha256 != nil && $0.sha256 == delivery.sha256 }
+        let earlier = work.deliveries.drop { $0.id != delivery.id }.dropFirst()
+        return earlier.first { $0.path == delivery.path && $0.sha256 != nil && $0.sha256 == delivery.sha256 }
+            ?? earlier.first { $0.sha256 != nil && $0.sha256 == delivery.sha256 }
     }
 
     func spoken(_ delivery: Delivery) -> String {
-        Wording.deliveryLine(delivery, sameAs: sameAs(delivery))
+        let earlier = sameAs(delivery)
+        var line = Wording.deliveryLine(delivery, sameAs: earlier?.path == delivery.path ? earlier : nil)
+        if let earlier, earlier.path != delivery.path {
+            line += ", same bytes as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))"
+        }
+        return work.files.count > 1 ? (delivery.path as NSString).lastPathComponent + ", " + line : line
     }
 
     func row(_ delivery: Delivery) -> some View {
         let isSelected = delivery.id == selected.id
         let provenance = Wording.provenanceShort(delivery.capture)
         let earlier = sameAs(delivery)
+        let name = (delivery.path as NSString).lastPathComponent
         return HStack(spacing: 12) {
-            Text("Delivery \(delivery.number)").fontWeight(isSelected ? .semibold : .regular)
+            if work.files.count > 1 { Text(name).fontWeight(isSelected ? .semibold : .regular).lineLimit(1).truncationMode(.middle) }
+            Text("Delivery \(delivery.number)").fontWeight(isSelected && work.files.count == 1 ? .semibold : .regular)
             Text(Wording.date(delivery.deliveredAt)).foregroundStyle(.secondary)
             Text(Wording.provider(delivery.provider)).foregroundStyle(.secondary)
             Spacer()
-            if let earlier { Text("same as \(Wording.number(earlier))").foregroundStyle(.secondary) }
+            if let earlier {
+                Text(earlier.path == delivery.path ? "same as \(Wording.number(earlier))"
+                     : "same bytes as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))")
+                    .foregroundStyle(.secondary)
+            }
             StatusLabel(mark: provenance.0, text: provenance.1)
         }
         .font(.callout)

@@ -418,6 +418,138 @@ enum Wording {
         "\(n) \(noun)\(n == 1 ? "" : "s")"
     }
 
+    static func count(_ n: Int, _ noun: String, _ plural: String) -> String {
+        "\(n) \(n == 1 ? noun : plural)"
+    }
+
+    // MARK: Projects, works and corrections
+
+    static func projectIcon(_ origin: Organization.Project.Origin) -> String {
+        switch origin {
+        case .repository: "arrow.triangle.branch"
+        case .folder: "folder"
+        case .yours: "square.stack"
+        }
+    }
+
+    /// What the project is and what it holds, in a sentence or two.
+    static func projectSummary(_ project: Organization.Project) -> String {
+        let what = switch project.origin {
+        case .repository: "The git repository at \(tilde(project.key)), with its worktrees."
+        case .folder: "Outside git: \(tilde(project.key)), the folder its agents worked in."
+        case .yours: "A project you made."
+        }
+        let works = count(project.works.count, "work")
+        let deliveries = count(project.works.map(\.deliveries.count).reduce(0, +), "delivery", "deliveries")
+        let latest = project.latest.map { ", latest \(date($0))" } ?? ""
+        return "\(what) \(works), \(deliveries)\(latest)."
+    }
+
+    /// Why a work is in the project it is shown in.
+    static func placement(_ placement: Organization.Placement, of work: Work, organization: Organization) -> String {
+        let file = work.latest
+        let found: String
+        if file.inRepository, let checkout = file.checkout {
+            let place = checkout.folder == checkout.repository ? "" : ", in its worktree \((checkout.folder as NSString).lastPathComponent)"
+            found = "Gleaner found it in the git repository at \(tilde(checkout.repository))\(place)."
+        } else if file.inRepository {
+            found = "Its agent worked in the git repository at \(tilde(file.projectFolder)); the file itself is outside it."
+        } else {
+            found = "Outside git: Gleaner groups it by \(tilde(file.projectFolder)), the folder its agent worked in."
+        }
+        switch placement {
+        case .found:
+            return found
+        case .moved(let correction):
+            return "You moved it here \(date(correction.madeAt)). Gleaner had found it in \(organization.projectName(file.projectFolder))."
+        case .combined(let folder, let correction):
+            return found + " You show \(organization.projectName(folder)) inside this project (\(date(correction.madeAt)))."
+        }
+    }
+
+    static func suggestionReason(_ suggestion: Organization.Suggestion) -> String {
+        let earlier = (suggestion.earlier as NSString).lastPathComponent, later = (suggestion.later as NSString).lastPathComponent
+        return switch suggestion.reason {
+        case .moved: "\(later) first arrived with the exact bytes \(earlier) last had, and \(earlier) is no longer at its path: it may have been renamed or moved. Same bytes alone don’t make one work."
+        case .versionName: "They are in one folder, and their names differ only by a version mark. Similar names alone don’t make one work."
+        }
+    }
+
+    /// Where a sibling link goes.
+    static func siblingHelp(_ delivery: Delivery) -> String {
+        "Go to \((delivery.path as NSString).lastPathComponent), \(number(delivery)), delivered in this reply"
+    }
+
+    static func resume(_ resume: Resume) -> String {
+        switch resume {
+        case .command: ""
+        case .logGone: "Its log is gone, so it can’t be resumed."
+        case .folderGone(let folder): "It started in \(tilde(folder)), which is gone, so it can’t be resumed there."
+        case .folderUnknown: "Its log doesn’t say which folder it started in, so Gleaner can’t give a command to resume it."
+        }
+    }
+
+    static func resumeHelp(_ provider: Provider) -> String {
+        "Gleaner can’t open the conversation itself. Paste this in Terminal to continue it in \(self.provider(provider))."
+    }
+
+    // MARK: Sources
+
+    /// How one agent's logs last read, with when.
+    static func sourceStatement(_ source: Indexer.Report.Source?, indexed: Bool, lastRead: Date?) -> Statement {
+        guard let source else {
+            return Statement(mark: .dashed, title: indexed ? "Not read" : "Reading…",
+                             detail: indexed ? "The last read stopped before this source." : "Gleaner is reading the logs.")
+        }
+        let state = self.source(source)
+        let when = lastRead.map { "Last read \(date($0))." } ?? ""
+        let detail: String = switch source.folder {
+        case .absent: "There is no such folder on this Mac, so this agent has delivered nothing Gleaner can see. \(when)"
+        case .unreadable(let reason): "Gleaner couldn’t list the folder: \(reason). What the library holds stays. \(when)"
+        case .listed: (problems(source).map { $0.prefix(1).uppercased() + $0.dropFirst() + ". " } ?? "Every log read whole. ") + when
+        }
+        return Statement(mark: state.0, title: state.1, detail: detail)
+    }
+
+    static func scope(_ provider: Provider) -> [String] {
+        switch provider {
+        case .claudeCode: [
+            "Each conversation’s log under ~/.claude/projects, as Claude Code writes it, watched while Gleaner is open.",
+            "Only its final replies to you: the text after the agent’s last tool call in each turn.",
+            "Files those replies name by a link, an image, or a path with a folder. Gleaner reads those files, and saves a copy of each up to 64 MB.",
+        ]
+        case .codex: [
+            "Each rollout log under ~/.codex/sessions, with titles from session_index.jsonl, watched while Gleaner is open.",
+            "Only final answers to you (phase final_answer).",
+            "Files those answers name by a link, an image, or a path with a folder. Gleaner reads those files, and saves a copy of each up to 64 MB.",
+        ]
+        }
+    }
+
+    /// What the adapter leaves out, and why: these aren't replies to the person (SPEC §8).
+    static func exclusions(_ provider: Provider) -> [String] {
+        switch provider {
+        case .claudeCode: [
+            "Sub-agent transcripts (subagents folders) and side chains: they are the agent’s own work, not replies to you. A file a sub-agent made appears once the main conversation hands it to you.",
+            "Messages before the last tool call of a turn, examples in fenced code, line references into code, and placeholder paths.",
+        ]
+        case .codex: [
+            "Sub-agent threads: their answers go to another agent, not to you.",
+            "In a forked thread, the messages it copied from the thread it forked from: those were delivered there, and are listed there.",
+            "Examples in fenced code, line references into code, and placeholder paths.",
+        ]
+        }
+    }
+
+    /// The window's subtitle: what the library holds.
+    static func library(works: Int, deliveries: Int) -> String {
+        "\(count(works, "work")) · \(count(deliveries, "delivery", "deliveries"))"
+    }
+
+    static let preparedCopyChanged = "Another app changed Gleaner’s prepared copy. Gleaner is preparing it again; try once more in a moment."
+
+    static func tilde(_ path: String) -> String { (path as NSString).abbreviatingWithTildeInPath }
+
     /// A project as shown. When no repository was found for the file, that is said rather than
     /// guessed (SPEC §5).
     static func project(_ name: String, inRepository: Bool) -> String {

@@ -117,7 +117,7 @@ public enum MentionExtractor {
             guard let cwd else { return nil }
             target = (cwd as NSString).appendingPathComponent(target)
         }
-        return ((target as NSString).standardizingPath, anchor)
+        return (standardPath(target), anchor)
     }
 
     /// Inline code is mostly identifiers and commands; keep spans that read as paths.

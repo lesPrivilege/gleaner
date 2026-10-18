@@ -60,6 +60,9 @@ public struct Delivery: Sendable, Identifiable {
     /// Where the reply names this file among the files it names, from 0.
     public var replyRank = 0
     public var provider: Provider
+    /// The agent's own id for the conversation, and the folder it started in.
+    public var sessionID = ""
+    public var sessionCwd: String?
     public var sessionTitle: String?
     public var request: String?
     public var cwd: String?
@@ -82,7 +85,11 @@ public struct Artifact: Sendable, Identifiable {
 
     public var path: String
     /// Newest first.
-    public var deliveries: [Delivery]
+    public let deliveries: [Delivery]
+    /// Each delivery's own words (request, session title, reply), and the file name and its folder,
+    /// in the form search compares (`Search.form`), made once.
+    let ownWords: [String]
+    private(set) var searchPlace = ""
     /// What a project filter keys on: the main folder of the repository the file belongs to, or
     /// outside git the folder its agent worked in (see `Projects`).
     public var projectFolder: String
@@ -101,6 +108,16 @@ public struct Artifact: Sendable, Identifiable {
         projectFolder = root ?? Projects.folder(path: path, cwd: cwd)
         inRepository = root != nil
         self.checkout = checkout ?? Projects.checkout(path: path)
+        // One line each: a search word holds no whitespace, so it never reads across two of them.
+        ownWords = deliveries.map { d in
+            Search.form([d.request ?? "", d.sessionTitle ?? "", d.evidence.map(\.excerpt).joined(separator: " ")].joined(separator: "\n"))
+        }
+        // The file name and its folder, not the whole path: words like "users" or "projects" in
+        // every path would otherwise match everything.
+        let folder = folder
+        let place = folder.hasPrefix("~") || folder.hasPrefix("/")
+            ? (folder as NSString).pathComponents.suffix(2).joined(separator: "/") : folder
+        searchPlace = Search.form(name + " " + place)
     }
 
     /// The project's name, its folder's. Two projects can share one.
@@ -156,8 +173,9 @@ public struct Artifact: Sendable, Identifiable {
     /// The folder holding the file, relative to where the agent worked when that is an ancestor.
     public var folder: String {
         let directory = (path as NSString).deletingLastPathComponent
-        if let cwd = latest.cwd, directory == cwd { return "." }
-        if let cwd = latest.cwd, directory.hasPrefix(cwd + "/") { return String(directory.dropFirst(cwd.count + 1)) }
+        let cwd = latest.cwd.map(standardPath)
+        if let cwd, directory == cwd { return "." }
+        if let cwd, directory.hasPrefix(cwd + "/") { return String(directory.dropFirst(cwd.count + 1)) }
         return (directory as NSString).abbreviatingWithTildeInPath
     }
 }
@@ -300,24 +318,21 @@ extension Artifact {
     /// combine (SPEC §10). Otherwise the index of the newest delivery whose own words matched, or
     /// 0 when the name or project alone matched.
     public func match(_ tokens: [String]) -> Int? {
-        guard !tokens.isEmpty else { return 0 }
-        // The file name and its folder, not the whole path: words like "users" or "projects" in
-        // every path would otherwise match everything.
-        let place = folder.hasPrefix("~") || folder.hasPrefix("/")
-            ? (folder as NSString).pathComponents.suffix(2).joined(separator: "/") : folder
-        let shared = (name + " " + place + " " + project).lowercased()
-        func own(_ d: Delivery) -> [String] {
-            [d.request?.lowercased() ?? "", d.sessionTitle?.lowercased() ?? "",
-             d.evidence.map(\.excerpt).joined(separator: " ").lowercased()]
-        }
+        matches(tokens, project: project)?.index
+    }
+
+    /// `match`, with the project as the library shows it, and whether the delivery's own words
+    /// matched or only the name or project did.
+    public func matches(_ tokens: [String], project: String) -> (index: Int, ownWords: Bool)? {
+        guard !tokens.isEmpty else { return (0, false) }
+        let tokens = tokens.map(Search.form)
+        let shared = searchPlace + " " + Search.form(project)
         let matching = deliveries.indices.filter { i in
-            let all = ([shared] + own(deliveries[i])).joined(separator: " ")
-            return tokens.allSatisfy { all.contains($0) }
+            tokens.allSatisfy { token in Search.has(shared, token) || Search.has(ownWords[i], token) }
         }
         guard let first = matching.first else { return nil }
-        return matching.first { i in
-            own(deliveries[i]).contains { field in tokens.contains { field.contains($0) } }
-        } ?? first
+        let byOwnWords = matching.first { i in tokens.contains { Search.has(ownWords[i], $0) } }
+        return byOwnWords.map { ($0, true) } ?? (first, false)
     }
 }
 
@@ -341,5 +356,18 @@ public enum Admission {
     static func isLineAnchor(_ anchor: String?) -> Bool {
         guard let anchor else { return false }
         return anchor.range(of: #"^(:\d|#L\d)"#, options: .regularExpression) != nil
+    }
+}
+
+/// How search compares words: lowercased and in one Unicode form (NFC), so an accent typed one
+/// way finds it stored the other, compared as plain text, which is fast enough to run on every
+/// keystroke over a large library.
+enum Search {
+    static func form(_ text: String) -> String {
+        text.lowercased().precomposedStringWithCanonicalMapping
+    }
+
+    static func has(_ text: String, _ word: String) -> Bool {
+        text.range(of: word, options: .literal) != nil
     }
 }
