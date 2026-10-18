@@ -698,10 +698,11 @@ extension Catalog {
         public var partialLogs = 0
         /// Logs found shorter than when Gleaner read them: records were lost.
         public var shortenedLogs = 0
-        /// Logs whose closed turns have assistant records but no final reply. The open last turn, and
-        /// a turn the person interrupted, don't count.
+        /// Logs where the assistant answered in a closed turn but no final reply was found anywhere,
+        /// the open last turn included. Neither that turn nor one the person interrupted counts as
+        /// answered.
         public var logsWithoutFinalReply = 0
-        /// Logs whose last complete read found fewer final replies in closed turns than the one before it.
+        /// Logs whose last complete read found fewer final replies of closed turns than the one before it.
         public var logsWithFewerReplies = 0
         /// Logs that couldn't be read or stored.
         public var failures = 0

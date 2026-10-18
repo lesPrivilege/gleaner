@@ -61,9 +61,9 @@ public struct SessionLog: Sendable {
     /// running, the text it ends on may yet be followed by a tool call, or it ended on one. A turn
     /// the person interrupted was not answered.
     public var answeredTurns: Int
-    /// The final replies of closed turns, interrupted ones included. Unlike the open last turn's,
-    /// these stay as they are while the log grows.
-    public var finalReplies: Int
+    /// The final replies of closed turns, interrupted ones included: those of `turns` but the open
+    /// last turn's. Unlike that one, they stay as they are while the log grows.
+    public var closedReplies: Int
     /// Record types the adapter does not recognize, with counts. Non-empty means the format moved.
     public var unknownRecordTypes: [String: Int]
     /// Keys the adapter does not know inside the record types it does, as "type.key", with counts.

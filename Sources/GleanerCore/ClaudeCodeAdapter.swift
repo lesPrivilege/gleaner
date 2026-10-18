@@ -96,7 +96,7 @@ public enum ClaudeCodeAdapter {
         var sessionCwd: String?
         var turns: [Turn] = []
         var answeredTurns = 0
-        var finalReplies = 0
+        var closedReplies = 0
 
         var request: String?
         var turnCwd: String?
@@ -111,7 +111,7 @@ public enum ClaudeCodeAdapter {
         func endTurn(closed: Bool, interrupted: Bool = false) {
             if closed {
                 if answered, !interrupted { answeredTurns += 1 }
-                if !reply.isEmpty { finalReplies += 1 }
+                if !reply.isEmpty { closedReplies += 1 }
             }
             if !reply.isEmpty { turns.append(Turn(request: request, parts: reply, model: replyModel)) }
             reply = []
@@ -185,7 +185,7 @@ public enum ClaudeCodeAdapter {
                 provider: .claudeCode, id: sessionID, title: customTitle ?? aiTitle,
                 cwd: sessionCwd, logPath: url.path),
             turns: turns,
-            records: file.records.count, answeredTurns: answeredTurns, finalReplies: finalReplies,
+            records: file.records.count, answeredTurns: answeredTurns, closedReplies: closedReplies,
             unknownRecordTypes: unknown, unknownFields: unknownFields,
             malformedLines: file.malformed)
     }

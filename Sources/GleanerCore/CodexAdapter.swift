@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Final replies are assistant messages with `phase == "final_answer"`. Forked threads replay
 /// their parent's messages marked `inherited_user_message`; those are skipped. Each turn starts
-/// with a `turn_context`; one the person interrupted holds a `turn_aborted` event.
+/// with a `turn_context`; a `turn_aborted` event names one the person interrupted.
 public struct CodexAdapter: Sendable {
     /// The keys of every record. Its content is in its payload.
     static let recordKeys: Set<String> = ["timestamp", "type", "ordinal", "payload", "metadata"]
@@ -92,18 +92,20 @@ public struct CodexAdapter: Sendable {
         var model: String?
         var request: String?
         var turns: [Turn] = []
-        var answeredTurns = 0
-        var finalReplies = 0
+        var closedReplies = 0
+        /// The turns the next turn's context closed, by the id their own gave them: whether the
+        /// assistant answered in each, and whether it was aborted (the person interrupted it).
+        var closed: [(id: String?, answered: Bool, aborted: Bool)] = []
+        var turnID: String?
         var answered = false
         var aborted = false
         var replies = 0
 
-        /// Counts the turn the next turn's context closes: answered, unless it was aborted (the
-        /// person interrupted it), and its final answers. The log's last turn is still open and
+        /// Closes the open turn, and counts its final answers. The log's last turn is still open and
         /// isn't counted: the thread may be running, or it ended on a tool call.
         func closeTurn() {
-            if answered, !aborted { answeredTurns += 1 }
-            finalReplies += replies
+            closed.append((turnID, answered, aborted))
+            closedReplies += replies
             answered = false
             aborted = false
             replies = 0
@@ -129,6 +131,7 @@ public struct CodexAdapter: Sendable {
                 // The model the turn asked for; through a gateway, as the gateway's catalog names it.
                 model = payload["model"] as? String ?? model
                 closeTurn()
+                turnID = payload["turn_id"] as? String
             case "response_item" where payload["type"] as? String == "message":
                 if (record["metadata"] as? [String: Any])?["inherited_user_message"] as? Bool == true { continue }
                 let content = payload["content"] as? [[String: Any]] ?? []
@@ -147,12 +150,20 @@ public struct CodexAdapter: Sendable {
                     break
                 }
             case "event_msg" where payload["type"] as? String == "turn_aborted":
-                // The person interrupted the turn: what the assistant wrote in it is not an answer.
-                aborted = true
+                // The person interrupted a turn: what the assistant wrote in it is not an answer. The
+                // event names its turn, which the next turn's context may already have closed; one
+                // that names no closed turn is the open turn's.
+                if let id = payload["turn_id"] as? String, id != turnID,
+                   let index = closed.lastIndex(where: { $0.id == id }) {
+                    closed[index].aborted = true
+                } else {
+                    aborted = true
+                }
             default:
                 break
             }
         }
+        let answeredTurns = closed.filter { $0.answered && !$0.aborted }.count
 
         let id = meta?["id"] as? String ?? url.deletingPathExtension().lastPathComponent
         return SessionLog(
@@ -160,7 +171,7 @@ public struct CodexAdapter: Sendable {
                 provider: .codex, id: id, title: titles[id],
                 cwd: meta?["cwd"] as? String, logPath: url.path, modelProvider: meta?["model_provider"] as? String),
             turns: turns,
-            records: file.records.count, answeredTurns: answeredTurns, finalReplies: finalReplies,
+            records: file.records.count, answeredTurns: answeredTurns, closedReplies: closedReplies,
             unknownRecordTypes: unknown, unknownFields: unknownFields,
             malformedLines: file.malformed)
     }
