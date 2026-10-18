@@ -9,7 +9,7 @@ public final class Registry: @unchecked Sendable {
     /// record types a log holds that Gleaner doesn't know).
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
     /// at a moment in time, are never rewritten.
-    public static let extractorVersion = 12
+    public static let extractorVersion = 13
 
     public init(path: String) throws {
         db = try Database(path: path)

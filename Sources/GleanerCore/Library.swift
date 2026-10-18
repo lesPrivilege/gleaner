@@ -156,8 +156,9 @@ public struct Artifact: Sendable, Identifiable {
     /// The folder holding the file, relative to where the agent worked when that is an ancestor.
     public var folder: String {
         let directory = (path as NSString).deletingLastPathComponent
-        if let cwd = latest.cwd, directory == cwd { return "." }
-        if let cwd = latest.cwd, directory.hasPrefix(cwd + "/") { return String(directory.dropFirst(cwd.count + 1)) }
+        let cwd = latest.cwd.map(standardPath)
+        if let cwd, directory == cwd { return "." }
+        if let cwd, directory.hasPrefix(cwd + "/") { return String(directory.dropFirst(cwd.count + 1)) }
         return (directory as NSString).abbreviatingWithTildeInPath
     }
 }

@@ -181,4 +181,25 @@ import Testing
         #expect(notes.projectFolder == root.path + "/notes")
         #expect(!notes.inRepository)
     }
+
+    /// A path keeps one spelling whether or not it exists: `/private/var` and `/private/tmp` read
+    /// as `/var` and `/tmp`, for a delivered file that is gone and for the folder the agent worked in.
+    @Test func aFolderUnderPrivateVarIsOneProjectWithItsFilesThereOrGone() throws {
+        let board = "/private" + FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-board-\(UUID().uuidString)").path
+        try FileManager.default.createDirectory(atPath: board + "/charts", withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(atPath: board) }
+        try Data("chart".utf8).write(to: URL(fileURLWithPath: board + "/charts/revenue.png"))
+        let there = standardPath(board + "/charts/revenue.png"), gone = standardPath(board + "/charts/gone.png")
+        #expect(there.hasPrefix("/var/") && gone.hasPrefix("/var/"))
+        #expect(Projects.folder(path: there, cwd: board) == standardPath(board))
+        #expect(Projects.folder(path: gone, cwd: board) == standardPath(board))
+        #expect(standardPath("/private/tmp/a/../b.md") == "/tmp/b.md")
+        // The repository an agent worked in, reached through its cwd, is the one its own files are in.
+        let repo = board + "/app"
+        try FileManager.default.createDirectory(atPath: repo + "/.git", withIntermediateDirectories: true)
+        Projects.forgetRepositories()
+        #expect(Projects.repository(path: there, cwd: repo) == Projects.repository(path: standardPath(repo + "/report.md"), cwd: nil))
+        #expect(Projects.repository(path: there, cwd: repo) == standardPath(repo))
+        #expect(standardPath("/private/varnish/x") == "/private/varnish/x")
+    }
 }
