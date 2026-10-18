@@ -9,7 +9,7 @@ A local shell agent (Claude Code, Codex) finds the delivery a person means, sele
 Three layers:
 - `GleanerCore.Catalog`: read-only queries over the registry.
 - The `gleaner` executable: JSON over the catalog.
-- MCP and extensions, over the same catalog: `gleaner mcp` serves the command's calls as MCP tools ([mcp-adapter](mcp-adapter.md)); extensions come later. None of them reads SQLite directly.
+- MCP and extensions, over the same catalog: `gleaner mcp` serves the command's calls as MCP tools ([mcp-adapter](mcp-adapter.md)), and one skill runs the command for Claude Code, Codex and the DeepSeek Harness ([extensions](extensions.md)). None of them reads SQLite directly.
 
 The app keeps sole ownership of indexing. The command never indexes, never writes the registry, and never writes a project folder.
 
