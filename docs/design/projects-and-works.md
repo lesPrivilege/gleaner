@@ -2,7 +2,10 @@
 
 Opus, 2026-10-18, after an independent completion review of main `3a89888`. The review found two byte-correctness defects (A1, A2, fixed first: SPEC §6, §9) and a gap against what the person asked for: they return to work by **project → logical work → revision, file and evidence**, also for non-code work that is renamed between revisions, and they need to see and correct the sources and associations Gleaner relies on before a release. A flat list of paths with a project menu did not do that job.
 
-This chapter is the contract the app now keeps. It supersedes rulings §2's deferral of reassigning projects and its C4 ("the project label is not editable"), and it is the "person's explicit link" that `structure.md` left cross-path lineage waiting for.
+This chapter is the contract the app now keeps. It supersedes, where they differ:
+- rulings §2's deferral of reassigning projects, its project menu beside the kind filter, §6's "no customization beyond filters" and §7a's menu placement: projects are a sidebar, and the person can move work, make projects and join files;
+- review-rulings C4, "the project label is not editable": a project the person made has the name they give it, and a derived one keeps its folder's;
+- structure.md's "Inferred lineage" and "manual groups" stays: Gleaner still never infers lineage, but it may now *suggest* a join with its reason, which only the person can make; projects of one's own are the one manual grouping, chosen because the review asked for correctable associations. This is the "person's explicit link" that structure.md left cross-path lineage waiting for. Its project timeline, placed on the project menu, now belongs in the project's outline when PR #4 is rebased.
 
 ## The objects the person sees
 
@@ -14,14 +17,14 @@ This chapter is the contract the app now keeps. It supersedes rulings §2's defe
 
 Same bytes, names, folders, sessions or times never make two files one work. Gleaner **suggests** a join only with a reason the person can check, and never applies it:
 
-- **Moved:** a file first arrived with the exact bytes another file last had, after that file was gone from its path.
-- **Version mark:** two files in one folder, of one kind, whose names differ only by a version mark (`v2`, `rev 3`, `draft`, `final`, a date, `(1)`). A bare number is not a version mark: `chapter1` and `chapter2` are two parts.
+- **Moved:** a file first arrived, after another file's last delivery, with the exact bytes that file last had, and that file is no longer at its path. Empty files, which all share one hash, are never matched this way.
+- **Version mark:** two files in one folder, with one extension, whose names differ only by a version mark (`v2`, `rev 3`, `draft`, `final`, `copy`, `(1)`). A bare number or a date is not a version mark: `chapter1` and `chapter2` are two parts, and `standup 2026-10-18` is another day's notes.
 
-Each file gets at most one suggestion, for the file it most likely continues, and only within one project. A suggestion the person declined is not made again.
+Each file gets at most one suggestion, for the nearest file before it that it may continue, and only within one project. Not the Same ends suggestions for that file: Gleaner doesn't offer the next likeliest instead. A project's outline lists five suggestions; each file's detail shows its own.
 
 ## Corrections
 
-A correction is the person's decision, kept apart from what Gleaner observed (review-rulings §3, foundation 2): its own tables (`corrections`, `projects`) in the library. No correction changes a delivery, a capture, a hash or a status. Reading the logs again, a new extractor version and a relaunch all keep them.
+A correction is the person's decision, kept apart from what Gleaner observed (review-rulings §3, foundation 2): its own tables (`corrections`, `projects`) in the library, written over a connection of their own so a log being read never holds them up for long or takes them with it. Foundation 2 keys a derived record by delivery, input hash, producer and version; a correction is about a file or a project, not one delivery or one set of bytes, so it is keyed by the file's path (the app's artifact identity, SPEC §5) or the project, and its producer is always the person. No correction changes a delivery, a capture, a hash or a status. Reading the logs again, a new extractor version and a relaunch all keep them.
 
 | Decision | Scope | Undo |
 |---|---|---|
@@ -31,7 +34,7 @@ A correction is the person's decision, kept apart from what Gleaner observed (re
 | Not the same | Two files: the suggestion stops | Undo, in the list |
 | A project of your own | Its name; deleting it returns its work | Delete Project |
 
-Sources → Your Corrections lists every decision with its date and an Undo, and Undo All Corrections resets the organization to what Gleaner found. These are distinct from Read Again (reread logs; derived data only), clearing hand-off copies (cache), and deleting saved copies (never offered).
+Sources → Your Corrections lists every decision with its date and an Undo (a work's move is one decision, however many files it has), and Undo All Corrections resets the organization to what Gleaner found. These are distinct from Read Again (reread logs; derived data only), clearing hand-off copies (cache), and deleting saved copies (never offered).
 
 ## The window
 
@@ -51,11 +54,11 @@ Each action names what it opens.
 | Show in Finder on a project | The project's folder |
 | Copy Resume Command | A command that continues the conversation in its agent: `claude --resume <id>` (in Claude Code 2.1.302's own help) or `codex resume <id>` (OpenAI's Codex CLI reference), run from the folder the conversation started in. Offered only while its log and that folder are there; otherwise the row says why it can't be resumed. |
 
-Gleaner opens no conversation itself and invents no URL scheme for one. A log file is not the conversation, so revealing one is never offered as opening it.
+Gleaner opens no conversation itself and invents no URL scheme for one. A log file is not the conversation: review-rulings §3.3's Show in Log, built on the query branch, reveals the log and is labeled as that, never as opening the conversation.
 
 ## Sources
 
-Sources → each agent shows its log folder, how the last read went and when, how many deliveries and conversations it gave, each kind of read problem with the logs or folders behind it (Show), and Read Again. It also says what Gleaner reads and what it leaves out: sub-agent transcripts and side chains (Claude Code), sub-agent threads and messages a fork copied from its parent (Codex), examples, line references and placeholders. Admission does not change: a sub-agent's file appears once the main conversation hands it to the person. Gleaner draws no agent topology.
+Sources → each agent shows its log folder, how the last read went and when (and why a run failed), how many deliveries and conversations it gave, each kind of read problem with the logs or folders behind it where Gleaner records them (unknown record types are counted per type), and Read Again. It also says what Gleaner reads and what it leaves out: sub-agent transcripts and side chains (Claude Code), sub-agent threads and messages a fork copied from its parent (Codex), examples, line references and placeholders. Admission does not change: a sub-agent's file appears once the main conversation hands it to the person. Gleaner draws no agent topology.
 
 ## Paths keep one spelling
 

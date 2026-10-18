@@ -99,7 +99,9 @@ import Testing
         #expect(suggested("/w/r/report-v1.pdf", "/w/r/report-v2.pdf"))
         #expect(suggested("/w/r/board-draft.md", "/w/r/board-final.md"))
         #expect(suggested("/w/r/brief.docx", "/w/r/brief (1).docx"))
-        #expect(suggested("/w/r/plan 2026-10-01.md", "/w/r/plan 2026-10-18.md"))
+        // A date names another day's document; a long number, another receipt.
+        #expect(!suggested("/w/r/plan 2026-10-01.md", "/w/r/plan 2026-10-18.md"))
+        #expect(!suggested("/w/r/receipt-10293847.pdf", "/w/r/receipt-56473829.pdf"))
         // A number alone names another part; another folder or kind is another file.
         #expect(!suggested("/w/r/chapter1.md", "/w/r/chapter2.md"))
         #expect(!suggested("/w/r/report-v1.pdf", "/w/other/report-v2.pdf"))
@@ -111,6 +113,30 @@ import Testing
         let a = file("/w/r/deck-v1.key", [(1, "x")]), b = file("/w/r/deck-v2.key", [(2, "y")])
         #expect(Organization(artifacts: [a, b], corrections: [correction(.notSameWork, b.path, a.path)]).suggestions.isEmpty)
         #expect(Organization(artifacts: [a, b], corrections: [correction(.sameWork, a.path, b.path)]).suggestions.isEmpty)
+        // Declined, it isn't replaced by the next older version.
+        let c = file("/w/r/deck-v3.key", [(3, "z")])
+        let declined = Organization(artifacts: [a, b, c], corrections: [correction(.notSameWork, c.path, b.path)])
+        #expect(declined.suggestions == [.init(earlier: a.path, later: b.path, reason: .versionName)])
+    }
+
+    @Test func copiesDeliveredTogetherAreNotSuggestedAsRenamed() {
+        let out = file("/w/out/report.pdf", [(1, "same")]), dist = file("/w/dist/report.pdf", [(1, "same")])
+        #expect(Organization(artifacts: [out, dist], missing: [out.path, dist.path]).suggestions.isEmpty)
+    }
+
+    @Test func aJoinThroughAFileNoLongerInTheLibraryHolds() {
+        let draft = file("/w/r/report-draft.md", [(1, "d")]), final = file("/w/r/report-final.md", [(3, "f")])
+        let org = Organization(artifacts: [draft, final], corrections: [
+            correction(.sameWork, draft.path, "/w/r/report-v2.md"), correction(.sameWork, "/w/r/report-v2.md", final.path)])
+        #expect(org.works.count == 1)
+    }
+
+    @Test func aFolderOfManyVersionsIsSuggestedQuickly() {
+        let files = (0..<1500).map { file("/w/r/notes-v\($0).md", [(Double($0), "s\($0)")]) }
+        let clock = ContinuousClock.now
+        let org = Organization(artifacts: files)
+        #expect(ContinuousClock.now - clock < .seconds(2))
+        #expect(org.suggestions.count == 1499)
     }
 
     @Test func correctionsAreKeptApartFromWhatGleanerFoundAndSurviveReopening() throws {

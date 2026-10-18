@@ -76,7 +76,11 @@ final class LibraryModel {
     /// When the latest run finished.
     private(set) var lastRead: Date?
     var query = "" {
-        didSet { if query != oldValue { chosenDelivery = nil } }
+        didSet {
+            if query != oldValue { chosenDelivery = nil }
+            // A search looks through deliveries, not through the sources.
+            if !query.isEmpty, place == .sources { place = .all }
+        }
     }
     var kind: Artifact.Kind?
     var place: Place = .all {
@@ -143,7 +147,11 @@ final class LibraryModel {
 
     private func reorganize() {
         organization = Organization(artifacts: artifacts, corrections: corrections, projects: userProjects, missing: missing)
+        organizationVersion += 1
     }
+
+    /// Bumped with each rebuilt organization, so a listing made before is never reused after.
+    @ObservationIgnored private var organizationVersion = 0
 
     /// Only what is shown to be gone: a file Gleaner can't reach is unreadable, not missing.
     private static func missing(_ artifacts: [Artifact]) -> Set<String> {
@@ -252,7 +260,7 @@ final class LibraryModel {
                 case (_, .failure(let error)): "Gleaner couldn’t read its library: \(error)"
                 default: nil
                 }
-                self.status = "\(self.artifacts.count) delivered files"
+                self.status = Wording.library(works: self.organization.works.count, deliveries: self.artifacts.map(\.deliveries.count).reduce(0, +))
                 self.indexing = false
                 if self.pending { self.pending = false; self.reindex() }
             }
@@ -264,10 +272,23 @@ final class LibraryModel {
     /// The works the window lists, newest first: in the project shown, of the kind chosen, matching the search.
     var results: [SearchResult] {
         let tokens = tokens
-        return organization.works.compactMap { result(for: $0, tokens: tokens) }
+        let key = ResultsKey(tokens: tokens, kind: kind, place: place, organization: organizationVersion)
+        if let cached = resultsCache, cached.key == key { return cached.results }
+        let results = organization.works.compactMap { result(for: $0, tokens: tokens) }
+        resultsCache = (key, results)
+        return results
     }
 
+    /// What the list depends on: it is listed again only when one of these changes, not each time
+    /// a view asks for it.
+    private struct ResultsKey: Equatable {
+        var tokens: [String], kind: Artifact.Kind?, place: Place, organization: Int
+    }
+    @ObservationIgnored private var resultsCache: (key: ResultsKey, results: [SearchResult])?
+
     /// The work as the list shows it, or nil when the place, kind or search leaves it out.
+    func result(for work: Work) -> SearchResult? { result(for: work, tokens: tokens) }
+
     private func result(for work: Work, tokens: [String]) -> SearchResult? {
         if case .project(let key) = place, work.project != key { return nil }
         guard kind == nil || work.kind == kind,
@@ -278,7 +299,8 @@ final class LibraryModel {
     /// The selected work, as the list shows it: looked up, not found by listing every work, since
     /// the detail asks for it many times each time it is drawn.
     var selected: SearchResult? {
-        guard let selection, let work = organization.work(containing: selection) else { return nil }
+        // The Sources page hides the selection: menus and Quick Look don't act on what isn't shown.
+        guard place != .sources, let selection, let work = organization.work(containing: selection) else { return nil }
         return result(for: work, tokens: tokens)
     }
 
@@ -315,9 +337,10 @@ final class LibraryModel {
 
     /// A delivery's bytes as a comparison end: its saved copy, or the file on disk while that still
     /// hashes to the delivery. Bytes first seen after the delivery say so.
-    func compareEnd(_ delivery: Delivery, artifact: Artifact) -> Comparison.End? {
+    /// `named` puts the file's name in the title, for a work of several files.
+    func compareEnd(_ delivery: Delivery, artifact: Artifact, named: Bool = false) -> Comparison.End? {
         guard let sha = delivery.sha256 else { return nil }
-        let title = Wording.compareTitle(delivery)
+        let title = (named ? artifact.name + " · " : "") + Wording.compareTitle(delivery)
         if hasSaved(sha) {
             return Comparison.End(title: title, source: "saved copy", sha: sha, url: indexer.store.objectURL(sha))
         }
@@ -337,85 +360,140 @@ final class LibraryModel {
 
     // MARK: Corrections
 
-    /// Records a decision and shows the library with it; or says why it couldn't be recorded,
-    /// and leaves the library as it was.
-    private func correcting(_ change: (Registry) throws -> Void) {
-        let registry = indexer.registry
+    /// Corrections are written over a connection of their own: the indexer's holds a transaction
+    /// while it reads a log, and a write over it would join that transaction, or fail.
+    @ObservationIgnored private var correctionsRegistry: Registry?
+
+    private func correctionsStore() throws -> Registry {
+        if let registry = correctionsRegistry { return registry }
+        let registry = try Registry(path: indexer.registry.path)
+        correctionsRegistry = registry
+        return registry
+    }
+
+    /// Records a decision off the main thread, waiting for a read in progress if it must, then
+    /// shows the library with it; or says why it couldn't be recorded, and leaves the library as
+    /// it was.
+    @discardableResult
+    private func correcting<T: Sendable>(_ change: @escaping @Sendable (Registry) throws -> T) async -> T? {
+        let outcome: Result<(T, [Correction], [UserProject]), Error>
         do {
-            try change(registry)
-            correctionFailure = nil
+            let registry = try correctionsStore()
+            outcome = await Task.detached(priority: .userInitiated) {
+                Result { (try change(registry), try registry.corrections(), try registry.userProjects()) }
+            }.value
         } catch {
-            correctionFailure = "Gleaner couldn’t record that: \(error)"
+            outcome = .failure(error)
         }
-        corrections = (try? registry.corrections()) ?? corrections
-        userProjects = (try? registry.userProjects()) ?? userProjects
-        reorganize()
+        switch outcome {
+        case .success(let (value, corrections, projects)):
+            self.corrections = corrections
+            userProjects = projects
+            correctionFailure = nil
+            reorganize()
+            return value
+        case .failure(let error):
+            correctionFailure = "Gleaner couldn’t record that: \(error)"
+            return nil
+        }
+    }
+
+    /// Shows the work holding `path` where it now is: selected, in its project when the window
+    /// shows a project.
+    private func follow(_ path: String) {
+        guard let work = organization.work(containing: path) else { return }
+        if case .project(let key) = place, key != work.project { place = .project(work.project) }
+        selection = work.id
     }
 
     /// Puts the work, every one of its files, in the project `key`.
-    func move(_ work: Work, to key: String) {
-        correcting { try $0.correct(.project, subjects: work.files.map(\.path), target: key, at: Date()) }
-        if case .project = place { place = .project(key) }
-        selection = work.id
+    func move(_ work: Work, to key: String) async {
+        let paths = work.files.map(\.path)
+        await correcting { try $0.correct(.project, subjects: paths, target: key, at: Date()) }
+        follow(work.id)
     }
 
     /// Makes a project of the person's own and puts the work in it.
-    func move(_ work: Work, toNewProject name: String) {
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    func move(_ work: Work, toNewProject name: String) async {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines), paths = work.files.map(\.path)
         guard !name.isEmpty else { return }
-        var created: UserProject?
-        correcting { created = try $0.addProject(named: name, at: Date()) }
-        if let created { move(work, to: created.key) }
+        await correcting { try $0.addProject(named: name, at: Date(), moving: paths) }
+        follow(work.id)
     }
 
     /// Gleaner puts the work back where it found it.
-    func undoMove(_ work: Work) {
-        let moves = corrections.filter { $0.kind == .project && work.contains($0.subject) }
-        correcting { try $0.undo(moves.map(\.id)) }
-        selection = work.id
+    func undoMove(_ work: Work) async {
+        let moves = corrections.filter { $0.kind == .project && work.contains($0.subject) }.map(\.id)
+        await correcting { try $0.undo(moves) }
+        follow(work.id)
     }
 
     /// The two files are versions of one work, from now on and after every reread.
-    func join(_ a: String, _ b: String) {
-        correcting { try $0.correct(.sameWork, subject: a, target: b, at: Date()) }
-        if let work = organization.work(containing: a) {
-            selection = work.id
-            if case .project(let key) = place, key != work.project { place = .project(work.project) }
-        }
+    func join(_ a: String, _ b: String) async {
+        await correcting { try $0.correct(.sameWork, subject: a, target: b, at: Date()) }
+        follow(a)
     }
 
     /// The two files are not one work: Gleaner stops suggesting it.
-    func keepApart(_ a: String, _ b: String) {
-        correcting { try $0.correct(.notSameWork, subject: a, target: b, at: Date()) }
+    func keepApart(_ a: String, _ b: String) async {
+        await correcting { try $0.correct(.notSameWork, subject: a, target: b, at: Date()) }
     }
 
-    /// Undoes one decision, whichever it was.
-    func undo(_ correction: Correction) {
-        correcting { try $0.undo(correction.id) }
+    /// Undoes decisions made together, such as moving every file of a work.
+    func undo(_ corrections: [Correction]) async {
+        let ids = corrections.map(\.id), selected = selection
+        await correcting { try $0.undo(ids) }
+        if let selected { follow(selected) }
     }
 
-    func undoAllCorrections() {
-        correcting { try $0.undoAllCorrections() }
+    func undo(_ correction: Correction) async {
+        await undo([correction])
+    }
+
+    func undoAllCorrections() async {
+        await correcting { try $0.undoAllCorrections() }
         if case .project(let key) = place, organization.project(key) == nil { place = .all }
     }
 
     /// Shows the project `folder` inside the project `key`.
-    func combine(_ folder: String, into key: String) {
-        correcting { try $0.correct(.combine, subject: folder, target: key, at: Date()) }
+    func combine(_ folder: String, into key: String) async {
+        await correcting { try $0.correct(.combine, subject: folder, target: key, at: Date()) }
         place = .project(key)
     }
 
-    func rename(_ project: Organization.Project, to name: String) {
-        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    func rename(_ project: Organization.Project, to name: String) async {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines), key = project.key
         guard project.origin == .yours, !name.isEmpty else { return }
-        correcting { try $0.renameProject(project.key, to: name) }
+        await correcting { try $0.renameProject(key, to: name) }
     }
 
     /// Removes a project the person made; its work goes back where Gleaner found it.
-    func remove(_ project: Organization.Project) {
+    func remove(_ project: Organization.Project) async {
+        let key = project.key
         guard project.origin == .yours else { return }
-        correcting { try $0.removeProject(project.key) }
-        if place == .project(project.key) { place = .all }
+        await correcting { try $0.removeProject(key) }
+        if place == .project(key) { place = .all }
+    }
+
+    /// The corrections, newest first, a move of several files at once as one decision.
+    var correctionGroups: [[Correction]] {
+        var groups: [[Correction]] = []
+        for correction in corrections.reversed() {
+            if correction.kind == .project, let last = groups.last?.last, last.kind == .project,
+               last.target == correction.target, last.madeAt == correction.madeAt {
+                groups[groups.count - 1].append(correction)
+            } else {
+                groups.append([correction])
+            }
+        }
+        return groups
+    }
+
+    /// What decisions made together did, in a sentence.
+    func describe(_ group: [Correction]) -> String {
+        guard group.count > 1, let first = group.first, first.kind == .project else { return group.first.map(describe) ?? "" }
+        return group.sorted { $0.id < $1.id }.map { ($0.subject as NSString).lastPathComponent }.joined(separator: ", ")
+            + " moved to " + organization.projectName(first.target)
     }
 
     /// What a correction did, in a sentence, for the list of corrections.
@@ -494,7 +572,7 @@ final class LibraryModel {
         } else if Locator.stat(folder.path).kind != .missing {
             NSWorkspace.shared.open(folder)
         } else {
-            selection = artifact.path
+            selection = organization.work(containing: artifact.path)?.id ?? artifact.path
             actionFailure = (artifact.id, nil, Wording.folderGone(folder.path))
         }
     }
@@ -711,6 +789,8 @@ final class LibraryModel {
         saved.subtract(versions)
         saved.formUnion(held)
         if completed { artifacts = (try? indexer.registry.artifacts()) ?? artifacts }
+        // Whether a file is gone decides which joins Gleaner suggests.
+        let goneChanged = (state.kind == .missing) != missing.contains(path)
         if state.kind == .missing {
             missing.insert(path)
         } else {
@@ -718,6 +798,7 @@ final class LibraryModel {
             // The file is there, so its folder is too.
             if let failure = actionFailure, failure.artifact == artifact.id, failure.delivery == nil { actionFailure = nil }
         }
+        if goneChanged { reorganize() }
     }
 
     /// Prepares a verified, immutable copy of `sha` to drag. A copy already prepared for these

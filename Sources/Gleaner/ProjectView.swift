@@ -7,6 +7,9 @@ struct ProjectOutline: View {
     @Environment(LibraryModel.self) private var model
     var project: Organization.Project
 
+    /// Suggestions listed here; each file's detail shows its own.
+    static let suggestionsShown = 5
+
     var body: some View {
         @Bindable var model = model
         let results = model.results
@@ -14,11 +17,16 @@ struct ProjectOutline: View {
         let order = folders.keys.sorted { a, b in a.isEmpty != b.isEmpty ? a.isEmpty : a.localizedStandardCompare(b) == .orderedAscending }
         let suggestions = model.organization.suggestions(in: project)
         VStack(spacing: 0) {
+        FilterBar()
         List(selection: $model.selection) {
             Section { ProjectHeader(project: project) }
             if !suggestions.isEmpty {
                 Section {
-                    ForEach(suggestions) { SuggestionView(suggestion: $0, compact: true) }
+                    ForEach(suggestions.prefix(Self.suggestionsShown)) { SuggestionView(suggestion: $0, compact: true) }
+                    if suggestions.count > Self.suggestionsShown {
+                        Text("\(suggestions.count - Self.suggestionsShown) more, each in its file’s detail.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
                 } header: {
                     Text("Possibly one work")
                         .help("Gleaner never joins files by itself. Joined files show as versions of one work; nothing on disk changes.")
@@ -44,6 +52,12 @@ struct ProjectOutline: View {
             if project.works.isEmpty {
                 ContentUnavailableView("Nothing here yet", systemImage: "tray",
                                        description: Text("Move work here from its detail: Move to Project…"))
+            } else if results.isEmpty {
+                ContentUnavailableView {
+                    Label("No \(model.kind.map(Wording.kindName) ?? "works") here", systemImage: "line.3.horizontal.decrease.circle")
+                } actions: {
+                    Button("Show All Kinds") { model.kind = nil }
+                }
             }
         }
         TroubleBar()
@@ -73,7 +87,7 @@ struct ProjectHeader: View {
                 HStack(spacing: 6) {
                     Text("Also shows \(combined.name), which you put inside it \(Wording.date(combined.correction.madeAt)).")
                         .font(.caption).foregroundStyle(.secondary)
-                    Button("Show Apart") { model.undo(combined.correction) }.controlSize(.mini)
+                    Button("Show Apart") { Task { await model.undo(combined.correction) } }.controlSize(.mini)
                 }
             }
             let recent = project.works.prefix(3)
@@ -117,9 +131,9 @@ struct SuggestionView: View {
             Text(Wording.suggestionReason(suggestion)).font(.caption).foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                Button("Same Work") { model.join(suggestion.earlier, suggestion.later) }
+                Button("Same Work") { Task { await model.join(suggestion.earlier, suggestion.later) } }
                     .help("Show both files as versions of one work. Nothing on disk changes; you can undo this.")
-                Button("Not the Same") { model.keepApart(suggestion.earlier, suggestion.later) }
+                Button("Not the Same") { Task { await model.keepApart(suggestion.earlier, suggestion.later) } }
                     .help("Keep them apart. Gleaner won’t suggest this again.")
                 if compact, let work = model.organization.work(containing: suggestion.later) {
                     Button("Show") { model.select(work.deliveries[0]) }.buttonStyle(.link)

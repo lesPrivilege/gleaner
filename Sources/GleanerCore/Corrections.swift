@@ -42,8 +42,17 @@ extension Registry {
 
     @discardableResult
     public func addProject(named name: String, at date: Date) throws -> UserProject {
+        try addProject(named: name, at: date, moving: [])
+    }
+
+    /// Makes a project and moves the files `moving` into it, whole or not at all.
+    @discardableResult
+    public func addProject(named name: String, at date: Date, moving subjects: [String]) throws -> UserProject {
         let project = UserProject(key: "user:" + UUID().uuidString, name: name, createdAt: date)
-        try db.run("INSERT INTO projects (key, name, created_at) VALUES (?, ?, ?)", [project.key, name, date])
+        try db.transaction {
+            try db.run("INSERT INTO projects (key, name, created_at) VALUES (?, ?, ?)", [project.key, name, date])
+            try record(.project, subjects: subjects, target: project.key, at: date)
+        }
         return project
     }
 
@@ -76,20 +85,22 @@ extension Registry {
 
     /// The same decision for each of `subjects`, made whole or not at all.
     public func correct(_ kind: Correction.Kind, subjects: [String], target: String, at date: Date) throws {
-        try db.transaction {
-            for subject in subjects {
-                let (subject, target) = kind == .sameWork || kind == .notSameWork
-                    ? (min(subject, target), max(subject, target)) : (subject, target)
-                switch kind {
-                case .project, .combine:
-                    try db.run("DELETE FROM corrections WHERE kind = ? AND subject = ?", [kind.rawValue, subject])
-                case .sameWork, .notSameWork:
-                    try db.run("DELETE FROM corrections WHERE kind IN ('same_work', 'not_same_work') AND subject = ? AND target = ?",
-                               [subject, target])
-                }
-                try db.run("INSERT INTO corrections (kind, subject, target, made_at) VALUES (?, ?, ?, ?)",
-                           [kind.rawValue, subject, target, date])
+        try db.transaction { try record(kind, subjects: subjects, target: target, at: date) }
+    }
+
+    private func record(_ kind: Correction.Kind, subjects: [String], target: String, at date: Date) throws {
+        for subject in subjects {
+            let (subject, target) = kind == .sameWork || kind == .notSameWork
+                ? (min(subject, target), max(subject, target)) : (subject, target)
+            switch kind {
+            case .project, .combine:
+                try db.run("DELETE FROM corrections WHERE kind = ? AND subject = ?", [kind.rawValue, subject])
+            case .sameWork, .notSameWork:
+                try db.run("DELETE FROM corrections WHERE kind IN ('same_work', 'not_same_work') AND subject = ? AND target = ?",
+                           [subject, target])
             }
+            try db.run("INSERT INTO corrections (kind, subject, target, made_at) VALUES (?, ?, ?, ?)",
+                       [kind.rawValue, subject, target, date])
         }
     }
 

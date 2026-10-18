@@ -81,8 +81,11 @@ struct AgentSourcePage: View {
                 if model.progress != nil { ProgressView().controlSize(.small) }
             }
         }
-        Text("\(Wording.count(deliveries.count, "delivery", "deliveries")) from \(Wording.count(conversations, "conversation")) are in the library.")
+        Text("In the library: \(Wording.count(deliveries.count, "delivery", "deliveries")) from \(Wording.count(conversations, "conversation")).")
             .font(.callout)
+        if let failure = model.indexFailure {
+            StatusLabel(mark: .attention, text: failure).font(.callout)
+        }
         if let source {
             ProblemList(title: "Logs with malformed lines", detail: "What they name was added and nothing was removed; they are read again next time.", paths: source.partialLogs)
             ProblemList(title: "Logs found shorter than before", detail: "They lost records, so nothing they no longer name is removed.", paths: source.shortenedLogs)
@@ -143,6 +146,7 @@ struct ProblemList: View {
 struct CorrectionsPage: View {
     @Environment(LibraryModel.self) private var model
     @State private var confirming = false
+    @State private var removing: Organization.Project?
 
     var body: some View {
         Text("Your Corrections").font(.title2.weight(.semibold))
@@ -151,14 +155,14 @@ struct CorrectionsPage: View {
         if model.corrections.isEmpty && model.userProjects.isEmpty {
             Text("No corrections yet. Gleaner shows the library as it found it.").font(.callout)
         }
-        ForEach(model.corrections.reversed()) { correction in
+        ForEach(model.correctionGroups, id: \.first!.id) { group in
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(model.describe(correction)).font(.callout)
-                    Text(Wording.date(correction.madeAt)).font(.caption).foregroundStyle(.secondary)
+                    Text(model.describe(group)).font(.callout)
+                    Text(Wording.date(group[0].madeAt)).font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("Undo") { model.undo(correction) }.controlSize(.small)
+                Button("Undo") { Task { await model.undo(group) } }.controlSize(.small)
             }
             Divider()
         }
@@ -172,16 +176,22 @@ struct CorrectionsPage: View {
                     Spacer()
                     if let shown {
                         Button("Go to Project") { model.place = .project(shown.key) }.controlSize(.small)
-                        Button("Delete") { model.remove(shown) }.controlSize(.small)
+                        Button("Delete…") { removing = shown }.controlSize(.small)
                     }
                 }
             }
         }
+        Color.clear.frame(height: 0)
+            .confirmationDialog("Delete “\(removing?.name ?? "")”?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
+                Button("Delete Project", role: .destructive) { if let removing { Task { await model.remove(removing) } } }
+            } message: {
+                Text("Its work goes back to the projects Gleaner found it in, and the moves into it are removed. No file is touched.")
+            }
         if !model.corrections.isEmpty || !model.userProjects.isEmpty {
             Button("Undo All Corrections…", role: .destructive) { confirming = true }
                 .padding(.top, 8)
                 .confirmationDialog("Undo every correction?", isPresented: $confirming) {
-                    Button("Undo All", role: .destructive) { model.undoAllCorrections() }
+                    Button("Undo All", role: .destructive) { Task { await model.undoAllCorrections() } }
                 } message: {
                     Text("Gleaner shows the library as it found it, and removes the projects you made. Saved copies, deliveries and files are not touched.")
                 }

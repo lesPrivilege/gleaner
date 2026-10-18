@@ -15,7 +15,8 @@ The path from a green `main` to a downloadable, notarized `Gleaner-0.1.0.zip`. S
   - right-click a result: each item acts on that result;
   - Compare two deliveries, an image pair, and a delivery against a changed file on disk;
   - a file under "Delivered with" opens on its delivery from that reply;
-  - Settings shows how each log folder read and Read Again rereads them; clearing hand-off copies prepares the selection's copy again;
+  - Sources (⌘,) shows how each log folder read and Read Again rereads them; Storage's Clear prepares the selection's copy again;
+  - a project opens on its outline; Same Work, Not the Same, Move to Project…, Put Back and Show Apart act as their help says, survive a relaunch, and Your Corrections undoes each and Undo All all of them;
   - VoiceOver reads a result row, a delivery row and the drag tile as one sentence each;
   - quit and relaunch: search and filters come back.
 - [ ] `CHANGELOG.md`: give 0.1.0 its date.

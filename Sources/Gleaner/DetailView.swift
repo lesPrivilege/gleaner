@@ -519,8 +519,8 @@ struct DeliveriesSection: View {
     /// This delivery against the selected one, older first, when both versions can be read and differ.
     func ends(_ delivery: Delivery) -> (from: Comparison.End, to: Comparison.End)? {
         guard delivery.id != selected.id, delivery.sha256 != selected.sha256,
-              let a = model.compareEnd(delivery, artifact: work.file(of: delivery)),
-              let b = model.compareEnd(selected, artifact: work.file(of: selected)) else { return nil }
+              let a = model.compareEnd(delivery, artifact: work.file(of: delivery), named: work.files.count > 1),
+              let b = model.compareEnd(selected, artifact: work.file(of: selected), named: work.files.count > 1) else { return nil }
         let older = (delivery.deliveredAt ?? .distantPast) < (selected.deliveredAt ?? .distantPast)
         return older ? (a, b) : (b, a)
     }
@@ -533,7 +533,11 @@ struct DeliveriesSection: View {
     }
 
     func spoken(_ delivery: Delivery) -> String {
-        let line = Wording.deliveryLine(delivery, sameAs: sameAs(delivery))
+        let earlier = sameAs(delivery)
+        var line = Wording.deliveryLine(delivery, sameAs: earlier?.path == delivery.path ? earlier : nil)
+        if let earlier, earlier.path != delivery.path {
+            line += ", same bytes as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))"
+        }
         return work.files.count > 1 ? (delivery.path as NSString).lastPathComponent + ", " + line : line
     }
 

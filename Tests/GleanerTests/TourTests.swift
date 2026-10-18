@@ -87,7 +87,7 @@ import Testing
         try await shot("final-report-with-suggestion")
 
         let suggestion = try #require(model.organization.suggestions(for: final).first)
-        model.join(suggestion.earlier, suggestion.later)
+        await model.join(suggestion.earlier, suggestion.later)
         let joined = try work("board-report-final.md")
         try await show(joined)
         try await tall("report-joined-whole-detail")
@@ -114,7 +114,7 @@ import Testing
         let appendix = try work("appendix.md")
         try await show(appendix)
         try await tall("appendix-misfiled-whole-detail")
-        model.move(appendix, to: board.key)
+        await model.move(appendix, to: board.key)
         try await show(try work("appendix.md"))
         try await shot("appendix-moved")
 

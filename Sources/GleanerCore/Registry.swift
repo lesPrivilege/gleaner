@@ -4,6 +4,8 @@ import Foundation
 /// captured of each delivery's bytes, and where. Excerpts are stored redacted; whole logs never are.
 public final class Registry: @unchecked Sendable {
     let db: Database
+    /// The library file, for another connection to it (`LibraryModel` writes corrections over one).
+    public let path: String
 
     /// Bump when extraction changes what is derived from logs (requests, evidence, admission, the
     /// record types a log holds that Gleaner doesn't know).
@@ -12,6 +14,7 @@ public final class Registry: @unchecked Sendable {
     public static let extractorVersion = 13
 
     public init(path: String) throws {
+        self.path = path
         db = try Database(path: path)
         try db.execute("""
             CREATE TABLE IF NOT EXISTS log_files (

@@ -20,8 +20,10 @@ struct WorkSection: View {
                     .font(.callout.weight(.semibold))
                 Spacer(minLength: 8)
                 switch placement {
-                case .moved: Button("Put Back") { model.undoMove(work) }.help("Return it to the project Gleaner found it in.")
-                case .combined(_, let correction): Button("Show Apart") { model.undo(correction) }
+                case .moved: Button("Put Back") { Task { await model.undoMove(work) } }.help("Return it to the project Gleaner found it in.")
+                case .combined(let folder, let correction):
+                    Button("Show Apart") { Task { await model.undo(correction) } }
+                        .help("Show \(organization.projectName(folder)) as its own project again, with all its work.")
                 case .found: EmptyView()
                 }
                 Button("Move to Project…") { moving = true }
@@ -45,7 +47,7 @@ struct WorkSection: View {
                         HStack(spacing: 6) {
                             Text("You said \(model.describe(link)) on \(Wording.date(link.madeAt)).")
                                 .font(.caption).foregroundStyle(.secondary)
-                            Button("Undo") { model.undo(link) }.controlSize(.mini)
+                            Button("Undo") { Task { await model.undo(link) } }.controlSize(.mini)
                         }
                     }
                 }
@@ -86,6 +88,7 @@ struct MoveSheet: View {
                 }
             }
             .frame(minHeight: 180)
+            .onChange(of: target) { if target != nil { newName = "" } }
             HStack {
                 TextField("Or a new project named…", text: $newName)
                     .onSubmit(move)
@@ -103,7 +106,7 @@ struct MoveSheet: View {
     }
 
     func move() {
-        if let target { model.move(work, to: target) } else if !newName.trimmingCharacters(in: .whitespaces).isEmpty { model.move(work, toNewProject: newName) } else { return }
+        if let target { Task { await model.move(work, to: target) } } else if !newName.trimmingCharacters(in: .whitespaces).isEmpty { Task { await model.move(work, toNewProject: newName) } } else { return }
         dismiss()
     }
 }
@@ -145,7 +148,7 @@ struct JoinSheet: View {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button("Join") {
-                    if let other { model.join(work.id, other) }
+                    if let other { Task { await model.join(work.id, other) } }
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)

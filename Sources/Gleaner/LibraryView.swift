@@ -28,11 +28,7 @@ struct LibraryView: View {
         .quickLookPreview(Binding(get: { quickLookURL }, set: { model.isQuickLookOpen = $0 != nil }))
         .onChange(of: model.selectedHandoffURL) { if model.selectedHandoffURL == nil { model.isQuickLookOpen = false } }
         .onAppear(perform: restore)
-        .onChange(of: model.query) {
-            savedQuery = model.query
-            // A search looks through deliveries, not through the sources.
-            if !model.query.isEmpty, model.place == .sources { model.place = .all }
-        }
+        .onChange(of: model.query) { savedQuery = model.query }
         .onChange(of: model.kind) { savedKind = model.kind?.rawValue ?? "" }
         .onChange(of: model.place) { savedPlace = Self.encode(model.place) }
         .navigationSubtitle(model.progress.map { "Reading logs… \($0.done) of \($0.total)" } ?? model.status)
@@ -44,13 +40,16 @@ struct LibraryView: View {
         }
     }
 
+    /// The search first and the place after it, so a saved Sources page stays open; the kind
+    /// last, since entering a project clears it.
     func restore() {
+        let kind = Artifact.Kind(rawValue: savedKind)
         model.query = savedQuery
-        model.kind = Artifact.Kind(rawValue: savedKind)
         switch Self.decode(savedPlace) {
         case .project(let key) where model.organization.project(key) == nil: model.place = .all
         case let place: model.place = place
         }
+        model.kind = kind
     }
 
     static func encode(_ place: Place) -> String {
@@ -103,11 +102,11 @@ struct Sidebar: View {
         }
         .alert("Rename Project", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
             TextField("Name", text: $newName)
-            Button("Rename") { if let renaming { model.rename(renaming, to: newName) } }
+            Button("Rename") { if let renaming { Task { await model.rename(renaming, to: newName) } } }
             Button("Cancel", role: .cancel) {}
         }
         .confirmationDialog("Delete “\(removing?.name ?? "")”?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
-            Button("Delete Project", role: .destructive) { if let removing { model.remove(removing) } }
+            Button("Delete Project", role: .destructive) { if let removing { Task { await model.remove(removing) } } }
         } message: {
             Text("Its work goes back to the projects Gleaner found it in. No file is touched.")
         }
@@ -121,7 +120,7 @@ struct Sidebar: View {
         if project.origin != .yours {
             Menu("Show Inside") {
                 ForEach(model.projects.filter { $0.key != project.key }) { other in
-                    Button(other.name) { model.combine(project.key, into: other.key) }
+                    Button(other.name) { Task { await model.combine(project.key, into: other.key) } }
                 }
             }
         } else {
@@ -176,7 +175,8 @@ struct ListHandoff: ViewModifier {
         content
             .contextMenu(forSelectionType: Work.ID.self) { ids in
                 if let id = ids.first, let work = model.organization.work(containing: id) {
-                    let artifact = id == model.selection ? model.selected.map(model.file(in:)) ?? work.latest : work.latest
+                    // The file the row shows and drags, which may be an earlier one of the work's.
+                    let artifact = model.result(for: work).map(model.file(in:)) ?? work.latest
                     if id == model.selection {
                         Button("Open Verified Copy") { model.openSelected() }.disabled(model.selectedHandoffURL == nil)
                         Button("Quick Look") { model.toggleQuickLook() }.disabled(model.selectedHandoffURL == nil)
@@ -206,7 +206,7 @@ struct ResultsList: View {
         let repeated = Set(Dictionary(grouping: results, by: \.work.name).filter { $0.value.count > 1 }.keys)
         // Filters sit above the list, not over it: rows never scroll under the glass controls.
         VStack(spacing: 0) {
-            filters
+            FilterBar()
             List(selection: $model.selection) {
                 ForEach(results) { result in
                     let file = model.file(in: result)
@@ -226,29 +226,6 @@ struct ResultsList: View {
             .overlay { emptyState(results) }
             TroubleBar()
         }
-    }
-
-    var filters: some View {
-        @Bindable var model = model
-        return HStack(spacing: 8) {
-            if let project = model.currentProject {
-                Label(project.name, systemImage: Wording.projectIcon(project.origin))
-                    .font(.callout.weight(.semibold)).lineLimit(1)
-            }
-            Spacer(minLength: 0)
-            Picker("Kind", selection: $model.kind) {
-                Text("All kinds").tag(Artifact.Kind?.none)
-                Divider()
-                ForEach(Artifact.Kind.allCases, id: \.self) { kind in
-                    Text(Wording.kindName(kind)).tag(Artifact.Kind?.some(kind))
-                }
-            }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .fixedSize()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
     }
 
     @ViewBuilder
@@ -289,6 +266,34 @@ struct ResultsList: View {
                 if model.currentProject != nil { Button("Search All Deliveries") { model.place = .all } }
             }
         }
+    }
+}
+
+/// The project shown, and the kind filter, above a list.
+struct FilterBar: View {
+    @Environment(LibraryModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        HStack(spacing: 8) {
+            if let project = model.currentProject {
+                Label(project.name, systemImage: Wording.projectIcon(project.origin))
+                    .font(.callout.weight(.semibold)).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Picker("Kind", selection: $model.kind) {
+                Text("All kinds").tag(Artifact.Kind?.none)
+                Divider()
+                ForEach(Artifact.Kind.allCases, id: \.self) { kind in
+                    Text(Wording.kindName(kind)).tag(Artifact.Kind?.some(kind))
+                }
+            }
+            .pickerStyle(.menu)
+            .labelsHidden()
+            .fixedSize()
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
     }
 }
 

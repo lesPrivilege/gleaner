@@ -124,7 +124,9 @@ public struct Organization: Sendable {
             while let up = parent[p], up != p { p = up }
             return p
         }
-        for c in corrections where c.kind == .sameWork && byPath[c.subject] != nil && byPath[c.target] != nil {
+        // Every join counts, also through a file no longer in the library: a work joined through a
+        // file a reread dropped stays one work.
+        for c in corrections where c.kind == .sameWork {
             let (a, b) = (root(c.subject), root(c.target))
             if a != b { parent[b] = a }
         }
@@ -236,53 +238,61 @@ public struct Organization: Sendable {
     }
 
     /// At most one suggestion per file, for the file it most likely continues: one whose last bytes
-    /// it first came with after that file was gone, else the latest one in its folder whose name
-    /// differs only by a version mark. Only within a project, never for files already joined, and
-    /// never again for two files the person said are not one work.
+    /// it first came with after that file was delivered, now gone from its path, else the one
+    /// before it in its folder whose name differs only by a version mark. Only within a project,
+    /// never for files already joined, and none once the person said the pair is not one work:
+    /// Gleaner doesn't offer the next likeliest instead. Each file's search looks back from it
+    /// among files sorted by date, so a folder of hundreds of versions costs little.
     static func suggest(works: [Work], workIndex: [String: Int], corrections: [Correction], missing: Set<String>) -> [Suggestion] {
         let rejected = Set(corrections.filter { $0.kind == .notSameWork }.map {
             min($0.subject, $0.target) + "\n" + max($0.subject, $0.target)
         })
-        func date(_ d: Delivery?) -> Date { d?.deliveredAt ?? .distantPast }
+        func first(_ file: Artifact) -> Date { file.deliveries.last?.deliveredAt ?? .distantPast }
+        func last(_ file: Artifact) -> Date { file.latest.deliveredAt ?? .distantPast }
         let files = works.flatMap(\.files)
-        var bySha: [String: [Artifact]] = [:]
-        var byName: [String: [Artifact]] = [:]
+        // Empty files share one hash and say nothing about where a file came from.
+        var bySha: [String: [Artifact]] = [:], byName: [String: [Artifact]] = [:]
         for file in files {
-            if let sha = file.latest.sha256 { bySha[sha, default: []].append(file) }
+            if let sha = file.latest.sha256, (file.latest.capture?.size ?? 1) > 0 { bySha[sha, default: []].append(file) }
             if let key = versionKey(file.path) { byName[key, default: []].append(file) }
+        }
+        for key in bySha.keys { bySha[key]!.sort { last($0) < last($1) } }
+        for key in byName.keys { byName[key]!.sort { first($0) < first($1) } }
+        func apart(_ a: Artifact, _ b: Artifact) -> Bool {
+            guard let x = workIndex[a.path], let y = workIndex[b.path] else { return false }
+            return x != y && works[x].project == works[y].project
+        }
+        /// The nearest file before `date` in `group` (sorted by `key`) that passes `ok`.
+        func nearest(in group: [Artifact], before date: Date, by key: (Artifact) -> Date, _ ok: (Artifact) -> Bool) -> Artifact? {
+            var low = 0, high = group.count
+            while low < high { let mid = (low + high) / 2; if key(group[mid]) < date { low = mid + 1 } else { high = mid } }
+            return group[..<low].reversed().prefix(64).first(where: ok)
         }
         var suggestions: [Suggestion] = []
         for later in files {
-            let first = later.deliveries.last
-            func eligible(_ earlier: Artifact) -> Bool {
-                guard earlier.path != later.path, let a = workIndex[earlier.path], let b = workIndex[later.path], a != b,
-                      works[a].project == works[b].project else { return false }
-                let pair = min(earlier.path, later.path) + "\n" + max(earlier.path, later.path)
-                return !rejected.contains(pair)
+            let arrived = first(later)
+            let moved = (later.deliveries.last?.sha256).flatMap { bySha[$0] }.flatMap { group in
+                nearest(in: group, before: arrived, by: last) { missing.contains($0.path) && apart($0, later) }
             }
-            let moved = (first?.sha256).flatMap { bySha[$0] }?.filter {
-                eligible($0) && missing.contains($0.path) && date($0.latest) <= date(first)
-            }.max { date($0.latest) < date($1.latest) }
-            let renamed = versionKey(later.path).flatMap { byName[$0] }?.filter {
-                eligible($0) && $0.name != later.name && date($0.deliveries.last) < date(first)
-            }.max { date($0.latest) < date($1.latest) }
-            if let earlier = moved {
-                suggestions.append(Suggestion(earlier: earlier.path, later: later.path, reason: .moved))
-            } else if let earlier = renamed {
-                suggestions.append(Suggestion(earlier: earlier.path, later: later.path, reason: .versionName))
+            let renamed = versionKey(later.path).flatMap { byName[$0] }.flatMap { group in
+                nearest(in: group, before: arrived, by: first) { $0.name != later.name && apart($0, later) }
             }
+            let (earlier, reason): (Artifact?, Suggestion.Reason) = moved != nil ? (moved, .moved) : (renamed, .versionName)
+            guard let earlier, !rejected.contains(min(earlier.path, later.path) + "\n" + max(earlier.path, later.path)) else { continue }
+            suggestions.append(Suggestion(earlier: earlier.path, later: later.path, reason: reason))
         }
         return suggestions
     }
 
     /// The folder, extension and name of `path` without the version marks people and agents add
-    /// (`report-v2`, `deck_final`, `notes 2026-10-18`, `brief (1)`); nil when nothing is left.
-    /// A bare number (`chapter2`) is not a version mark: it usually names another part.
+    /// (`report-v2`, `deck_final`, `brief (1)`); nil when nothing is left. A bare number
+    /// (`chapter2`, `receipt-10293847`) or a date (`standup 2026-10-18`) is not a version mark: it
+    /// usually names another part, or another day's document.
     static func versionKey(_ path: String) -> String? {
         let name = (path as NSString).lastPathComponent
         let ext = (name as NSString).pathExtension.lowercased()
         var stem = (name as NSString).deletingPathExtension.lowercased()
-        let mark = #"([\s._-]+(v\d+([._]\d+)*|rev\s?\d+|r\d+|version\s?\d+|draft\d*|final|wip|copy(\s?\d+)?|old|new|latest|\d{4}[-_.]?\d{2}[-_.]?\d{2}|\d{8})|\s*\(\d+\))$"#
+        let mark = #"([\s._-]+(v\d+([._]\d+)*|rev\s?\d+|r\d+|version\s?\d+|draft\d*|final|wip|copy(\s?\d+)?|old|new|latest)|\s*\(\d+\))$"#
         while let range = stem.range(of: mark, options: .regularExpression), !range.isEmpty {
             stem.removeSubrange(range)
         }

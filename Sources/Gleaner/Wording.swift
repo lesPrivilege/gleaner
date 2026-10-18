@@ -541,6 +541,11 @@ enum Wording {
         }
     }
 
+    /// The window's subtitle: what the library holds.
+    static func library(works: Int, deliveries: Int) -> String {
+        "\(count(works, "work")) · \(count(deliveries, "delivery", "deliveries"))"
+    }
+
     static let preparedCopyChanged = "Another app changed Gleaner’s prepared copy. Gleaner is preparing it again; try once more in a moment."
 
     static func tilde(_ path: String) -> String { (path as NSString).abbreviatingWithTildeInPath }

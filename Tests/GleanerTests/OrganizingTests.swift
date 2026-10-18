@@ -70,7 +70,7 @@ import Testing
         #expect(model.organization.works.count == 3)
         #expect(model.organization.suggestions == [.init(earlier: draft, later: final, reason: .moved)])
 
-        model.join(draft, final)
+        await model.join(draft, final)
         let work = try #require(model.organization.work(containing: final))
         #expect(work.files.map(\.path) == [draft, final])
         #expect(model.organization.suggestions.isEmpty)
@@ -97,22 +97,22 @@ import Testing
         #expect(try String(contentsOf: url, encoding: .utf8) == "# Board report\nDraft.")
     }
 
-    @Test func aDeclinedSuggestionIsNotMadeAgainAfterARelaunch() throws {
+    @Test func aDeclinedSuggestionIsNotMadeAgainAfterARelaunch() async throws {
         try renamedReport()
         let model = relaunch()
         let suggestion = try #require(model.organization.suggestions.first)
-        model.keepApart(suggestion.earlier, suggestion.later)
+        await model.keepApart(suggestion.earlier, suggestion.later)
         #expect(model.organization.suggestions.isEmpty)
         _ = try indexer.run(now: { then.addingTimeInterval(9999) })
         #expect(relaunch().organization.suggestions.isEmpty)
         #expect(relaunch().corrections.map(\.kind) == [.notSameWork])
     }
 
-    @Test func workMovedToANewProjectStaysThereAndCanBePutBack() throws {
+    @Test func workMovedToANewProjectStaysThereAndCanBePutBack() async throws {
         try renamedReport()
         let model = relaunch()
         let deck = try #require(model.organization.work(containing: board.appendingPathComponent("slides/deck.key").path))
-        model.move(deck, toNewProject: "Board meeting")
+        await model.move(deck, toNewProject: "Board meeting")
         let moved = try #require(relaunch().organization.work(containing: deck.id))
         let project = try #require(relaunch().organization.project(moved.project))
         #expect(project.name == "Board meeting")
@@ -124,16 +124,16 @@ import Testing
         #expect(after.organization.work(containing: deck.id)?.project == project.key)
         #expect(after.organization.work(containing: deck.id)?.deliveries.count == 2)
 
-        after.undoMove(try #require(after.organization.work(containing: deck.id)))
+        await after.undoMove(try #require(after.organization.work(containing: deck.id)))
         #expect(relaunch().organization.work(containing: deck.id)?.project == board.path)
         #expect(relaunch().organization.project(project.key)?.works.isEmpty == true)
     }
 
-    @Test func aSiblingInAnotherProjectIsShownInItsProject() throws {
+    @Test func aSiblingInAnotherProjectIsShownInItsProject() async throws {
         try renamedReport()
         let model = relaunch()
         let deck = try #require(model.organization.work(containing: board.appendingPathComponent("slides/deck.key").path))
-        model.move(deck, toNewProject: "Slides")
+        await model.move(deck, toNewProject: "Slides")
         let report = try #require(model.organization.work(containing: board.appendingPathComponent("board-draft.md").path))
         model.place = .project(report.project)
         let sibling = try #require(model.siblings[report.files[0].deliveries.last!.id]?.first)
@@ -143,7 +143,7 @@ import Testing
         #expect(model.delivery(in: try #require(model.selected)).id == sibling.id)
     }
 
-    @Test func theConversationIsResumableOnlyWhileItsLogAndFolderAreThere() throws {
+    @Test func theConversationIsResumableOnlyWhileItsLogAndFolderAreThere() async throws {
         try renamedReport()
         let model = relaunch()
         let delivery = try #require(model.organization.works.first?.deliveries.first)
@@ -156,17 +156,65 @@ import Testing
         #expect(model.resume(moved) == .logGone)
     }
 
-    @Test func undoingEveryCorrectionShowsTheLibraryAsGleanerFoundIt() throws {
+    @Test func undoingEveryCorrectionShowsTheLibraryAsGleanerFoundIt() async throws {
         try renamedReport()
         let model = relaunch()
         let suggestion = try #require(model.organization.suggestions.first)
-        model.join(suggestion.earlier, suggestion.later)
-        model.move(try #require(model.organization.works.first), toNewProject: "Mine")
+        await model.join(suggestion.earlier, suggestion.later)
+        await model.move(try #require(model.organization.works.first), toNewProject: "Mine")
         model.place = .project(try #require(model.organization.works.first).project)
-        model.undoAllCorrections()
+        await model.undoAllCorrections()
         #expect(model.place == .all)
         #expect(model.organization.works.count == 3)
         #expect(model.userProjects.isEmpty)
         #expect(relaunch().corrections.isEmpty)
+    }
+
+    /// A decision made while Gleaner reads a log waits for that read, and is kept whatever the
+    /// read does with its own transaction.
+    @Test func aCorrectionMadeDuringAReadIsKept() async throws {
+        try renamedReport()
+        let model = relaunch()
+        let suggestion = try #require(model.organization.suggestions.first)
+        // The indexer's connection holds a transaction, as while it reads a log, and gives it up.
+        let db = indexer.registry.db
+        try db.execute("BEGIN IMMEDIATE")
+        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { try? db.execute("ROLLBACK") }
+        await model.join(suggestion.earlier, suggestion.later)
+        #expect(model.correctionFailure == nil)
+        #expect(relaunch().corrections.map(\.kind) == [.sameWork])
+    }
+
+    @Test func undoingAMoveOfSeveralFilesIsOneDecision() async throws {
+        try renamedReport()
+        let model = relaunch()
+        let suggestion = try #require(model.organization.suggestions.first)
+        await model.join(suggestion.earlier, suggestion.later)
+        let report = try #require(model.organization.work(containing: suggestion.later))
+        await model.move(report, toNewProject: "Board meeting")
+        let mine = try #require(model.userProjects.first).key
+        #expect(model.place == .all || model.place == .project(mine))
+        let group = try #require(model.correctionGroups.first)
+        #expect(group.count == 2)
+        #expect(model.describe(group) == "board-draft.md, board-final.md moved to Board meeting")
+        model.place = .project(mine)
+        await model.undo(group)
+        let back = try #require(model.organization.work(containing: suggestion.later))
+        #expect(back.project == board.path)
+        // The window follows the work back to its project.
+        #expect(model.place == .project(board.path))
+        #expect(model.selected?.work.id == back.id)
+    }
+
+    @Test func theSourcesPageHidesTheSelection() throws {
+        try renamedReport()
+        let model = relaunch()
+        model.selection = try #require(model.organization.works.first).id
+        #expect(model.selected != nil)
+        model.place = .sources
+        #expect(model.selected == nil)
+        // A search goes back to the deliveries.
+        model.query = "deck"
+        #expect(model.place == .all)
     }
 }
