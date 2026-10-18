@@ -18,7 +18,7 @@ The test for every choice is Gleaner's product contract (SPEC §2): find an old 
 **Adopted:** derive the project from the repository, not from folder names.
 - A delivery's project is the repository holding the file, else the one its cwd belongs to. Gleaner finds it by reading `.git` entries (a worktree's `.git` file and its `commondir`), without running git. Every worktree of a repository therefore folds into one project, wherever the agent keeps it, and a deleted worktree resolves through the folder that held it.
 - Outside git, the project stays the cwd's folder name.
-- The value is computed once per distinct cwd at load and kept in memory. No schema change.
+- The value is computed once per folder and kept in memory. Each delivery also records, at ingest, the repository and the checkout it resolved to (`deliveries.repository` and `deliveries.checkout`, review-rulings D4 and §2), because a deleted external worktree leaves nothing on disk to follow; that record wins over a later resolution.
 - The list gets a project scope next to the kind filter. Global results keep the project label.
 
 **Deferred:** reassigning or additionally linking a delivery to another project (the [assignment and link alternatives](evidence-and-lifecycle.md#personal-organization-should-survive-a-rescan)). Revisit when real use shows misfiled outputs that git can't resolve. Until then, an output whose path lies outside its cwd's repository is labeled by its own repository, as today.
@@ -36,7 +36,7 @@ The test for every choice is Gleaner's product contract (SPEC §2): find an old 
 ## 4. Naming: original filename only
 
 **Adopted:**
-- The label is the original filename. When two results share a name, the row adds the shortest folder suffix that tells them apart.
+- The label is the original filename. When two results share a name, the row adds the folder holding the file: relative to the folder the agent worked in when it lies inside it, else the full folder with `~` for home. The project and place labels tell apart the rest.
 - Hand-off copies keep the original filename.
 
 **Not adopted for v0.1:** logical titles, display aliases, and renamed export copies. An alias is personal state that has to survive rescans; filename plus project plus request excerpt has been enough to recognize outputs on real data.
@@ -48,9 +48,9 @@ The test for every choice is Gleaner's product contract (SPEC §2): find an old 
 2. project, plus place only when it isn't the main checkout;
 3. the matched request (two lines);
 4. the matched delivery's date;
-5. one status mark, only when something needs attention: not on disk, changed, or first seen after delivery.
+5. one status mark, only when something needs attention: not available (with why), not on disk, changed, or first seen after delivery. Rows never read the disk while drawing, so "changed" is shown only for a file already checked this session, and "not on disk" from a check at load or since.
 
-The full folder appears only to tell two same-named files apart.
+The folder (section 4) appears only to tell two same-named files apart.
 
 **Detail, always visible**, in order:
 1. the preview;
@@ -74,8 +74,8 @@ The preview, the bytes it shows, the action that hands them off and any caveat a
 - There are no saved views, density presets, pins or aliases.
 
 The three reset meanings in [evidence and lifecycle](evidence-and-lifecycle.md#personal-organization-should-survive-a-rescan) are recorded as the contract for when such controls exist:
-- **Reindex** rereads logs and keeps captures. It is the only reset in v0.1.
-- **Clearing hand-off copies** is safe: they live in Caches.
+- **Reindex** rereads logs and keeps captures. It is the only reset of derived data in v0.1.
+- **Clearing hand-off copies** is housekeeping, not a reset, and safe: they live in Caches, and the one on the clipboard is kept.
 - **Deleting saved copies** is destructive and is not offered.
 
 ## 7. Preview and external review

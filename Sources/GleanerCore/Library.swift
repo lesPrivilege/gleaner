@@ -8,7 +8,9 @@ public enum Provenance: String, Sendable, Codable {
     case neverObserved = "never_observed"
 }
 
-/// What Gleaner recorded about a delivery's bytes when it first looked.
+/// What Gleaner recorded about a delivery's bytes when it first looked. One without a hash, other
+/// than a folder's, is completed once, the first time Gleaner reads the file; one with a hash is
+/// never rewritten (SPEC §5.1).
 public struct Capture: Sendable, Equatable {
     public var sha256: String?
     public var size: Int64?
@@ -17,17 +19,21 @@ public struct Capture: Sendable, Equatable {
     /// Set when the bytes are kept in the content store.
     public var savedAt: Date?
     public var provenance: Provenance
-    public var isDirectory: Bool
+    /// What was at the path: a file Gleaner read (it has a hash) or a folder; or, with no hash and
+    /// never observed, nothing, a file Gleaner couldn't read, or one that isn't a regular file.
+    public var kind: LocatorState.Kind
+
+    public var isDirectory: Bool { kind == .directory }
 
     public init(sha256: String?, size: Int64?, modifiedAt: Date?, observedAt: Date, savedAt: Date?,
-                provenance: Provenance, isDirectory: Bool) {
+                provenance: Provenance, kind: LocatorState.Kind) {
         self.sha256 = sha256
         self.size = size
         self.modifiedAt = modifiedAt
         self.observedAt = observedAt
         self.savedAt = savedAt
         self.provenance = provenance
-        self.isDirectory = isDirectory
+        self.kind = kind
     }
 }
 
@@ -47,6 +53,12 @@ public struct Delivery: Sendable, Identifiable {
     public var number: Int
     public var path: String
     public var deliveredAt: Date?
+    /// The log line of the reply's first record, which every file that reply named shares with its
+    /// log: one reply however many records it took. Nil until a log read before Gleaner recorded it
+    /// is read again, and for good once that log is gone.
+    public var replyLine: Int?
+    /// Where the reply names this file among the files it names, from 0.
+    public var replyRank = 0
     public var provider: Provider
     public var sessionTitle: String?
     public var request: String?
@@ -71,14 +83,28 @@ public struct Artifact: Sendable, Identifiable {
     public var path: String
     /// Newest first.
     public var deliveries: [Delivery]
-    /// See `Projects.project(path:cwd:)`.
-    public var project: String
+    /// What a project filter keys on: the main folder of the repository the file belongs to, or
+    /// outside git the folder its agent worked in (see `Projects`).
+    public var projectFolder: String
+    /// False when no repository was found, at delivery or now: the project is only a folder.
+    public var inRepository: Bool
+    /// The checkout holding the file; nil when the file is in no repository.
+    public var checkout: Checkout?
 
-    public init(path: String, deliveries: [Delivery]) {
+    /// `repository` and `checkout` are the ones recorded at delivery. They win over what can be
+    /// found now, which is worse once a worktree is gone.
+    public init(path: String, deliveries: [Delivery], repository: String? = nil, checkout: Checkout? = nil) {
         self.path = path
         self.deliveries = deliveries
-        project = Projects.project(path: path, cwd: deliveries.first?.cwd)
+        let cwd = deliveries.first?.cwd
+        let root = repository ?? Projects.repository(path: path, cwd: cwd)
+        projectFolder = root ?? Projects.folder(path: path, cwd: cwd)
+        inRepository = root != nil
+        self.checkout = checkout ?? Projects.checkout(path: path)
     }
+
+    /// The project's name, its folder's. Two projects can share one.
+    public var project: String { Projects.name(projectFolder) }
 
     public var id: String { path }
     public var name: String { (path as NSString).lastPathComponent }
@@ -117,15 +143,11 @@ public struct Artifact: Sendable, Identifiable {
         "pkg": .build, "ipa": .build, "apk": .build, "app": .build,
     ]
 
-    /// Where the file lives: a named worktree, or the project's own folder.
+    /// Where the file lives: a worktree, named after its folder wherever it is kept, or the
+    /// repository's main folder.
     public var place: String {
-        for marker in ["/.claude/worktrees/", "/.worktrees/", "/.codex/worktrees/"] {
-            if let range = path.range(of: marker) {
-                let rest = path[range.upperBound...]
-                return "worktree " + (rest.split(separator: "/").first.map(String.init) ?? "")
-            }
-        }
-        return "main folder"
+        guard let checkout, checkout.folder != checkout.repository else { return "main folder" }
+        return "worktree " + (checkout.folder as NSString).lastPathComponent
     }
 
     /// True when the file lives in a worktree rather than the project's own folder.
@@ -164,6 +186,8 @@ public enum OnDisk: Equatable, Sendable {
     case lost
     case folder
     case special
+    /// Something is at the path, but Gleaner can't read it, so it can't say which version it is.
+    case unreadable
 }
 
 /// What a drag would hand over for one delivery (SPEC §6).
@@ -176,7 +200,8 @@ public enum Handoff: Equatable, Sendable {
     case unavailable(alternative: Int?, currentSha: String?)
     case restoreFromGit
     case lost
-    /// Folders are not versioned in v0.1; the current folder can be handed over as it is.
+    /// Folders are not versioned in v0.1: a delivered folder is handed over as it is now, and
+    /// only while its path is still a folder.
     case folder
 
     /// The bytes a hand-off copy must hash to: the delivery's, or the current file's when the
@@ -191,24 +216,26 @@ public enum Handoff: Equatable, Sendable {
 }
 
 extension Artifact {
+    /// The path compared by hash with every delivery. It reads as a folder only when the latest
+    /// delivery was one and the path still is; anything else at the path is matched by its bytes.
     public func onDisk(_ now: FileObservation, hasSaved: (String) -> Bool) -> OnDisk {
         switch now.state.kind {
-        case .directory: return .folder
+        case .directory where latest.capture?.isDirectory == true: return .folder
         case .special: return .special
+        case .unreadable: return .unreadable
         case .missing:
             if let saved = deliveries.first(where: { $0.sha256.map(hasSaved) == true }) {
                 let firstSeen = saved.capture?.provenance == .firstSeenAfterDelivery ? saved.capture?.observedAt : nil
                 return .missingWithSavedCopy(of: saved.number, firstSeen: firstSeen)
             }
-            if now.state.git == .recoverableFromHead || now.state.git == .recoverableFromHistory {
-                return .missingInGitHistory
-            }
-            return .lost
-        case .file:
+            // Folders aren't versioned: what git holds at a delivered folder's path is not shown to be it.
+            let recoverable = now.state.git == .recoverableFromHead || now.state.git == .recoverableFromHistory
+            return recoverable && latest.capture?.isDirectory != true ? .missingInGitHistory : .lost
+        case .file, .directory:
             break
         }
-        let current = now.state.sha256
-        if current != nil, current == latest.sha256 {
+        guard let current = now.state.sha256 else { return .changed(since: latest.number) }
+        if current == latest.sha256 {
             if latest.capture?.provenance == .firstSeenAfterDelivery, let seen = latest.capture?.observedAt {
                 return .unchangedSinceFirstSeen(seen)
             }
@@ -218,58 +245,79 @@ extension Artifact {
         if let match = older.first(where: { $0.isTrusted && $0.sha256 == current }) {
             return .rolledBack(to: match.number, latest: latest.number, firstSeen: nil)
         }
-        if current != nil, let match = older.first(where: { $0.sha256 == current }) {
+        if let match = older.first(where: { $0.sha256 == current }) {
             return .rolledBack(to: match.number, latest: latest.number, firstSeen: match.capture?.observedAt)
         }
         return .changed(since: latest.number)
     }
 
+    /// Decided by how `delivery` was captured, not by what the path is today: a file delivery is
+    /// its hash (the original while it matches, else the saved copy), even when a folder now
+    /// stands at the path, and a folder delivery is the live folder only while it is still one,
+    /// never what git holds at its path.
     public func handoff(_ delivery: Delivery, now: FileObservation, hasSaved: (String) -> Bool) -> Handoff {
-        if now.state.kind == .directory || delivery.capture?.isDirectory == true { return .folder }
+        if delivery.capture?.isDirectory == true, now.state.kind == .directory { return .folder }
         let current = now.state.kind == .file ? now.state.sha256 : nil
-        let recoverable = now.state.git == .recoverableFromHead || now.state.git == .recoverableFromHistory
 
         if let sha = delivery.sha256 {
             let firstSeen = delivery.capture?.provenance == .firstSeenAfterDelivery ? delivery.capture?.observedAt : nil
             if current == sha { return .ready(sha: sha, from: .original, firstSeen: firstSeen) }
             if hasSaved(sha) { return .ready(sha: sha, from: .savedCopy, firstSeen: firstSeen) }
         }
-        if let current {
-            let others = deliveries.filter { $0.id != delivery.id && $0.sha256 == current }
-            let match = others.first(where: \.isTrusted) ?? others.first
-            return .unavailable(alternative: match?.number, currentSha: current)
+        if now.state.kind == .missing {
+            let recoverable = now.state.git == .recoverableFromHead || now.state.git == .recoverableFromHistory
+            return recoverable && delivery.capture?.isDirectory != true ? .restoreFromGit : .lost
         }
-        return recoverable ? .restoreFromGit : .lost
+        // Something else is at the path: a changed or unreadable file, a folder, a pipe.
+        let others = deliveries.filter { $0.id != delivery.id && current != nil && $0.sha256 == current }
+        let match = others.first(where: \.isTrusted) ?? others.first
+        return .unavailable(alternative: match?.number, currentSha: current)
+    }
+
+    /// The other files each reply named, keyed by delivery id, as their deliveries from that reply
+    /// in the order it names them: a sibling delivered again later is still offered as the
+    /// occurrence that came with this one.
+    public static func deliveredWith(_ artifacts: [Artifact]) -> [Delivery.ID: [Delivery]] {
+        var byReply: [String: [Delivery]] = [:]
+        for artifact in artifacts {
+            for d in artifact.deliveries {
+                guard let line = d.replyLine else { continue }
+                byReply["\(d.logPath)|\(line)", default: []].append(d)
+            }
+        }
+        var result: [Delivery.ID: [Delivery]] = [:]
+        for group in byReply.values where group.count > 1 {
+            let ordered = group.sorted { $0.replyRank < $1.replyRank }
+            for delivery in ordered {
+                result[delivery.id] = ordered.filter { $0.id != delivery.id }
+            }
+        }
+        return result
     }
 
     /// For a search: nil unless every token appears in the file name, the project, or one
     /// delivery's own words (request, session title, reply). Words from different deliveries don't
     /// combine (SPEC §10). Otherwise the index of the newest delivery whose own words matched, or
     /// 0 when the name or project alone matched.
-    public func match(_ tokens: [String]) -> (deliveryIndex: Int, fields: [String])? {
-        guard !tokens.isEmpty else { return (0, []) }
+    public func match(_ tokens: [String]) -> Int? {
+        guard !tokens.isEmpty else { return 0 }
         // The file name and its folder, not the whole path: words like "users" or "projects" in
         // every path would otherwise match everything.
         let place = folder.hasPrefix("~") || folder.hasPrefix("/")
             ? (folder as NSString).pathComponents.suffix(2).joined(separator: "/") : folder
-        let name = (self.name + " " + place).lowercased()
-        let projectName = project.lowercased()
-        func fields(_ d: Delivery) -> [(String, String)] {
-            [("file name", name), ("project", projectName),
-             ("your request", d.request?.lowercased() ?? ""),
-             ("session title", d.sessionTitle?.lowercased() ?? ""),
-             ("reply", d.evidence.map(\.excerpt).joined(separator: " ").lowercased())]
+        let shared = (name + " " + place + " " + project).lowercased()
+        func own(_ d: Delivery) -> [String] {
+            [d.request?.lowercased() ?? "", d.sessionTitle?.lowercased() ?? "",
+             d.evidence.map(\.excerpt).joined(separator: " ").lowercased()]
         }
         let matching = deliveries.indices.filter { i in
-            let all = fields(deliveries[i]).map(\.1).joined(separator: " ")
+            let all = ([shared] + own(deliveries[i])).joined(separator: " ")
             return tokens.allSatisfy { all.contains($0) }
         }
         guard let first = matching.first else { return nil }
-        let index = matching.first { i in
-            fields(deliveries[i]).dropFirst(2).contains { field in tokens.contains { field.1.contains($0) } }
+        return matching.first { i in
+            own(deliveries[i]).contains { field in tokens.contains { field.contains($0) } }
         } ?? first
-        let hit = fields(deliveries[index]).filter { field in tokens.contains { field.1.contains($0) } }.map(\.0)
-        return (index, hit)
     }
 }
 

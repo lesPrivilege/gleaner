@@ -13,19 +13,27 @@ public enum ClaudeCodeAdapter {
         "cost-state", "artifact-autoreact-ledger", "artifact-comment-monitor",
     ]
 
-    /// Session logs under `root`, excluding sub-agent transcripts.
-    public static func sessionFiles(root: URL) -> [URL] {
-        guard let projects = try? FileManager.default.contentsOfDirectory(
-            at: root, includingPropertiesForKeys: nil) else { return [] }
-        return projects.flatMap { project in
-            ((try? FileManager.default.contentsOfDirectory(at: project, includingPropertiesForKeys: nil)) ?? [])
-                .filter { $0.pathExtension == "jsonl" }
+    /// Session logs under `root`, excluding sub-agent transcripts, and the project folders that
+    /// could not be listed, with the reason. Throws when `root` itself cannot be listed, so an
+    /// unreadable folder is never taken for an empty one; one project folder that can't be listed
+    /// leaves the others read.
+    public static func sessionFiles(root: URL) throws -> (logs: [URL], unlisted: [String]) {
+        let fm = FileManager.default
+        var logs: [URL] = [], unlisted: [String] = []
+        for project in try fm.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        where Locator.stat(project.path).kind == .directory {
+            do {
+                logs += try fm.contentsOfDirectory(at: project, includingPropertiesForKeys: nil).filter { $0.pathExtension == "jsonl" }
+            } catch {
+                unlisted.append("\(project.path): \(error.localizedDescription)")
+            }
         }
+        return (logs, unlisted)
     }
 
     public static func parse(_ url: URL) throws -> SessionLog {
         let file = try JSONLines.read(url)
-        var unknown: [String: Int] = file.malformed > 0 ? ["<malformed>": file.malformed] : [:]
+        var unknown: [String: Int] = [:]
         var sessionID = url.deletingPathExtension().lastPathComponent
         var customTitle: String?
         var aiTitle: String?
@@ -101,7 +109,8 @@ public enum ClaudeCodeAdapter {
                 provider: .claudeCode, id: sessionID, title: customTitle ?? aiTitle,
                 cwd: sessionCwd, logPath: url.path),
             turns: turns,
-            unknownRecordTypes: unknown)
+            unknownRecordTypes: unknown,
+            malformedLines: file.malformed)
     }
 
     static func userText(_ content: Any?) -> String {

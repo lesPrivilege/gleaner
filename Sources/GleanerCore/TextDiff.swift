@@ -26,6 +26,8 @@ public enum TextDiff {
 
     public enum Outcome: Sendable, Equatable {
         case rows([Row])
+        /// The versions differ, but no line does: only line endings or the final newline.
+        case sameLines
         case limited(String)
     }
 
@@ -43,14 +45,8 @@ public enum TextDiff {
         if a.count > maxLines || b.count > maxLines {
             return .limited("One version has more than \(maxLines) lines.")
         }
-        let difference = b.difference(from: a)
-        var removed = Set<Int>(), inserted = Set<Int>()
-        for change in difference {
-            switch change {
-            case .remove(let offset, _, _): removed.insert(offset)
-            case .insert(let offset, _, _): inserted.insert(offset)
-            }
-        }
+        let (removed, inserted) = changes(a, b)
+        if removed.isEmpty, inserted.isEmpty, !old.utf8.elementsEqual(new.utf8) { return .sameLines }
         var rows: [Row] = []
         var i = 0, j = 0
         while i < a.count || j < b.count {
@@ -106,12 +102,27 @@ public enum TextDiff {
         return items
     }
 
+    /// Split at each `\n` byte, without the `\r` before it or the empty line after the last one.
+    /// Bytes, not characters: to Swift `\r\n` is one character, which `\n` never matches.
     static func lines(_ text: String) -> [String] {
-        var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { line in
-            line.hasSuffix("\r") ? String(line.dropLast()) : String(line)
+        var lines = text.utf8.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: false).map { line in
+            String(decoding: line.last == UInt8(ascii: "\r") ? line.dropLast() : line, as: UTF8.self)
         }
         if lines.last == "" { lines.removeLast() }
         return lines
+    }
+
+    /// The offsets removed from `a` and inserted into `b`, comparing bytes: Swift's `==` takes
+    /// text that only looks the same (é composed and decomposed) for equal.
+    static func changes(_ a: [String], _ b: [String]) -> (removed: Set<Int>, inserted: Set<Int>) {
+        var removed = Set<Int>(), inserted = Set<Int>()
+        for change in b.map({ Array($0.utf8) }).difference(from: a.map { Array($0.utf8) }) {
+            switch change {
+            case .remove(let offset, _, _): removed.insert(offset)
+            case .insert(let offset, _, _): inserted.insert(offset)
+            }
+        }
+        return (removed, inserted)
     }
 
     /// Whitespace runs, single CJK characters, or runs of anything else: a changed Chinese word
@@ -129,14 +140,7 @@ public enum TextDiff {
         if a.count > 2048 || b.count > 2048 || a.count * b.count > 65536 {
             return ([Segment(text: old, changed: true)], [Segment(text: new, changed: true)])
         }
-        let difference = b.difference(from: a)
-        var removed = Set<Int>(), inserted = Set<Int>()
-        for change in difference {
-            switch change {
-            case .remove(let offset, _, _): removed.insert(offset)
-            case .insert(let offset, _, _): inserted.insert(offset)
-            }
-        }
+        let (removed, inserted) = changes(a, b)
         let oldSegments = a.indices.map { Segment(text: a[$0], changed: removed.contains($0)) }
         let newSegments = b.indices.map { Segment(text: b[$0], changed: inserted.contains($0)) }
         return (absorbWhitespace(oldSegments), absorbWhitespace(newSegments))
@@ -175,6 +179,7 @@ extension TextDiff.Outcome {
     public var summary: String {
         switch self {
         case .limited(let reason): return reason
+        case .sameLines: return "Only line endings or the final newline differ."
         case .rows(let rows):
             let added = rows.filter { $0.kind == .added }.count
             let removed = rows.filter { $0.kind == .removed }.count

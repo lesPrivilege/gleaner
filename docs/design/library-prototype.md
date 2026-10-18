@@ -52,7 +52,7 @@ Verification: tag balance checked, and the prototype logic run in Node for all n
 | The deliveries list is ordered only. A caption says "Spacing doesn't show time", and each entry carries its own date. | `kit/design/foundations/placement.md` (rules 1–3; order without a scale) |
 | Hand-off sits above the delivery history and follows the selected delivery. | design critique (below): P0 ends in a drag, and the action was buried under the history |
 | The tool's own storage is called a "saved copy", never just "copy". | ux-copy review: "dragging copies" collided with "copy kept" |
-| Search results say which fields matched; the request text is on every card. | SPEC §10; the user remembers the topic, not the file name |
+| ~~Search results say which fields matched~~; the request text is on every card. **Superseded** in part by [rulings §5](rulings.md#5-progressive-disclosure-preview-led-detail-with-three-levels): a row shows the request and date of the delivery that matched, and no list of matched fields. | SPEC §10; the user remembers the topic, not the file name |
 
 ## Review passes applied
 

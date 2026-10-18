@@ -77,9 +77,22 @@ enum Parsed {
     case failed(Provider, String, String)
 }
 
-let jobs: [(Provider, URL)] =
-    ClaudeCodeAdapter.sessionFiles(root: options.claudeRoot).map { (.claudeCode, $0) }
-    + CodexAdapter.sessionFiles(root: options.codexRoot.appendingPathComponent("sessions")).map { (.codex, $0) }
+// A log folder that is missing or can't be listed is reported and skipped: the sheet covers the
+// logs that could be read.
+let sources = LogSources(claudeProjects: options.claudeRoot, codexHome: options.codexRoot)
+let jobs: [(Provider, URL)] = Provider.allCases.flatMap { provider in
+    let (source, files) = sources.logs(provider)
+    let folder = sources.folder(provider).path
+    switch source.folder {
+    case .absent: FileHandle.standardError.write(Data("\(provider.rawValue): no log folder at \(folder)\n".utf8))
+    case .unreadable(let reason): FileHandle.standardError.write(Data("\(provider.rawValue): can't list \(folder): \(reason)\n".utf8))
+    case .listed: break
+    }
+    for unlisted in source.unlistedFolders {
+        FileHandle.standardError.write(Data("\(provider.rawValue): can't list \(unlisted)\n".utf8))
+    }
+    return files.map { (provider, $0) }
+}
 FileHandle.standardError.write(Data("parsing \(jobs.count) session files…\n".utf8))
 
 let parsed = Collector<Parsed>()
@@ -163,7 +176,7 @@ let candidatesURL = options.out.appendingPathComponent("candidates.tsv")
 let labels = previousLabels(candidatesURL)
 
 let header = [
-    "id", "label", "note", "provider", "project", "session_title", "delivered_at", "syntax", "anchors",
+    "id", "label", "note", "admitted", "provider", "project", "session_title", "delivered_at", "syntax", "anchors",
     "raw_targets", "path", "kind", "size", "sha256_12", "git", "occurrences", "replies_naming_path",
     "request", "evidence", "session_id",
 ]
@@ -175,6 +188,8 @@ for candidate in candidates {
     let previous = labels[candidate.id]
     let row: [String?] = [
         candidate.id, previous?.label, previous?.note,
+        // What the §9 rule decides, next to the label it is measured against.
+        Admission.admits(candidate.delivery) ? "yes" : "no",
         candidate.session.provider.rawValue,
         projectName(candidate.first.part.cwd ?? candidate.session.cwd),
         share(candidate.session.title),
@@ -263,6 +278,7 @@ for provider in Provider.allCases {
         unique paths by kind: \(tally { $0.kind.rawValue }.sorted { $0.key < $1.key })
         unique paths by git: \(tally { $0.git.rawValue }.sorted { $0.key < $1.key })
         unknown record types: \(providerLogs.reduce(into: [String: Int]()) { acc, log in acc.merge(log.unknownRecordTypes, uniquingKeysWith: +) }.sorted { $0.key < $1.key })
+        malformed lines: \(providerLogs.reduce(0) { $0 + $1.malformedLines })
         \(failed.map { "failed: \($0)" }.joined(separator: "\n"))
 
         """

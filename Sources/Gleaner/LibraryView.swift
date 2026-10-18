@@ -11,6 +11,8 @@ struct LibraryView: View {
 
     var body: some View {
         @Bindable var model = model
+        // Read here so the view follows every change to what the selection hands over.
+        let quickLookURL = model.quickLookURL
         NavigationSplitView {
             ResultsList()
                 .navigationSplitViewColumnWidth(min: 340, ideal: 380, max: 460)
@@ -25,12 +27,12 @@ struct LibraryView: View {
             }
         }
         .searchable(text: $model.query, placement: .sidebar, prompt: "What you asked for, file name, project…")
-        .quickLookPreview($model.quickLookURL)
-        .onChange(of: model.selection) { if model.quickLookURL != nil { model.quickLookURL = model.selectedHandoffURL } }
+        .quickLookPreview(Binding(get: { quickLookURL }, set: { model.isQuickLookOpen = $0 != nil }))
+        .onChange(of: model.selectedHandoffURL) { if model.selectedHandoffURL == nil { model.isQuickLookOpen = false } }
         .onAppear {
             model.query = savedQuery
             model.kind = Artifact.Kind(rawValue: savedKind)
-            model.project = savedProject.isEmpty ? nil : savedProject
+            model.project = model.projects.contains { $0.projectFolder == savedProject } ? savedProject : nil
         }
         .onChange(of: model.query) { savedQuery = model.query }
         .onChange(of: model.kind) { savedKind = model.kind?.rawValue ?? "" }
@@ -57,11 +59,16 @@ struct ResultsList: View {
             filters
             List(selection: $model.selection) {
                 ForEach(results) { result in
-                    ResultRow(result: result, showProject: model.project == nil,
-                              showFolder: repeated.contains(result.artifact.name),
-                              onDisk: !model.missing.contains(result.artifact.path))
+                    let row = ResultRow(result: result, delivery: model.delivery(in: result),
+                                        project: model.project == nil ? model.projectName(result.artifact) : nil,
+                                        showFolder: repeated.contains(result.artifact.name), status: model.rowStatus(result))
                         .tag(result.id)
-                        .onDrag { model.dragItem(for: result) }
+                    // A row with nothing to hand over starts no drag, rather than one that fails at drop.
+                    if model.rowHandoff(result) != nil {
+                        row.onDrag { model.dragItem(for: result) ?? NSItemProvider() }
+                    } else {
+                        row
+                    }
                 }
             }
             .contextMenu(forSelectionType: Artifact.ID.self) { ids in
@@ -74,11 +81,11 @@ struct ResultsList: View {
                     Button(model.missing.contains(artifact.path) ? "Show Folder in Finder" : "Show in Finder") { model.reveal(artifact) }
                     Button("Copy Path") { model.copyPath(artifact) }
                     Divider()
-                    Button("Show Only \(artifact.project)") { model.project = artifact.project }
+                    Button("Show Only \(model.projectName(artifact))") { model.project = artifact.projectFolder }
                 }
             }
             .onKeyPress(.space) {
-                guard model.selectedHandoffURL != nil || model.quickLookURL != nil else { return .ignored }
+                guard model.selectedHandoffURL != nil || model.isQuickLookOpen else { return .ignored }
                 model.toggleQuickLook()
                 return .handled
             }
@@ -87,6 +94,21 @@ struct ResultsList: View {
                 return [provider]
             }
             .overlay { emptyState(results) }
+            if !model.artifacts.isEmpty, let trouble = model.logTrouble {
+                Divider()
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    StatusLabel(mark: .attention, text: trouble).font(.caption).lineLimit(2)
+                        .help(trouble)
+                    Spacer(minLength: 8)
+                    if model.canReadAgain {
+                        Button("Try Again") { model.reindex() }
+                            .controlSize(.small)
+                            .help("Read the agent logs again. Settings shows each source.")
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
         }
     }
 
@@ -96,7 +118,7 @@ struct ResultsList: View {
             Picker("Project", selection: $model.project) {
                 Text("All projects").tag(String?.none)
                 Divider()
-                ForEach(model.projects, id: \.self) { Text($0).tag(String?.some($0)) }
+                ForEach(model.projects) { Text(model.projectName($0)).tag(String?.some($0.projectFolder)) }
             }
             .pickerStyle(.menu)
             .labelsHidden()
@@ -118,20 +140,28 @@ struct ResultsList: View {
     @ViewBuilder
     func emptyState(_ results: [SearchResult]) -> some View {
         if model.artifacts.isEmpty {
-            let folders = model.logFolders
             if !model.indexed {
                 ContentUnavailableView("Reading agent logs…", systemImage: "hourglass",
                                        description: Text("The first read takes a moment. Results appear when it finishes."))
-            } else if folders.found.isEmpty {
+            } else if model.canReadAgain, let trouble = model.logTrouble {
+                ContentUnavailableView {
+                    Label("Gleaner couldn’t read every agent log", systemImage: "exclamationmark.triangle")
+                } description: {
+                    Text(trouble)
+                } actions: {
+                    Button("Try Again") { model.reindex() }
+                }
+            } else if model.sources?.values.allSatisfy({ $0.folder == .absent }) == true {
                 ContentUnavailableView {
                     Label("No agent logs found", systemImage: "folder.badge.questionmark")
                 } description: {
                     Text("Gleaner reads Claude Code and Codex logs. It looked in:\n"
-                         + folders.missing.map { ($0 as NSString).abbreviatingWithTildeInPath }.joined(separator: "\n"))
+                         + model.indexer.sources.watchedDirectories.map { ($0 as NSString).abbreviatingWithTildeInPath }.joined(separator: "\n"))
                 }
             } else {
                 ContentUnavailableView("No delivered files yet", systemImage: "tray",
-                                       description: Text("When an agent names a file in a reply to you, it appears here."))
+                                       description: Text("When an agent names a file in a reply to you, it appears here."
+                                                         + (model.logTrouble.map { "\n\n" + $0 } ?? "")))
             }
         } else if results.isEmpty {
             ContentUnavailableView {
@@ -149,10 +179,12 @@ struct TypeBadge: View {
     var artifact: Artifact
 
     var body: some View {
+        // Widens for a long extension rather than cutting it.
         Text(Wording.kindLabel(artifact.kind, path: artifact.path))
             .font(.system(size: 10, weight: .semibold))
             .tracking(0.4)
             .foregroundStyle(.secondary)
+            .fixedSize()
             .frame(minWidth: 40, minHeight: 18)
             .padding(.horizontal, 4)
             .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
@@ -161,14 +193,18 @@ struct TypeBadge: View {
 
 struct ResultRow: View {
     var result: SearchResult
-    var showProject: Bool
+    /// The delivery the row shows and hands over: the one chosen in the detail for the selected
+    /// row, the matched one for any other.
+    var delivery: Delivery
+    /// The project as shown, or nil when the list is filtered to one.
+    var project: String?
     var showFolder: Bool
-    var onDisk: Bool
+    /// What the row says beside the date (`LibraryModel.rowStatus`).
+    var status: (mark: (Mark, String)?, number: String?)
 
     var body: some View {
         let artifact = result.artifact
-        let hit = artifact.deliveries[result.deliveryIndex]
-        let context = [showProject ? artifact.project : nil,
+        let context = [project,
                        artifact.inWorktree ? artifact.place : nil,
                        showFolder ? artifact.folder : nil].compactMap { $0 }
         VStack(alignment: .leading, spacing: 4) {
@@ -180,34 +216,33 @@ struct ResultRow: View {
                 Text(context.joined(separator: " · "))
                     .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             }
-            if let request = hit.request {
+            if let request = delivery.request {
                 Text("“\(request)”").font(.callout).lineLimit(2)
             }
             HStack(spacing: 10) {
-                if !onDisk {
-                    StatusLabel(mark: .dashed, text: "Not on disk")
+                if let mark = status.mark {
+                    StatusLabel(mark: mark.0, text: mark.1)
                 }
-                Text(hit.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "Unknown date")
+                Text(delivery.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "Unknown date")
                     .foregroundStyle(.secondary)
-                if artifact.deliveries.count > 1 {
-                    Text("Delivery \(hit.number) of \(artifact.latest.number)").foregroundStyle(.secondary)
+                if let number = status.number {
+                    Text(number).foregroundStyle(.secondary)
                 }
             }
             .font(.caption)
         }
         .padding(.vertical, 5)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spoken(context: context, hit: hit))
+        .accessibilityLabel(spoken(context: context))
     }
 
     /// One sentence VoiceOver reads for the row, in the order the eye reads it.
-    func spoken(context: [String], hit: Delivery) -> String {
-        let artifact = result.artifact
-        var parts = [artifact.name] + context
-        if !onDisk { parts.append("not on disk") }
-        parts.append("delivered " + (hit.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "on an unknown date"))
-        if artifact.deliveries.count > 1 { parts.append("delivery \(hit.number) of \(artifact.latest.number)") }
-        if let request = hit.request { parts.append("you asked: \(request.prefix(160))") }
+    func spoken(context: [String]) -> String {
+        var parts = [result.artifact.name] + context
+        if let mark = status.mark { parts.append(mark.1.lowercased()) }
+        parts.append("delivered " + (delivery.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "on an unknown date"))
+        if let number = status.number { parts.append(number.lowercased()) }
+        if let request = delivery.request { parts.append("you asked: \(request.prefix(160))") }
         return parts.joined(separator: ", ")
     }
 }

@@ -18,5 +18,6 @@ let package = Package(
             dependencies: ["GleanerCore"],
             resources: [.copy("Fixtures")]
         ),
+        .testTarget(name: "GleanerTests", dependencies: ["Gleaner", "GleanerCore"]),
     ]
 )

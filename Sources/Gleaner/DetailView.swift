@@ -43,7 +43,7 @@ struct DetailView: View {
             model.clearStaging()
             await model.observe(artifact)
         }
-        .task(id: "\(artifact.id)|\(delivery.id)|\(observation?.checkedAt.timeIntervalSince1970 ?? 0)") {
+        .task(id: "\(artifact.id)|\(delivery.id)|\(observation?.checkedAt.timeIntervalSince1970 ?? 0)|\(model.stagingGeneration)") {
             if case .ready(let sha, _, _) = plan {
                 await model.stage(sha: sha, artifact: artifact)
             } else {
@@ -55,7 +55,7 @@ struct DetailView: View {
     func header(_ artifact: Artifact) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(artifact.name).font(.title2.weight(.semibold)).textSelection(.enabled)
-            Text(([artifact.project, artifact.inWorktree ? artifact.place : nil] as [String?]).compactMap { $0 }.joined(separator: " · "))
+            Text(([model.projectName(artifact), artifact.inWorktree ? artifact.place : nil] as [String?]).compactMap { $0 }.joined(separator: " · "))
                 .font(.callout).foregroundStyle(.secondary)
         }
     }
@@ -209,18 +209,18 @@ struct HandoffPanel: View {
     var staging: Staging { model.staging(for: plan.sha) }
 
     var body: some View {
-        let statement = Wording.handoff(plan, delivery: delivery.number, onDisk: onDisk)
-        let disk = Wording.onDisk(onDisk, checked: observation.checkedAt)
+        let statement = Wording.handoff(plan, delivery: delivery, in: artifact, now: observation.state, large: model.isLarge(delivery))
+        let disk = Wording.onDisk(onDisk, in: artifact, now: observation)
         VStack(alignment: .leading, spacing: 12) {
-            Text("Hand off delivery \(delivery.number)").font(.headline)
+            Text(Wording.handoffHeading(delivery)).font(.headline)
             HStack(spacing: 10) {
                 tile
-                Button("Open") { open() }
+                Button("Open") { model.openSelected() }
                     .disabled(openURL == nil)
                     .help("Open the verified copy in its app (⌘O). ⌘C in the list copies it as a file.")
                 if let ends = diskComparison {
                     Button("Compare with File on Disk") { model.comparison = ends }
-                        .help("Show what changed between delivery \(delivery.number) and the file on disk now.")
+                        .help("Show what changed between delivery \(Wording.number(delivery)) and the file on disk now.")
                 }
                 if canSave {
                     Button("Save a Copy (\(sizeText))") { Task { await model.saveCopy(of: delivery, artifact: artifact) } }
@@ -274,23 +274,26 @@ struct HandoffPanel: View {
         .opacity(ready == nil ? 0.55 : 1)
         .onDrag {
             guard let ready else { return NSItemProvider() }
+            // A delivered folder is the live one: the receiver gets a copy, never the folder to move.
+            if plan == .folder { return LibraryModel.folderItem(artifact.path) }
             return NSItemProvider(contentsOf: ready) ?? NSItemProvider()
         }
         .help(ready == nil ? "Nothing to drag for this version" : "Drag into Finder, a chat, or an upload field")
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Drag \(artifact.name), delivery \(delivery.number)")
+        .accessibilityLabel("Drag \(artifact.name), \(Wording.tileVersion(staged: staged, plan: plan, delivery: delivery, in: artifact))")
         .accessibilityValue(tileCaption)
         .accessibilityHint(ready == nil ? "" : "Drag into another app, or choose File > Open Verified Copy.")
+    }
+
+    /// The bytes ready to drag, when a copy is.
+    var staged: String? {
+        if case .ready(_, let sha) = staging { sha } else { nil }
     }
 
     var tileCaption: String {
         switch staging {
         case .ready(_, let sha):
-            let label = artifact.deliveries.first { $0.sha256 == sha && $0.isTrusted }.map { "delivery \($0.number)" }
-                ?? (sha == delivery.sha256
-                    ? "delivery \(delivery.number)" + (delivery.capture?.provenance == .firstSeenAfterDelivery ? " · first seen later" : "")
-                    : "current file · not a found delivery")
-            return "\(label) · \(sha.prefix(12))…"
+            return "\(Wording.tileVersion(staged: sha, plan: plan, delivery: delivery, in: artifact)) · \(sha.prefix(12))…"
         case .preparing: return "verifying…"
         case .failed(let why, _): return why
         case .idle: return plan == .folder ? "folder as it is now" : "not available"
@@ -301,12 +304,12 @@ struct HandoffPanel: View {
         switch plan {
         case .unavailable(let k?, _):
             if let other = artifact.deliveries.first(where: { $0.number == k }) {
-                Button("Hand Off Delivery \(k) Instead") { model.chosenDelivery = other.id }
+                Button("Hand Off Delivery \(Wording.number(other)) Instead") { model.chosenDelivery = other.id }
             }
         case .unavailable(nil, let current?):
             Button("Hand Off the Current File") { Task { await model.stage(sha: current, artifact: artifact) } }
         case .restoreFromGit:
-            if let command = restoreCommand {
+            if let command = observation.state.restoreCommand {
                 HStack {
                     Text(command).font(.system(.caption, design: .monospaced)).textSelection(.enabled).lineLimit(2)
                     Button("Copy Command") { copy(command) }
@@ -316,7 +319,14 @@ struct HandoffPanel: View {
             EmptyView()
         }
         if case .failed(let why, _) = staging {
-            StatusLabel(mark: .attention, text: why).font(.callout)
+            HStack {
+                StatusLabel(mark: .attention, text: why).font(.callout)
+                Button("Check Again") { Task { await model.checkAgain(artifact) } }
+                    .help("Check the file now and prepare its copy again.")
+            }
+        }
+        if let failure = model.actionFailure(artifact, delivery) {
+            StatusLabel(mark: .attention, text: failure).font(.callout)
         }
     }
 
@@ -344,17 +354,6 @@ struct HandoffPanel: View {
         return nil
     }
 
-    var restoreCommand: String? {
-        guard let root = observation.state.repositoryRoot else { return nil }
-        let rel = artifact.path.hasPrefix(root + "/") ? String(artifact.path.dropFirst(root.count + 1)) : artifact.path
-        if observation.state.git == .recoverableFromHead {
-            return "git -C '\(root)' restore --source=HEAD -- '\(rel)'"
-        }
-        return "git -C '\(root)' checkout \"$(git -C '\(root)' rev-list -n 1 --all -- '\(rel)')^\" -- '\(rel)'"
-    }
-
-    func open() { if let openURL { NSWorkspace.shared.open(openURL) } }
-
     func copy(_ text: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
@@ -369,9 +368,9 @@ struct ReplySection: View {
     var delivery: Delivery
 
     var body: some View {
-        let others = (model.siblings[delivery.id] ?? []).compactMap { id in model.artifacts.first { $0.id == id } }
+        let others = model.siblings[delivery.id] ?? []
         VStack(alignment: .leading, spacing: 8) {
-            Text("Delivered \(Wording.date(delivery.deliveredAt)) by \(delivery.provider == .codex ? "Codex" : "Claude Code") · “\(delivery.sessionTitle ?? "Untitled session")”")
+            Text("Delivered \(Wording.date(delivery.deliveredAt)) by \(Wording.provider(delivery.provider)) · “\(delivery.sessionTitle ?? "Untitled session")”")
                 .font(.caption).foregroundStyle(.secondary).lineLimit(1)
             if let request = delivery.request {
                 (Text("You asked: ").foregroundStyle(.secondary) + Text("“\(request)”"))
@@ -388,18 +387,14 @@ struct ReplySection: View {
             if !others.isEmpty {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
                     Text("Delivered with:").font(.caption).foregroundStyle(.secondary)
-                    ForEach(others.prefix(6), id: \.id) { other in
-                        Button(other.name) { select(other) }.buttonStyle(.link).font(.caption)
+                    ForEach(others.prefix(6)) { other in
+                        Button((other.path as NSString).lastPathComponent) { model.select(other) }
+                            .buttonStyle(.link).font(.caption)
                     }
                     if others.count > 6 { Text("and \(others.count - 6) more").font(.caption).foregroundStyle(.secondary) }
                 }
             }
         }
-    }
-
-    func select(_ other: Artifact) {
-        if !model.results.contains(where: { $0.id == other.id }) { model.clearFilters() }
-        model.selection = other.id
     }
 }
 
@@ -436,28 +431,25 @@ struct DeliveriesSection: View {
         return delivery.number < selected.number ? (a, b) : (b, a)
     }
 
+    /// An earlier delivery with the same bytes.
+    func sameAs(_ delivery: Delivery) -> Delivery? {
+        artifact.deliveries.first { $0.number < delivery.number && $0.sha256 != nil && $0.sha256 == delivery.sha256 }
+    }
+
     func spoken(_ delivery: Delivery) -> String {
-        let sameAs = artifact.deliveries.first {
-            $0.number < delivery.number && $0.sha256 != nil && $0.sha256 == delivery.sha256
-        }
-        return ["Delivery \(delivery.number)", Wording.date(delivery.deliveredAt),
-                delivery.provider == .codex ? "Codex" : "Claude Code",
-                Wording.provenanceShort(delivery.capture).1.lowercased(),
-                sameAs.map { "same content as delivery \($0.number)" }].compactMap { $0 }.joined(separator: ", ")
+        Wording.deliveryLine(delivery, sameAs: sameAs(delivery))
     }
 
     func row(_ delivery: Delivery) -> some View {
         let isSelected = delivery.id == selected.id
         let provenance = Wording.provenanceShort(delivery.capture)
-        let sameAs = artifact.deliveries.first {
-            $0.number < delivery.number && $0.sha256 != nil && $0.sha256 == delivery.sha256
-        }
+        let earlier = sameAs(delivery)
         return HStack(spacing: 12) {
             Text("Delivery \(delivery.number)").fontWeight(isSelected ? .semibold : .regular)
             Text(Wording.date(delivery.deliveredAt)).foregroundStyle(.secondary)
-            Text(delivery.provider == .codex ? "Codex" : "Claude Code").foregroundStyle(.secondary)
+            Text(Wording.provider(delivery.provider)).foregroundStyle(.secondary)
             Spacer()
-            if let sameAs { Text("same as \(sameAs.number)").foregroundStyle(.secondary) }
+            if let earlier { Text("same as \(Wording.number(earlier))").foregroundStyle(.secondary) }
             StatusLabel(mark: provenance.0, text: provenance.1)
         }
         .font(.callout)
@@ -481,7 +473,7 @@ struct DetailsSection: View {
             let capture = delivery.capture
             let provenance = Wording.provenance(capture)
             let storage = Wording.storage(delivery, hasSaved: delivery.sha256.map(model.hasSaved) ?? false,
-                                          current: observation?.state.sha256, checked: observation != nil)
+                                          large: model.isLarge(delivery), now: observation?.state)
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
                 row("Path", artifact.path, mono: true)
                 if let observation {

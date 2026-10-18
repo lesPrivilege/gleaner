@@ -45,22 +45,22 @@ The core is a library (`GleanerCore`), not logic inside the UI, so that the Spik
 ## 4. Platform
 
 - **SwiftUI + AppKit + SQLite**, macOS only.
-- SwiftUI for the library, search, and cards; AppKit for system drag (`NSFilePromiseProvider` or file URL pasteboard items); Quick Look for preview of video, PDF, images. Markdown and interactive HTML preview are handled separately — do not assume Quick Look covers them.
+- SwiftUI for the library, search, and cards; AppKit for system drag (`NSFilePromiseProvider` or file URL pasteboard items); Quick Look for preview of video, PDF, images. Text and Markdown have their own views (rulings §7). An HTML page is previewed by Quick Look as the single staged file, without the files it references; an interactive HTML preview is deferred.
 - Drag-out always uses **copy** semantics. A drag must never let Finder move the source file.
 - Distribution decides sandboxing. If the app is sandboxed, project folders are reached through security-scoped bookmarks granted by the user.
 
 ## 5. Data model
 
-Four core objects. Project is a derived, editable label (from cwd and git repository), not a stored entity with its own lifecycle.
+Four core objects. Project is a derived label (from cwd and git repository), not a stored entity with its own lifecycle.
 
 | Object | Holds |
 |---|---|
 | **Session** | provider, provider session ID, title, cwd, log file location |
-| **Delivery Mention** | the reply excerpt that names the artifact, the raw target as written, the user request that started the turn, position in the log (its own log file and line), `delivered_at` |
-| **Locator** | resolved path, worktree / repository root, git state (`committed`, `modified`, `untracked`, `ignored`, `not_in_repo`; when missing: `recoverable_from_head`, `recoverable_from_history`, `lost`), availability (`file`, `directory`, `missing`), last verified time |
-| **Capture** | `observed_at`, sha256, size, optional snapshot reference (`captured_at`), and the capture's provenance |
+| **Delivery Mention** | the reply excerpt that names the artifact, the raw target as written, the user request that started the turn, position in the log (its own log file and line), its place in the reply (the line where the reply starts, which every file the reply named shares, and the order the reply names them in), `delivered_at` |
+| **Locator** | resolved path, worktree / repository root, git state (`committed`, `modified`, `untracked`, `ignored`, `not_in_repo`; when missing: `recoverable_from_head`, `recoverable_from_history`, `lost`), availability (`file`, `directory`, `special`, `unreadable`, `missing`), last verified time |
+| **Capture** | `observed_at`, sha256, size, optional snapshot reference (`captured_at`), the capture's provenance, and what was at the path (a file, a folder, or, without a hash, nothing, an unreadable file, or not a regular file) |
 
-Artifact identity in v0.1 is the path. A renamed or moved file appears as a separate artifact; re-linking is deferred, and Gleaner never guesses identity across paths. A project is the git repository holding the file (every worktree folds into its repository), else the one its cwd belongs to, else the folder name (rulings §2).
+Artifact identity in v0.1 is the path. A renamed or moved file appears as a separate artifact; re-linking is deferred, and Gleaner never guesses identity across paths. A project is the git repository holding the file (every worktree folds into its repository), else the one its cwd belongs to, else the folder name (rulings §2). Projects are told apart by the repository's main folder (for a bare repository, its own folder, named without `.git`) and shown by its name. Each delivery records, with its capture, the repository it resolved to and the checkout it was in (the main folder or a worktree's own folder), only while the file's folder is there to show them. The record outlives a reread that drops the delivery, and the earliest one wins over any later resolution: a deleted worktree keeps its project and its name, and a file committed on its branch is still looked up in the repository's history at its path within that checkout. A delivery never resolved stays explicitly outside any repository.
 
 ### 5.1 Time semantics
 
@@ -74,7 +74,9 @@ When history is backfilled, these can be months apart. A capture records its pro
 
 - `at_delivery` — observed within 10 minutes of `delivered_at`, and the file's mtime is no later than `delivered_at` plus 2 seconds of clock granularity.
 - `first_seen_after_delivery` — observed during backfill or after the file's mtime moved past the delivery. The UI must say plainly that this may not be the delivered version.
-- `never_observed` — the file was already gone when Gleaner first looked. Only the delivery mention is on record, and the delivery has no capture or hash.
+- `never_observed` — Gleaner never read the file's bytes: when it first looked, the path was missing, unreadable, or not a regular file. The capture has no hash and records which. It is completed once, the first time Gleaner reads the file (checking it, or capturing a later delivery of it), as `first_seen_after_delivery`.
+
+A capture with a hash is never rewritten. A file that is there but cannot be opened or read is `unreadable`, with its own wording: it is never described as missing, gone, changed, or seen.
 
 Gleaner never labels a file "latest" unconditionally. It shows the time of the last verification.
 
@@ -100,27 +102,28 @@ Same bytes do not imply the same logical artifact.
 
 - Location: `~/Library/Application Support/Gleaner/` — `registry.sqlite` and `objects/<sha256-prefix>/<sha256>`.
 - Nothing is written to project folders.
-- Policy by size, not type: every regular file up to 64 MB gets a saved copy when it is first captured. A larger file is tracked by hash, and "Save a copy" keeps it while the file on disk still matches the delivery. Thumbnails for large video, directory snapshots and HTML dependency handling are deferred.
-- Folders are listed but not versioned: preview, Open and drag use the folder as it is now, and the UI says so.
+- Policy by size, not type: every regular file up to 64 MB gets a saved copy when Gleaner first reads it. A larger file is tracked by hash, and "Save a copy" keeps it while the file on disk still matches the delivery. Thumbnails for large video, directory snapshots and HTML dependency handling are deferred.
+- Folders are listed but not versioned: preview, Open and drag use the folder as it is now, only while the path is still a folder, and the UI says so.
 - A delivered symlink is captured by the file it points to; the link itself is never copied, and the target's permissions are never changed.
-- **Hand-off copies** (`~/Library/Caches/Gleaner/handoff`, read-only files) and the **version store** are separate. Hand-off copies are disposable; a saved copy that backs a version is never removed by cleaning caches.
-- A drag hands over an immutable, verified copy, never the live source path. At drop time Gleaner copies the chosen version's bytes (from the source when it still matches, else from the saved copy) to a staging file, hashes the staged file, and delivers it only if the hash equals the version's. Handing over the source path itself would only guarantee the content at the moment of the check; an agent or editor may change it before the receiver reads it.
+- **Hand-off copies** (`~/Library/Caches/Gleaner/handoff`, read-only files) and the **version store** are separate. Hand-off copies are disposable; clearing them keeps the one on the clipboard, which a paste still reads, and a saved copy that backs a version is never removed by cleaning caches.
+- A drag hands over an immutable, verified copy, never the live source path. Gleaner copies the chosen version's bytes (from the saved copy when there is one, else from the source while it still matches) to a staging file, hashes the staged file, and hands it over only if the hash equals the version's. The detail's tile prepares its copy when the delivery is selected, so the preview shows the same bytes; a list row prepares its copy at drop. A copy prepared earlier is hashed again before it is reused. Handing over the source path itself would only guarantee the content at the moment of the check; an agent or editor may change it before the receiver reads it.
 - Which bytes back the chosen version:
 
 | Situation | Drag behavior |
 |---|---|
-| Source matches the chosen version | Stage a copy of the source (an APFS clone), verify its hash, drag that |
+| Source matches the chosen version | Stage a copy (an APFS clone of the saved copy, else of the source), verify its hash, drag that |
 | Source differs or is missing, and a snapshot of the chosen version exists | Drag the snapshot |
-| Source differs, and the chosen version has no snapshot | Say the version is no longer available. If the current file matches another delivery k, offer delivery k by name; otherwise offer the current file only under an explicit "not among the deliveries Gleaner found" label |
-| Source missing, no snapshot, but git history has the path | Offer a restore command for the user to run. Gleaner never restores it itself (Invariant 2), and says it cannot confirm that the git version is the delivered one when the delivery was `never_observed` |
+| Something else is at the path (a changed file, a folder, a file Gleaner can't read, a pipe), and the chosen version has no snapshot | Say the version isn't available, and why Gleaner has none of its bytes: never seen, never read (unreadable or not a regular file at first look), a folder, too large to have been saved, or a save that failed. Say "no longer" only for bytes Gleaner had, and "now" while the path can't be read. If the current file matches another delivery k, offer delivery k by name; otherwise, when Gleaner can read the file there, offer it only under an explicit "not among the deliveries Gleaner found" label |
+| Source missing, no snapshot, but git history has the path | Offer a restore command for the user to run, naming a commit checked to hold the path: the checkout's HEAD when it does, else the newest commit on any ref that does. For a removed worktree, the command adds the worktree back at that commit. Gleaner never restores it itself (Invariant 2), and says it cannot confirm that the git version is the delivered one |
 | Source missing, no snapshot, not in git | Lost: keep the record, offer no drag |
 
+- A list row hands over what the detail would for the delivery the row shows: the chosen one for the selected row, the matched one for any other. A row with nothing to hand over is marked unavailable, with why, and starts no drag.
 - A saved copy inherits its capture's provenance. A snapshot taken during backfill keeps its delivery number with the qualifier "first seen later" in storage labels, previews and drag captions (rulings §9).
 - **UI vocabulary.** "Snapshot" and "pin" are internal terms. The user sees "saved copy" for a snapshot and "Save a copy" for pinning. Plain "copy" is never used for Gleaner's storage, because every drag copies.
 
 ### 6.1 Comparing versions
 
-Any two versions Gleaner holds bytes for (two deliveries, or a delivery and the file on disk) can be compared, read-only. Both ends are named with their hash and must still hash to it. Text gets a line diff in one accent: grey for what was there, the accent for new lines, a solid block only on the new words of a one-for-one replaced line, both line numbers and the ± mark always shown. Images show side by side; other kinds compare size and hash. Inputs over 64 KB or 2000 lines are reported as limited, never shown partially. See `docs/design/diff-and-references.md`.
+Any two versions Gleaner holds bytes for (two deliveries, or a delivery and the file on disk) can be compared, read-only. Both ends are named with their hash and must still hash to it. Text gets a line diff in one accent: grey for what was there, the accent for new lines, a solid block only on the new words of a one-for-one replaced line, both line numbers and the ± mark always shown. Two versions whose bytes differ never read as "No changes": when no line differs, Compare says that only line endings or the final newline differ. Images show side by side; other kinds compare size and hash. Text over 64 KB or 2000 lines is reported as limited, never shown partially; a file of a text kind that isn't text (a PDF) compares by size and hash at any size. See `docs/design/diff-and-references.md`.
 
 ### 6.2 Claims in replies
 
@@ -128,9 +131,9 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 
 ## 7. Watching
 
-- Watch only the agents' log directories (FSEvents). New sessions are ingested near real time, so `observed_at` stays close to `delivered_at`.
+- Watch only the agents' log directories (FSEvents). New sessions are ingested near real time, so `observed_at` stays close to `delivered_at`. While a log directory does not exist yet, the nearest existing folder above it is watched only to notice it appear.
 - Do not watch the paths of indexed artifacts. Re-verify a file's hash when it is selected and again when its hand-off copy is staged; there is no background pass in v0.1.
-- Observation is read-only: only regular files are opened (a FIFO, socket, or device is reported as `special`), and git runs with `--no-optional-locks` so `git status` never rewrites the index.
+- Observation is read-only: only regular files are opened (a FIFO, socket, or device is reported as `special`; a file that can't be opened or read, or a path behind a folder that can't be searched, as `unreadable`), and git runs with `--no-optional-locks` so `git status` never rewrites the index, and runs nothing the repository configures: `core.fsmonitor` off, so it starts no hook or daemon; `log.showSignature` off, so `git log` starts no signature program; and lazy fetching off, so a partial clone fetches nothing it lacks. A commit is checked to hold a path through its trees, never by reading the file's contents. A clean filter (Git LFS, for one) may still run while git compares a file with the index; that is a known limit.
 
 ## 8. Adapters
 
@@ -174,10 +177,10 @@ Admission for v0.1 is a synthetic rule derived from what a delivery is: a file t
 - A link or image is a hand-off: the agent made the file clickable.
 - A line anchor (`:42`, `#L42`) points into code instead of handing a file over, so a mention with one never admits a file, even as a link. A heading anchor (`#usage`) points at a section of a document that may itself be the delivery, so it does not block admission.
 - Inline code or a bare path admits a file only when it names a place (a directory component) and has no anchor. A bare file name (`App.tsx`) names a topic, not a place.
-- Anything inside a fenced code block, or a link written inside inline code, is an example or an instruction, not a hand-off.
+- Anything inside a fenced code block, or a link written inside inline code, is an example or an instruction, not a hand-off. Fences are read as CommonMark reads them: only a fence of the same character (backtick or tilde) at least as long closes one, and an unclosed fence runs to the end of the reply.
 - A path with a placeholder (`build/<name>.zip`, `out/{id}.md`) names a pattern, not a file.
 
-When a log is reread, deliveries it no longer admits are removed from the index with their captures; saved copies stay in the store.
+When a log is reread completely, deliveries it no longer admits are removed from the index. Their captures and saved copies stay, so a delivery the log admits again gets its own capture back. A log with malformed lines removes nothing: what it still names is updated, it is reported as partial, and it is read again on the next run. Neither does a log found shorter than when Gleaner read it, even after an extractor change: it lost records for good, so it removes nothing from then on, however it grows again, and it is reported as found shorter on every run.
 
 Answers to an agent's question prompt (Codex sends them as JSON, sometimes wrapped in a tag) are not requests; the previous request stays as context.
 
@@ -185,14 +188,14 @@ Derived fields (request, evidence) are versioned: when extraction changes, logs 
 
 ## 10. Search
 
-A result matches when every search term is found in one delivery's own words (request, session, reply), together with the file name and project; terms from different deliveries do not combine. The result opens on the newest delivery that matched, not the newest delivery, and shows that delivery's date. Changing the query resets a manually chosen delivery to the matched one.
+A result matches when every search term is found in one delivery's own words (request, session, reply), together with the file name and project; terms from different deliveries do not combine. The result opens on the newest delivery whose own words matched, falling back to the newest delivery when only the file name or project matched, and shows that delivery's date. Changing the query resets a manually chosen delivery to the matched one.
 
 The index covers, per delivery: the reply excerpt, the user request that started the turn, the session title, the project, and the file name with its folder (not the whole path, whose home and `Projects` components would match everything). The delivery sentence alone usually lacks the topic words the user remembers.
 
 ## 11. Privacy
 
 - Store excerpts, not whole logs: the reply passage around a mention (up to about 400 characters, cut only at whitespace), the request (up to 2000 characters), titles, paths.
-- Redact secret-shaped strings (API keys, bearer tokens, long hex/base64 runs) before storing any excerpt, request, title or link anchor, and before truncating, so a secret at an edge is still recognized. Saved copies are the delivered bytes and are not redacted.
+- Redact secret-shaped strings (API keys and access tokens, bearer tokens, `key=value` secrets, credentials in URLs, and runs of 40 or more base64-like characters mixing upper case, lower case and digits; lowercase hex such as hashes and IDs is kept) before storing any excerpt, request, title or link anchor, and before truncating, so a secret at an edge is still recognized. Saved copies are the delivered bytes and are not redacted.
 - All data stays local.
 
 ## 12. Gates
@@ -214,12 +217,12 @@ After both gates: visual polish, incremental indexing performance, cache cleanup
 
 `swift run gleaner-spike` (see `README.md`) runs the adapters and extractor read-only over the local logs and writes, under `out/`:
 
-- `candidates.tsv` — one row per candidate with request, evidence, resolution, and empty `label` / `note` columns.
+- `candidates.tsv` — one row per candidate with request, evidence, resolution, whether the §9 rule admits it (`admitted`, yes or no), and empty `label` / `note` columns.
 - `recall-sample.md` — a random sample of final replies with the candidates found in each, for marking misses.
 - `summary.txt` — counts per provider, unknown record types, resolution stats.
 - `locators.internal.tsv` — full local paths for the owner's checks; never shared.
 
-The sheet lists every candidate, admitted or not; measuring the §9 rule after release needs an `admitted` column.
+The sheet lists every candidate, admitted or not, so the §9 rule can be measured against the labels after release.
 
 `out/` contains log excerpts and is never committed.
 
@@ -254,7 +257,7 @@ Adapters are capability-based. A runtime may offer only a read-only log, or also
 - Send only minimal, redacted evidence excerpts and candidate metadata, never whole sessions or file contents. Network reasoning is opt-in.
 - Bring it in only if labeled data from Gate 1 shows that the deterministic extractor leaves a long tail large enough to matter. Measure its gain against the same labels.
 
-**Distribution.** Ecosystems are channels, not dependencies: GitHub Release / Homebrew → agent plugin directories (Claude Code, Codex) → MCP Registry → related communities. The demo is the P0 scenario: a video delivered into a worktree that has since been deleted, found again, its version identified, and dragged into another agent.
+**Distribution.** Ecosystems are channels, not dependencies: GitHub Release / Homebrew, then in-app updates (Sparkle) → agent plugin directories (Claude Code, Codex) → MCP Registry → related communities. The demo is the P0 scenario: a video delivered into a worktree that has since been deleted, found again, its version identified, and dragged into another agent.
 
 ## 15. Beyond v0.1: build and release artifacts (direction, not scheduled)
 

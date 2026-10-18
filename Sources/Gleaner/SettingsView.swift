@@ -9,13 +9,32 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Reads") {
-                ForEach(model.indexer.sources.watchedDirectories, id: \.self) { path in
-                    LabeledContent((path as NSString).abbreviatingWithTildeInPath) {
-                        Text(FileManager.default.fileExists(atPath: path) ? "Found" : "Not found").foregroundStyle(.secondary)
+                ForEach(Provider.allCases, id: \.self) { provider in
+                    let source = model.sources?[provider]
+                    LabeledContent {
+                        if let source {
+                            let state = Wording.source(source)
+                            StatusLabel(mark: state.0, text: state.1)
+                        } else {
+                            Text(model.indexed ? "Not read" : "Reading…").foregroundStyle(.secondary)
+                        }
+                    } label: {
+                        Text(Wording.provider(provider))
+                        Text((model.indexer.sources.folder(provider).path as NSString).abbreviatingWithTildeInPath)
+                        if let detail = source.flatMap(Wording.sourceDetail) {
+                            Text(detail)
+                        }
                     }
                 }
-                Text("Gleaner watches these agent log folders while it is open, and reads only the files their replies name.")
-                    .font(.caption).foregroundStyle(.secondary)
+                if let failure = model.indexFailure {
+                    StatusLabel(mark: .attention, text: failure)
+                }
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Gleaner watches these agent log folders while it is open, and reads only the files their replies name.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Read Again") { model.reindex() }
+                }
             }
             Section("Keeps") {
                 LabeledContent("Saved copies") {
@@ -30,7 +49,7 @@ struct SettingsView: View {
                     HStack {
                         Text(size(usage?.handoff))
                         Button("Clear") {
-                            model.clearHandoffCopies()
+                            model.clearHandoffCopies(keeping: .general)
                             refresh()
                         }
                     }

@@ -8,9 +8,18 @@ struct ComparePane: View {
     var artifact: Artifact
     var from: Comparison.End
     var to: Comparison.End
-    @State private var content: Comparison.Content?
+    @State private var loaded: (request: Request, content: Comparison.Content)?
+
+    /// What a comparison is of: both ends, each naming its delivery, source and hash.
+    struct Request: Equatable {
+        var from: Comparison.End
+        var to: Comparison.End
+        var kind: Artifact.Kind
+    }
 
     var body: some View {
+        let request = Request(from: from, to: to, kind: artifact.kind)
+        let content = Self.content(loaded, for: request)
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text("\(from.title) → \(to.title)").font(.headline)
@@ -24,11 +33,11 @@ struct ComparePane: View {
                 switch content {
                 case nil:
                     ProgressView().frame(maxWidth: .infinity, minHeight: 120)
-                case .text(.rows(let rows))?:
-                    Text(Comparison.Content.text(.rows(rows)).summaryText).font(.caption).foregroundStyle(.secondary)
-                    if !rows.isEmpty, rows.contains(where: { $0.kind != .context }) { DiffRows(rows: rows) }
                 case .text(.limited(let reason))?:
                     note(reason + " Read either exact version on its own.")
+                case .text(let outcome)?:
+                    Text(outcome.summary).font(.caption).foregroundStyle(.secondary)
+                    if case .rows(let rows) = outcome, rows.contains(where: { $0.kind != .context }) { DiffRows(rows: rows) }
                 case .images(let a, let b)?:
                     HStack(spacing: 12) {
                         image(a, end: from)
@@ -39,11 +48,18 @@ struct ComparePane: View {
                         Text(a.sha == b.sha ? "Same content" : "These bytes differ").font(.callout.weight(.semibold))
                         bytesLine(from, a)
                         bytesLine(to, b)
-                        Text("Gleaner compares text line by line and images side by side; for this kind it compares size and hash.")
+                        Text("Gleaner compares text line by line and images side by side; for these files it compares size and hash.")
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 case .failed(let reason)?:
-                    note(reason)
+                    HStack {
+                        note(reason)
+                        Button("Check Again") {
+                            model.comparison = nil
+                            Task { await model.checkAgain(artifact) }
+                        }
+                        .help("Close the comparison, check the file now, and prepare its copy again.")
+                    }
                 }
             }
         }
@@ -51,11 +67,19 @@ struct ComparePane: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color(nsColor: .separatorColor)))
-        .task(id: "\(from.sha)|\(to.sha)") {
-            content = nil
-            let (from, to, kind) = (from, to, artifact.kind)
-            content = await Task.detached(priority: .userInitiated) { Comparison.load(from, to, kind: kind) }.value
+        .task(id: request) {
+            let result = await Task.detached(priority: .userInitiated) {
+                Comparison.load(request.from, request.to, kind: request.kind)
+            }.value
+            // Another comparison was asked for while this one loaded.
+            guard !Task.isCancelled else { return }
+            loaded = (request, result)
         }
+    }
+
+    /// Only a result loaded for this very pair is shown; until then it is loading.
+    static func content(_ loaded: (request: Request, content: Comparison.Content)?, for request: Request) -> Comparison.Content? {
+        loaded?.request == request ? loaded?.content : nil
     }
 
     func label(_ end: Comparison.End) -> String { "\(end.source) · \(end.sha.prefix(8))" }
@@ -69,9 +93,9 @@ struct ComparePane: View {
             .font(.system(.callout, design: .monospaced))
     }
 
-    func image(_ url: URL, end: Comparison.End) -> some View {
+    func image(_ data: Data, end: Comparison.End) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            if let image = NSImage(contentsOf: url) {
+            if let image = NSImage(data: data) {
                 Image(nsImage: image).resizable().scaledToFit().frame(maxWidth: .infinity, maxHeight: 280)
                 Text("\(end.title) · \(Int(image.size.width))×\(Int(image.size.height))").font(.caption).foregroundStyle(.secondary)
             } else {
@@ -79,13 +103,6 @@ struct ComparePane: View {
             }
         }
         .frame(maxWidth: .infinity)
-    }
-}
-
-extension Comparison.Content {
-    var summaryText: String {
-        if case .text(let outcome) = self { return outcome.summary }
-        return ""
     }
 }
 
