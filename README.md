@@ -148,7 +148,7 @@ To add it to the DeepSeek Harness, insert a row for its MCP client, in `$DSH_HOM
 
 `<path to gleaner>` is the command you built, such as the full path of `.build/release/gleaner`. `--home <folder>` after `mcp` serves the library kept for another home folder.
 
-**As a skill.** `extensions/gleaner` is an [Agent Skills](https://agentskills.io) folder that tells an agent when to use Gleaner and how: find a file an agent delivered earlier from your own description of it, open it in Gleaner with its `gleaner://delivery/<id>` link, and hand on its exact version with `handoff` or `read`, giving you the hand-off path or the reference rather than pasting the file. It only runs the `gleaner` command, and keeps nothing of its own. Claude Code, Codex and the DeepSeek Harness read the same folder. Gleaner never installs it: link (or copy) it where each one reads skills, from the repository:
+**As a skill.** `extensions/gleaner` is an [Agent Skills](https://agentskills.io) folder that tells an agent when to use Gleaner and how: find a file an agent delivered earlier from your own description of it, open it in Gleaner with its `gleaner://delivery/<id>` link, and hand on its exact version with `handoff` or `read`, giving you the hand-off path or the reference rather than pasting the file. It runs only the `gleaner` command, and `open` for a `gleaner://` link; it keeps nothing of its own. Claude Code, Codex and the DeepSeek Harness read the same folder. Gleaner never installs it: link (or copy) it where each one reads skills, from the repository:
 
 ```bash
 mkdir -p ~/.claude/skills ~/.agents/skills

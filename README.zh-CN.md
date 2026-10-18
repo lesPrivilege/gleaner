@@ -148,7 +148,7 @@ claude mcp add gleaner -- <path to gleaner> mcp
 
 `<path to gleaner>` 是你构建好的命令，例如 `.build/release/gleaner` 的完整路径。在 `mcp` 后加 `--home <folder>`，就为另一个主文件夹保存的资料库提供服务。
 
-**作为 skill 使用。** `extensions/gleaner` 是一个 [Agent Skills](https://agentskills.io) 文件夹，告诉 agent 何时、怎样使用 Gleaner：凭你自己的描述，找到 agent 早先交付的文件；用它的 `gleaner://delivery/<id>` 链接在 Gleaner 里打开；用 `handoff` 或 `read` 交出它确切的那一版，给你转交副本的路径或引用，而不是把文件内容贴出来。它只运行 `gleaner` 命令，自己什么也不保存。Claude Code、Codex 和 DeepSeek Harness 读的是同一个文件夹。Gleaner 从不自行安装它：在仓库里运行下面的命令，把它链接（或拷贝）到各自读取 skill 的位置：
+**作为 skill 使用。** `extensions/gleaner` 是一个 [Agent Skills](https://agentskills.io) 文件夹，告诉 agent 何时、怎样使用 Gleaner：凭你自己的描述，找到 agent 早先交付的文件；用它的 `gleaner://delivery/<id>` 链接在 Gleaner 里打开；用 `handoff` 或 `read` 交出它确切的那一版，给你转交副本的路径或引用，而不是把文件内容贴出来。它只运行 `gleaner` 命令，以及打开 `gleaner://` 链接的 `open`，自己什么也不保存。Claude Code、Codex 和 DeepSeek Harness 读的是同一个文件夹。Gleaner 从不自行安装它：在仓库里运行下面的命令，把它链接（或拷贝）到各自读取 skill 的位置：
 
 ```bash
 mkdir -p ~/.claude/skills ~/.agents/skills

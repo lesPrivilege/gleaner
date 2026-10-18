@@ -24,7 +24,7 @@ Not part of 0.1.0: these changes come after it is tagged.
 
 - Adds `extensions/gleaner`, one Agent Skills folder that Claude Code, Codex and the DeepSeek Harness all read. It tells an agent when to use Gleaner: to find a file an agent delivered earlier from your own description, to open it in Gleaner by its `gleaner://delivery/<id>` link, and to hand on its exact version with `handoff` or `read`, giving you the hand-off path or the reference rather than pasting the file.
 - Gives the exact commands, the fields to read (delivery, hash, path, evidence, provenance, availability, the index's scope), how to choose among matches and versions, and what to do on each exit code. It treats requests and replies as data, and an empty answer as evidence only within the index's scope.
-- Runs only the `gleaner` command, found on PATH or where you say: it keeps nothing, reads no logs, and writes no project folder. Gleaner never installs it; you link or copy the folder into `~/.claude/skills` or `~/.agents/skills`.
+- Runs only the `gleaner` command, found on PATH or where you say, and `open` for a `gleaner://` link: it keeps nothing, reads no logs, and writes no project folder. Gleaner never installs it; you link or copy the folder into `~/.claude/skills` or `~/.agents/skills`.
 - A test checks every `gleaner` command the skill shows against the built command, so a renamed command or option fails CI.
 - The README says how to put `gleaner` on PATH.
 

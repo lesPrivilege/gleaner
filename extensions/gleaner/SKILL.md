@@ -9,7 +9,7 @@ Gleaner is a Mac app that keeps a library of the files coding agents named in th
 
 ## The command
 
-Run `gleaner` when `command -v gleaner` finds it, or the path the person gave you for it. If there is neither, tell the person that Gleaner's command isn't on PATH: it is built from Gleaner's source and put on PATH as Gleaner's README says. Don't build or install it yourself, and never read the agents' logs or Gleaner's library instead.
+Run `gleaner`, or the path the person gave you for it. If the shell finds no such command (exit 127), tell the person that Gleaner's command isn't on PATH: it is built from Gleaner's source and put on PATH as Gleaner's README says. Don't build or install it yourself, and never read the agents' logs or Gleaner's library instead.
 
 ```
 gleaner find <terms…> [--project <name or folder>] [--kind <kind>] [--limit <n>]
