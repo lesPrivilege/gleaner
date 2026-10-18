@@ -1,4 +1,5 @@
 import GleanerCore
+import GleanerUI
 import SwiftUI
 
 /// Renders `MarkdownBlock`s at their full height; whoever shows them decides whether they scroll.

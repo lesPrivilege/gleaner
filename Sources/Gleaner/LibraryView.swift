@@ -1,5 +1,6 @@
 import GleanerCore
 import QuickLook
+import GleanerUI
 import SwiftUI
 
 /// The library window: where you are (every delivery, a project, or the sources), what is there,
@@ -317,11 +318,11 @@ struct TroubleBar: View {
                 Spacer(minLength: Space.s)
                 if model.canReadAgain {
                     Button("Try Again") { model.reindex() }
-                        .controlSize(.small)
+                        .controlRole(.inline)
                         .help("Read the agent logs again")
                 }
                 Button("Sources") { model.place = .sources }
-                    .controlSize(.small)
+                    .controlRole(.inline)
             }
             .padding(.horizontal, Space.m)
             .padding(.vertical, Space.s)
@@ -372,7 +373,7 @@ struct ResultRow: View {
                     }
                     // Open, its revisions each carry their agent and date.
                     if !open {
-                        ProviderMark(provider: delivery.provider, size: 12).foregroundStyle(.secondary)
+                        AgentMark(provider: delivery.provider, size: 12).foregroundStyle(.secondary)
                         Text(Wording.shortDate(delivery.deliveredAt)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
                             .help(Wording.date(delivery.deliveredAt))
                     }

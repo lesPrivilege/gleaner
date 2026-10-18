@@ -1,4 +1,5 @@
 import GleanerCore
+import GleanerUI
 import SwiftUI
 
 /// Each agent Gleaner reads, as a connection the person can see and switch: its mark, how its logs
@@ -14,20 +15,16 @@ struct ConnectionRow: View {
         let on = !model.sourcesOff.contains(provider)
         let state = Self.state(provider, in: model)
         HStack(spacing: Space.s + 2) {
-            ProviderMark(provider: provider, size: size, color: true)
+            AgentMark(provider: provider, size: size, color: true)
                 .saturation(on ? 1 : 0).opacity(on ? 1 : 0.5)
             VStack(alignment: .leading, spacing: 1) {
                 Text(Wording.provider(provider)).fontWeight(.semibold)
                 StatusLabel(mark: state.0, text: state.1, size: 11).font(.caption)
             }
             Spacer(minLength: Space.s)
-            Toggle(isOn: Binding(get: { on }, set: { value in Task { await model.setSource(provider, on: value) } })) {
-                Text("Read \(Wording.provider(provider))")
-            }
-            .toggleStyle(.switch)
-            .controlSize(.small)
-            .labelsHidden()
-            .help(on ? "Stop reading \(Wording.provider(provider))’s logs and hide its deliveries" : "Read \(Wording.provider(provider))’s logs again")
+            Switch("Read \(Wording.provider(provider))", isOn: Binding(get: { on }, set: { value in Task { await model.setSource(provider, on: value) } }),
+                   role: .inline)
+                .help(on ? "Stop reading \(Wording.provider(provider))’s logs and hide its deliveries" : "Read \(Wording.provider(provider))’s logs again")
         }
     }
 
@@ -39,8 +36,9 @@ struct ConnectionRow: View {
     }
 }
 
-/// The toolbar's sources button: the agent mark, with the triangle when one needs a look, opening
-/// the connections popover.
+/// The toolbar's sources button, opening the connections popover. The toolbar is the system's
+/// chrome, so it takes SF Symbols beside the others there: connections, or the triangle when a
+/// source needs a look.
 struct ConnectionsButton: View {
     @Environment(LibraryModel.self) private var model
     @State private var shown = false
@@ -50,7 +48,7 @@ struct ConnectionsButton: View {
             Label {
                 Text("Sources")
             } icon: {
-                GlyphView(glyph: model.logTrouble == nil ? .agent : .warning, size: 16)
+                Image(systemName: model.logTrouble == nil ? "point.3.connected.trianglepath.dotted" : "exclamationmark.triangle")
                     .foregroundStyle(model.logTrouble == nil ? AnyShapeStyle(.primary) : AnyShapeStyle(Palette.attention))
             }
         }
@@ -79,7 +77,7 @@ struct ConnectionsPanel: View {
                 Button("Check Now") { model.reindex() }
                     .disabled(model.sourcesOff.count == Provider.allCases.count)
             }
-            .controlSize(.small)
+            .controlRole(.inline)
         }
         .padding(Space.l)
         .frame(width: 320)
@@ -99,15 +97,15 @@ struct TopologyLine: View {
         let gateways = Array(Set(models.compactMap(\.provider))).sorted()
         let vendors = Self.vendors(models)
         HStack(spacing: Space.s) {
-            ProviderMark(provider: provider, size: 20, color: true).saturation(on ? 1 : 0)
+            AgentMark(provider: provider, size: 20, color: true).saturation(on ? 1 : 0)
             ForEach(gateways, id: \.self) { gateway in
-                Connector(on: on)
+                RelationLine(inEffect: on)
                 Text(gateway).font(.caption).foregroundStyle(.secondary)
                     .padding(.horizontal, Space.s).padding(.vertical, 2)
                     .overlay(Capsule().strokeBorder(Color(nsColor: .separatorColor)))
                     .help("The provider \(Wording.provider(provider)) sent requests to")
             }
-            Connector(on: on)
+            RelationLine(inEffect: on)
             if vendors.isEmpty {
                 Text(models.isEmpty ? "No deliveries yet" : "Models not named in the logs").font(.caption).foregroundStyle(.secondary)
             } else {
@@ -129,17 +127,5 @@ struct TopologyLine: View {
         var seen: [ModelVendor] = []
         for vendor in models.compactMap({ ModelVendor.of(model: $0.model) }) where !seen.contains(vendor) { seen.append(vendor) }
         return seen
-    }
-}
-
-/// A short line between two ends of a connection: solid in effect, dashed not.
-struct Connector: View {
-    var on: Bool
-
-    var body: some View {
-        Path { $0.move(to: CGPoint(x: 0, y: 1)); $0.addLine(to: CGPoint(x: 20, y: 1)) }
-            .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: on ? [] : [2, 3]))
-            .foregroundStyle(.secondary)
-            .frame(width: 20, height: 2)
     }
 }

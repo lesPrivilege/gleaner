@@ -154,9 +154,11 @@ swift test                      # fixture 测试
 工作区有未提交的改动时，`release.sh` 不会运行。打了 `v0.1.0` 标签的提交构建为 0.1.0 版，其他提交构建为 `0.1.0-dev+<commit>`。
 
 - `Sources/GleanerCore`：各 agent 的日志适配器（Claude Code、Codex）、提及抽取、文件定位、脱敏、索引库（SQLite）、内容库（存档副本与核验过的转交副本）、索引器、日志监视，以及状态判断（`Library.swift`）。
+- `Sources/GleanerUI`：窗口所用的组件库：标记、状态、表面、控件与动效，依 [docs/design/components.md](docs/design/components.md)。只依赖 SwiftUI 与 AppKit。
 - `Sources/Gleaner`：macOS 应用（SwiftUI、AppKit、Quick Look）。
 - `Sources/gleaner-spike`：Spike A，只读地抽取本地日志，输出一份标注表。
 - `Tests/GleanerCoreTests`：用脱敏后的日志记录结构写成的 fixture 测试，以及整个流程的测试（并发编辑、删除 worktree、回滚、补读旧日志、核验后转交）。
+- `Tests/GleanerUITests`：标记、设计令牌，以及画出每个组件的图库（`GLEANER_GALLERY=<文件夹> swift test --filter GalleryTests`）。
 - `Tests/GleanerTests`：在合成的资料库上检验应用的判断（点一下落在哪次交付上，Quick Look、Compare 和拖拽用的是哪份字节）及其措辞。
 
 v0.1 的设计决定见 [docs/SPEC.md](docs/SPEC.md)，设计探索与裁决见 [docs/design/](docs/design/README.md)。

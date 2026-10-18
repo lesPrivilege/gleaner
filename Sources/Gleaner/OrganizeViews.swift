@@ -1,4 +1,5 @@
 import GleanerCore
+import GleanerUI
 import SwiftUI
 
 /// Where a work belongs: its project and why, the files joined as its versions, and the pairs the
@@ -17,7 +18,7 @@ struct WorkSection: View {
         let project = organization.project(work.project)
         let links = organization.links(of: work), declines = organization.declines(of: work)
         DetailSection(title: "Project") {
-            Button("Move to Project…") { moving = true }.controlSize(.small)
+            Button("Move to Project…") { moving = true }.controlRole(.inline)
         } content: {
             HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                 Label {
@@ -35,13 +36,13 @@ struct WorkSection: View {
                 switch placement {
                 case .moved:
                     Button("Put Back") { Task { await model.undoMove(work) } }
-                        .controlSize(.small)
+                        .controlRole(.inline)
                         .help("Return it to the project Gleaner found it in")
                 case .combined(let folder, let correction):
                     Button { Task { await model.undo(correction) } } label: {
                         Label { Text("Show Apart") } icon: { GlyphView(glyph: .branch, size: 12) }
                     }
-                    .controlSize(.small)
+                    .controlRole(.inline)
                     .help("Show \(organization.projectName(folder)) as its own project again")
                 case .found:
                     EmptyView()
@@ -68,7 +69,7 @@ struct WorkSection: View {
                 Button { joining = true } label: {
                     Label { Text("Join With Another File…") } icon: { GlyphView(glyph: .merge, size: 12) }
                 }
-                .controlSize(.small)
+                .controlRole(.inline)
                 .help("Say that another file is a version of this work, such as a renamed draft")
             }
             if let failure = model.correctionFailure {
@@ -92,16 +93,7 @@ struct VersionsStrip: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(work.files.enumerated()), id: \.element.path) { index, file in
                 HStack(alignment: .center, spacing: Space.s) {
-                    ZStack {
-                        // The line into this node and out of it, solid: the join is in effect. It
-                        // stops at the dot's edge, so the dot reads as one solid end.
-                        VStack(spacing: 8) {
-                            Rectangle().fill(index == 0 ? Color.clear : Color.secondary).frame(width: 1.5)
-                            Rectangle().fill(index == work.files.count - 1 ? Color.clear : Color.secondary).frame(width: 1.5)
-                        }
-                        GlyphView(glyph: .endSolid, size: 12).foregroundStyle(.secondary)
-                    }
-                    .frame(width: 14)
+                    RelationNode(into: index > 0, out: index < work.files.count - 1, end: .solid)
                     FileIcon(path: file.path, folder: file.kind == .folder, size: 16)
                     Text(file.name).lineLimit(1).truncationMode(.middle)
                     Text([Wording.count(file.deliveries.count, "delivery", "deliveries"),
@@ -130,7 +122,7 @@ struct DecisionLine: View {
             Text(text).lineLimit(1).truncationMode(.middle)
             Text(Wording.shortDate(date)).foregroundStyle(.secondary).monospacedDigit()
                 .help(Wording.date(date))
-            Button("Undo", action: undo).controlSize(.small).accessibilityLabel("Undo: \(text)")
+            Button("Undo", action: undo).controlRole(.inline).accessibilityLabel("Undo: \(text)")
         }
         .font(.caption)
     }
@@ -143,18 +135,12 @@ struct DeclineLine: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: Space.s) {
-            ZStack(alignment: .leading) {
-                Path { $0.move(to: CGPoint(x: 0, y: 6)); $0.addLine(to: CGPoint(x: 8, y: 6)) }
-                    .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [2, 3]))
-                GlyphView(glyph: .endCross, size: 8).offset(x: 7)
-            }
-            .frame(width: 14, height: 12, alignment: .leading)
-            .foregroundStyle(.secondary)
+            RelationLine(inEffect: false, end: .cross, length: 14)
             Text(model.describe(decline)).lineLimit(1).truncationMode(.middle)
             Text(Wording.shortDate(decline.madeAt)).foregroundStyle(.secondary).monospacedDigit()
                 .help(Wording.date(decline.madeAt))
             Button("Undo") { Task { await model.undo(decline) } }
-                .controlSize(.small)
+                .controlRole(.inline)
                 .accessibilityLabel("Undo: \(model.describe(decline))")
         }
         .font(.caption)

@@ -62,13 +62,13 @@ Files are drawn with the icon Finder uses for their type (`NSWorkspace.icon(for:
 
 ## Agents' marks
 
-`Sources/Gleaner/ProviderMarks.swift` draws Claude Code and Codex from the `claudecode` and `codex` drawings of [lobe-icons](https://github.com/lobehub/lobe-icons) (MIT). That is the set [Magpie](https://github.com/yetone/magpie) bundles for agents and model vendors, byte-identical to the lobe master in the files compared. The marks belong to Anthropic and OpenAI. Gleaner uses them only to say which agent's logs a delivery came from, and the agent's name stays in the help tag and for VoiceOver. Each mark is drawn in two ways:
+`Sources/GleanerUI/AgentMarks.swift` (then `Sources/Gleaner/ProviderMarks.swift`) draws Claude Code and Codex from the `claudecode` and `codex` drawings of [lobe-icons](https://github.com/lobehub/lobe-icons) (MIT). That is the set [Magpie](https://github.com/yetone/magpie) bundles for agents and model vendors, byte-identical to the lobe master in the files compared. The marks belong to Anthropic and OpenAI. Gleaner uses them only to say which agent's logs a delivery came from, and the agent's name stays in the help tag and for VoiceOver. Each mark is drawn in two ways:
 - **Color** (Claude's orange; Codex's tile and gradient), where the agent is named on its own: Information, Sources.
 - **One ink**, where it repeats on every row.
 
 ## Marks
 
-`Sources/Gleaner/Glyphs.swift` draws Gleaner's marks natively from SVG path data. Each is on the kit's 24-point grid, with a 1.5 stroke that scales with the size and never draws under 1 point, round caps and joins. The renderer reads SVG path syntax, elliptical arcs included, stops at numbers after a close rather than repeating it, and takes any whitespace between numbers. `GlyphTests` checks that every mark and agent mark draws inside its grid. Twenty-six marks are copied from the kit's `glyphs.svg`. Two are Gleaner's own, drawn to the same grid:
+`Sources/GleanerUI/Glyph.swift` (then `Sources/Gleaner/Glyphs.swift`) draws Gleaner's marks natively from SVG path data. Each is on the kit's 24-point grid, with a 1.5 stroke that scales with the size and never draws under 1 point, round caps and joins. The renderer reads SVG path syntax, elliptical arcs included, stops at numbers after a close rather than repeating it, and takes any whitespace between numbers. `MarkTests` (in `GleanerUITests`, then `GlyphTests`) checks that every mark and agent mark draws inside its grid. Twenty-six marks are copied from the kit's `glyphs.svg`. Two are Gleaner's own, drawn to the same grid (a third, `lost`, came with the component library, [components.md](components.md)):
 - **repository**: three nodes and a branch, for git projects;
 - **work**: a file with another behind it, for one work in several files.
 
@@ -76,7 +76,7 @@ In a sidebar, a mark follows the row as an SF Symbol would: it uses the size set
 
 ## Space, radius and motion
 
-`Sources/Gleaner/Style.swift` sets these:
+`Sources/GleanerUI/Tokens.swift` (then `Sources/Gleaner/Style.swift`) sets these:
 - **Space:** a 4-point step (4, 8, 12, 16, 24, 32). Sections of the detail are 24 apart, and items inside them 8.
 - **Radius:** two values, 4 for tags and 10 for cards.
 - **Motion:** three durations, each named for what it shows, after the kit's tokens:
@@ -98,8 +98,8 @@ Not moved:
 
 ## Checked
 
-- **The tour.** `GLEANER_TOUR=<folder> swift test --filter TourTests` draws each step of the board walk in light and dark. It also draws a sheet of every mark at 32, 16 and 11 points, the agents' marks in color and in one ink, and four file icons.
-- **The suite.** 213 tests pass, `WordingTests` and `GlyphTests` included.
+- **The tour.** `GLEANER_TOUR=<folder> swift test --filter TourTests` draws each step of the board walk in light and dark. It also drew a sheet of every mark at 32, 16 and 11 points, the agents' marks in color and in one ink, and four file icons. That sheet is now part of the component gallery ([components.md](components.md)), in every appearance.
+- **The suite.** 213 tests pass, `WordingTests` and `GlyphTests` (now `MarkTests`) included.
 - **Not checked:**
   - VoiceOver listening;
   - real hover, drag and the ⓘ popovers in a running window;

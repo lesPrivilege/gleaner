@@ -30,6 +30,8 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - Keeps "first seen later" on every label that names a delivery number.
 - Marks a list row only when it needs a look: unavailable and why, not on disk, changed (once checked this session), or first seen later. Each file shows its own icon, as Finder draws it, and each delivery its agent's mark (Claude Code, Codex; drawings from lobe-icons, MIT).
 - Says a state in as few words as it needs: a mark alone when all is as it should be, a word or two when something needs a look, and the full sentence behind ⓘ, in the help tag and to VoiceOver.
+- "Lost" has its own mark, a cross between brackets, so it never differs from "not on disk" by color alone.
+- Under Increase Contrast, status colors, the edges of tinted panels and suggestions, and link underlines draw stronger, in light and in dark; under Reduce Transparency, a label floating over a preview turns opaque.
 - Quotes claims in replies as the agent's words, never as a status.
 - Saves a copy of every file up to 64 MB when first read; Save a Copy keeps a larger one while it still matches.
 

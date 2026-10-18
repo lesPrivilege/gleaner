@@ -1,5 +1,6 @@
 import AppKit
 import GleanerCore
+import GleanerUI
 import Observation
 import UniformTypeIdentifiers
 

@@ -136,7 +136,7 @@ The outline teaches itself the same way:
 
 ## Checked
 
-- **The suite.** `swift test`: 222 tests pass. `OutlineTests` covers five things:
+- **The suite.** `swift test`: 226 tests pass. `OutlineTests` covers five things:
   - which works open, in a folder outside git, in a git repository, in every list and in search;
   - that an open work's row names the work's own revision while another is chosen, and that a revision with nothing to hand over says so on its row alone, with its reason;
   - what choosing a work's row, a revision's row or a delivery under Versions shows, and that the outline follows;

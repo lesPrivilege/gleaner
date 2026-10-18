@@ -1,125 +1,7 @@
 import AppKit
 import GleanerCore
+import GleanerUI
 import SwiftUI
-
-/// A state is said in three tiers, each only as far as it is needed:
-/// - **the mark:** a shape that stays apart from the others in grey: an endpoint for whether
-///   Gleaner confirmed the bytes, brackets for a missing value, a triangle for a look, an octagon
-///   for a failed read, a diamond for what waits on the person;
-/// - **the label:** one to three words beside the mark, for a state that needs a look;
-/// - **the sentence:** why, behind the label's info button, in its help and to VoiceOver.
-/// A state that is as it should be draws its mark alone, or nothing (Praxis kit,
-/// foundations/standing.md; macOS lists mark the exception, not the rule).
-enum Mark {
-    /// Confirmed: the filled endpoint.
-    case solid
-    /// Not confirmed (first seen later): the hollow endpoint.
-    case hollow
-    /// No value here, nothing lost: brackets.
-    case dashed
-    /// Doesn't apply here, such as a version of a folder: the slashed circle.
-    case na
-    /// Needs a look: the triangle, amber.
-    case attention
-    /// Gone for good: brackets, red.
-    case cross
-    /// Gleaner tried to read it and couldn't: the octagon.
-    case failed
-    /// Waits on the person's decision: the diamond, the one accent.
-    case awaiting
-    /// The person declined it; it stays shown: the crossed circle.
-    case declined
-    /// Under way, for as long as it takes: three dots, never a percentage.
-    case running
-    /// Done, such as read or copied: the check.
-    case done
-
-    var glyph: Glyph {
-        switch self {
-        case .solid: .endSolid
-        case .hollow: .endHollow
-        case .dashed, .cross: .missing
-        case .na: .na
-        case .attention: .warning
-        case .failed: .error
-        case .awaiting: .awaiting
-        case .declined: .rejected
-        case .running: .running
-        case .done: .done
-        }
-    }
-
-    var color: Color {
-        switch self {
-        case .solid, .hollow, .done: .primary
-        case .dashed, .na, .declined, .running: .secondary
-        case .attention, .failed: Palette.attention
-        case .cross: Palette.lost
-        case .awaiting: Palette.awaiting
-        }
-    }
-
-    /// Asks for a look: drawn in a tinted panel where it stands alone.
-    var needsLook: Bool { [.attention, .failed, .cross].contains(self) }
-}
-
-/// Amber means "needs your look", red means gone, and the one accent marks what waits on the
-/// person (Praxis kit). Each color has a light and a dark value, and a stronger one under
-/// Increase Contrast.
-enum Palette {
-    static let attention = dynamic(light: (0.54, 0.29, 0.0), dark: (1.0, 0.72, 0.36), contrast: (0.42, 0.21, 0.0))
-    static let attentionFill = dynamic(light: (1.0, 0.96, 0.92), dark: (0.24, 0.16, 0.07), contrast: (1.0, 0.93, 0.85))
-    static let lost = dynamic(light: (0.63, 0.17, 0.17), dark: (1.0, 0.52, 0.5), contrast: (0.5, 0.08, 0.08))
-    static let lostFill = dynamic(light: (1.0, 0.96, 0.96), dark: (0.26, 0.1, 0.1), contrast: (1.0, 0.92, 0.92))
-    /// Changed text, and only that (Courtwork's change language): the line colour, the solid block
-    /// on new words, and the dark ink inside that block.
-    static let change = dynamic(light: (0.63, 0.24, 0.21), dark: (0.89, 0.55, 0.51), contrast: (0.5, 0.14, 0.12))
-    static let changeBlock = dynamic(light: (0.87, 0.44, 0.41), dark: (0.83, 0.41, 0.37), contrast: (0.75, 0.3, 0.27))
-    static let changeInk = dynamic(light: (0.09, 0.13, 0.15), dark: (0.07, 0.09, 0.11), contrast: (0.0, 0.0, 0.0))
-    /// Marks beside their words, in a plain color that holds on any material.
-    static let mark = Color(nsColor: .secondaryLabelColor)
-    /// The one accent: what waits on the person's decision, and only that (standing.md). Links are
-    /// ink with an underline, so they never borrow it.
-    static let awaiting = dynamic(light: (0.11, 0.35, 0.81), dark: (0.45, 0.63, 1.0), contrast: (0.07, 0.25, 0.68))
-    static let awaitingWash = dynamic(light: (0.94, 0.96, 1.0), dark: (0.11, 0.15, 0.24), contrast: (0.9, 0.93, 1.0))
-
-    private typealias RGB = (Double, Double, Double)
-
-    private static func dynamic(light: RGB, dark: RGB, contrast: RGB) -> Color {
-        Color(nsColor: NSColor(name: nil) { appearance in
-            let match = appearance.bestMatch(from: [.aqua, .darkAqua, .accessibilityHighContrastAqua, .accessibilityHighContrastDarkAqua])
-            let rgb = switch match {
-            case .darkAqua?, .accessibilityHighContrastDarkAqua?: dark
-            case .accessibilityHighContrastAqua?: contrast
-            default: light
-            }
-            return NSColor(srgbRed: rgb.0, green: rgb.1, blue: rgb.2, alpha: 1)
-        })
-    }
-}
-
-/// A state: its mark, its label, and the sentence that says why.
-struct Statement {
-    var mark: Mark
-    var title: String
-    var detail: String
-}
-
-struct StatusLabel: View {
-    var mark: Mark
-    var text: String
-    /// The mark's size: caption text takes 12, a heading 15.
-    var size: CGFloat = 12
-
-    var body: some View {
-        Label {
-            Text(text)
-        } icon: {
-            GlyphView(glyph: mark.glyph, size: size)
-        }
-        .foregroundStyle(mark.color)
-    }
-}
 
 enum Wording {
     static func date(_ date: Date?) -> String {
@@ -427,7 +309,7 @@ enum Wording {
     }
 
     static func provider(_ provider: Provider) -> String {
-        provider == .codex ? "Codex" : "Claude Code"
+        AgentMark.Agent(provider).name
     }
 
     /// One agent's log folder as last read (SPEC §8): not on this Mac, unreadable, read with

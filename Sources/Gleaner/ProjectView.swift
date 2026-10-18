@@ -1,4 +1,5 @@
 import GleanerCore
+import GleanerUI
 import SwiftUI
 
 /// One project as an outline, to enter and resume: the project at its head (what it is, and what
@@ -99,7 +100,7 @@ struct ProjectHeader: View {
                     Button { Task { await model.undo(combined.correction, following: false) } } label: {
                         Label { Text("Show Apart") } icon: { GlyphView(glyph: .branch, size: 12) }
                     }
-                    .controlSize(.small)
+                    .controlRole(.inline)
                     .help("Show \(combined.name) as its own project again, as you set on \(Wording.date(combined.correction.madeAt))")
                 }
             }
@@ -184,11 +185,7 @@ struct SuggestionView: View {
                 }
                 .padding(.horizontal, Space.m)
                 .padding(.vertical, Space.s + 2)
-                .background(Palette.awaitingWash, in: RoundedRectangle(cornerRadius: Radius.card))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Radius.card)
-                        .strokeBorder(Palette.awaiting.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-                }
+                .surface(.awaiting)
             }
         }
         .accessibilityElement(children: .contain)
@@ -201,9 +198,11 @@ struct SuggestionView: View {
                 Label { Text("Join") } icon: { GlyphView(glyph: .merge, size: 12) }
             }
             .help("Show both as versions of one work")
-            Button("Keep Apart") { Task { await model.keepApart(suggestion.earlier, suggestion.later) } }
-                .help("Gleaner stops suggesting this")
+            Button { Task { await model.keepApart(suggestion.earlier, suggestion.later) } } label: {
+                Label { Text("Keep Apart") } icon: { GlyphView(glyph: .rejected, size: 12) }
+            }
+            .help("Gleaner stops suggesting this")
         }
-        .controlSize(.small)
+        .controlRole(.inline)
     }
 }

@@ -1,6 +1,7 @@
 import AppKit
 import GleanerCore
 import Quartz
+import GleanerUI
 import SwiftUI
 
 /// One delivered file, laid out as Finder's preview pane lays out a file: the file itself to drag
@@ -66,8 +67,6 @@ struct DetailView: View {
 /// the version can't be handed over, the reason and what can be done instead follow.
 struct DetailHeader: View {
     @Environment(LibraryModel.self) private var model
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hovering = false
     var artifact: Artifact
     var delivery: Delivery
     var plan: Handoff?
@@ -134,10 +133,9 @@ struct DetailHeader: View {
         }
         .padding(.vertical, Space.xs)
         .padding(.horizontal, Space.s)
-        .background(hovering ? Color.primary.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: Radius.card))
-        .padding(.horizontal, -Space.s)
-        .contentShape(RoundedRectangle(cornerRadius: Radius.card))
-        .onHover { hovering in withAnimation(Motion.feedback(reduceMotion)) { self.hovering = hovering && ready } }
+        // The wash, the pointer and the drag share one rect: the wash's, which then reaches past
+        // the text column by its own padding.
+        .hoverWash(ready)
         .pointerStyle(ready ? .grabIdle : nil)
         .onDrag {
             // Decided now, not when the tile was drawn: the copy may have changed since.
@@ -149,6 +147,7 @@ struct DetailHeader: View {
         .accessibilityLabel("\(artifact.name), \(plan.map { Wording.tileVersion(staged: staged, plan: $0, delivery: delivery, in: artifact) } ?? Wording.compareTitle(delivery))")
         .accessibilityValue(status.text)
         .accessibilityHint(ready ? "Drag into another app, or choose File > Open Verified Copy." : "")
+        .padding(.horizontal, -Space.s)
     }
 
     /// The tile's status, in a word or two: what the panel below says in full.
@@ -234,55 +233,6 @@ extension Staging {
     var isPreparing: Bool { if case .preparing = self { true } else { false } }
 }
 
-/// A state that needs more than its label: the mark and label, the sentence, then what to do. It
-/// stands in a tinted box only when the person needs to look (amber) or something is gone (red);
-/// otherwise it is plain text in its place, so boxes don't stack inside boxes. A new statement
-/// takes the old one's place rather than stacking under it.
-struct StatusPanel<Actions: View>: View {
-    var statement: Statement
-    @ViewBuilder var actions: Actions
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    var body: some View {
-        let tinted = statement.mark.needsLook
-        VStack(alignment: .leading, spacing: Space.s) {
-            ZStack(alignment: .leading) {
-                StatusLabel(mark: statement.mark, text: statement.title, size: 14).font(.headline)
-                    .id(statement.title).transition(.opacity)
-            }
-            Text(statement.detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: Space.s) { actions }
-        }
-        .padding(tinted ? Space.m : 0)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(fill, in: RoundedRectangle(cornerRadius: Radius.card))
-        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(stroke))
-        .animation(Motion.state(reduceMotion), value: statement.title)
-    }
-
-    var fill: Color {
-        switch statement.mark {
-        case .attention, .failed: Palette.attentionFill
-        case .cross: Palette.lostFill
-        default: .clear
-        }
-    }
-
-    var stroke: Color {
-        switch statement.mark {
-        case .attention, .failed: Palette.attention.opacity(0.35)
-        case .cross: Palette.lost.opacity(0.3)
-        default: .clear
-        }
-    }
-}
-
-extension StatusPanel where Actions == EmptyView {
-    init(statement: Statement) {
-        self.init(statement: statement) { EmptyView() }
-    }
-}
-
 /// The selected version's bytes, drawn as a page: as tall as the text, up to a limit past which it
 /// scrolls. The header above names which bytes they are.
 struct PreviewPane: View {
@@ -321,7 +271,7 @@ struct PreviewPane: View {
                     if text.truncated {
                         Text("First 64 KB").font(.caption).foregroundStyle(.secondary)
                             .padding(.horizontal, Space.s).padding(.vertical, 2)
-                            .background(.regularMaterial, in: Capsule())
+                            .surface(.floating, in: Capsule())
                             .padding(Space.s)
                             .help("Open it to read the rest.")
                     }
@@ -339,9 +289,7 @@ struct PreviewPane: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: Radius.card))
-        .clipShape(RoundedRectangle(cornerRadius: Radius.card))
-        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Color(nsColor: .separatorColor)))
+        .surface(.page)
     }
 
     /// Installers and apps are never opened, mounted or previewed by selection.
@@ -413,7 +361,7 @@ struct InformationSection: View {
                 }
                 InfoRow(label: "Agent") {
                     HStack(spacing: Space.s) {
-                        ProviderMark(provider: delivery.provider, size: 16, color: true)
+                        AgentMark(provider: delivery.provider, size: 16, color: true)
                         Text(delivery.sessionTitle ?? "Untitled conversation").lineLimit(1).truncationMode(.tail)
                         resume
                     }
@@ -438,7 +386,7 @@ struct InformationSection: View {
                             InfoButton(text: disk.detail)
                             if let ends = diskComparison {
                                 Button("Compare") { model.comparison = ends }
-                                    .controlSize(.small)
+                                    .controlRole(.inline)
                                     .help("Compare delivery \(Wording.number(delivery)) with the file on disk")
                             }
                         }
@@ -449,7 +397,7 @@ struct InformationSection: View {
                         Text(Wording.tilde(artifact.path)).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                             .help(artifact.path)
                         CopyButton(title: "Copy", text: artifact.path) { model.copy($0) }
-                            .controlSize(.small)
+                            .controlRole(.inline)
                             .help("Copy the original’s path. The file there may change; drag the file above to hand over the verified copy.")
                             .id(artifact.path)
                     }
@@ -463,12 +411,7 @@ struct InformationSection: View {
                                     .transition(Motion.arrive(reduceMotion))
                             }
                             if others.count > Self.shown {
-                                Button(showsAll ? "Show Fewer" : "\(others.count - Self.shown) More") {
-                                    withAnimation(Motion.state(reduceMotion)) { showsAll.toggle() }
-                                }
-                                .buttonStyle(.plain)
-                                .foregroundStyle(.secondary)
-                                .pointerStyle(.link)
+                                MoreButton(hidden: others.count - Self.shown, expanded: $showsAll)
                             }
                         }
                     }
@@ -485,7 +428,7 @@ struct InformationSection: View {
         switch model.resume(delivery) {
         case .command(let command):
             CopyButton(title: "Copy Resume Command", text: command) { model.copy($0) }
-                .controlSize(.small)
+                .controlRole(.inline)
                 .help("Copies “\(command)”. Paste it in Terminal to continue in \(Wording.provider(delivery.provider)).")
                 .id(delivery.id)
         case let other:
@@ -510,54 +453,16 @@ struct InformationSection: View {
     }
 }
 
-/// Lays its views out in rows, wrapping to the width it is given.
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        var width: CGFloat = 0, height: CGFloat = 0
-        for (index, row) in rows(subviews, width: proposal.width ?? .infinity).enumerated() {
-            let sizes = row.map { $0.sizeThatFits(.unspecified) }
-            let rowWidth: CGFloat = sizes.reduce(0) { $0 + $1.width } + CGFloat(row.count - 1) * spacing
-            width = max(width, rowWidth)
-            height += (sizes.map(\.height).max() ?? 0) + (index > 0 ? spacing / 2 : 0)
-        }
-        return CGSize(width: min(width, proposal.width ?? width), height: height)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var y = bounds.minY
-        for row in rows(subviews, width: bounds.width) {
-            var x = bounds.minX
-            let height = row.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
-            for view in row {
-                let size = view.sizeThatFits(.unspecified)
-                view.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-                x += size.width + spacing
-            }
-            y += height + spacing / 2
-        }
-    }
-
-    private func rows(_ subviews: Subviews, width: CGFloat) -> [[LayoutSubview]] {
-        var rows: [[LayoutSubview]] = [[]], x: CGFloat = 0
-        for view in subviews {
-            let w = view.sizeThatFits(.unspecified).width
-            if x > 0, x + w > width { rows.append([]); x = 0 }
-            rows[rows.count - 1].append(view)
-            x += w + spacing
-        }
-        return rows.filter { !$0.isEmpty }
-    }
-}
-
 /// Every delivery of the work, across its files, newest first, as one table: picking a row
 /// switches the file above and its bytes together. Gleaner saw most deliveries' bytes as they
-/// arrived, so that row shows only its mark; the exceptions say so in words.
+/// arrived, so that row shows only its mark; the exceptions say so in words. Where the table is
+/// too narrow for its words, dates shorten as Mail's do and the columns close up, for every row at
+/// once, so they still line up.
 struct VersionsSection: View {
     @Environment(LibraryModel.self) private var model
     var work: Work
     var selected: Delivery
+    @State private var width: CGFloat = .infinity
 
     var body: some View {
         DetailSection(title: "Versions") {
@@ -567,33 +472,40 @@ struct VersionsSection: View {
                     row(delivery)
                 }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         }
+    }
+
+    /// The columns, their gaps, and room for a label such as "Same as delivery 2 (first seen later)".
+    var compact: Bool {
+        width < (work.files.count > 1 ? 765 : 585)
     }
 
     func row(_ delivery: Delivery) -> some View {
         let isSelected = delivery.id == selected.id
         let provenance = Wording.provenanceShort(delivery.capture)
         let earlier = sameAs(delivery)
-        return HStack(spacing: Space.m) {
-            GlyphView(glyph: provenance.0.glyph, size: 12).foregroundStyle(provenance.0.color)
+        return HStack(spacing: compact ? Space.s : Space.m) {
+            StatusMark(mark: provenance.0, word: provenance.1)
                 .frame(width: 16)
-                .help(provenance.1)
             Text("Delivery \(delivery.number)").fontWeight(isSelected ? .semibold : .regular)
                 .frame(width: 84, alignment: .leading)
             if work.files.count > 1 {
                 Text((delivery.path as NSString).lastPathComponent).lineLimit(1).truncationMode(.middle)
                     .frame(width: 180, alignment: .leading)
             }
-            Text(Wording.date(delivery.deliveredAt)).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
-                .frame(width: 150, alignment: .leading)
-            ProviderMark(provider: delivery.provider, size: 13).foregroundStyle(.secondary)
+            Text(compact ? Wording.shortDate(delivery.deliveredAt) : Wording.date(delivery.deliveredAt))
+                .foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+                .frame(width: compact ? 72 : 150, alignment: .leading)
+                .help(Wording.date(delivery.deliveredAt))
+            AgentMark(provider: delivery.provider, size: 13).foregroundStyle(.secondary)
             if provenance.0 != .solid {
-                Text(provenance.1).foregroundStyle(.secondary).lineLimit(1)
+                Text(provenance.1).foregroundStyle(.secondary).lineLimit(1).layoutPriority(1)
             }
             if let earlier {
                 Text(earlier.path == delivery.path ? "Same as \(Wording.number(earlier))"
                      : "Same as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))")
-                    .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).layoutPriority(1)
             }
             Spacer(minLength: Space.s)
             // Every row keeps the column, so the right edge holds.
@@ -601,7 +513,7 @@ struct VersionsSection: View {
                 Color.clear.frame(width: 72, height: 1)
                 if let ends = ends(delivery) {
                     Button("Compare") { model.comparison = ends }
-                        .controlSize(.small)
+                        .controlRole(.inline)
                         .help("Compare with delivery \(Wording.number(selected))")
                 }
             }
@@ -610,7 +522,7 @@ struct VersionsSection: View {
         .padding(.horizontal, Space.s)
         .frame(minHeight: 30)
         .background(isSelected ? Color(nsColor: .unemphasizedSelectedContentBackgroundColor) : .clear,
-                    in: RoundedRectangle(cornerRadius: Radius.tag + 2))
+                    in: RoundedRectangle(cornerRadius: Radius.row))
         .contentShape(Rectangle())
         .onTapGesture { model.chosenDelivery = delivery.id }
         .accessibilityElement(children: .combine)

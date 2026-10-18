@@ -1,4 +1,5 @@
 import GleanerCore
+import GleanerUI
 import SwiftUI
 
 /// A work in a list and, when it has more than one revision, its revisions under it, as Mail lists
@@ -107,16 +108,16 @@ struct RevisionRow: View {
     var body: some View {
         let provenance = Wording.provenanceShort(delivery.capture)
         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-            GlyphView(glyph: provenance.0.glyph, size: 10).foregroundStyle(provenance.0.color)
+            // The first tier: a state as it should be, by its mark alone, its word in the help tag.
+            StatusMark(mark: provenance.0, word: provenance.1, size: 10)
                 .frame(width: 12)
-                .help(provenance.1)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                     Text(([("Delivery " + Wording.number(delivery))]
                           + (work.files.count > 1 ? [(delivery.path as NSString).lastPathComponent] : [])).joined(separator: " · "))
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: Space.xs)
-                    ProviderMark(provider: delivery.provider, size: 11).foregroundStyle(.secondary)
+                    AgentMark(provider: delivery.provider, size: 11).foregroundStyle(.secondary)
                     Text(Wording.shortDate(delivery.deliveredAt)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
                         .help(Wording.date(delivery.deliveredAt))
                 }
