@@ -95,7 +95,7 @@ Gleaner 没见过或没读到的交付，会在 Gleaner 第一次读到该文件
 
 **每个 agent** 都有一个开关，在 Sources（⌘,）和工具栏的 Sources 弹窗里。关掉后，Gleaner 不再读取或监视它的日志，并隐藏它的交付；不会删除任何内容，重新打开即全部恢复。agent 的页面画出它通往服务商和回复所用模型的连线，每个模型带着厂商的标志；交付的 Information 也写明所用模型。
 
-**agent 日志**，见 Sources（⌘,）、Sources 行末的三角标记，需要留意时也会在列表下方用一行显示：*Read*；*Read with problems*（有未知的记录类型、有格式错误的行或比之前更短的日志、读不了的日志或文件夹）；*Can't read*；*Not on this Mac*。重读可能有用时会出现 Try Again，已经找到的内容照常显示。
+**agent 日志**，见 Sources（⌘,）、Sources 行末的三角标记，需要留意时也会在列表下方用一行显示：*Read*；*Read with problems*（有未知的记录类型、有格式错误的行或比之前更短的日志、读不了的日志或文件夹、没能走完的工作区）；*Can't read*；*Not on this Mac*。重读可能有用时会出现 Try Again，已经找到的内容照常显示。
 
 ## 转交
 
@@ -130,6 +130,7 @@ Gleaner 只读每一轮的最终回复，回复把文件交到你手上，才收
 ## 读取与保存
 
 - **读取** `~/.claude/projects` 下的 Claude Code 日志、`~/.codex` 下的 Codex 日志，以及回复里提到的文件。应用开着时监视日志文件夹，启动后才出现的也一样。通过读取 `.git` 条目找到文件所属的仓库，在仓库里只运行只读的 git 命令：文件在磁盘上时运行 `git status --porcelain --ignored`；文件已不在时运行 `git rev-parse` 和 `git log --all`，找出包含它的提交。每条命令都带 `--no-optional-locks`，git 不会改写索引；也不会运行仓库配置的任何东西：关闭 `core.fsmonitor`，不启动钩子或守护进程；关闭签名校验，`git log` 不启动签名程序；在部分克隆（partial clone）里，不去拉取克隆缺少的内容。git 比较文件时，clean filter（例如 Git LFS）仍可能运行。
+- **观察**每个会话工作的文件夹（它所在的 git 检出，否则就是该文件夹本身），每读一次它的日志走一遍：创建或修改日期落在会话第一条记录与最后一次回复之间的文件，只记名称、大小、日期和文件标识，从不读内容。这样的文件是在那次会话期间*出现*或*改动*的，并不说明是谁做的；它与交付并列保存，从不算作交付。主目录、系统文件夹、隐藏文件夹和构建缓存（`node_modules`、`.build`、`__pycache__`、`.venv`、`DerivedData`、`target`、`dist`）都跳过，不跟随链接，一次最多走 100,000 个条目，超出时 Sources 会报告。详见 [docs/design/capture.md](docs/design/capture.md)。
 - **保存**回复和要求的摘录，不存完整日志。摘录截短之前，先抹去形似密钥的字符串：API key 和访问令牌、bearer token、`key=value` 形式的密钥、URL 里的凭据，以及 40 个以上字母和数字组成、大小写字母和数字混杂的串。小写十六进制串（哈希、ID）保留。索引和存档副本放在 `~/Library/Application Support/Gleaner`。64 MB 以内的文件，第一次读到时就存一份；更大的文件只记哈希，磁盘上的文件仍与交付一致时，可以用 **Save a Copy** 存下。存档副本是交付时的原样字节，不做抹除。
 - **转交副本**放在 `~/Library/Caches/Gleaner`。Sources → Storage 里能看到占用并清除；清除时保留剪贴板上的那份（粘贴时还要读它），也不会动存档副本。
 - **不写入**项目文件夹。Gleaner 自身不发网络请求；用 Quick Look 预览网页时，页面可能加载它引用的资源，链接只在你点击时打开。
@@ -140,6 +141,7 @@ Gleaner 只读每一轮的最终回复，回复把文件交到你手上，才收
 - 网页引用的图片、脚本和样式表不随页面保存，Quick Look 预览网页时也不带它们。
 - 超过 64 MB 的文件，只有在磁盘上的文件仍与交付一致时选 **Save a Copy**，才会存下。没存下的大文件所在的 worktree 一旦删除，Gleaner 只能通过 git 提供它（给出一条由你执行的命令），而且前提是文件提交过；否则就丢失了。可能还要用的大文件，删除 worktree 之前先存一份。
 - 交付认定规则是暂定的，有待更多用户日志的反馈。
+- 会话期间观察到的文件已经记录，但窗口还不列出它们。
 - 应用还没有图标。
 - 发布包没有公证。
 
@@ -153,11 +155,11 @@ swift test                      # fixture 测试
 
 工作区有未提交的改动时，`release.sh` 不会运行。打了 `v0.1.0` 标签的提交构建为 0.1.0 版，其他提交构建为 `0.1.0-dev+<commit>`。
 
-- `Sources/GleanerCore`：各 agent 的日志适配器（Claude Code、Codex）、提及抽取、文件定位、脱敏、索引库（SQLite）、内容库（存档副本与核验过的转交副本）、索引器、日志监视，以及状态判断（`Library.swift`）。
+- `Sources/GleanerCore`：各 agent 的日志适配器（Claude Code、Codex）、提及抽取、文件定位、脱敏、索引库（SQLite）、内容库（存档副本与核验过的转交副本）、索引器、对每个会话工作区的观察（`Observations.swift`）及其列表的排序（`Listing.swift`）、日志监视，以及状态判断（`Library.swift`）。
 - `Sources/GleanerUI`：窗口所用的组件库：标记、状态、表面、控件与动效，依 [docs/design/components.md](docs/design/components.md)。只依赖 SwiftUI 与 AppKit。
 - `Sources/Gleaner`：macOS 应用（SwiftUI、AppKit、Quick Look）。
 - `Sources/gleaner-spike`：Spike A，只读地抽取本地日志，输出一份标注表。
-- `Tests/GleanerCoreTests`：用脱敏后的日志记录结构写成的 fixture 测试，以及整个流程的测试（并发编辑、删除 worktree、回滚、补读旧日志、核验后转交）。
+- `Tests/GleanerCoreTests`：用脱敏后的日志记录结构写成的 fixture 测试，整个流程的测试（并发编辑、删除 worktree、回滚、补读旧日志、核验后转交），以及几类工作中的观察。
 - `Tests/GleanerUITests`：标记、设计令牌，以及画出每个组件的图库（`GLEANER_GALLERY=<文件夹> swift test --filter GalleryTests`）。
 - `Tests/GleanerTests`：在合成的资料库上检验应用的判断（点一下落在哪次交付上，Quick Look、Compare 和拖拽用的是哪份字节）及其措辞。
 

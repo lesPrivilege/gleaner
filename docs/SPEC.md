@@ -35,6 +35,7 @@ In v0.1:
 - Read-only adapters for Claude Code (`~/.claude/projects`) and Codex (`~/.codex/sessions`).
 - Delivery extraction from user-facing final replies.
 - Registry of sessions, deliveries (mentions) and captures in SQLite. Locator state (git, availability) is recomputed when a file is checked, not stored.
+- Observations of what appeared or changed in each session's workspace during its span, kept beside the deliveries, never as deliveries (§5.3).
 - Content-addressed snapshots under a size policy.
 - Library window: projects and the works in each, search, preview (Quick Look, text, Markdown), compare versions, reveal in Finder, copy path, drag out, and a Sources page for what Gleaner reads, the person's corrections and what it keeps (§5.1a).
 
@@ -51,7 +52,7 @@ The core is a library (`GleanerCore`), not logic inside the UI, so that the Spik
 
 ## 5. Data model
 
-Four core objects, recorded from the logs and the files. Projects and works, which the person sees and may correct, are built over them (§5.1a).
+Four core objects, recorded from the logs and the files. Projects and works, which the person sees and may correct, are built over them (§5.1a). Observations, a second kind of evidence, are kept apart from them (§5.3).
 
 | Object | Holds |
 |---|---|
@@ -106,6 +107,19 @@ Versions follow **delivery events**, not file saves. Twenty-five rebuilds betwee
 
 Same bytes do not imply the same logical artifact.
 
+### 5.3 Observations
+
+What a session gives besides its replies is where and when it worked (`docs/design/capture.md`). Gleaner keeps what it finds there apart from the deliveries:
+
+- **Span.** From the session's first record to its last reply, widened by a minute each way for the clocks of the log's writer and the disk. The adapters give times for reply records only, so the first record's time is the log file's creation date, which that record's write set; a log created after its first reply (copied later) starts at that reply. A session without a reply ends at the log's last write. No adapter is involved.
+- **Workspace.** The git checkout holding each folder the session's records name (a worktree's own folder, or the main one), else the folder. A session whose workspace is the home folder, a folder holding it, or a system folder has none walked.
+- **Walk.** Each workspace is walked once per run, for every session read in that run that worked in it, one workspace at a time. It reads names, sizes, creation and modification dates and file identity (device and inode), never contents. It doesn't enter hidden folders (`.git`, `.build` and `.venv` among them) or the caches tools leave (`node_modules`, `__pycache__`, `DerivedData`, `target`, `dist`), and doesn't follow links. It stops after 100,000 entries. A walk cut short, a folder it couldn't list and observations it couldn't record are each reported with their reason under the session's agent, on every run until the session is read again. No file type is skipped.
+- **Observation.** A regular file whose creation date falls in the span *appeared* during the session; one whose modification date does, and creation date doesn't, *changed* during it. Gleaner records it, with its size, dates, identity and the repository and checkout it was in, the first time it sees it during that session (its own `observed_at`, which unlike a capture's (§5.1) reads no bytes), and never rewrites it. Another session's observation of the file is recorded beside it. Only the sessions read in a run are matched, so a file copied in later with older dates isn't put in an old session.
+- **What it shows.** That the file appeared or changed while the session ran, in its workspace: not that the session made it, since parallel sessions, copied files and background jobs fall inside spans too, and, for a modification date, not that the contents changed. Nothing is labeled "made by". An observation is a candidate: it never becomes a delivery, a capture, a version or a work, and Invariant 1 stands. A delivered file keeps its delivery, with its observation beside it.
+- **Corrections** (§5.1a). *Not from this session* detaches a file from one session it was observed during; *related* puts an observed file with a work, shown with it and never one of its versions. Both are appended to the corrections, never applied to the observations, and each can be undone.
+- **Order and grouping.** Type, stem and folder order and group a list, and never decide what enters it or which files are one work: handed over before observed; within each, what a person opens (documents, images, audio and video, pages, models, installers, folders) before what a program reads (data, code, formats Gleaner can't place); then newest first. A folder's observed files of one kind fold into one row with their count from twelve; files in one folder whose names share a stem (the name before its first dot) are shown together, which claims nothing.
+- **Reread.** Spans are derived from the logs, so the extractor version moved to 15 and every log is read once more. Reading a log again finds the same observations: what was recorded stays as first seen.
+
 ## 6. Snapshots and storage
 
 - Location: `~/Library/Application Support/Gleaner/` — `registry.sqlite` and `objects/<sha256-prefix>/<sha256>`.
@@ -141,6 +155,7 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 
 - Watch only the agents' log directories (FSEvents). New sessions are ingested near real time, so `observed_at` stays close to `delivered_at`. While a log directory does not exist yet, the nearest existing folder above it is watched only to notice it appear.
 - Do not watch the paths of indexed artifacts. Re-verify a file's hash when it is selected and again when its hand-off copy is staged; there is no background pass in v0.1.
+- A session's workspace is walked, not watched, when its log is read (§5.3). Live capture while a log is being written is a later layer.
 - Observation is read-only: only regular files are opened (a FIFO, socket, or device is reported as `special`; a file that can't be opened or read, or a path behind a folder that can't be searched, as `unreadable`), and git runs with `--no-optional-locks` so `git status` never rewrites the index, and runs nothing the repository configures: `core.fsmonitor` off, so it starts no hook or daemon; `log.showSignature` off, so `git log` starts no signature program; and lazy fetching off, so a partial clone fetches nothing it lacks. A commit is checked to hold a path through its trees, never by reading the file's contents. A clean filter (Git LFS, for one) may still run while git compares a file with the index; that is a known limit.
 
 ## 8. Adapters

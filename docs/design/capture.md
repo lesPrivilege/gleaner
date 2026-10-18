@@ -97,3 +97,18 @@ Each shape an adapter knows keeps a sanitized fixture line from a real log and t
 3. **Live capture.** FSEvents on a session's workspace while its log is being written.
 4. **Written-by evidence.** Structured write records from the adapters, with sanitized fixtures from the owner's session.
 5. **Acceptance.** The owner's series, reviewed episode by episode without the conversation or Finder.
+
+## Layer 1, as built
+
+Built on `feat/capture`, 2026-10-19. [SPEC §5.3](../SPEC.md) is the contract. Where it differs from the chapter above, or settles what the chapter left open:
+
+- **The span's ends.** The adapters give times for reply records only, so "the first record's time" is the log file's creation date, which that record's write set, bounded by the first reply for a log copied later. The span ends at the last reply, not at the log's last write: an agent may append to an old log, a title set days later for one, which would stretch the span over days. A session without a reply ends at the log's last write. No adapter changed; work after a final reply, and an interrupted turn, may fall outside the span.
+- **Who opens a kind.** A person opens documents, images, audio and video, pages, models, installers and folders; a program reads code, data and formats Gleaner can't place.
+- **Crowded** is twelve or more observed files of one kind in one folder. What was handed over never folds.
+- **A stem** is the name before its first dot, compared without case, so dotted roles (`ep00.mix.wav`) share it. A hyphen isn't read as a role: `ov-4x3` and `ov-3x4` stay apart.
+- **Hidden files** are observed; only hidden folders are skipped, as the skips above say.
+- **A project with candidates and no delivery** isn't added to the sidebar's projects yet; `Organization.candidates(in:)` lists any project's candidates, and the window decides in layer 2.
+- **The observed mark** is the kit's unverified one, a line to an open circle, in secondary ink.
+- **The extractor version** moved to 15, since spans are derived from the logs: every log is read once more, and each session's workspace observed.
+
+Checked: `swift test`. `ObservationTests` reads synthetic sessions in five kinds of work (a video series whose reply names only a folder, with three hundred segments; a report with Markdown, a PDF and charts; a slide deck; a data analysis; a code change in a Git repository), and checks a reread, a later session editing a file, two overlapping sessions, the home folder, the walk's bound, that discovery reads no bytes (access times stay where they were set), a delivered file with its observation beside it, corrections appended and undone, and `scripts/acceptance-home.py <home> capture`. `ListingTests` checks the order, the fold and stems; `ObservingTests` the model; `WordingTests` the words.

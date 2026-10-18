@@ -51,6 +51,14 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - Open and Save a Copy say why when they fail, beside the button.
 - Show in Finder (⇧⌘R) and Copy Path (⌥⌘C) act on the original location; Show Folder says when the folder is gone too.
 
+### Observe each conversation's workspace
+
+- Each conversation read now gets a span, from its first record to its last reply, and a workspace: the git checkout of each folder it worked in, else the folder. Each workspace is walked once per read, by names, sizes, dates and file identities only, never contents; the home folder, system folders, hidden folders and build caches are skipped, links aren't followed, and a walk stops after 100,000 entries, which Sources reports on every read until the conversation is read again.
+- A file whose creation or modification date falls in a span is recorded as having appeared or changed during that conversation, the first time Gleaner sees it, and never rewritten; another conversation's observation of it is added beside it. It shows when the file appeared or changed, not who made it, and no file type is left out.
+- Observed files are candidates kept beside the deliveries, never deliveries: a delivered file keeps its delivery, and its observation sits next to it. Two corrections join the others, with Undo: a file is not from a conversation, and a file goes with a work, without becoming one of its versions.
+- The model can order a project's files (handed over before observed, what a person opens before what a program reads, newest first), fold a folder crowded with one kind into one row with its count, and show files that share a stem together, claiming nothing. The window lists none of this yet.
+- The extractor version moves to 15: every log is read once more, and each conversation's workspace observed.
+
 ### Keep data local
 
 - Keeps redacted excerpts, not whole logs, and never writes to project folders. Redacts before cutting an excerpt to length, so a secret at its edge is still caught. Makes no model calls or network requests of its own.
@@ -63,4 +71,5 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - A file over 64 MB that you didn't save is gone with its worktree, unless git history has it.
 - A git clean filter (Git LFS, for one) may still run when git compares a file.
 - The admission rule is provisional.
+- Files observed during a conversation are recorded but not yet listed in the window. A conversation's span starts at its log's creation date (the adapters give times for replies only) and ends at its last reply, so work after a final reply, or in a log copied without its dates, may fall outside it.
 - No app icon; the release zip is ad-hoc signed, not notarized.
