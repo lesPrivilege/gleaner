@@ -3,6 +3,17 @@ import Testing
 @testable import GleanerCore
 
 @Suite struct RegistryTests {
+    @Test func aLibraryAlreadyMadeOpensWithoutAWriteWhileALogIsRead() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString).sqlite").path
+        let library = try Registry(path: path).index().library
+        // Another connection holds the write lock, as the indexer does while it reads a log; opening
+        // the library again, as the app does to record a correction, waits for no write.
+        let reading = try Database(path: path)
+        try reading.execute("BEGIN IMMEDIATE")
+        defer { try? reading.execute("ROLLBACK") }
+        #expect(try Registry(path: path).index().library == library)
+    }
+
     @Test func rereadingALogKeepsAKnownTitle() throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString).sqlite").path
         let registry = try Registry(path: path)

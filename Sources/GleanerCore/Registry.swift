@@ -115,7 +115,12 @@ public final class Registry: @unchecked Sendable {
             CREATE TABLE IF NOT EXISTS sources_off (provider TEXT PRIMARY KEY, since REAL NOT NULL);
             """)
         // The library's namespace, made once with it: every delivery id is unique only within it.
-        try db.run("INSERT OR IGNORE INTO meta (key, value) VALUES ('library', ?)", [UUID().uuidString.lowercased()])
+        // Written only when missing, and through the gate: a library already made is opened without
+        // a write, so a second connection opened while a log is read (`LibraryModel`'s, for
+        // corrections) never waits on SQLite's lock.
+        if try db.rows("SELECT 1 FROM meta WHERE key = 'library'").isEmpty {
+            try writing { try db.run("INSERT OR IGNORE INTO meta (key, value) VALUES ('library', ?)", [UUID().uuidString.lowercased()]) }
+        }
         // Each change of several statements is made whole or not at all: a launch that stops partway,
         // say while another copy of Gleaner holds the library, leaves all of it to the next launch.
 
