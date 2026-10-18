@@ -280,13 +280,20 @@ enum Tools {
                 self = .id(id)
                 return
             }
+            let kept: Catalog.Kept
             do {
-                self = .kept(try Catalog.Kept(from: decoder))
+                kept = try Catalog.Kept(from: decoder)
             } catch {
                 throw DecodingError.dataCorrupted(.init(
                     codingPath: decoder.codingPath,
                     debugDescription: "Give a delivery's id, or a reference as gleaner_resolve gives it."))
             }
+            // Of what is read: a string the SDK took for a data URL (`Call.answer`) comes back as one,
+            // and no other string does.
+            if [kept.library, kept.delivery].contains(where: { Data.parseDataURL($0) != nil }) {
+                throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath, debugDescription: Call.rewritten))
+            }
+            self = .kept(kept)
         }
     }
 }
@@ -314,12 +321,18 @@ struct Call: Sendable {
 
     /// The answer to a call with `arguments`. An argument the tool doesn't take, one it must have
     /// and wasn't given, or one of the wrong form, is refused as a usage error before any library
-    /// is open, as the command refuses its own.
+    /// is open, as the command refuses its own; so is one the SDK rewrote.
     func answer(_ arguments: [String: Value], from library: Library) -> Answer {
         let takes = tool.inputSchema.objectValue?["properties"]?.objectValue ?? [:]
         do {
             if let other = arguments.keys.sorted().first(where: { takes[$0] == nil }) {
                 throw Catalog.Failure.usage("\(tool.name) takes no argument \(other).")
+            }
+            // The SDK reads arguments as its `Value`, which takes a string that reads as a data URL
+            // for data, and gives it back in another form: refused, rather than answered for another
+            // string. Of an object, only what the tool reads is checked (`Tools.Named`).
+            if let rewritten = arguments.filter({ $0.value.objectValue == nil && $0.value.holdsData }).keys.sorted().first {
+                throw Catalog.Failure.usage("\(rewritten): \(Self.rewritten)")
             }
             return try body(JSONEncoder().encode(arguments), library)
         } catch let error as DecodingError {
@@ -328,6 +341,9 @@ struct Call: Sendable {
             return Answer(refusing: error, index: nil)
         }
     }
+
+    /// Why an argument that reads as a data URL is refused.
+    static let rewritten = "the MCP SDK rewrites a string that reads as a data URL before Gleaner sees it, so it can't be read as sent."
 
     /// A wrong argument, in words: which, and what is wrong with it.
     private static func words(_ error: DecodingError) -> String {

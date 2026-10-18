@@ -312,6 +312,11 @@ extension CommandTests {
         let kept = home.appendingPathComponent("notes-reference.json"), bare = home.appendingPathComponent("notes-bare.json")
         try JSONSerialization.data(withJSONObject: resolved).write(to: kept)
         try JSONSerialization.data(withJSONObject: try #require(resolved["reference"])).write(to: bare)
+        // Only the reference's library and delivery are read, whatever else it holds.
+        var named = try #require(resolved["reference"] as? [String: Any])
+        named["name"] = "data:,notes.md"
+        let odd = home.appendingPathComponent("notes-odd.json")
+        try JSONSerialization.data(withJSONObject: named).write(to: odd)
         let calls: [(tool: String, arguments: [String: Any], command: [String])] = [
             ("gleaner_find", ["terms": ["release", "notes"], "limit": 2], ["find", "release", "notes", "--limit", "2"]),
             ("gleaner_find", ["terms": ["release"], "kind": "image", "project": "praxis"], ["find", "release", "--kind", "image", "--project", "praxis"]),
@@ -328,6 +333,7 @@ extension CommandTests {
             // resolve's answer, and its reference alone, as an object where the command takes a file.
             ("gleaner_verify", ["reference": resolved], ["verify", kept.path]),
             ("gleaner_verify", ["reference": try #require(resolved["reference"])], ["verify", bare.path]),
+            ("gleaner_verify", ["reference": named], ["verify", odd.path]),
         ]
         let host = try Host(home: home)
         try host.initialize()
@@ -392,6 +398,13 @@ extension CommandTests {
             ("gleaner_read", ["delivery": notes, "lines": "1:2", "bytes": "0:3"]),
             ("gleaner_verify", ["reference": ["name": "notes.md"]]),
             ("gleaner_verify", ["reference": 3]),
+            // A string that reads as a data URL, which the SDK hands on rewritten: the tool would
+            // answer for another.
+            ("gleaner_find", ["terms": ["data:,notes"]]),
+            ("gleaner_find", ["terms": ["notes"], "project": "data:,Praxis"]),
+            ("gleaner_show", ["delivery": "data:,abc"]),
+            ("gleaner_verify", ["reference": "data:,abc"]),
+            ("gleaner_verify", ["reference": ["library": "data:,abc", "delivery": notes]]),
         ]
         for (tool, arguments) in wrong {
             let result = try call(host, tool, arguments)
