@@ -1,9 +1,9 @@
 import Foundation
 
-/// What one read of a log counted: its records, those of a type its adapter knows, the turns the
-/// assistant answered in (the last only once it has a final reply), the final replies among them,
-/// and the candidates those replies name, admitted or not (SPEC §9). Kept per log, so a format
-/// change shows as a count that moves.
+/// What one read of a log counted: its records, those of a type its adapter knows, the closed turns
+/// the assistant answered in (not the open last turn, nor one the person interrupted), the final
+/// replies of closed turns, and the candidates every final reply names, admitted or not (SPEC §9).
+/// Kept per log, so a format change shows as a count that moves.
 public struct LogCounts: Sendable, Equatable {
     public var records: Int
     public var knownRecords: Int
@@ -28,7 +28,7 @@ public struct LogFindings: Sendable, Equatable {
     public var unknownFields: [String: Int] = [:]
     /// Nil when it holds no session (a Codex sub-agent thread), or was read before Gleaner counted.
     public var counts: LogCounts?
-    /// The read found fewer final replies than the complete read before it.
+    /// The read found fewer final replies in closed turns than the complete read before it.
     public var fewerReplies = false
     /// Found shorter than when Gleaner read it, now or on an earlier run (`markShortened`).
     public var shortened = false
@@ -42,9 +42,9 @@ public struct LogFindings: Sendable, Equatable {
         self.shortened = shortened
     }
 
-    /// The assistant answered in a turn other than the log's last, but the adapter found no final
-    /// reply. A last turn without one is still open: the session may be running, or it ended on a
-    /// tool call.
+    /// The assistant answered in a closed turn, but the adapter found no final reply in any. The
+    /// last turn is still open: the session may be running, or it ended on a tool call. A turn the
+    /// person interrupted was not answered.
     public var lacksFinalReply: Bool { counts.map { $0.turns > 0 && $0.finalReplies == 0 } ?? false }
 }
 
@@ -87,7 +87,7 @@ public final class Registry: @unchecked Sendable {
     /// the library gains something its readers need: `init(readingAt:)` reads no other version.
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
     /// at a moment in time, are never rewritten.
-    public static let extractorVersion = 18
+    public static let extractorVersion = 19
 
     public init(path: String) throws {
         self.path = path
@@ -236,6 +236,9 @@ public final class Registry: @unchecked Sendable {
                 }
             }
         }
+        // A log's final replies were counted over all its turns before 19, and are now counted over
+        // its closed turns: a count kept from before is not compared with the next read's.
+        if version < 19 { try db.execute("UPDATE log_files SET final_replies = NULL;") }
         if version != Int64(Self.extractorVersion) {
             // No log has this modification time, so every log is read again; each keeps the size
             // it was read at, and whether it lost records, so one that did still removes nothing.
@@ -325,8 +328,8 @@ public final class Registry: @unchecked Sendable {
     }
 
     /// The size a log had when it was last read whole, whether it lost records since Gleaner first
-    /// read it, and the final replies that read found (nil when it didn't count them); nil when it
-    /// never was read whole.
+    /// read it, and the final replies in closed turns that read found (nil when it didn't count
+    /// them so); nil when it never was read whole.
     public func lastRead(logFile path: String) throws -> (size: Int64, shortened: Bool, finalReplies: Int?)? {
         try db.rows("SELECT size, shortened, final_replies FROM log_files WHERE path = ?", [path]).first.flatMap { row in
             (row["size"] as? Int64).map { ($0, row["shortened"] as? Int64 == 1, (row["final_replies"] as? Int64).map(Int.init)) }

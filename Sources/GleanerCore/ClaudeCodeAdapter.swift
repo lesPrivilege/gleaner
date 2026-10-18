@@ -4,6 +4,7 @@ import Foundation
 ///
 /// Records hold one content block each. A turn starts at a user record that is neither a tool
 /// result nor injected context; its final reply is the assistant text after the last tool call.
+/// When the person stops a turn, Claude Code writes a user record saying so, which ends it.
 public enum ClaudeCodeAdapter {
     /// The record types Claude Code writes, each with the keys it writes in them. A key outside
     /// its type's set is an unknown field: the format moved.
@@ -95,6 +96,7 @@ public enum ClaudeCodeAdapter {
         var sessionCwd: String?
         var turns: [Turn] = []
         var answeredTurns = 0
+        var finalReplies = 0
 
         var request: String?
         var turnCwd: String?
@@ -102,10 +104,15 @@ public enum ClaudeCodeAdapter {
         var replyModel: String?
         var answered = false
 
-        /// The log's last turn is answered only once it has a final reply: until then the session
-        /// may still be running, or it ended on a tool call.
-        func closeTurn(last: Bool = false) {
-            if answered, !last || !reply.isEmpty { answeredTurns += 1 }
+        /// Ends the turn. One the next user record closes is counted: answered, unless that record
+        /// is the person interrupting it, and its final reply. The log's last turn is still open and
+        /// isn't counted: the session may be running, its text may yet be followed by a tool call,
+        /// or it ended on one.
+        func endTurn(closed: Bool, interrupted: Bool = false) {
+            if closed {
+                if answered, !interrupted { answeredTurns += 1 }
+                if !reply.isEmpty { finalReplies += 1 }
+            }
             if !reply.isEmpty { turns.append(Turn(request: request, parts: reply, model: replyModel)) }
             reply = []
             replyModel = nil
@@ -132,12 +139,12 @@ public enum ClaudeCodeAdapter {
                    blocks.contains(where: { $0["type"] as? String == "tool_result" }) { continue }
                 if record["isMeta"] as? Bool == true || record["isCompactSummary"] as? Bool == true { continue }
 
-                closeTurn()
+                let text = userText(message["content"])
+                endTurn(closed: true, interrupted: isInterruption(text))
                 if let cwd = record["cwd"] as? String {
                     sessionCwd = sessionCwd ?? cwd
                     turnCwd = cwd
                 }
-                let text = userText(message["content"])
                 if isHumanRequest(record, text: text) { request = RequestText.clean(text) }
             case "assistant":
                 let message = record["message"] as? [String: Any]
@@ -171,14 +178,14 @@ public enum ClaudeCodeAdapter {
                 break
             }
         }
-        closeTurn(last: true)
+        endTurn(closed: false)
 
         return SessionLog(
             session: SessionInfo(
                 provider: .claudeCode, id: sessionID, title: customTitle ?? aiTitle,
                 cwd: sessionCwd, logPath: url.path),
             turns: turns,
-            records: file.records.count, answeredTurns: answeredTurns,
+            records: file.records.count, answeredTurns: answeredTurns, finalReplies: finalReplies,
             unknownRecordTypes: unknown, unknownFields: unknownFields,
             malformedLines: file.malformed)
     }
@@ -194,10 +201,17 @@ public enum ClaudeCodeAdapter {
     /// user but are not what the user asked for, so the previous request stays as context.
     static func isHumanRequest(_ record: [String: Any], text: String) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed.hasPrefix("[Request interrupted") { return false }
+        if trimmed.isEmpty || isInterruption(trimmed) { return false }
         if let kind = (record["origin"] as? [String: Any])?["kind"] as? String {
             return kind == "human"
         }
         return !trimmed.hasPrefix("<task-notification") && !trimmed.hasPrefix("<local-command")
+    }
+
+    /// The text of the user record Claude Code writes when the person stops a turn: "[Request
+    /// interrupted by user]", or "[Request interrupted by user for tool use]" when they stop a tool
+    /// call. What the assistant wrote before it is not an answer.
+    static func isInterruption(_ text: String) -> Bool {
+        text.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("[Request interrupted")
     }
 }

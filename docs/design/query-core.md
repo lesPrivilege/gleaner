@@ -89,10 +89,10 @@ Not now: `outline`, content search, pagination cursors, a daemon.
 
 ## Adapter maintenance (review-rulings §3 item 1)
 
-- **Per-log counts.** `log_files` records the counts of records, known records, turns, final replies and candidates for each log. A log's last turn counts as answered only once it has a final reply.
+- **Per-log counts.** `log_files` records the counts of records, known records, turns, final replies and candidates for each log. Turns and final replies are counted over closed turns only: a turn is closed once the log holds the next one. The last turn is open: the session may be running, the text it ends on may yet be followed by a tool call, or it ended on one. A turn the person interrupted (Claude Code's `[Request interrupted by user…]` record, Codex's `turn_aborted`) was not answered.
 - **Unknown fields.** Each adapter counts keys it doesn't know inside the record types it does know, alongside unknown record types.
 - **Problems in the source status:**
-  - a log with assistant records but no final reply, counting only turns other than its last. A last turn without a final reply is still open: the session may be running, or it ended on a tool call;
-  - a log whose count of final replies drops on a complete reread;
+  - a log whose closed turns have assistant records but no final reply;
+  - a log whose closed turns hold fewer final replies on a complete reread. A read made while the agent is between its text and the tool call after it reads that text as the open turn's reply, so it is left out of the count;
   - unknown fields.
 - **CI and review.** A GitHub Actions workflow runs `swift test` on macOS for every push and pull request. The repository's agent and contributor guidance says that an adapter change merges only with passing fixtures and the owner's review.
