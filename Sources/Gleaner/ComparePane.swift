@@ -1,5 +1,6 @@
 import AppKit
 import GleanerCore
+import GleanerUI
 import SwiftUI
 
 /// Two exact versions, in place of the preview. Read-only: nothing here chooses a winner.
@@ -38,7 +39,7 @@ struct ComparePane: View {
                     note(reason, mark: .na)
                 case .text(let outcome)?:
                     Text(outcome.summary).font(.caption).foregroundStyle(.secondary)
-                    if case .rows(let rows) = outcome, rows.contains(where: { $0.kind != .context }) { DiffRows(rows: rows) }
+                    if case .rows(let rows) = outcome, rows.contains(where: { $0.kind != .context }) { DiffRows(items: DiffItem.items(rows)) }
                 case .images(let a, let b)?:
                     HStack(spacing: 12) {
                         image(a, end: from)
@@ -64,8 +65,7 @@ struct ComparePane: View {
         }
         .padding(Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: Radius.card))
-        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Color(nsColor: .separatorColor)))
+        .surface(.page)
         .task(id: request) {
             let result = await Task.detached(priority: .userInitiated) {
                 Comparison.load(request.from, request.to, kind: request.kind)
@@ -105,106 +105,32 @@ struct ComparePane: View {
     }
 }
 
-/// Courtwork's change language: grey for what was there, the change colour for new lines, and a
-/// solid block only on the words that are new. Marks and both line numbers stay, so colour is
-/// never the only carrier.
-struct DiffRows: View {
-    var rows: [TextDiff.Row]
-    @State private var expanded: Set<Int> = []
-
-    var body: some View {
-        let items = TextDiff.items(rows)
-        // A two-axis scroll view centres content narrower than itself; pin rows to the leading edge.
-        GeometryReader { geometry in
-        ScrollView([.vertical, .horizontal]) {
-            LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.offset) { index, item in
-                    switch item {
-                    case .row(let row):
-                        line(row)
-                    case .unchanged(let count):
-                        if expanded.contains(index) {
-                            ForEach(Array(unchangedRows(before: index, items: items, count: count).enumerated()), id: \.offset) { _, row in
-                                line(row)
-                            }
-                        } else {
-                            Button("⋯ \(count) unchanged line\(count == 1 ? "" : "s")") { expanded.insert(index) }
-                                .buttonStyle(.plain)
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .padding(.vertical, 3)
-                                .padding(.leading, 10 * 7)
-                        }
-                    }
-                }
-            }
-            .textSelection(.enabled)
-            .padding(.vertical, 6)
-            .frame(minWidth: geometry.size.width, alignment: .leading)
-        }
-        }
-        .frame(height: min(420, CGFloat(items.count) * 23 + 14))
-    }
-
-    /// The context rows a fold stands for, recovered from the row list by position.
-    func unchangedRows(before index: Int, items: [TextDiff.Item], count: Int) -> [TextDiff.Row] {
-        let shown = items[..<index].reduce(0) { total, item in
+extension DiffItem {
+    /// The rows as the comparison shows them: each change with the lines around it, and each
+    /// longer unchanged run folded (`TextDiff.items`).
+    static func items(_ rows: [TextDiff.Row]) -> [DiffItem] {
+        var shown = 0
+        return TextDiff.items(rows).map { item in
             switch item {
-            case .row: total + 1
-            case .unchanged(let n): total + n
+            case .row(let row):
+                shown += 1
+                return .line(DiffLine(row))
+            case .unchanged(let count):
+                defer { shown += count }
+                return .folded(rows[shown..<min(rows.count, shown + count)].map(DiffLine.init))
             }
         }
-        return Array(rows[shown..<min(rows.count, shown + count)])
     }
+}
 
-    func line(_ row: TextDiff.Row) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Text(row.oldNumber.map(String.init) ?? "").frame(width: 38, alignment: .trailing).foregroundStyle(.tertiary)
-            Text(row.newNumber.map(String.init) ?? "").frame(width: 38, alignment: .trailing).foregroundStyle(.tertiary)
-            Text(row.kind == .added ? "+" : row.kind == .removed ? "−" : " ")
-                .fontWeight(.semibold).frame(width: 22)
-                .foregroundStyle(row.kind == .added ? Palette.change : .secondary)
-            Text(text(row)).fixedSize()
+extension DiffLine {
+    init(_ row: TextDiff.Row) {
+        let kind: Kind = switch row.kind {
+        case .context: .context
+        case .added: .added
+        case .removed: .removed
         }
-        .font(.system(.callout, design: .monospaced))
-        .lineSpacing(4)
-        .padding(.trailing, 12)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(spoken(row))
-    }
-
-    func text(_ row: TextDiff.Row) -> AttributedString {
-        let base: Color = row.kind == .added ? Palette.change : .secondary
-        guard let segments = row.segments else {
-            var text = AttributedString(row.text)
-            text.foregroundColor = base
-            return text
-        }
-        var out = AttributedString()
-        for segment in segments {
-            var part = AttributedString(segment.text)
-            part.foregroundColor = base
-            if segment.changed {
-                if row.kind == .added {
-                    part.backgroundColor = Palette.changeBlock
-                    part.foregroundColor = Palette.changeInk
-                } else {
-                    part.backgroundColor = Color(nsColor: .unemphasizedSelectedContentBackgroundColor)
-                    part.foregroundColor = .primary
-                }
-            }
-            out.append(part)
-        }
-        return out
-    }
-
-    func spoken(_ row: TextDiff.Row) -> String {
-        switch row.kind {
-        case .added:
-            let new = row.segments?.filter(\.changed).map(\.text).joined(separator: " ")
-            return "Added line \(row.newNumber ?? 0): \(row.text)" + (new.map { ". New words: \($0)" } ?? "")
-        case .removed: return "Removed line \(row.oldNumber ?? 0): \(row.text)"
-        case .context: return "Line \(row.newNumber ?? 0): \(row.text)"
-        }
+        self.init(kind: kind, oldNumber: row.oldNumber, newNumber: row.newNumber, text: row.text,
+                  segments: row.segments?.map { Segment(text: $0.text, changed: $0.changed) })
     }
 }

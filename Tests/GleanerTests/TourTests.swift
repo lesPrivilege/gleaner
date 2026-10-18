@@ -86,6 +86,19 @@ import Testing
         let board = try #require(model.projects.first { $0.name == "board" })
         model.place = .project(board.key)
         try await shot("board-outline")
+        // The detail with nothing selected offers the newest work here.
+        try await tall("no-selection-next-step")
+        // A revision chosen in the outline is the one the detail shows.
+        let chart = try work("revenue.png")
+        model.outlineSelection = .revision(chart.id, try #require(chart.deliveries.last).id)
+        #expect(model.delivery(in: try #require(model.selected)).number == 1)
+        try await show(chart, delivery: chart.deliveries.last)
+        try await shot("outline-chart-first-revision")
+        // Closed, its row stands for it, still showing that revision.
+        model.disclosed[chart.id] = false
+        #expect(model.outlineSelection == .work(chart.id))
+        try await shot("outline-chart-closed")
+        model.disclosed[chart.id] = nil
 
         let final = try work("board-report-final.md")
         try await show(final)
@@ -157,6 +170,23 @@ import Testing
         model.sourcePage = .corrections
         try await shot("sources-corrections")
 
+        // A project of your own left empty offers to bring work in.
+        await model.move(try work("board-deck.pptx"), toNewProject: "Annual review")
+        let yours = try #require(model.projects.first { $0.name == "Annual review" })
+        await model.undoMove(try work("board-deck.pptx"))
+        model.place = .project(yours.key)
+        try await shot("empty-project-next-step")
+        let moveHere = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 460, height: 440),
+                             styleMask: [.borderless], backing: .buffered, defer: false)
+        moveHere.isReleasedWhenClosed = false
+        moveHere.contentView = NSHostingView(rootView: MoveHereSheet(project: try #require(model.organization.project(yours.key)))
+            .environment(model).background(Color(nsColor: .windowBackgroundColor)))
+        moveHere.orderBack(nil)
+        step += 1
+        try await Self.snapshot(moveHere, to: out.appendingPathComponent(String(format: "%02d-move-here-sheet.png", step)))
+        moveHere.close()
+        await model.remove(try #require(model.organization.project(yours.key)))
+
         model.place = .project(board.key)
         try await show(try work("board-report-final.md"))
         // Dark from the start, as with the system set to dark, and after switching while open.
@@ -169,47 +199,6 @@ import Testing
         window.appearance = NSAppearance(named: .aqua)
         try await shot("dark-switched-to-light")
         window.close()
-
-        // Every mark, at the sizes the window uses it.
-        let sheet = VStack(alignment: .leading, spacing: 14) {
-            ForEach(Array(stride(from: 0, to: Glyph.allCases.count, by: 7)), id: \.self) { start in
-                HStack(spacing: 18) {
-                    ForEach(Array(Glyph.allCases[start..<min(start + 7, Glyph.allCases.count)].enumerated()), id: \.offset) { _, glyph in
-                        VStack(spacing: 4) {
-                            GlyphView(glyph: glyph, size: 32)
-                            HStack(spacing: 6) { GlyphView(glyph: glyph, size: 16); GlyphView(glyph: glyph, size: 11) }
-                            Text(String(describing: glyph)).font(.system(size: 10))
-                        }
-                        .frame(width: 76)
-                    }
-                }
-            }
-            // The agents' marks, in color and in one ink, and files as Finder draws them.
-            HStack(spacing: 18) {
-                ForEach([Provider.claudeCode, .codex], id: \.self) { provider in
-                    VStack(spacing: 4) {
-                        ProviderMark(provider: provider, size: 32, color: true)
-                        HStack(spacing: 6) { ProviderMark(provider: provider, size: 16); ProviderMark(provider: provider, size: 11) }
-                        Text(Wording.provider(provider)).font(.system(size: 10))
-                    }
-                    .frame(width: 76)
-                }
-                ForEach(["report.md", "deck.pptx", "chart.png", "brief.pdf"], id: \.self) { name in
-                    VStack(spacing: 4) {
-                        FileIcon(path: name, size: 32)
-                        Text(name).font(.system(size: 10))
-                    }
-                    .frame(width: 76)
-                }
-            }
-        }
-        .padding(20).background(Color.white).foregroundStyle(Color.black)
-        let renderer = ImageRenderer(content: sheet)
-        renderer.scale = 2
-        let image = try #require(renderer.nsImage?.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
-        step += 1
-        try #require(image.representation(using: .png, properties: [:]))
-            .write(to: out.appendingPathComponent(String(format: "%02d-marks.png", step)))
     }
 
     static func window(_ model: LibraryModel, appearance: NSAppearance? = nil) -> NSWindow {

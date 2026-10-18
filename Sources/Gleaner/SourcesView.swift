@@ -1,4 +1,5 @@
 import GleanerCore
+import GleanerUI
 import SwiftUI
 
 /// What Gleaner reads, the corrections the person made, and what it keeps, laid out as System
@@ -62,18 +63,14 @@ struct AgentSourcePage: View {
         Form {
             Section {
                 HStack(spacing: Space.m) {
-                    ProviderMark(provider: provider, size: 44, color: true)
+                    AgentMark(provider: provider, size: 44, color: true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(Wording.provider(provider)).font(.title3.weight(.semibold))
                         Text(on ? "Connected" : "Off").font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Toggle(isOn: Binding(get: { on }, set: { value in Task { await model.setSource(provider, on: value) } })) {
-                        Text("Read \(Wording.provider(provider))")
-                    }
-                    .toggleStyle(.switch)
-                    .labelsHidden()
-                    .help(on ? "Stop reading these logs and hide their deliveries" : "Read these logs again")
+                    Switch("Read \(Wording.provider(provider))", isOn: Binding(get: { on }, set: { value in Task { await model.setSource(provider, on: value) } }))
+                        .help(on ? "Stop reading these logs and hide their deliveries" : "Read these logs again")
                 }
                 .padding(.vertical, Space.xs)
                 TopologyLine(provider: provider)
@@ -82,7 +79,7 @@ struct AgentSourcePage: View {
                     HStack(spacing: Space.s) {
                         Text(Wording.tilde(folder)).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
                         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: folder)]) }
-                            .controlSize(.small)
+                            .controlRole(.inline)
                             .disabled(Locator.stat(folder).kind != .directory)
                     }
                 }
@@ -177,7 +174,7 @@ struct ProblemSection: View {
                             .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
                         Spacer(minLength: Space.s)
                         Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
-                            .controlSize(.small)
+                            .controlRole(.inline)
                             .disabled(Locator.stat(path).kind == .missing)
                     }
                 }
@@ -238,7 +235,7 @@ struct CorrectionsPage: View {
                         }
                         Spacer(minLength: Space.s)
                         Button("Undo") { Task { await model.undo(group) } }
-                            .controlSize(.small)
+                            .controlRole(.inline)
                             .accessibilityLabel("Undo: \(model.describe(group))")
                     }
                 }
@@ -257,8 +254,8 @@ struct CorrectionsPage: View {
                             Text(Wording.count(shown?.works.count ?? 0, "work")).foregroundStyle(.secondary).monospacedDigit()
                             Spacer()
                             if let shown {
-                                Button("Go to Project") { model.place = .project(shown.key) }.controlSize(.small)
-                                Button("Delete…") { removing = shown }.controlSize(.small)
+                                Button("Go to Project") { model.place = .project(shown.key) }.controlRole(.inline)
+                                Button("Delete…") { removing = shown }.controlRole(.inline)
                             }
                         }
                     }
@@ -310,7 +307,7 @@ struct StoragePage: View {
                     HStack {
                         Text(size(usage?.saved)).monospacedDigit()
                         Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([model.indexer.store.objects]) }
-                            .controlSize(.small)
+                            .controlRole(.inline)
                     }
                 }
             } footer: {
@@ -324,7 +321,7 @@ struct StoragePage: View {
                             model.clearHandoffCopies(keeping: .general)
                             refresh()
                         }
-                        .controlSize(.small)
+                        .controlRole(.inline)
                         .help("Remove the read-only copies made for dragging and opening, except the one on the clipboard")
                     }
                 }

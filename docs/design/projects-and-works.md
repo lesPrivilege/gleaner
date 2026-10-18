@@ -39,7 +39,7 @@ Sources → Corrections lists every decision with its date and an Undo (a work's
 ## The window
 
 - **Sidebar:** All Deliveries, then every project with its count, then Sources. ⌘, opens Sources.
-- **A project** opens on its outline: what it is (its counts, its folder, the latest three works to pick up from), the joins Gleaner suggests with Join and Keep Apart, then every work by the folder it is in, as the project's own folders lay it out. A file outside the project's folder is listed under that folder by name, never hidden. Searching inside a project searches that project.
+- **A project** opens on its outline: what it is (its counts, its folder, the latest three works to pick up from), the joins Gleaner suggests with Join and Keep Apart, then every work by the folder it is in, as the project's own folders lay it out, with each work's revisions under it ([outline.md](outline.md)). A file outside the project's folder is listed under that folder by name, never hidden. Searching inside a project searches that project.
 - **A work's detail** keeps the order of the delivery detail (rulings §5), laid out since as Finder's preview pane ([window-polish.md](window-polish.md), Fewer words): the file to hand off, its bytes, then the reply under Information. What the work may be (a suggestion) sits under its name, before its bytes. **Versions** lists every file's deliveries, named by file once there is more than one. **Project** says why the work is in its project (a short label, the sentence behind ⓘ), offers Move to Project…, Put Back or Show Apart, lists the files joined and each join's Undo, and Join With Another File…. Edit › Undo takes back a join, a keep-apart or a move.
 - **Delivered With** reaches every file the reply named: six, then the rest.
 

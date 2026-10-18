@@ -1,4 +1,5 @@
 import Foundation
+import GleanerUI
 import Testing
 @testable import Gleaner
 @testable import GleanerCore
@@ -170,6 +171,12 @@ import Testing
     }
 
     // MARK: The type badge (A17)
+
+    @Test func anAgentsMarkCarriesTheNameTheCoreGivesIt() {
+        for provider in Provider.allCases {
+            #expect(AgentMark.Agent(provider).name == Wording.provider(provider))
+        }
+    }
 
     @Test func theTypeBadgeKeepsTheExactExtension() {
         #expect(Wording.kindLabel(.model, path: "/p/out/bracket.SLDPRT") == "SLDPRT")

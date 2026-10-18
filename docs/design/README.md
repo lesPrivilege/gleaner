@@ -2,7 +2,7 @@
 
 **Ruled:** see [rulings](rulings.md) for the alternatives adopted, deferred and declined, and the order of work.
 
-**Built after the completion review (2026-10-18):** [projects, works and sources](projects-and-works.md), the contract the window now keeps for logical work, corrections, opening actions and source management.
+**Built after the completion review (2026-10-18):** [projects, works and sources](projects-and-works.md), the contract the window now keeps for logical work, corrections, opening actions and source management. The window draws with [GleanerUI](components.md), its own component library, with a gallery of every component in light, dark and Increase Contrast. [The outline](outline.md) sets its levels, the conventions each keeps, and the empty states that show the next step.
 
 Draft reference for Opus, grounded in public source at [`79d724d1228a4b748572958dcbdd22aa6b7da142`](https://github.com/lesPrivilege/gleaner/tree/79d724d1228a4b748572958dcbdd22aa6b7da142), 2026-10-17. These are alternatives for improving an already useful small product, not an adopted architecture or implementation plan.
 

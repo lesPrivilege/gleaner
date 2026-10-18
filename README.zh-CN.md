@@ -20,13 +20,13 @@ Gleaner 0.1.0 需要 macOS 15 或更高版本。这是早期版本：哪些文�
 
 输入记得的词：当初的要求、回复里的话、文件名或项目名。所有词都出现在同一次交付里才算匹配，分属两次对话的词不会拼成一个结果。结果打开在自身文字（你的要求、回复、会话标题）匹配到的最新一次交付上；只有文件名或项目名匹配时，打开最新一次交付。显示的也是那次交付的日期。改动搜索词后，你切换到别的交付的结果会回到匹配的那一次。
 
-侧栏列出 All Deliveries、每个项目和 Sources。项目指存放该文件的 git 仓库，同一仓库的各个 worktree 无论放在哪里都归在一起；不在 git 里的，取 agent 工作时所在的文件夹，并注明“outside git”。两个项目同名时还会显示上级文件夹；文件在 worktree 里时，标出是哪个 worktree。在项目里搜索，只搜这个项目。结果上方的菜单按类型筛选，共十种：Documents、Images、Video & Audio、Web Pages、Code、Data、3D & CAD、Builds & Archives、Folders、Other。界面目前只有英文，本文提到界面文字时照录原文。
+侧栏列出 All Deliveries、每个项目和 Sources。项目指存放该文件的 git 仓库，同一仓库的各个 worktree 无论放在哪里都归在一起；不在 git 里的，取 agent 工作时所在的文件夹，用文件夹标记而不是仓库标记表示。两个项目同名时还会显示上级文件夹；文件在 worktree 里时，标出是哪个 worktree。在项目里搜索，只搜这个项目。结果上方的菜单按类型筛选，共十种：Documents、Images、Video & Audio、Web Pages、Code、Data、3D & CAD、Builds & Archives、Folders、Other。界面目前只有英文，本文提到界面文字时照录原文。
 
 详情栏仿照 Finder 的预览栏：最上面是文件本身，带着它自己的图标，可以拖出或打开；一行说明它带的是哪份字节、Gleaner 是否核验过；然后是预览；再是 **Information**：你的要求、交付这个文件的那次回复、agent（用它自己的标志）和会话、时间、磁盘上的现状，以及位置。Markdown 直接在应用内渲染，其他格式多数用 Quick Look 预览。**Versions** 列出同一路径的每次交付，一次一行；选中一行，文件、预览和转交一起切换。一切如常的状态只显示一个标记；需要留意的用一两个词说明，完整的句子在 ⓘ 后面。**More Info** 保留路径、哈希和会话日志。**Compare** 显示两次交付之间，或某次交付与磁盘上当前文件之间的差异：文本逐行对比，图片并排显示，其他格式比较大小和哈希。两个版本只差换行符或末尾换行时，Compare 会如实说明。
 
 ## 项目与作品
 
-打开一个项目，先看到它的概览：它是什么、为什么归在这里，最近交付的作品，Gleaner 建议合并的文件，再按所在文件夹列出每件作品。一件作品是一个文件，或你确认属于同一件作品的几个文件，比如从 draft 改名为 final 的报告；详情里列出每个文件的每次交付。Gleaner 从不自行合并文件，只在有可查证的理由时提出建议：后一个文件带着前一个文件最后的同样字节出现，而前一个已经不在原来的路径；或者同一文件夹里两个名字只差一个版本标记（`v2`、`rev 3`、`draft`、`final`、`(1)`；日期或单纯的数字表示另一份文件）。选 **Join** 或 **Keep Apart**；选了 Keep Apart 之后，Gleaner 不再为那个文件提出建议。Edit › Undo 可以撤销一次合并、一次 Keep Apart 或一次移动。
+打开一个项目，先看到它的概览：它是什么、为什么归在这里，最近交付的作品，Gleaner 建议合并的文件，再按所在文件夹列出每件作品，最新的在前。交付过不止一次的作品可以展开，列出每次交付和当时的请求；git 之外的项目和你自己建的项目默认展开，git 仓库默认收起。用 ← 和 → 收起或展开。一件作品是一个文件，或你确认属于同一件作品的几个文件，比如从 draft 改名为 final 的报告；详情里列出每个文件的每次交付。Gleaner 从不自行合并文件，只在有可查证的理由时提出建议：后一个文件带着前一个文件最后的同样字节出现，而前一个已经不在原来的路径；或者同一文件夹里两个名字只差一个版本标记（`v2`、`rev 3`、`draft`、`final`、`(1)`；日期或单纯的数字表示另一份文件）。选 **Join** 或 **Keep Apart**；选了 Keep Apart 之后，Gleaner 不再为那个文件提出建议。Edit › Undo 可以撤销一次合并、一次 Keep Apart 或一次移动。
 
 作品详情里的 **Project** 说明它为什么归在这个项目（文件所在的仓库、agent 工作时所在的仓库，或 git 之外的文件夹），并提供 **Move to Project…**（移到另一个项目，或你新建的项目）和 **Join With Another File…**。侧栏里项目的菜单可以把一个推导出的项目显示在另一个项目之内。这些决定只改变 Gleaner 的呈现方式，不改动任何文件、交付或状态；重新读取日志也会保留。**Sources → Corrections** 逐条列出，每条可 Undo，也可 Undo All。
 
@@ -91,7 +91,7 @@ Gleaner 没见过或没读到的交付，会在 Gleaner 第一次读到该文件
 
 没有存档副本的三种情况，后面接着最近一次核查的结果：磁盘上的文件仍是它（按哈希核对）、不在磁盘上、磁盘上的文件读不了，或磁盘上的文件已不是它。
 
-**列表中**，每行最多一个标记，只在需要留意时出现：*Unavailable* 并说明原因（never seen、never read、not on disk、can't read、not a file、a folder now、changed），*Not on disk*，*Changed*，或 *First seen later*。绘制列表时从不读取磁盘，所以只有在应用打开后核查过的文件才会标 *Changed*。交付过不止一次的文件显示“Delivery N of M”。
+**列表中**，每行最多一个标记，只在需要留意时出现：*Unavailable* 并说明原因（never seen、never read、not on disk、can't read、not a file、a folder now、changed），*Not on disk*，*Changed*，或 *First seen later*。绘制列表时从不读取磁盘，所以只有在应用打开后核查过的文件才会标 *Changed*。交付过不止一次的作品在第一行末尾标出交付次数；只有显示的不是最新一次时，才写“Delivery N of M”。展开的作品下，某次交付无法交出时，那一行标 *Unavailable* 并说明原因。
 
 **每个 agent** 都有一个开关，在 Sources（⌘,）和工具栏的 Sources 弹窗里。关掉后，Gleaner 不再读取或监视它的日志，并隐藏它的交付；不会删除任何内容，重新打开即全部恢复。agent 的页面画出它通往服务商和回复所用模型的连线，每个模型带着厂商的标志；交付的 Information 也写明所用模型。
 
@@ -209,11 +209,13 @@ swift test                      # fixture 测试
 工作区有未提交的改动时，`release.sh` 不会运行。打了 `v0.1.0` 标签的提交构建为 0.1.0 版，其他提交构建为 `0.1.0-dev+<commit>`。
 
 - `Sources/GleanerCore`：各 agent 的日志适配器（Claude Code、Codex）、提及抽取、文件定位、脱敏、索引库（SQLite）、内容库（存档副本与核验过的转交副本）、索引器、日志监视，以及状态判断（`Library.swift`）。
+- `Sources/GleanerUI`：窗口所用的组件库：标记、状态、表面、控件与动效，依 [docs/design/components.md](docs/design/components.md)。只依赖 SwiftUI 与 AppKit。
 - `Sources/Gleaner`：macOS 应用（SwiftUI、AppKit、Quick Look）。
 - `Sources/gleaner-cli`：`gleaner` 命令，以 JSON 给出 catalog 的回答；以及 `gleaner mcp`，把同样的回答作为 MCP 工具提供。
 - `Sources/gleaner-spike`：Spike A，只读地抽取本地日志，输出一份标注表。
 - `extensions/gleaner`：Claude Code、Codex 和 DeepSeek Harness 读取的 skill。
 - `Tests/GleanerCoreTests`：用脱敏后的日志记录结构写成的 fixture 测试，整个流程的测试（并发编辑、删除 worktree、回滚、补读旧日志、核验后转交），以及 catalog 的查询。
+- `Tests/GleanerUITests`：标记、设计令牌，以及画出每个组件的图库（`GLEANER_GALLERY=<文件夹> swift test --filter GalleryTests`）。
 - `Tests/GleanerTests`：在合成的资料库上检验应用的判断（点一下落在哪次交付上，Quick Look、Compare 和拖拽用的是哪份字节）及其措辞。
 - `Tests/GleanerCommandTests`：像 agent 的 shell 那样运行构建好的 `gleaner`：检验它的 JSON、退出码，以及它既不写资料库也不写项目；再像宿主那样运行 `gleaner mcp`，把每个工具的回答和拒绝与命令自己的对照；最后拿构建好的命令核对 skill 里给出的每条命令。
 

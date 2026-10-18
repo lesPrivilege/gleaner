@@ -25,7 +25,7 @@ A model is matched to its vendor by its family name, as Magpie's `icons.go` matc
 - a short family (`o3`) counts only whole or before a dash;
 - a model that matches no family gets no mark, never a guessed one.
 
-The vendors' marks are lobe-icons' monochrome drawings (commit 8a1b282), the set Magpie bundles, generated into `VendorMarks.swift`: Anthropic, OpenAI, Google, DeepSeek, xAI, Moonshot, Zhipu, Qwen, Mistral, MiniMax. Agents are drawn in their own colors where they are named alone. Model vendors are always in one ink, a step below the agent, because the agent is what Gleaner reads.
+The vendors' marks are lobe-icons' monochrome drawings (commit 8a1b282), the set Magpie bundles, generated into `Sources/GleanerUI/VendorMarks.swift`: Anthropic, OpenAI, Google, DeepSeek, xAI, Moonshot, Zhipu, Qwen, Mistral, MiniMax. Agents are drawn in their own colors where they are named alone. Model vendors are always in one ink, a step below the agent, because the agent is what Gleaner reads.
 
 ## The plane
 
@@ -47,6 +47,6 @@ The vendors' marks are lobe-icons' monochrome drawings (commit 8a1b282), the set
   - The adapters read the model and the provider (`AdapterTests`).
   - Both survive storage and a reread (`LibraryFlowTests`).
   - A source turned off hides its deliveries and keeps them, its logs go unread, the choice survives reopening, and on again shows all (`LibraryModelTests`).
-  - Models are matched to vendors (`GlyphTests`).
+  - Models are matched to vendors (`MarkTests`).
 - **The tour.** The synthetic home now routes Codex through a gateway named `magpie` to `moonshot/kimi-k2.5`, and one Claude Code reply through `deepseek-v4-flash`. The tour draws Codex's page connected and off, and the popover on its own.
 - **Not checked:** the toolbar button in a running window (the tour draws no toolbar), switches by mouse and keyboard, and real logs routed through Magpie.
