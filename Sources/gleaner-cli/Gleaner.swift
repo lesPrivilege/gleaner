@@ -21,8 +21,8 @@ struct Gleaner: ParsableCommand {
 
     /// Runs the command as `ParsableCommand.main` does, with the contract's exit codes: a failure
     /// exits with its own, and a usage error with 2, where ArgumentParser would give 64. A refusal's
-    /// answer is written where it was refused (`Library.answer`); a usage error is refused before
-    /// any library is open, so it is written here, without an index.
+    /// answer is written by the command refused (`write(_:)`); a usage error is refused before any
+    /// library is open, so it is written here, without an index.
     static func main() {
         do {
             var command = try parseAsRoot()
@@ -30,7 +30,8 @@ struct Gleaner: ParsableCommand {
         } catch let refusal as Refusal {
             fail("Error: \(refusal.failure)", status: refusal.failure.exitCode)
         } catch let error where exitCode(for: error) == .validationFailure {
-            try? write(Catalog.Refused(index: nil, error: .usage(message(for: error))))
+            // Written as any refusal is, but said on stderr in ArgumentParser's words, with the usage.
+            try? write(Answer(refusing: Catalog.Failure.usage(message(for: error)), index: nil))
             fail(fullMessage(for: error), status: 2)
         } catch {
             // Help, and the like: not a failure.
@@ -60,7 +61,7 @@ extension Gleaner {
         @OptionGroup var library: Library
 
         func run() throws {
-            try library.answer { try $0.find(terms, project: project, kind: kind, limit: limit) }
+            try write(library.answer { try $0.find(terms, project: project, kind: kind, limit: limit) })
         }
     }
 
@@ -73,7 +74,7 @@ extension Gleaner {
         @OptionGroup var library: Library
 
         func run() throws {
-            try library.answer { try $0.show(delivery) }
+            try write(library.answer { try $0.show(delivery) })
         }
     }
 
@@ -96,8 +97,7 @@ extension Gleaner {
         }
 
         func run() throws {
-            let span = lines.map { Catalog.Span.lines($0.start, $0.end) } ?? bytes.map { .bytes($0.start, $0.end) }
-            try library.answer { try $0.read(delivery, span: span, max: max) }
+            try write(library.answer { try $0.read(delivery, span: Bounds.span(lines: lines, bytes: bytes), max: max) })
         }
     }
 
@@ -110,7 +110,7 @@ extension Gleaner {
         @OptionGroup var library: Library
 
         func run() throws {
-            try library.answer { try $0.resolve(delivery) }
+            try write(library.answer { try $0.resolve(delivery) })
         }
     }
 
@@ -123,7 +123,7 @@ extension Gleaner {
         @OptionGroup var library: Library
 
         func run() throws {
-            try library.answer { try $0.handoff(delivery) }
+            try write(library.answer { try $0.handoff(delivery) })
         }
     }
 
@@ -138,9 +138,7 @@ extension Gleaner {
 
         func run() throws {
             let kept = FileManager.default.fileExists(atPath: reference) ? try keptReference() : nil
-            let verified = try library.answer { catalog in try kept.map(catalog.verify) ?? catalog.verify(reference) }
-            // Neither holds the bytes: there are none for that version now, and the answer says why.
-            if let error = verified.error { throw Refusal(failure: error) }
+            try write(library.answer { catalog in try kept.map(catalog.verify) ?? catalog.verify(reference) })
         }
 
         /// The reference the file `reference` holds.
@@ -162,31 +160,46 @@ struct Library: ParsableArguments {
         try Catalog(home: home.map { URL(fileURLWithPath: $0, isDirectory: true) })
     }
 
-    /// Writes the catalog's answer. When there is none, writes why, beside the index that is
-    /// evidence of once the library is open, and throws that refusal.
-    @discardableResult
-    func answer<Answer: Encodable>(_ body: (Catalog) throws -> Answer) throws -> Answer {
+    /// The catalog's answer, or why there is none, beside the index that is evidence of once the
+    /// library is open. Each call opens the library afresh.
+    func answer(_ body: (Catalog) throws -> some Encodable) -> Answer {
         let catalog: Catalog
         do {
             catalog = try self.catalog()
         } catch {
-            throw refuse(error, index: nil)
+            return Answer(refusing: error, index: nil)
         }
-        let answer: Answer
         do {
-            answer = try body(catalog)
+            let answer = try body(catalog)
+            // verify answers in full either way. When neither copy holds the bytes, there are none
+            // for that version now, and the answer says why.
+            return Answer(answer, failure: (answer as? Catalog.Verified)?.error)
         } catch {
-            throw refuse(error, index: try? catalog.registry.index())
+            return Answer(refusing: error, index: try? catalog.registry.index())
         }
-        try write(answer)
-        return answer
+    }
+}
+
+/// A call's answer, apart from where it is written: one JSON object, and the failure it reports,
+/// if any, which the command exits with.
+struct Answer {
+    var object: any Encodable
+    var failure: Catalog.Failure?
+
+    init(_ object: any Encodable, failure: Catalog.Failure? = nil) {
+        self.object = object
+        self.failure = failure
     }
 
-    /// Writes why there is no answer, as a failure the catalog names, beside `index`.
-    private func refuse(_ error: Error, index: Catalog.Index?) -> Refusal {
+    /// Why there is no answer, as a failure the catalog names, beside `index`.
+    init(refusing error: Error, index: Catalog.Index?) {
         let failure = error as? Catalog.Failure ?? .failed(Self.words(error))
-        try? write(Catalog.Refused(index: index, error: failure))
-        return Refusal(failure: failure)
+        self.init(Catalog.Refused(index: index, error: failure), failure: failure)
+    }
+
+    /// The object, as `Catalog.encoder` writes it.
+    func json() throws -> Data {
+        try Catalog.encoder.encode(object)
     }
 
     /// What went wrong, in words: Foundation's own for a file system error, else the error's.
@@ -211,11 +224,18 @@ struct Bounds: ExpressibleByArgument {
         guard parts.count == 2, let start = Int(parts[0]), let end = Int(parts[1]) else { return nil }
         (self.start, self.end) = (start, end)
     }
+
+    /// What `read` selects: these lines, or these bytes, or when neither is given, all of it.
+    static func span(lines: Bounds?, bytes: Bounds?) -> Catalog.Span? {
+        lines.map { .lines($0.start, $0.end) } ?? bytes.map { .bytes($0.start, $0.end) }
+    }
 }
 
 extension Artifact.Kind: ExpressibleByArgument {}
 
-/// Writes an answer to stdout as one JSON object and a newline.
-func write(_ answer: some Encodable) throws {
-    FileHandle.standardOutput.write(try Catalog.encoder.encode(answer) + Data("\n".utf8))
+/// Writes an answer to stdout as one JSON object and a newline. A failure's answer is written too,
+/// and the failure then thrown, so that the command says why on stderr and exits with its code.
+func write(_ answer: Answer) throws {
+    FileHandle.standardOutput.write(try answer.json() + Data("\n".utf8))
+    if let failure = answer.failure { throw Refusal(failure: failure) }
 }
