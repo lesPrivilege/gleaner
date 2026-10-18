@@ -40,7 +40,7 @@ import Testing
         try registry.upsertDelivery(id: "d", sessionID: "s", logPath: "/a.jsonl", path: "/r/a.md", deliveredAt: nil,
                                     replyLine: 1, replyRank: 0, cwd: nil, request: nil, evidence: [])
         try registry.addCapture(Capture(sha256: "abc", size: 1, modifiedAt: nil, observedAt: Date(), savedAt: nil,
-                                        provenance: .atDelivery, kind: .file), for: "d", logPath: "/a.jsonl", path: "/r/a.md", replyAt: nil)
+                                        provenance: .atDelivery, kind: .file), for: "d", logPath: "/a.jsonl", path: "/r/a.md", replyTimes: [])
         try registry.record(repository: "/r", checkout: "/r-feature", of: "d")
         #expect(try registry.artifacts().first?.projectFolder == "/r")
         #expect(try registry.artifacts().first?.checkout == Checkout(folder: "/r-feature", repository: "/r"))
@@ -85,7 +85,7 @@ import Testing
         #expect(try !registry.db.rows("PRAGMA table_info(captures)").contains { $0["name"] as? String == "is_directory" })
         #expect(try registry.db.rows("SELECT kind FROM captures").map { $0["kind"] as? String } == ["file"])
         try registry.addCapture(Capture(sha256: "def", size: 1, modifiedAt: nil, observedAt: Date(), savedAt: nil,
-                                        provenance: .atDelivery, kind: .file), for: "new", logPath: "/a.jsonl", path: "/a.md", replyAt: nil)
+                                        provenance: .atDelivery, kind: .file), for: "new", logPath: "/a.jsonl", path: "/a.md", replyTimes: [])
     }
 
     @Test func aLibraryFromBeforeCapturesSaidWhatTheyFoundGainsIt() throws {
@@ -108,5 +108,21 @@ import Testing
             "unread unreadable never_observed",
         ])
         #expect(try !registry.db.rows("PRAGMA table_info(captures)").contains { $0["name"] as? String == "is_directory" })
+    }
+
+    /// A library from before paths had one spelling keeps its captures under the spelling the
+    /// logs now give, so a reread finds them.
+    @Test func pathsStoredUnderPrivateAreRespelledOnce() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString).sqlite").path
+        let registry = try Registry(path: path)
+        try registry.addCapture(Capture(sha256: "abc", size: 1, modifiedAt: nil, observedAt: Date(), savedAt: nil, provenance: .atDelivery, kind: .file),
+                                for: "d", logPath: "/l.jsonl", path: "/private/tmp/p/report.md", replyTimes: [Date(timeIntervalSince1970: 1)])
+        try registry.record(repository: "/private/var/x/app", checkout: "/private/var/x/app", of: "d")
+        try registry.db.execute("PRAGMA user_version = 12")
+        let reopened = try Registry(path: path)
+        let row = try #require(try reopened.db.rows("SELECT path, repository, checkout FROM captures").first)
+        #expect(row["path"] as? String == "/tmp/p/report.md")
+        #expect(row["repository"] as? String == "/var/x/app")
+        #expect(try reopened.captures(logPath: "/l.jsonl", path: "/tmp/p/report.md").map(\.id) == ["d"])
     }
 }

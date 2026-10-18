@@ -25,7 +25,7 @@ public final class Registry: @unchecked Sendable {
             CREATE TABLE IF NOT EXISTS captures (
                 delivery_id TEXT PRIMARY KEY, sha256 TEXT, size INTEGER, mtime REAL, observed_at REAL NOT NULL,
                 saved_at REAL, provenance TEXT NOT NULL, kind TEXT NOT NULL, repository TEXT, checkout TEXT,
-                log_path TEXT, path TEXT, reply_at REAL);
+                log_path TEXT, path TEXT, reply_times TEXT);
             CREATE TABLE IF NOT EXISTS projects (key TEXT PRIMARY KEY, name TEXT NOT NULL, created_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS corrections (
                 id INTEGER PRIMARY KEY, kind TEXT NOT NULL, subject TEXT NOT NULL, target TEXT NOT NULL, made_at REAL NOT NULL);
@@ -88,23 +88,38 @@ public final class Registry: @unchecked Sendable {
                 }
             }
         }
-        // Each capture keeps the reply it was made for: its log, its file and the time of the
-        // record that named the file. A delivery's id comes from where its reply sat in the log, so a
-        // log rewritten with its replies moved would hand one reply's capture to another; the reply
-        // finds its own capture by these instead. Filled from each delivery's row; a capture whose
-        // delivery a reread dropped has none and is found by its id as before.
-        if try !has("captures", "reply_at") {
+        // Each capture keeps the reply it was made for: its log, its file and the times of the
+        // reply's records. A delivery's id comes from where its reply sat in the log, so a log
+        // rewritten with its replies moved would hand one reply's capture to another; the reply
+        // finds its own capture by these instead. Filled from each delivery's row (the time of the
+        // record that named the file); a capture whose delivery a reread dropped has none and is
+        // found by its id, as before.
+        if try !has("captures", "reply_times") {
             try db.transaction {
-                try db.execute("""
-                    ALTER TABLE captures ADD COLUMN log_path TEXT; ALTER TABLE captures ADD COLUMN path TEXT;
-                    ALTER TABLE captures ADD COLUMN reply_at REAL;
-                    UPDATE captures SET (log_path, path, reply_at) =
-                        (SELECT log_path, path, delivered_at FROM deliveries WHERE deliveries.id = captures.delivery_id);
-                    """)
+                try db.execute("ALTER TABLE captures ADD COLUMN log_path TEXT; ALTER TABLE captures ADD COLUMN path TEXT; ALTER TABLE captures ADD COLUMN reply_times TEXT;")
+                for row in try db.rows("SELECT id, log_path, path, delivered_at FROM deliveries") {
+                    try db.run("UPDATE captures SET log_path = ?, path = ?, reply_times = ? WHERE delivery_id = ?",
+                               [row["log_path"] as? String, row["path"] as? String,
+                                (row["delivered_at"] as? Double).map { Self.times([Date(timeIntervalSince1970: $0)]) }, row["id"] as? String])
+                }
             }
         }
         try db.execute("CREATE INDEX IF NOT EXISTS captures_reply ON captures(log_path, path);")
         let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
+        // Paths under /private/var, /private/tmp and /private/etc were kept in whichever spelling
+        // the disk gave at the time; they now have one (`standardPath`).
+        if version < 13 {
+            try db.transaction {
+                for (table, key, columns) in [("captures", "delivery_id", ["path", "repository", "checkout"]), ("deliveries", "id", ["path"])] {
+                    for column in columns {
+                        for row in try db.rows("SELECT \(key) AS key, \(column) AS value FROM \(table) WHERE \(column) LIKE '/private/%'") {
+                            guard let value = row["value"] as? String, standardPath(value) != value else { continue }
+                            try db.run("UPDATE \(table) SET \(column) = ? WHERE \(key) = ?", [standardPath(value), row["key"] as? String])
+                        }
+                    }
+                }
+            }
+        }
         if version != Int64(Self.extractorVersion) {
             // No log has this modification time, so every log is read again; each keeps the size
             // it was read at, and whether it lost records, so one that did still removes nothing.
@@ -164,28 +179,36 @@ public final class Registry: @unchecked Sendable {
         try !db.rows("SELECT 1 FROM captures WHERE delivery_id = ?", [id]).isEmpty
     }
 
-    /// The deliveries whose captures were made for `path` from the log at `logPath`, by a record
-    /// written at one of `times`: the same reply's, wherever the reply sits in the log now.
-    public func captures(logPath: String, path: String, at times: Set<Date>) throws -> [String] {
-        guard !times.isEmpty else { return [] }
-        let marks = Array(repeating: "?", count: times.count).joined(separator: ", ")
-        return try db.rows("""
-            SELECT delivery_id FROM captures WHERE log_path = ? AND path = ? AND reply_at IN (\(marks)) ORDER BY delivery_id
-            """, [logPath, path] + times.map { $0 as Any? }).compactMap { $0["delivery_id"] as? String }
+    /// The captures made for `path` from the log at `logPath`, with the times of the records of the
+    /// reply each was made for (empty when it records none).
+    public func captures(logPath: String, path: String) throws -> [(id: String, times: Set<Date>)] {
+        try db.rows("SELECT delivery_id, reply_times FROM captures WHERE log_path = ? AND path = ? ORDER BY delivery_id",
+                    [logPath, path]).compactMap { row in
+            (row["delivery_id"] as? String).map { ($0, Self.times(row["reply_times"] as? String)) }
+        }
     }
 
-    /// The time of the record a delivery's capture was made for: nil when there is no capture,
-    /// `.some(nil)` for a capture that records none (made before Gleaner kept it, or for records
-    /// that carry no time), tied to its reply only by its id.
-    public func captureReplyTime(_ id: String) throws -> Date?? {
-        guard let row = try db.rows("SELECT reply_at FROM captures WHERE delivery_id = ?", [id]).first else { return nil }
-        return .some((row["reply_at"] as? Double).map(Date.init(timeIntervalSince1970:)))
+    /// The times of the records of the reply a delivery's capture was made for: nil when there is no
+    /// capture, empty for one that records none (made before Gleaner kept them, or for records that
+    /// carry no time), tied to its reply only by its id.
+    public func captureTimes(_ id: String) throws -> Set<Date>? {
+        guard let row = try db.rows("SELECT reply_times FROM captures WHERE delivery_id = ?", [id]).first else { return nil }
+        return Self.times(row["reply_times"] as? String)
     }
 
-    /// Records the reply a capture without one belongs to (`captureReplyTime`).
-    public func place(capture id: String, logPath: String, path: String, replyAt: Date?) throws {
-        try db.run("UPDATE captures SET log_path = ?, path = ?, reply_at = ? WHERE delivery_id = ? AND reply_at IS NULL",
-                   [logPath, path, replyAt, id])
+    /// Records the reply a capture that records none belongs to (`captureTimes`).
+    public func place(capture id: String, logPath: String, path: String, times: Set<Date>) throws {
+        try db.run("UPDATE captures SET log_path = ?, path = ?, reply_times = ? WHERE delivery_id = ? AND reply_times IS NULL",
+                   [logPath, path, Self.times(times), id])
+    }
+
+    /// Times as stored: each one's exact seconds, so they read back equal.
+    static func times(_ times: Set<Date>) -> String? {
+        times.isEmpty ? nil : times.map { String($0.timeIntervalSince1970) }.sorted().joined(separator: " ")
+    }
+
+    static func times(_ text: String?) -> Set<Date> {
+        Set((text ?? "").split(separator: " ").compactMap { Double($0) }.map(Date.init(timeIntervalSince1970:)))
     }
 
     /// `replyLine` and `replyRank` place it in its reply (`Delivery`).
@@ -211,14 +234,14 @@ public final class Registry: @unchecked Sendable {
     }
 
     /// Records what Gleaner first saw of a delivery's bytes, with the reply it was made for: the
-    /// log, the file, and the time of the record that named it. A delivery has one capture; it is
+    /// log, the file, and the times of the reply's records. A delivery has one capture; it is
     /// never replaced, only completed once when it has no hash (`complete(capturesOf:with:)`).
-    public func addCapture(_ capture: Capture, for deliveryID: String, logPath: String, path: String, replyAt: Date?) throws {
+    public func addCapture(_ capture: Capture, for deliveryID: String, logPath: String, path: String, replyTimes: Set<Date>) throws {
         try db.run("""
-            INSERT INTO captures (delivery_id, sha256, size, mtime, observed_at, saved_at, provenance, kind, log_path, path, reply_at)
+            INSERT INTO captures (delivery_id, sha256, size, mtime, observed_at, saved_at, provenance, kind, log_path, path, reply_times)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [deliveryID, capture.sha256, capture.size, capture.modifiedAt, capture.observedAt, capture.savedAt,
-                  capture.provenance.rawValue, capture.kind.rawValue, logPath, path, replyAt])
+                  capture.provenance.rawValue, capture.kind.rawValue, logPath, path, Self.times(replyTimes)])
     }
 
     /// True when a delivery of `path` has a capture without a hash that a read could complete:

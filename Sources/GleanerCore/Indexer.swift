@@ -234,7 +234,8 @@ public final class Indexer: @unchecked Sendable {
                     })
                 if isNew {
                     let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
-                    try registry.addCapture(captured, for: id, logPath: log.session.logPath, path: candidate.path, replyAt: first.part.at)
+                    try registry.addCapture(captured, for: id, logPath: log.session.logPath, path: candidate.path,
+                                            replyTimes: Set(turn.parts.compactMap(\.at)))
                     // Gleaner's first read of the file for an earlier delivery whose bytes it never had.
                     if captured.sha256 != nil { try registry.complete(capturesOf: candidate.path, with: captured) }
                     added += 1
@@ -252,40 +253,40 @@ public final class Indexer: @unchecked Sendable {
     }
 
     /// A delivery keeps the id, and the capture, it was first given: a new capture would record the
-    /// bytes as they are now. Its reply finds that capture by the time of one of its records, so a
-    /// later extractor may find the reply's first mention of the path in another record, a reread
-    /// may admit it again after dropping it, and a rewritten log may move it to other lines; a reply
-    /// never takes the capture made for another one at its old place (SPEC §9). A time another
-    /// reply naming the file shares (`shared`), or no time at all, can't tell replies apart: such a
-    /// reply is found by its place in the log, as before Gleaner kept the times. `taken` holds the
-    /// ids other replies in the log were given in this read.
+    /// bytes as they are now. A capture records the times of its reply's records, and the reply
+    /// finds it by a time no other reply naming the file has, wherever the reply sits in the log
+    /// now: a later extractor may find the reply's first mention in another record, a reread may
+    /// admit it again after dropping it, a rewritten log may move it, and the reply may have grown.
+    /// A reply whose times other replies share (`shared`), or that has none, is found by its place,
+    /// as before Gleaner kept the times, but never takes a capture recording a time it doesn't have.
+    /// `taken` holds the ids other replies in the log were given in this read.
     func deliveryID(of candidate: DeliveryCandidate, in turn: Turn, logPath: String, taken: Set<String>,
                     shared: Set<Date>) throws -> String {
-        let fresh = candidate.id(logPath: logPath)
         let times = Set(turn.parts.compactMap(\.at))
-        let placed = [fresh] + turn.parts.map { DeliveryCandidate.id(logPath: logPath, line: $0.line, path: candidate.path) }
         let own = times.subtracting(shared)
+        let fresh = candidate.id(logPath: logPath)
+        let placed = [fresh] + turn.parts.map { DeliveryCandidate.id(logPath: logPath, line: $0.line, path: candidate.path) }
         if !own.isEmpty {
-            let mine = try registry.captures(logPath: logPath, path: candidate.path, at: own).filter { !taken.contains($0) }
-            if let id = mine.first(where: placed.contains) ?? mine.first { return id }
+            let mine = try registry.captures(logPath: logPath, path: candidate.path)
+                .filter { !taken.contains($0.id) && !$0.times.isDisjoint(with: own) }
+            if let capture = mine.first(where: { placed.contains($0.id) }) ?? mine.first { return capture.id }
         }
-        // A capture made at the reply's place, unless it records a time of another reply: then it is
-        // that reply's, from before the log was rewritten.
         for id in placed where !taken.contains(id) {
-            guard case .some(let at) = try registry.captureReplyTime(id) else { continue }
-            guard at.map(times.contains) ?? true else { continue }
-            if at == nil { try registry.place(capture: id, logPath: logPath, path: candidate.path, replyAt: candidate.evidence[0].part.at) }
+            guard let recorded = try registry.captureTimes(id), recorded.isSubset(of: times) else { continue }
+            if recorded.isEmpty { try registry.place(capture: id, logPath: logPath, path: candidate.path, times: times) }
             return id
         }
-        // A reply Gleaner hasn't captured. The id its place gives may be held by another reply's
-        // capture: it gets one of its own, which its record time finds on each reread.
-        var id = fresh, n = 0
-        while try taken.contains(id) || registry.hasCapture(id) {
+        if !taken.contains(fresh), try registry.captureTimes(fresh) == nil { return fresh }
+        // The reply's place is held by another reply's capture: it gets an id of its own, the same
+        // on every read while its place and times stay.
+        var n = 0
+        while true {
             n += 1
-            id = DeliveryCandidate.id(logPath: logPath, line: candidate.evidence[0].part.line, path: candidate.path,
-                                      distinct: (candidate.evidence[0].part.at.map { String($0.timeIntervalSince1970) } ?? "-") + " \(n)")
+            let id = DeliveryCandidate.id(logPath: logPath, line: candidate.evidence[0].part.line, path: candidate.path, distinct: "\(n)")
+            guard !taken.contains(id) else { continue }
+            guard let recorded = try registry.captureTimes(id) else { return id }
+            if !recorded.isEmpty, recorded.isSubset(of: times) { return id }
         }
-        return id
     }
 
     /// Over the save limit: tracked by hash, and saved only when the person asks (SPEC §6). A

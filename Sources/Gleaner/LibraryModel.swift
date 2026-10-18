@@ -461,13 +461,17 @@ final class LibraryModel {
     var quickLookURL: URL? { isQuickLookOpen ? selectedHandoffURL : nil }
 
     func toggleQuickLook() {
+        if !isQuickLookOpen, selectedHandoffURL == nil, let (artifact, delivery, _) = selectedHandoff {
+            preparingAgain(artifact, delivery)
+        }
         isQuickLookOpen = !isQuickLookOpen && selectedHandoffURL != nil
     }
 
     /// Opens the selection's verified copy (or folder) in its app, or says why it couldn't. A copy
     /// is opened only while it is the file Gleaner hashed (`selectedHandoffURL`).
     func openSelected() {
-        guard let (artifact, delivery, _) = selectedHandoff, let url = selectedHandoffURL else { return }
+        guard let (artifact, delivery, _) = selectedHandoff else { return }
+        guard let url = selectedHandoffURL else { return preparingAgain(artifact, delivery) }
         actionFailure = nil
         Task {
             do {
@@ -580,13 +584,32 @@ final class LibraryModel {
     /// Gleaner hashed (`isPreparedIntact`), or a delivered folder as it is. A copy changed since is
     /// prepared again first, and nothing is copied meanwhile.
     func copyItem() -> NSItemProvider? {
-        guard let (artifact, _, plan) = selectedHandoff else { return nil }
+        guard let (artifact, delivery, plan) = selectedHandoff else { return nil }
         if plan == .folder { return NSItemProvider(contentsOf: URL(fileURLWithPath: artifact.path)) }
         guard case .ready(let url, _) = staging(for: plan.sha) else {
-            if case .ready = staging { prepareAgain() }
+            preparingAgain(artifact, delivery)
             return nil
         }
         return NSItemProvider(contentsOf: url)
+    }
+
+    /// What dragging the detail's tile hands over, decided when the drag starts: the copy as a file
+    /// while it is the one Gleaner hashed, else the version's bytes staged and hashed when the
+    /// receiver asks for them (`handoffItem`), with the copy prepared again meanwhile.
+    func tileItem(_ plan: Handoff, artifact: Artifact) -> NSItemProvider {
+        if plan == .folder { return Self.folderItem(artifact.path) }
+        guard case .ready(let sha, _, _) = plan else { return NSItemProvider() }
+        if case .ready(let url, _) = staging(for: sha) { return NSItemProvider(contentsOf: url) ?? NSItemProvider() }
+        prepareAgain()
+        return handoffItem(sha: sha, artifact: artifact)
+    }
+
+    /// When the copy shown as ready was changed outside Gleaner: prepares it again, and says so where
+    /// the person asked for it, since the action they pressed did nothing.
+    private func preparingAgain(_ artifact: Artifact, _ delivery: Delivery) {
+        guard case .ready = staging, !isPreparedIntact else { return }
+        prepareAgain()
+        actionFailure = (artifact.id, delivery.id, Wording.preparedCopyChanged)
     }
 
     /// False when the copy shown as ready is no longer the file Gleaner hashed: another app replaced,

@@ -541,6 +541,8 @@ enum Wording {
         }
     }
 
+    static let preparedCopyChanged = "Another app changed Gleaner’s prepared copy. Gleaner is preparing it again; try once more in a moment."
+
     static func tilde(_ path: String) -> String { (path as NSString).abbreviatingWithTildeInPath }
 
     /// A project as shown. When no repository was found for the file, that is said rather than

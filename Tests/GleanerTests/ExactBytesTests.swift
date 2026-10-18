@@ -110,7 +110,7 @@ import Testing
         let both = try deliverTwice()
         let before = try await handedOver("first version")
         try indexer.registry.db.execute("""
-            DROP INDEX captures_reply; ALTER TABLE captures DROP COLUMN reply_at; ALTER TABLE captures DROP COLUMN path; ALTER TABLE captures DROP COLUMN log_path;
+            DROP INDEX captures_reply; ALTER TABLE captures DROP COLUMN reply_times; ALTER TABLE captures DROP COLUMN path; ALTER TABLE captures DROP COLUMN log_path;
             PRAGMA user_version = 1;
             """)
         let reopened = Indexer(registry: try Registry(path: root.appendingPathComponent("registry.sqlite").path),
@@ -155,5 +155,51 @@ import Testing
             .write(to: log, atomically: true, encoding: .utf8)
         _ = try indexer.run(now: { then.addingTimeInterval(9999) })
         #expect(try await handedOver("second version").delivery.capture?.provenance == .firstSeenAfterDelivery)
+    }
+
+    /// A reply with a record time no other reply has is found by it, though its first mention's
+    /// time is shared: rewritten after a reply written at that same time, it keeps its own bytes,
+    /// and the other reply never takes them at delivery.
+    @Test func aReplyIsFoundByATimeOfItsOwnWhenItsFirstMentionsTimeIsShared() async throws {
+        let y = try record("user", "y request", then) + record("assistant", "[report](report.md)", then)
+        try writeFile("Y BYTES", then)
+        try y.write(to: log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { then.addingTimeInterval(1) })
+        let later = then.addingTimeInterval(5)
+        let x = try record("user", "x request", then) + record("assistant", "[report](report.md)", then) + record("assistant", "All done.", later)
+        try writeFile("X BYTES", then.addingTimeInterval(1))
+        try (y + x).write(to: log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { later.addingTimeInterval(1) })
+        #expect(try await handedOver("x request").bytes == "X BYTES")
+
+        try (x + y).write(to: log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { then.addingTimeInterval(9999) })
+        #expect(try await handedOver("x request").bytes == "X BYTES")
+        let other = try await handedOver("y request")
+        #expect(other.bytes == "Y BYTES" || other.delivery.capture?.provenance == .firstSeenAfterDelivery)
+    }
+
+    /// A reply whose place another reply's capture holds, and whose times another reply shares,
+    /// gets an id of its own once, and the same one on every read after.
+    @Test func aReplyGivenAnIdOfItsOwnKeepsItAsTheLogGrows() async throws {
+        let tb = then.addingTimeInterval(-100)
+        let b = try record("user", "b request", tb) + record("assistant", "[report](report.md)", tb)
+        try writeFile("B BYTES", tb)
+        try b.write(to: log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { tb.addingTimeInterval(1) })
+        let a = try record("user", "a request", then) + record("assistant", "[report](report.md)", then)
+        let x = try record("user", "x request", then) + record("assistant", "[report](report.md)", then)
+        try writeFile("A BYTES", then)
+        var text = a + x + b
+        try text.write(to: log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { then.addingTimeInterval(1) })
+        let first = try await handedOver("a request").delivery.id
+        for n in 1...3 {
+            text += try record("user", "more \(n)", then.addingTimeInterval(Double(10 * n)))
+            try text.write(to: log, atomically: true, encoding: .utf8)
+            #expect(try indexer.run(now: { then.addingTimeInterval(Double(10 * n + 1)) }).newDeliveries == 0)
+            #expect(try await handedOver("a request").delivery.id == first)
+        }
+        #expect(try await handedOver("b request").bytes == "B BYTES")
     }
 }

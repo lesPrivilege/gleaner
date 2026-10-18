@@ -129,6 +129,10 @@ public struct ContentStore: Sendable {
         let fm = FileManager.default
         let directory = staging.appendingPathComponent(sha)
         let target = directory.appendingPathComponent(name)
+        // Kept read-only: another app may have made it writable while leaving its bytes alone.
+        if Identity(target) != nil, (try? fm.attributesOfItem(atPath: target.path)[.posixPermissions] as? Int) != 0o444 {
+            try? fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: target.path)
+        }
         if let before = Identity(target), Locator.sha256(target.path) == sha, Identity(target) == before {
             return Prepared(url: target, sha: sha, identity: before)
         }

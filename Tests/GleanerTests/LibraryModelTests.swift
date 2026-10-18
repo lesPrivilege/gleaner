@@ -458,6 +458,19 @@ import UniformTypeIdentifiers
         #expect(try String(contentsOf: try #require(model.selectedHandoffURL), encoding: .utf8) == "video v2")
     }
 
+    @Test func theTileChecksTheCopyWhenTheDragStartsAndOpenSaysWhyNothingOpened() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try await replacedCopy(model)
+        let sha = try #require(video.latest.sha256)
+        let plan = try #require(model.selectedHandoff).plan
+        // Drawn while the copy was intact; dragged after it changed: the receiver gets the version.
+        #expect(try await dropped(model.tileItem(plan, artifact: video)).contents == "video v2")
+        await model.stage(sha: sha, artifact: video)
+        try "CHANGED AGAIN".write(to: try #require(model.selectedHandoffURL), atomically: true, encoding: .utf8)
+        model.openSelected()
+        #expect(model.actionFailure(video, video.latest) == Wording.preparedCopyChanged)
+    }
+
     @Test func aCopyRemovedOrWrittenToIsPreparedAgainToo() async throws {
         let model = LibraryModel(indexer: indexer)
         let video = try await selectVideo(model)

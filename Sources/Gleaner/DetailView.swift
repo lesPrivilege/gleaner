@@ -284,11 +284,9 @@ struct HandoffPanel: View {
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(ready == nil ? Color(nsColor: .separatorColor) : Palette.selection.opacity(0.6)))
         .opacity(ready == nil ? 0.55 : 1)
         .onDrag {
-            guard let ready else { return NSItemProvider() }
-            // A delivered folder is the live one: the receiver gets a copy, never the folder to move.
-            if plan == .folder { return LibraryModel.folderItem(artifact.path) }
-            // The copy as a file, while it is the one Gleaner hashed (`openURL` checks).
-            return NSItemProvider(contentsOf: ready) ?? NSItemProvider()
+            // Decided now, not when the tile was drawn: the copy may have changed since.
+            guard ready != nil else { return NSItemProvider() }
+            return model.tileItem(plan, artifact: artifact)
         }
         .help(ready == nil ? "Nothing to drag for this version" : "Drag into Finder, a chat, or an upload field")
         .accessibilityElement(children: .ignore)
