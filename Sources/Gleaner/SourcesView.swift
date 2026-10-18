@@ -11,16 +11,9 @@ struct SourcesList: View {
         List(selection: page) {
             Section("Agents") {
                 ForEach(Provider.allCases, id: \.self) { provider in
-                    let state = model.sources?[provider].map(Wording.source) ?? (model.indexed ? (.dashed, "Not read") : (.running, "Reading…"))
-                    HStack(spacing: Space.s + 2) {
-                        ProviderMark(provider: provider, size: 28, color: true)
-                        VStack(alignment: .leading, spacing: 1) {
-                            Text(Wording.provider(provider)).fontWeight(.semibold)
-                            StatusLabel(mark: state.0, text: state.1, size: 11).font(.caption)
-                        }
-                    }
-                    .padding(.vertical, Space.xs)
-                    .tag(SourcePage.agent(provider))
+                    ConnectionRow(provider: provider)
+                        .padding(.vertical, Space.xs)
+                        .tag(SourcePage.agent(provider))
                 }
             }
             Section("Library") {
@@ -59,9 +52,12 @@ struct AgentSourcePage: View {
 
     var body: some View {
         let folder = model.indexer.sources.folder(provider).path
-        let source = model.sources?[provider]
-        let statement = Wording.sourceStatement(source, indexed: model.indexed)
-        let deliveries = model.artifacts.flatMap(\.deliveries).filter { $0.provider == provider }
+        let on = !model.sourcesOff.contains(provider)
+        let source = on ? model.sources?[provider] : nil
+        let statement = on ? Wording.sourceStatement(source, indexed: model.indexed)
+            : Statement(mark: .na, title: "Off", detail: "Gleaner neither reads nor watches these logs, and hides their deliveries. Nothing is removed.")
+        let models = model.models(of: provider)
+        let deliveries = model.deliveries(of: provider)
         let conversations = Set(deliveries.map(\.logPath)).count
         Form {
             Section {
@@ -69,14 +65,27 @@ struct AgentSourcePage: View {
                     ProviderMark(provider: provider, size: 44, color: true)
                     VStack(alignment: .leading, spacing: 2) {
                         Text(Wording.provider(provider)).font(.title3.weight(.semibold))
-                        Text(Wording.tilde(folder)).font(.callout).foregroundStyle(.secondary)
-                            .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        Text(on ? "Connected" : "Off").font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: folder)]) }
-                        .disabled(Locator.stat(folder).kind != .directory)
+                    Toggle(isOn: Binding(get: { on }, set: { value in Task { await model.setSource(provider, on: value) } })) {
+                        Text("Read \(Wording.provider(provider))")
+                    }
+                    .toggleStyle(.switch)
+                    .labelsHidden()
+                    .help(on ? "Stop reading these logs and hide their deliveries" : "Read these logs again")
                 }
                 .padding(.vertical, Space.xs)
+                TopologyLine(provider: provider)
+                    .padding(.vertical, Space.xs)
+                LabeledContent("Logs") {
+                    HStack(spacing: Space.s) {
+                        Text(Wording.tilde(folder)).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                        Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: folder)]) }
+                            .controlSize(.small)
+                            .disabled(Locator.stat(folder).kind != .directory)
+                    }
+                }
             }
             Section {
                 LabeledContent("Status") {
@@ -85,9 +94,10 @@ struct AgentSourcePage: View {
                         InfoButton(text: statement.detail)
                     }
                 }
-                if let lastRead = model.lastRead { LabeledContent("Last Read", value: Wording.date(lastRead)) }
+                if on, let lastRead = model.lastRead { LabeledContent("Last Read", value: Wording.date(lastRead)) }
                 LabeledContent("Deliveries") {
-                    Text("\(deliveries.count) from \(Wording.count(conversations, "conversation"))").monospacedDigit()
+                    Text("\(deliveries.count) from \(Wording.count(conversations, "conversation"))" + (on ? "" : ", hidden"))
+                        .monospacedDigit()
                 }
                 if let failure = model.indexFailure {
                     StatusLabel(mark: .attention, text: failure).font(.callout)
@@ -97,6 +107,7 @@ struct AgentSourcePage: View {
                     Spacer()
                     if model.progress != nil { ProgressView().controlSize(.small) }
                     Button("Read Again") { model.reindex() }
+                        .disabled(!on)
                         .help("Read every log again. Saved copies and corrections stay.")
                 }
             }
@@ -117,6 +128,31 @@ struct AgentSourcePage: View {
                     } footer: {
                         Text("The log format moved. These records may hold deliveries Gleaner doesn’t list.")
                     }
+                }
+            }
+            if !models.isEmpty {
+                Section {
+                    ForEach(Array(models.enumerated()), id: \.offset) { _, row in
+                        LabeledContent {
+                            Text(Wording.count(row.deliveries, "delivery", "deliveries")).monospacedDigit()
+                        } label: {
+                            HStack(spacing: Space.s) {
+                                if let vendor = ModelVendor.of(model: row.model) {
+                                    VendorMark(vendor: vendor, size: 16)
+                                } else {
+                                    Color.clear.frame(width: 16, height: 16)
+                                }
+                                Text(row.model ?? "Not named in the log").foregroundStyle(row.model == nil ? .secondary : .primary)
+                                if let gateway = row.provider {
+                                    Text("via \(gateway)").foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                    }
+                } header: {
+                    Text("Models")
+                } footer: {
+                    Text("As each reply’s log names its model. A model Gleaner can’t match to a vendor shows no mark.")
                 }
             }
             Section("Reads") {

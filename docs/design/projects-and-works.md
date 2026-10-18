@@ -58,7 +58,7 @@ Gleaner opens no conversation itself and invents no URL scheme for one. A log fi
 
 ## Sources
 
-Sources → each agent shows its log folder, how the last read went and when (and why a run failed), how many deliveries and conversations it gave, each kind of read problem with the logs or folders behind it where Gleaner records them (unknown record types are counted per type), and Read Again. It also says what Gleaner reads and what it leaves out: sub-agent transcripts and side chains (Claude Code), sub-agent threads and messages a fork copied from its parent (Codex), examples, line references and placeholders. Admission does not change: a sub-agent's file appears once the main conversation hands it to the person. Gleaner draws no agent topology.
+Sources → each agent shows its log folder, how the last read went and when (and why a run failed), how many deliveries and conversations it gave, each kind of read problem with the logs or folders behind it where Gleaner records them (unknown record types are counted per type), and Read Again. It also says what Gleaner reads and what it leaves out: sub-agent transcripts and side chains (Claude Code), sub-agent threads and messages a fork copied from its parent (Codex), examples, line references and placeholders. Admission does not change: a sub-agent's file appears once the main conversation hands it to the person. Each agent can be switched off, and its page draws its line to the provider and the models behind its replies ([sources-plane.md](sources-plane.md)).
 
 ## Paths keep one spelling
 
@@ -68,8 +68,8 @@ Dogfooding the window on a synthetic home under `/var/folders` showed one folder
 
 - Folder rules that file future deliveries under a subfolder into another project (a monorepo holding two projects). Moving a work covers its files and their later deliveries; a rule per folder waits for a case where that is not enough.
 - Suggestions from a model, or from similarity of content.
-- Adding, changing or pausing a source folder.
-- An agent topology browser, fork or delegation views.
+- Adding or changing a source folder. (Pausing one, and the agent → provider → model line, came after: [sources-plane.md](sources-plane.md).)
+- Fork or delegation views.
 - PR #4's Thread and project Timeline, which stay for after the tag.
 
 ## Verification

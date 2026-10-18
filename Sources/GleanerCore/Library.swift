@@ -124,6 +124,18 @@ public struct Artifact: Sendable, Identifiable {
         searchPlace = Search.form(name + " " + place)
     }
 
+    /// The artifact with only the deliveries `kept`, keeping its project and checkout and each
+    /// delivery's number; nil when none is kept.
+    public func keeping(_ kept: (Delivery) -> Bool) -> Artifact? {
+        let deliveries = deliveries.filter(kept)
+        guard !deliveries.isEmpty else { return nil }
+        guard deliveries.count < self.deliveries.count else { return self }
+        var artifact = Artifact(path: path, deliveries: deliveries, repository: inRepository ? projectFolder : nil, checkout: checkout)
+        artifact.projectFolder = projectFolder
+        artifact.inRepository = inRepository
+        return artifact
+    }
+
     /// The project's name, its folder's. Two projects can share one.
     public var project: String { Projects.name(projectFolder) }
 

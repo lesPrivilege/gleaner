@@ -69,6 +69,24 @@ extension Registry {
         } }
     }
 
+    /// The agents whose logs the person turned off: kept with the library, so a library opened
+    /// elsewhere (`-GleanerHome`) keeps its own.
+    public func sourcesOff() throws -> Set<Provider> {
+        Set(try db.rows("SELECT provider FROM sources_off").compactMap { ($0["provider"] as? String).flatMap(Provider.init) })
+    }
+
+    /// Turns an agent's logs on or off. Off, Gleaner neither reads nor watches them and shows none
+    /// of their deliveries; nothing in the library is removed, and on again shows it all.
+    public func setSource(_ provider: Provider, on: Bool, at date: Date) throws {
+        try writing {
+            if on {
+                try db.run("DELETE FROM sources_off WHERE provider = ?", [provider.rawValue])
+            } else {
+                try db.run("INSERT OR IGNORE INTO sources_off (provider, since) VALUES (?, ?)", [provider.rawValue, date])
+            }
+        }
+    }
+
     public func corrections() throws -> [Correction] {
         try db.rows("SELECT id, kind, subject, target, made_at FROM corrections ORDER BY made_at, id").compactMap { row in
             guard let kind = Correction.Kind(rawValue: row["kind"] as? String ?? "") else { return nil }

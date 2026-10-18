@@ -90,6 +90,30 @@ import UniformTypeIdentifiers
         #expect(done())
     }
 
+    // MARK: Sources the person turns off
+
+    /// Off, an agent's deliveries leave the window, its logs aren't read, and nothing is removed;
+    /// the choice is kept with the library, and on again shows everything.
+    @Test func aSourceTurnedOffHidesItsDeliveriesAndKeepsThem() async throws {
+        let model = LibraryModel(indexer: indexer)
+        #expect(model.artifacts.count == 2)
+        #expect(model.models(of: .claudeCode).map(\.model) == ["m"])
+        await model.setSource(.claudeCode, on: false)
+        #expect(model.sourcesOff == [.claudeCode])
+        #expect(model.artifacts.isEmpty)
+        // Its logs aren't read, so nothing it delivered is touched.
+        let report = try indexer.run(providers: [.codex])
+        #expect(report.sources[.claudeCode] == nil)
+        #expect(try indexer.registry.artifacts().count == 2)
+        // Counted still, from the library.
+        #expect(model.models(of: .claudeCode).first?.deliveries == 4)
+        // A library opened again keeps the choice.
+        #expect(LibraryModel(indexer: indexer).artifacts.isEmpty)
+        await model.setSource(.claudeCode, on: true)
+        #expect(model.sourcesOff.isEmpty)
+        #expect(model.artifacts.count == 2)
+    }
+
     // MARK: Reading the logs (N3)
 
     @Test func aFailedReadKeepsShowingTheLibrary() async throws {

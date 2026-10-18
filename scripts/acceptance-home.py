@@ -41,21 +41,24 @@ def links(paths):
     return '\n'.join(f'[{pathlib.Path(p).name}]({p})' for p in paths)
 
 
-def claude_delivery(log, session, cwd, request, paths):
+def claude_delivery(log, session, cwd, request, paths, model='claude-fable-5'):
     base = dict(sessionId=session, cwd=str(cwd), timestamp=now())
     log.parent.mkdir(parents=True, exist_ok=True)
     with log.open('a') as f:
         f.write(json.dumps(dict(base, type='user', origin={'kind': 'human'}, message={'content': request}), ensure_ascii=False) + '\n')
-        f.write(json.dumps(dict(base, type='assistant', message={'content': [{'type': 'text', 'text': links(paths)}]}), ensure_ascii=False) + '\n')
+        f.write(json.dumps(dict(base, type='assistant', message={'model': model, 'content': [{'type': 'text', 'text': links(paths)}]}), ensure_ascii=False) + '\n')
 
 
-def codex_delivery(thread, cwd, request, paths):
+def codex_delivery(thread, cwd, request, paths, provider='magpie', model='moonshot/kimi-k2.5'):
     day = datetime.date.today()
     log = codex / 'sessions' / f'{day:%Y}' / f'{day:%m}' / f'{day:%d}' / f'rollout-{day}-{thread}.jsonl'
     log.parent.mkdir(parents=True, exist_ok=True)
     at = now()
     with log.open('a') as f:
-        for payload, kind in ((dict(id=thread, cwd=str(cwd), thread_source='user'), 'session_meta'),
+        # Codex through a local gateway, as Magpie routes it: the provider names the gateway, the
+        # model its catalog reference.
+        for payload, kind in ((dict(id=thread, cwd=str(cwd), thread_source='user', model_provider=provider), 'session_meta'),
+                              (dict(turn_id='t1', cwd=str(cwd), model=model), 'turn_context'),
                               (dict(type='message', role='user', content=[dict(type='input_text', text=request)],
                                     internal_chat_message_metadata_passthrough=dict(content_item_kinds=['user.text'])), 'response_item'),
                               (dict(type='message', role='assistant', phase='final_answer',
@@ -189,7 +192,7 @@ elif phase == 'board-final':
     (board / 'brief.pdf').unlink()
     (board / 'appendix.md').write_text('# Board appendix\n\nNumbers behind the chart.\n')
     claude_delivery(claude / 'client-a-app' / 'client-a.jsonl', 'client-a', work / 'client-a' / 'app',
-                    'Export the board appendix', [board / 'appendix.md'])
+                    'Export the board appendix', [board / 'appendix.md'], model='deepseek-v4-flash')
 
 else:
     raise SystemExit(__doc__)

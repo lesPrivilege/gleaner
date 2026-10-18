@@ -42,7 +42,14 @@ enum Staging: Equatable {
 
 @MainActor @Observable
 final class LibraryModel {
-    var artifacts: [Artifact] = [] {
+    /// Every delivery the library holds, whichever agent's.
+    private var library: [Artifact] = [] {
+        didSet { artifacts = Self.shown(library, without: sourcesOff) }
+    }
+    /// The agents whose logs the person turned off: not read, not watched, not shown.
+    private(set) var sourcesOff: Set<Provider> = []
+    /// What the window shows: the library without the deliveries of the agents turned off.
+    private(set) var artifacts: [Artifact] = [] {
         didSet {
             siblings = Artifact.deliveredWith(artifacts)
             missing = Self.missing(artifacts)
@@ -138,7 +145,9 @@ final class LibraryModel {
         self.indexer = indexer
         corrections = (try? indexer.registry.corrections()) ?? []
         userProjects = (try? indexer.registry.userProjects()) ?? []
-        artifacts = (try? indexer.registry.artifacts()) ?? []
+        sourcesOff = (try? indexer.registry.sourcesOff()) ?? []
+        library = (try? indexer.registry.artifacts()) ?? []
+        artifacts = Self.shown(library, without: sourcesOff)
         siblings = Artifact.deliveredWith(artifacts)
         missing = Self.missing(artifacts)
         saved = Self.saved(artifacts, in: indexer.store)
@@ -172,13 +181,13 @@ final class LibraryModel {
     /// One line about the agents' logs when something needs a look: a run that failed, or a
     /// source that can't be read or was read with problems. What the library holds stays shown.
     var logTrouble: String? {
-        indexFailure ?? sources.flatMap(Wording.sourcesLine)
+        indexFailure ?? sources.flatMap { Wording.sourcesLine($0.filter { !sourcesOff.contains($0.key) }) }
     }
 
     /// True when reading the logs again may help: a run failed, or a source wasn't read whole.
     /// Unknown record types are reported, but a reread can't change them.
     var canReadAgain: Bool {
-        indexFailure != nil || sources?.values.contains(where: \.isIncomplete) == true
+        indexFailure != nil || sources?.contains(where: { !sourcesOff.contains($0.key) && $0.value.isIncomplete }) == true
     }
 
     /// Projects, newest activity first.
@@ -230,10 +239,52 @@ final class LibraryModel {
     }
 
     func start() {
-        watcher = LogWatcher(directories: indexer.sources.watchedDirectories, queue: work) { [weak self] in
+        watch()
+        reindex()
+    }
+
+    /// Watches the log folders of the agents that are on.
+    private func watch() {
+        let folders = Provider.allCases.filter { !sourcesOff.contains($0) }.map { indexer.sources.folder($0).path }
+        watcher = folders.isEmpty ? nil : LogWatcher(directories: folders, queue: work) { [weak self] in
             Task { @MainActor in self?.reindex() }
         }
-        reindex()
+    }
+
+    /// The library without `off`'s deliveries, and without the files left with none.
+    private static func shown(_ library: [Artifact], without off: Set<Provider>) -> [Artifact] {
+        guard !off.isEmpty else { return library }
+        return library.compactMap { $0.keeping { !off.contains($0.provider) } }
+    }
+
+    /// Turns an agent's logs on or off (`Registry.setSource`). On again, they are read at once.
+    func setSource(_ provider: Provider, on: Bool) async {
+        let registry: Registry
+        do { registry = try correctionsStore() } catch { return }
+        let queue = correctionQueue
+        let stored = await withCheckedContinuation { done in
+            queue.async { done.resume(returning: Result { try registry.setSource(provider, on: on, at: Date()); return try registry.sourcesOff() }) }
+        }
+        guard case .success(let off) = stored else { return }
+        sourcesOff = off
+        artifacts = Self.shown(library, without: off)
+        if watcher != nil || on { watch() }
+        if on { reindex() }
+        announce("\(Wording.provider(provider)) \(on ? "on" : "off")")
+    }
+
+    /// Every delivery the library holds from `provider`, shown or not.
+    func deliveries(of provider: Provider) -> [Delivery] {
+        library.flatMap(\.deliveries).filter { $0.provider == provider }
+    }
+
+    /// What each model wrote, for one agent: the provider it went through, the model, and how many
+    /// deliveries, the most first. Turned off, the agent's are still counted from the library.
+    func models(of provider: Provider) -> [(provider: String?, model: String?, deliveries: Int)] {
+        let deliveries = deliveries(of: provider)
+        let counts = Dictionary(grouping: deliveries) { [$0.modelProvider ?? "", $0.model ?? ""] }
+        return counts.map { key, list in (key[0].isEmpty ? nil : key[0], key[1].isEmpty ? nil : key[1], list.count) }
+            .sorted { $0.deliveries != $1.deliveries ? $0.deliveries > $1.deliveries : ($0.model ?? "") < ($1.model ?? "") }
     }
 
     func reindex() {
@@ -241,17 +292,17 @@ final class LibraryModel {
         indexing = true
         // A log folder that appeared since launch is watched from now on.
         watcher?.refresh()
-        let indexer = indexer
+        let indexer = indexer, on = Set(Provider.allCases).subtracting(sourcesOff)
         work.async {
             let outcome = Swift.Result {
-                try indexer.run(progress: { done, total in
+                try indexer.run(providers: on, progress: { done, total in
                     Task { @MainActor [weak self] in self?.progress = total > 0 && done < total ? (done, total) : nil }
                 })
             }
             let library = Swift.Result { try indexer.registry.artifacts() }
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if case .success(let artifacts) = library { self.artifacts = artifacts }
+                if case .success(let artifacts) = library { self.library = artifacts }
                 self.progress = nil
                 self.indexed = true
                 self.lastRead = Date()
@@ -844,7 +895,7 @@ final class LibraryModel {
         observations[path] = FileObservation(state: state, checkedAt: Date())
         saved.subtract(versions)
         saved.formUnion(held)
-        if completed { artifacts = (try? indexer.registry.artifacts()) ?? artifacts }
+        if completed { library = (try? indexer.registry.artifacts()) ?? library }
         // Whether a file is gone decides which joins Gleaner suggests.
         let goneChanged = (state.kind == .missing) != missing.contains(path)
         if state.kind == .missing {
@@ -895,7 +946,7 @@ final class LibraryModel {
         let indexer = indexer
         let result = await Task.detached { Result { try indexer.saveCopy(of: delivery, at: Date()) } }.value
         switch result {
-        case .success: artifacts = (try? indexer.registry.artifacts()) ?? artifacts
+        case .success: library = (try? indexer.registry.artifacts()) ?? library
         case .failure(let error): actionFailure = (artifact.id, delivery.id, Wording.saveFailed(error, delivery: delivery))
         }
         await observe(artifact)

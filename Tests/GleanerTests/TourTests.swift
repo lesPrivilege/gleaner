@@ -138,6 +138,22 @@ import Testing
         model.place = .sources
         model.sourcePage = .agent(.claudeCode)
         try await shot("sources-claude-code")
+        // Codex through a gateway, then turned off: its line dashed, its deliveries hidden.
+        model.sourcePage = .agent(.codex)
+        try await shot("sources-codex-through-a-gateway")
+        await model.setSource(.codex, on: false)
+        try await shot("sources-codex-off")
+        // The toolbar's popover, on its own: the window's toolbar isn't drawn off screen.
+        let panel = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 320, height: 220),
+                             styleMask: [.borderless], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.contentView = NSHostingView(rootView: ConnectionsPanel().environment(model)
+            .background(Color(nsColor: .windowBackgroundColor)))
+        panel.orderBack(nil)
+        step += 1
+        try await Self.snapshot(panel, to: out.appendingPathComponent(String(format: "%02d-connections-popover.png", step)))
+        panel.close()
+        await model.setSource(.codex, on: true)
         model.sourcePage = .corrections
         try await shot("sources-corrections")
 

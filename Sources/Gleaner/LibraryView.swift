@@ -38,6 +38,9 @@ struct LibraryView: View {
         .navigationSubtitle(model.progress.map { "Reading logs… \($0.done) of \($0.total)" } ?? model.status)
         .toolbar {
             ToolbarItem {
+                ConnectionsButton()
+            }
+            ToolbarItem {
                 Button("Check for New Deliveries", systemImage: "arrow.clockwise") { model.reindex() }
                     .help("Check for New Deliveries (⌘R)")
             }

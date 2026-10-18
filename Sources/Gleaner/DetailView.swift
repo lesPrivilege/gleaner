@@ -418,6 +418,17 @@ struct InformationSection: View {
                         resume
                     }
                 }
+                if let name = delivery.model {
+                    InfoRow(label: "Model") {
+                        HStack(spacing: Space.s) {
+                            if let vendor = ModelVendor.of(model: name) { VendorMark(vendor: vendor, size: 14).foregroundStyle(.secondary) }
+                            Text(name).textSelection(.enabled)
+                            if let gateway = delivery.modelProvider, gateway != "openai" {
+                                Text("via \(gateway)").foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
                 InfoRow("Delivered", Wording.date(delivery.deliveredAt))
                 if let onDisk, let observation {
                     let disk = Wording.onDisk(onDisk, in: artifact, now: observation)

@@ -60,6 +60,7 @@ public final class Registry: @unchecked Sendable {
             CREATE TABLE IF NOT EXISTS projects (key TEXT PRIMARY KEY, name TEXT NOT NULL, created_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS corrections (
                 id INTEGER PRIMARY KEY, kind TEXT NOT NULL, subject TEXT NOT NULL, target TEXT NOT NULL, made_at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS sources_off (provider TEXT PRIMARY KEY, since REAL NOT NULL);
             """)
         // Each change of several statements is made whole or not at all: a launch that stops partway,
         // say while another copy of Gleaner holds the library, leaves all of it to the next launch.

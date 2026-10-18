@@ -93,6 +93,8 @@ Gleaner 没见过或没读到的交付，会在 Gleaner 第一次读到该文件
 
 **列表中**，每行最多一个标记，只在需要留意时出现：*Unavailable* 并说明原因（never seen、never read、not on disk、can't read、not a file、a folder now、changed），*Not on disk*，*Changed*，或 *First seen later*。绘制列表时从不读取磁盘，所以只有在应用打开后核查过的文件才会标 *Changed*。交付过不止一次的文件显示“Delivery N of M”。
 
+**每个 agent** 都有一个开关，在 Sources（⌘,）和工具栏的 Sources 弹窗里。关掉后，Gleaner 不再读取或监视它的日志，并隐藏它的交付；不会删除任何内容，重新打开即全部恢复。agent 的页面画出它通往服务商和回复所用模型的连线，每个模型带着厂商的标志；交付的 Information 也写明所用模型。
+
 **agent 日志**，见 Sources（⌘,）、Sources 行末的三角标记，需要留意时也会在列表下方用一行显示：*Read*；*Read with problems*（有未知的记录类型、有格式错误的行或比之前更短的日志、读不了的日志或文件夹）；*Can't read*；*Not on this Mac*。重读可能有用时会出现 Try Again，已经找到的内容照常显示。
 
 ## 转交

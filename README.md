@@ -93,6 +93,8 @@ The three without a saved copy go on with what the latest check found: the file 
 
 **In the list**, a row carries at most one mark, and only when something needs a look: *Unavailable* with why (never seen, never read, not on disk, can't read, not a file, a folder now, changed), *Not on disk*, *Changed*, or *First seen later*. Drawing the list never reads the disk, so *Changed* appears only for a file Gleaner has checked since it opened. A file delivered more than once shows "Delivery N of M".
 
+**Each agent** has a switch, in Sources (⌘,) and in the toolbar's Sources popover. Off, Gleaner neither reads nor watches its logs and hides its deliveries; nothing is removed, and on again shows everything. An agent's page draws its line to the provider and the models behind its replies, each with its vendor's mark, and a delivery's Information names its model.
+
 **The agents' logs**, in Sources (⌘,), as a triangle at the end of the Sources row, and in a line under the list when one needs a look: *Read*; *Read with problems* (unknown record types, logs with malformed lines or shorter than before, logs or folders that couldn't be read); *Can't read*; *Not on this Mac*. Try Again appears when reading again can help, and what Gleaner already found stays shown.
 
 ## Hand-off

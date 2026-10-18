@@ -20,6 +20,7 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - Move to Project… puts a work, and its files' later deliveries, in another project or a new one of your own; a derived project can be shown inside another. Each work says why it is in its project.
 - Every correction is kept apart from what Gleaner observed, survives reading the logs again and relaunching, and can be undone one by one or all at once in Sources → Corrections.
 - Delivered With reaches every file the reply named. Copy Resume Command gives `claude --resume` or `codex resume` for the conversation, run from the folder it started in, while its log and that folder are there, and says why not otherwise.
+- Each agent has a switch, in Sources and in the toolbar's Sources popover: off, its logs are neither read nor watched and its deliveries are hidden, never removed. Each agent's page draws its line to the provider and the models behind its replies, and each delivery names its model, with the vendors' marks from lobe-icons.
 - Sources (⌘,) shows each agent's log folder, how and when it was last read, its deliveries and conversations, the logs behind each read problem (unknown record types are counted per type), and what Gleaner reads and skips; Corrections; and Storage, laid out as System Settings lays out a pane.
 
 ### Identify the version
