@@ -88,11 +88,14 @@ public final class Indexer: @unchecked Sendable {
             /// lost. What they name is added, and nothing they no longer name is removed, however
             /// they grow again; reading again can't bring the records back.
             public var shortenedLogs: [String] = []
-            /// Logs with assistant records but no final reply, not counting the last turn while it has
-            /// none (the session may still be running): the adapter may no longer recognize one.
+            /// Logs whose closed turns have assistant records but no final reply: the adapter may no
+            /// longer recognize one. The last turn is still open (the session may be running), and a
+            /// turn the person interrupted was not answered.
             public var logsWithoutFinalReply: [String] = []
-            /// Logs whose last complete read found fewer final replies than the one before it: the log
-            /// or the adapter changed, and the deliveries only those replies named were removed.
+            /// Logs whose last complete read found fewer final replies in closed turns than the one
+            /// before it: the log or the adapter changed, and the deliveries only those replies named
+            /// were removed. The open last turn's reply isn't counted: the text it ends on may yet be
+            /// followed by a tool call, and is then no reply.
             public var logsWithFewerReplies: [String] = []
             /// Logs that could not be read or stored, with the reason. Their deliveries stay as they were.
             public var failures: [String] = []
@@ -235,7 +238,7 @@ public final class Indexer: @unchecked Sendable {
                         let ingested = try log.map { try ingest($0, isComplete: complete, now: now()) }
                         let counts = log.map {
                             LogCounts(records: $0.records, knownRecords: $0.knownRecords, turns: $0.answeredTurns,
-                                      finalReplies: $0.turns.count, candidates: ingested?.candidates ?? 0)
+                                      finalReplies: $0.finalReplies, candidates: ingested?.candidates ?? 0)
                         }
                         let findings = LogFindings(
                             unknownRecordTypes: log?.unknownRecordTypes ?? [:], unknownFields: log?.unknownFields ?? [:],

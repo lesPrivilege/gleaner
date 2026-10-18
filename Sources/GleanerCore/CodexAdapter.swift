@@ -3,7 +3,8 @@ import Foundation
 /// Reads Codex rollout logs (`~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl`).
 ///
 /// Final replies are assistant messages with `phase == "final_answer"`. Forked threads replay
-/// their parent's messages marked `inherited_user_message`; those are skipped.
+/// their parent's messages marked `inherited_user_message`; those are skipped. Each turn starts
+/// with a `turn_context`; one the person interrupted holds a `turn_aborted` event.
 public struct CodexAdapter: Sendable {
     /// The keys of every record. Its content is in its payload.
     static let recordKeys: Set<String> = ["timestamp", "type", "ordinal", "payload", "metadata"]
@@ -93,15 +94,20 @@ public struct CodexAdapter: Sendable {
         var requestAt: Date?
         var turns: [Turn] = []
         var answeredTurns = 0
+        var finalReplies = 0
         var answered = false
-        var replied = false
+        var aborted = false
+        var replies = 0
 
-        /// The log's last turn is answered only once it has a final answer: until then the thread
-        /// may still be running, or it ended on a tool call.
-        func closeTurn(last: Bool = false) {
-            if answered, !last || replied { answeredTurns += 1 }
+        /// Counts the turn the next turn's context closes: answered, unless it was aborted (the
+        /// person interrupted it), and its final answers. The log's last turn is still open and
+        /// isn't counted: the thread may be running, or it ended on a tool call.
+        func closeTurn() {
+            if answered, !aborted { answeredTurns += 1 }
+            finalReplies += replies
             answered = false
-            replied = false
+            aborted = false
+            replies = 0
         }
 
         for (line, record) in file.records {
@@ -140,15 +146,17 @@ public struct CodexAdapter: Sendable {
                     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                     turns.append(Turn(request: request, requestAt: requestAt, parts: [ReplyPart(
                         text: text, line: line, at: Timestamp.parse(record["timestamp"]), cwd: cwd)], model: model))
-                    replied = true
+                    replies += 1
                 default:
                     break
                 }
+            case "event_msg" where payload["type"] as? String == "turn_aborted":
+                // The person interrupted the turn: what the assistant wrote in it is not an answer.
+                aborted = true
             default:
                 break
             }
         }
-        closeTurn(last: true)
 
         let id = meta?["id"] as? String ?? url.deletingPathExtension().lastPathComponent
         return SessionLog(
@@ -156,7 +164,7 @@ public struct CodexAdapter: Sendable {
                 provider: .codex, id: id, title: titles[id],
                 cwd: meta?["cwd"] as? String, logPath: url.path, modelProvider: meta?["model_provider"] as? String),
             turns: turns,
-            records: file.records.count, answeredTurns: answeredTurns,
+            records: file.records.count, answeredTurns: answeredTurns, finalReplies: finalReplies,
             unknownRecordTypes: unknown, unknownFields: unknownFields,
             malformedLines: file.malformed)
     }

@@ -1,0 +1,3 @@
+{"type":"user","isSidechain":false,"message":{"role":"user","content":"Summarize what changed in the release"},"origin":{"kind":"human"},"uuid":"u1","timestamp":"2026-07-12T13:00:00.000Z","cwd":"/work/Praxis","sessionId":"s-interrupted-reply"}
+{"type":"assistant","isSidechain":false,"message":{"model":"claude-fable-5","role":"assistant","content":[{"type":"text","text":"So far, [the release notes](docs/release-notes.md) cover the import screen and"}]},"timestamp":"2026-07-12T13:00:04.000Z","cwd":"/work/Praxis","sessionId":"s-interrupted-reply"}
+{"type":"user","isSidechain":false,"message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]},"timestamp":"2026-07-12T13:00:05.000Z","cwd":"/work/Praxis","sessionId":"s-interrupted-reply"}

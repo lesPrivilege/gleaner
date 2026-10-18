@@ -493,7 +493,7 @@ import Testing
                            Turn(request: nil, requestAt: turn.asked,
                                 parts: [ReplyPart(text: "r", line: i + 1, at: turn.replied, cwd: i < cwds.count ? cwds[i] : nil)])
                        },
-                       records: turns.count, answeredTurns: turns.count,
+                       records: turns.count, answeredTurns: turns.count, finalReplies: turns.count,
                        unknownRecordTypes: [:], unknownFields: [:], malformedLines: 0)
         }
         let day = 24 * 60.0

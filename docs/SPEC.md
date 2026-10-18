@@ -193,7 +193,8 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 ## 8. Adapters
 
 - Each provider is an isolated module that turns its log format into `Session`, turns, user requests, and final replies. The extractor downstream is provider-agnostic.
-- Log formats are undocumented and change. Each adapter ships fixture tests built from real record shapes (sanitized). An unknown record type is counted and reported, never silently dropped into "no deliveries".
+- Log formats are undocumented and change. Each adapter ships fixture tests built from real record shapes (sanitized). An unknown record type, or an unknown key in a known one, is counted and reported, never silently dropped into "no deliveries". An adapter change merges only with passing fixture tests and the owner's review (`AGENTS.md`).
+- Each read of a log counts its records, the records of a known type, the closed turns the assistant answered in, the final replies of closed turns, and the candidates the final replies name. A turn is closed once the log holds the next one. The last turn is open and isn't counted: the session may still be running, the text it ends on may yet be followed by a tool call, or it ended on one. A turn the person interrupted was not answered. The source status reports a log whose closed turns have assistant records but no final reply, and a log whose closed turns hold fewer final replies on a complete reread.
 - Sub-agent and side-chain transcripts are excluded: they are not replies to the user.
 - A log that disappears (agents prune old transcripts) leaves its deliveries as last derived: they are not re-derived on an extractor change, and their captures and saved copies stay.
 
@@ -202,6 +203,7 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 - Records are one content block per line; `type` is `user`, `assistant`, `system`, `attachment`, `ai-title`, `custom-title`, and others.
 - A turn begins at a `user` record that is not a tool result, not `isMeta`, and not `isCompactSummary`. Records with `origin.kind == "human"` are the user's request, and their `timestamp` its time (§5.3); `task-notification` and similar also start a turn (the agent's answer to them is still user-facing) but do not replace the request context or its time.
 - The final reply is the assistant `text` blocks that come after the turn's last `tool_use`.
+- When the person stops a turn, Claude Code writes a `user` record with the text `[Request interrupted by user]`, or `[Request interrupted by user for tool use]` when they stopped a tool call. It ends the turn, which was not answered, and does not replace the request context.
 - Relative paths resolve against the `cwd` of the reply record, not the request: the agent may have entered a worktree mid-turn.
 - Title: latest `custom-title`, else latest `ai-title`.
 - Exclude `subagents/` directories and `isSidechain` records.
@@ -212,6 +214,7 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 - Forked threads replay parent messages marked `metadata.inherited_user_message`; skip them.
 - The user request is a `response_item` `message` with role `user` whose `content_item_kinds` include `user.text`, and the record's `timestamp` its time (§5.3). A user message without `content_item_kinds` (older rollouts) is not taken as a request. Codex's attachment header ("# Files mentioned by the user … ## My request:") is dropped: the request is the words after it, or the attachment names when nothing was typed.
 - The final reply is an assistant `message` with `phase == "final_answer"`.
+- A turn starts at a `turn_context`. An `event_msg` of type `turn_aborted` means the person interrupted the turn: it was not answered.
 - Title from `~/.codex/session_index.jsonl` (`thread_name` by id).
 
 ## 9. Extraction
