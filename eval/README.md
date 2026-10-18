@@ -1,8 +1,20 @@
 # Evaluation E0
 
-Scripted retrieval without a model, as [docs/design/evaluation-e0.md](../docs/design/evaluation-e0.md) specifies it. This folder holds the worlds the policies answer over. Everything here is Python 3's standard library, deterministic from a seed, and makes no model or network call.
+Scripted retrieval without a model, as [docs/design/evaluation-e0.md](../docs/design/evaluation-e0.md) specifies it. This folder holds the worlds, the two policies that answer over them, the runner and the scorer. Everything here is Python 3's standard library, deterministic from a seed, and makes no model or network call.
 
 You need macOS, the Swift toolchain (to build the app and the `gleaner` command), git and Python 3.
+
+## Run it
+
+```sh
+python3 eval/run.py 1-3 build/e0          # the development seeds
+python3 eval/run.py 101-110 build/e0      # the scored seeds
+python3 eval/score.py                     # score the latest results again
+```
+
+`run.py` builds the app and `gleaner` (skip with `--no-build`), writes and prepares each seed's worlds under `<out>/seed-<n>`, and runs both policies on every world. A world already prepared there is used as it is. It writes `eval/results/<date>/results.json` with every episode, then scores it: `score.py` adds the scored rows and tables, and writes `report.md` beside it. `--tasks` and `--policies` narrow a run; `--results` writes elsewhere.
+
+The steps below are what `run.py` does, one at a time.
 
 ## Write worlds
 
@@ -119,7 +131,30 @@ Paths are relative to `world/`. A delivery is named by its file, the session tha
 
 `drift.json` says when the runner rewrites the delivered file during an episode. After the first command whose standard output contains the file's name, and before the policy's next command, the runner copies `drift/kpis.csv` over `world/work/south/out/kpis.csv`, once. The same hook runs for both policies. The delivered bytes are still Gleaner's saved copy; the new bytes must never be passed off as the delivery.
 
-## For the policies
+## The policies
+
+`policies.py` holds both. Each is a generic function of `task.json`: its `words`, its `asks`, and the fields `asks` uses. No task id, path, gold or answer word is in the policy code.
+
+- **R**, the locked raw recipe:
+  1. `rg -l` over `.claude/projects` and `.codex/sessions` for each word, sub-agent transcripts left out. Codex titles come from `.codex/session_index.jsonl`.
+  2. A `jq` projection of each log that holds every word: one short line per request, assistant text, tool call, tool result and title, with the home folder written `~`. Turns are split from it. The turn chosen is the one whose request, title, final reply and project hold every word, ranked by the words in its request, then the newest. For `decision`, the one that holds the most words.
+  3. The paths its final reply names, resolved against each record's cwd. A link names a delivery; inline code names one only with a folder in it, a line anchor makes it a reference into code, and a bare file name is a mention, placed through the one file of that name the turn's tools touched.
+  4. `stat` and `shasum -a 256` of the file, and of the turn's last logged write of it (a Write call's content, or a here-document). The logged write stands for the delivered bytes while the file still has them, or changed after the reply, or is gone. A file that differs from it with a modification time before the reply was changed by something the log does not show, so neither is the delivery. Without such a write, `git -C … log` finds a commit made during the turn. A modification time alone never establishes the bytes.
+- **G**: `gleaner find` with the words (and `--project`), then only what the question needs: `read` for a value, `show` for the other versions or a hand-off plan, `handoff` and `shasum` for bytes, `verify` for a pointer, and `git show … | shasum` to check the commit a restore command names. It falls back to R, run in full, when find's index reports a source not read cleanly, or when find returns nothing. For what the catalog does not record, the delivering turn's tool output and later turns, it reads the one log the delivery's evidence names with R's projection. Its negative answers carry the index's scope, and R's when it fell back.
+
+Two points go beyond evaluation-e0.md, which has G always call `show` and names only the two fallback conditions: G calls `show` only when the answer needs it, and it reads the delivering log for what is outside the catalog.
+
+### How an episode runs
+
+The runner starts the policy as a subprocess and is its only way to the world. The policy writes each command as one JSON line, `{"argv": [...]}` or `{"sh": "..."}` for a pipeline. The runner runs it in the world's home folder, with that folder as `HOME` and no git configuration, and answers with its status, standard output and standard error. It refuses tools outside `rg`, `jq`, `shasum`, `git`, `stat`, `sed`, `awk`, `cat` and `head`, plus `gleaner` with `--home <world>`, and anything of the raw policy's that names `world/Library`. The policy's last line is its answer.
+
+The runner counts each command and every byte of its standard output and standard error. A pipeline counts what it prints. It also counts the same bytes with the world's home folder written `~`, so where a world was written weighs nothing. After the episode, it hashes any file the answer offers as bytes, then puts the world back: T25's file, and Gleaner's hand-off copies. Which policy goes first alternates by world.
+
+### Scoring
+
+`score.py` scores each answer against its world's `gold.json` by what the question asks: the delivery cited (file, log and reply line), the value, hash or files, and for a negative, a scope that is complete and covers the sessions it should. It records the hard failures an answer commits: the four the evaluation names (`false_global_absence`, `current_as_delivered`, `hash_merge`, `tool_only_as_delivery`) and the task-specific ones each gold lists. An answer with a hard failure is not correct. The report keeps every episode, with per-family and per-task tables and the ratio of bytes read, G to R, overall and per family.
+
+### The worlds, for the policies
 
 - Both policies see `world/`. The gleaner policy runs `gleaner … --home <world>`. `world/Library` is the catalog and is charged to it; the raw policy never reads it.
 - T10 follows the benchmark: the file's modification time is five minutes before the reply, as if restored, and its bytes differ from the logged write. Gleaner first read it when the world was prepared, long after the reply, so its capture is `first_seen_after_delivery`.
