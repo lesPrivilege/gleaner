@@ -39,18 +39,22 @@ public enum DiffItem: Equatable, Sendable {
 
 /// Courtwork's change language: grey for what was there, the change color for new lines, and a
 /// solid block only on the words that are new. Marks and both line numbers stay, so color is
-/// never the only carrier. A folded run opens in place when clicked.
+/// never the only carrier. A folded run opens in place when clicked. The rows are as tall as they
+/// are, up to `tallest`, past which they scroll.
 public struct DiffRows: View {
     public var items: [DiffItem]
     @State private var expanded: Set<Int> = []
+    @State private var height: CGFloat?
+
+    public static let tallest: CGFloat = 420
+    /// The two line-number columns and the mark's: the text starts after them.
+    static let numberWidth: CGFloat = 38, markWidth: CGFloat = 22
 
     public init(items: [DiffItem]) {
         self.items = items
     }
 
     public var body: some View {
-        // A two-axis scroll view centres content narrower than itself; pin rows to the leading edge.
-        GeometryReader { geometry in
         ScrollView([.vertical, .horizontal]) {
             LazyVStack(alignment: .leading, spacing: 0) {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in
@@ -65,28 +69,31 @@ public struct DiffRows: View {
                         } else {
                             Button("⋯ \(rows.count) unchanged line\(rows.count == 1 ? "" : "s")") { expanded.insert(index) }
                                 .buttonStyle(.plain)
+                                .fixedSize()
                                 .font(.system(.caption, design: .monospaced))
                                 .foregroundStyle(.secondary)
                                 .padding(.vertical, 3)
-                                .padding(.leading, 10 * 7)
+                                .padding(.leading, 2 * Self.numberWidth + Self.markWidth)
                         }
                     }
                 }
             }
             .textSelection(.enabled)
             .padding(.vertical, 6)
-            .frame(minWidth: geometry.size.width, alignment: .leading)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
         }
-        }
-        .frame(height: min(420, CGFloat(items.count) * 23 + 14))
+        // A two-axis scroll view centres content smaller than itself; hold the rows at the top left.
+        .defaultScrollAnchor(.topLeading, for: .alignment)
+        // Until the rows are measured, a guess from their count.
+        .frame(height: min(height ?? CGFloat(items.count) * 20 + 12, Self.tallest))
     }
 
     func line(_ row: DiffLine) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
-            Text(row.oldNumber.map(String.init) ?? "").frame(width: 38, alignment: .trailing).foregroundStyle(.tertiary)
-            Text(row.newNumber.map(String.init) ?? "").frame(width: 38, alignment: .trailing).foregroundStyle(.tertiary)
+            Text(row.oldNumber.map(String.init) ?? "").frame(width: Self.numberWidth, alignment: .trailing).foregroundStyle(.tertiary)
+            Text(row.newNumber.map(String.init) ?? "").frame(width: Self.numberWidth, alignment: .trailing).foregroundStyle(.tertiary)
             Text(row.kind == .added ? "+" : row.kind == .removed ? "−" : " ")
-                .fontWeight(.semibold).frame(width: 22)
+                .fontWeight(.semibold).frame(width: Self.markWidth)
                 .foregroundStyle(row.kind == .added ? Palette.change : .secondary)
             Text(text(row)).fixedSize()
         }

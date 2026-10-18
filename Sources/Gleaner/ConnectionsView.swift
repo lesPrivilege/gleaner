@@ -22,7 +22,8 @@ struct ConnectionRow: View {
                 StatusLabel(mark: state.0, text: state.1, size: 11).font(.caption)
             }
             Spacer(minLength: Space.s)
-            Switch("Read \(Wording.provider(provider))", isOn: Binding(get: { on }, set: { value in Task { await model.setSource(provider, on: value) } }))
+            Switch("Read \(Wording.provider(provider))", isOn: Binding(get: { on }, set: { value in Task { await model.setSource(provider, on: value) } }),
+                   role: .inline)
                 .help(on ? "Stop reading \(Wording.provider(provider))’s logs and hide its deliveries" : "Read \(Wording.provider(provider))’s logs again")
         }
     }
@@ -35,8 +36,9 @@ struct ConnectionRow: View {
     }
 }
 
-/// The toolbar's sources button: the agent mark, with the triangle when one needs a look, opening
-/// the connections popover.
+/// The toolbar's sources button, opening the connections popover. The toolbar is the system's
+/// chrome, so it takes SF Symbols beside the others there: connections, or the triangle when a
+/// source needs a look.
 struct ConnectionsButton: View {
     @Environment(LibraryModel.self) private var model
     @State private var shown = false
@@ -46,7 +48,7 @@ struct ConnectionsButton: View {
             Label {
                 Text("Sources")
             } icon: {
-                GlyphView(glyph: model.logTrouble == nil ? .agent : .warning, size: 16)
+                Image(systemName: model.logTrouble == nil ? "point.3.connected.trianglepath.dotted" : "exclamationmark.triangle")
                     .foregroundStyle(model.logTrouble == nil ? AnyShapeStyle(.primary) : AnyShapeStyle(Palette.attention))
             }
         }

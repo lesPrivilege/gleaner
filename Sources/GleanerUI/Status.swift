@@ -1,13 +1,15 @@
 import SwiftUI
 
 /// A state is said in three tiers, each only as far as it is needed:
-/// - **the mark:** a shape that stays apart from the others in grey: an endpoint for whether
-///   the bytes were confirmed, brackets for a missing value, a triangle for a look, an octagon
-///   for a failed read, a diamond for what waits on the person;
-/// - **the label:** one to three words beside the mark, for a state that needs a look;
-/// - **the sentence:** why, behind the label's info button, in its help and to VoiceOver.
-/// A state that is as it should be draws its mark alone, or nothing (Praxis kit,
-/// foundations/standing.md; macOS lists mark the exception, not the rule).
+/// - **the mark alone** (`StatusMark`), for a state that is as it should be: its word is in the
+///   help tag and is what VoiceOver reads;
+/// - **the mark and its label** (`StatusLabel`), one to three words, for a state that needs a look;
+/// - **the sentence:** why, behind the label's info button or in a `StatusPanel`, in its help and
+///   to VoiceOver.
+/// Each mark is a shape that stays apart from the others in grey: an endpoint for whether the
+/// bytes were confirmed, brackets for a missing value and a cross between them for one gone, a
+/// triangle for a look, an octagon for a failed read, a diamond for what waits on the person
+/// (Praxis kit, foundations/standing.md; macOS lists mark the exception, not the rule).
 public enum Mark: CaseIterable, Sendable {
     /// Confirmed: the filled endpoint.
     case solid
@@ -19,7 +21,7 @@ public enum Mark: CaseIterable, Sendable {
     case na
     /// Needs a look: the triangle, amber.
     case attention
-    /// Gone for good: brackets, red.
+    /// Gone for good: a cross between brackets, red.
     case cross
     /// Tried to read it and couldn't: the octagon, amber.
     case failed
@@ -36,7 +38,8 @@ public enum Mark: CaseIterable, Sendable {
         switch self {
         case .solid: .endSolid
         case .hollow: .endHollow
-        case .dashed, .cross: .missing
+        case .dashed: .missing
+        case .cross: .lost
         case .na: .na
         case .attention: .warning
         case .failed: .error
@@ -81,7 +84,29 @@ public struct Statement: Equatable, Sendable {
     }
 }
 
-/// A state's mark and label, in the mark's color. The label is what VoiceOver reads; the mark is
+/// The first tier: a state that is as it should be, said by its mark alone, as a Mac list marks
+/// only the exception. Its word is the help tag, and what VoiceOver reads.
+public struct StatusMark: View {
+    public var mark: Mark
+    public var word: String
+    public var size: CGFloat
+
+    public init(mark: Mark, word: String, size: CGFloat = 12) {
+        self.mark = mark
+        self.word = word
+        self.size = size
+    }
+
+    public var body: some View {
+        GlyphView(glyph: mark.glyph, size: size)
+            .foregroundStyle(mark.color)
+            .help(word)
+            .accessibilityElement()
+            .accessibilityLabel(word)
+    }
+}
+
+/// The second tier: a state's mark and label, in the mark's color. The label is what VoiceOver reads; the mark is
 /// hidden from it.
 public struct StatusLabel: View {
     public var mark: Mark

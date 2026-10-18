@@ -89,16 +89,7 @@ struct VersionsStrip: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(work.files.enumerated()), id: \.element.path) { index, file in
                 HStack(alignment: .center, spacing: Space.s) {
-                    ZStack {
-                        // The line into this node and out of it, solid: the join is in effect. It
-                        // stops at the dot's edge, so the dot reads as one solid end.
-                        VStack(spacing: 8) {
-                            Rectangle().fill(index == 0 ? Color.clear : Color.secondary).frame(width: 1.5)
-                            Rectangle().fill(index == work.files.count - 1 ? Color.clear : Color.secondary).frame(width: 1.5)
-                        }
-                        GlyphView(glyph: .endSolid, size: 12).foregroundStyle(.secondary)
-                    }
-                    .frame(width: 14)
+                    RelationNode(into: index > 0, out: index < work.files.count - 1, end: .solid)
                     FileIcon(path: file.path, folder: file.kind == .folder, size: 16)
                     Text(file.name).lineLimit(1).truncationMode(.middle)
                     Text([Wording.count(file.deliveries.count, "delivery", "deliveries"),
@@ -140,13 +131,7 @@ struct DeclineLine: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: Space.s) {
-            ZStack(alignment: .leading) {
-                Path { $0.move(to: CGPoint(x: 0, y: 6)); $0.addLine(to: CGPoint(x: 8, y: 6)) }
-                    .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [2, 3]))
-                GlyphView(glyph: .endCross, size: 8).offset(x: 7)
-            }
-            .frame(width: 14, height: 12, alignment: .leading)
-            .foregroundStyle(.secondary)
+            RelationLine(inEffect: false, end: .cross, length: 14)
             Text(model.describe(decline)).lineLimit(1).truncationMode(.middle)
             Text(Wording.shortDate(decline.madeAt)).foregroundStyle(.secondary).monospacedDigit()
                 .help(Wording.date(decline.madeAt))

@@ -12,16 +12,18 @@ public enum Space {
     public static let xxl: CGFloat = 32
 }
 
-/// Two radii: one for tags and small rows, one for cards (a page, a panel, a banner).
+/// Three radii: a tag, a selected row in a table, and a card (a page, a panel, a banner).
 public enum Radius {
     public static let tag: CGFloat = 4
+    public static let row: CGFloat = 6
     public static let card: CGFloat = 10
 }
 
-/// Motion only shows a state switching, something arriving or leaving, or where it went
-/// (`kit/design/motion`). It follows the model, which has already changed: a new click reverses
-/// or replaces it, and nothing waits for it. Under Reduce Motion there is none; the words and
-/// marks still change.
+/// Motion only shows a state switching, or something arriving or leaving (`kit/design/motion`).
+/// It follows the model, which has already changed: a new click reverses or replaces it, and
+/// nothing waits for it. Under Reduce Motion there is none; the words and marks still change.
+/// The kit's third duration, 240 ms for a move, has no token: nothing in the window moves to a
+/// new place (a selection swaps at once, and nothing flies), so it waits for something that does.
 ///
 /// Each token is called with the person's Reduce Motion setting and gives its animation, or nil:
 ///
@@ -31,23 +33,17 @@ public enum Motion: CaseIterable, Sendable {
     case feedback
     /// A state switching, something appearing or leaving: 200 ms.
     case state
-    /// Something moving to where it now is: 240 ms.
-    case move
 
     public var duration: Double {
         switch self {
         case .feedback: 0.12
         case .state: 0.2
-        case .move: 0.24
         }
     }
 
-    /// The cubic Bézier's two control points: out for feedback and state, in-out for a move.
+    /// The cubic Bézier's two control points: the kit's ease-out, quick to answer and soft to land.
     public var curve: (x1: Double, y1: Double, x2: Double, y2: Double) {
-        switch self {
-        case .feedback, .state: (0.2, 0, 0, 1)
-        case .move: (0.45, 0, 0.25, 1)
-        }
+        (0.2, 0, 0, 1)
     }
 
     /// The token's animation, or none under Reduce Motion.

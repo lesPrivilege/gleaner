@@ -107,6 +107,8 @@ struct HoverWash: ViewModifier {
     func body(content: Content) -> some View {
         content
             .background(Self.fill(enabled && hovering, contrast), in: RoundedRectangle(cornerRadius: Radius.card))
+            // The whole wash is the target, not only the icon and text inside it.
+            .contentShape(RoundedRectangle(cornerRadius: Radius.card))
             .onHover { hovering in withAnimation(Motion.feedback(reduceMotion)) { self.hovering = hovering } }
     }
 

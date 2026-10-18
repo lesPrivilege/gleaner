@@ -203,8 +203,10 @@ struct SuggestionView: View {
                 Label { Text("Join") } icon: { GlyphView(glyph: .merge, size: 12) }
             }
             .help("Show both as versions of one work")
-            Button("Keep Apart") { Task { await model.keepApart(suggestion.earlier, suggestion.later) } }
-                .help("Gleaner stops suggesting this")
+            Button { Task { await model.keepApart(suggestion.earlier, suggestion.later) } } label: {
+                Label { Text("Keep Apart") } icon: { GlyphView(glyph: .rejected, size: 12) }
+            }
+            .help("Gleaner stops suggesting this")
         }
         .controlRole(.inline)
     }

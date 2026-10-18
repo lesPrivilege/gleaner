@@ -3,12 +3,12 @@ import SwiftUI
 /// Gleaner's marks, drawn natively from SVG geometry on a 24-point grid with a 1.5 stroke that
 /// scales with the size. Each repeats a word written beside it and is never the only carrier of a
 /// meaning (Praxis `kit/design/marks`, grammar §2). The kit's glyphs are copied from its
-/// `glyphs.svg`; `repository` and `work` are Gleaner's own, drawn to the same grid.
+/// `glyphs.svg`; `repository`, `work` and `lost` are Gleaner's own, drawn to the same grid.
 public enum Glyph: CaseIterable, Sendable {
     // Objects
     case file, artifact, work, folder, repository, person, agent, terminal, database, checkpoint
     // States: what the person must know about a thing, each with its word
-    case done, running, awaiting, rejected, error, warning, unknown, unverified, missing, na, outside
+    case done, running, awaiting, rejected, error, warning, unknown, unverified, missing, lost, na, outside
     // Flows: what a decision does
     case branch, merge, retry, rollback
     // Relation endpoints: confirmed, not confirmed, declined
@@ -114,6 +114,11 @@ public enum Glyph: CaseIterable, Sendable {
         ])
         case .missing: Spec(viewBox: CGRect(x: 0.0, y: 0.0, width: 24.0, height: 24.0), elements: [
             .path("M9 6H6v12h3M15 6h3v12h-3"),
+        ])
+        // Gone for good: the brackets of a missing value, with nothing to get back between them.
+        case .lost: Spec(viewBox: CGRect(x: 0, y: 0, width: 24, height: 24), elements: [
+            .path("M9 6H6v12h3M15 6h3v12h-3"),
+            .path("M10.25 10.25l3.5 3.5M13.75 10.25l-3.5 3.5"),
         ])
         case .na: Spec(viewBox: CGRect(x: 0.0, y: 0.0, width: 24.0, height: 24.0), elements: [
             .rect(4.5, 4.5, 15.0, 15.0, 2.0),

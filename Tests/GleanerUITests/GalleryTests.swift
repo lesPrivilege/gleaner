@@ -109,6 +109,7 @@ struct Gallery: View {
                     FeedbackSection()
                     SurfacesSection()
                     MotionSection()
+                    RelationsSection()
                     LayoutSection()
                 }
                 .frame(width: 520)
@@ -162,12 +163,14 @@ struct MarksSection: View {
                 ForEach([SidebarRowSize.small, .medium, .large], id: \.self) { size in
                     VStack(alignment: .leading, spacing: Space.xs) {
                         GlyphLabel(title: "All Deliveries", glyph: .artifact)
+                        // A stand-in for the emphasized selection, which the system draws only on
+                        // screen: the mark answers the prominence the selection gives it.
                         GlyphLabel(title: "board", glyph: .folder)
                             .padding(.horizontal, Space.s).padding(.vertical, 3)
-                            .background(Color.accentColor, in: RoundedRectangle(cornerRadius: Radius.tag + 1))
+                            .background(Color.accentColor, in: RoundedRectangle(cornerRadius: Radius.row))
                             .environment(\.backgroundProminence, .increased)
                             .foregroundStyle(.white)
-                        Name("Sidebar, \(String(describing: size))")
+                        Name("Sidebar icons, \(String(describing: size))")
                     }
                     .environment(\.sidebarRowSize, size)
                 }
@@ -221,7 +224,18 @@ struct StatusSection: View {
     ]
 
     var body: some View {
-        Part(title: "Status", caption: "Mark, label, sentence") {
+        Part(title: "Status", caption: "Mark alone, mark and label, sentence") {
+            HStack(spacing: Space.l) {
+                Name("Mark alone:")
+                ForEach([(Mark.solid, "Seen at delivery"), (.done, "Read"), (.na, "Folder")], id: \.1) { mark, word in
+                    HStack(spacing: Space.xs) {
+                        StatusMark(mark: mark, word: word)
+                        Name("“\(word)”")
+                    }
+                }
+                Name("the word is its help tag and VoiceOver label")
+            }
+            .padding(.bottom, Space.xs)
             Grid(alignment: .leading, horizontalSpacing: Space.xl, verticalSpacing: Space.s) {
                 ForEach(Array(stride(from: 0, to: Mark.allCases.count, by: 3)), id: \.self) { start in
                     GridRow {
@@ -264,7 +278,7 @@ struct DiffSection: View {
                        segments: [.init(text: "Revenue grew ", changed: false), .init(text: "14%", changed: true),
                                   .init(text: " in the quarter.", changed: false)])),
         .line(DiffLine(kind: .added, oldNumber: nil, newNumber: 7, text: "Margins held.")),
-        .line(context(7, "## Outlook")),
+        .line(DiffLine(kind: .context, oldNumber: 7, newNumber: 8, text: "## Outlook")),
     ]
 
     var body: some View {
@@ -297,7 +311,7 @@ struct ControlsSection: View {
                     HStack(spacing: Space.s) {
                         Button("Compare") {}
                         Button { } label: { Label { Text("Join") } icon: { GlyphView(glyph: .merge, size: 12) } }
-                        Button("Keep Apart") {}
+                        Button { } label: { Label { Text("Keep Apart") } icon: { GlyphView(glyph: .rejected, size: 12) } }
                         CopyButton(title: "Copy", text: "") { _ in }
                         CopyButton(title: "Copy", text: "", copied: true) { _ in }
                     }
@@ -306,10 +320,10 @@ struct ControlsSection: View {
                 GridRow {
                     Name("Switches")
                     HStack(spacing: Space.m) {
-                        Switch("On", isOn: $on, role: .standalone)
-                        Switch("Off", isOn: $off, role: .standalone)
                         Switch("On", isOn: $on)
                         Switch("Off", isOn: $off)
+                        Switch("On", isOn: $on, role: .inline)
+                        Switch("Off", isOn: $off, role: .inline)
                     }
                 }
                 GridRow {
@@ -337,10 +351,11 @@ struct FeedbackSection: View {
                     }
                 }
                 GridRow {
-                    Name("Quiet")
+                    Name("More")
                     ForEach(Feedback.allCases, id: \.self) { state in
-                        TextButtonStyle.face(.quiet, Text("3 More"), state, contrast)
+                        TextButtonStyle.face(.quiet, MoreButton.label(hidden: 3, expanded: false), state, contrast)
                     }
+                    TextButtonStyle.face(.quiet, MoreButton.label(hidden: 3, expanded: true), .rest, contrast)
                 }
             }
             .font(.callout)
@@ -406,21 +421,21 @@ struct SurfacesSection: View {
                 }
                 .surface(.page)
                 .environment(\._accessibilityReduceTransparency, reduce)
-            Name(reduce ? "floating, Reduce Transparency" : "floating")
+            Name(reduce ? "floating, Reduce Transparency" : "floating: glass draws only on screen")
         }
     }
 }
 
 struct MotionSection: View {
     var body: some View {
-        Part(title: "Motion", caption: "None under Reduce Motion; arrivals only fade") {
+        Part(title: "Motion", caption: "Off under Reduce Motion; arrivals only fade") {
             HStack(alignment: .bottom, spacing: Space.xl) {
                 ForEach(Motion.allCases, id: \.self) { motion in
                     VStack(alignment: .leading, spacing: Space.xs) {
                         Curve(motion: motion)
                             .stroke(.primary, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
                             .background(alignment: .bottom) { Rectangle().fill(.quaternary).frame(height: 1) }
-                            .frame(width: 140 * motion.duration / 0.24, height: 48)
+                            .frame(width: 140 * motion.duration / 0.2, height: 48)
                         Name("\(String(describing: motion)) · \(Int(motion.duration * 1000)) ms")
                     }
                 }
@@ -460,7 +475,7 @@ struct TokensSection: View {
     }
 
     var body: some View {
-        Part(title: "Space, radius, color", caption: "A 4-point step; tag and card; one role per color") {
+        Part(title: "Space, radius, color", caption: "A 4-point step; tag, row, card; one role per color") {
             HStack(alignment: .bottom, spacing: Space.l) {
                 ForEach([("xs", Space.xs), ("s", Space.s), ("m", Space.m), ("l", Space.l), ("xl", Space.xl), ("xxl", Space.xxl)], id: \.0) { name, value in
                     VStack(spacing: Space.xs) {
@@ -469,7 +484,7 @@ struct TokensSection: View {
                     }
                 }
                 Divider().frame(height: 48)
-                ForEach([("tag", Radius.tag), ("card", Radius.card)], id: \.0) { name, value in
+                ForEach([("tag", Radius.tag), ("row", Radius.row), ("card", Radius.card)], id: \.0) { name, value in
                     VStack(spacing: Space.xs) {
                         RoundedRectangle(cornerRadius: value).strokeBorder(.secondary).frame(width: 40, height: 32)
                         Name("\(name) \(Int(value))")
@@ -515,19 +530,55 @@ struct LayoutSection: View {
                         ForEach(["revenue.png", "deck.pptx", "brief.pdf"], id: \.self) { LinkButton(title: $0) {} }
                     }
                 }
-                InfoRow(label: "Relation") {
-                    HStack(spacing: Space.s) {
-                        AgentMark(.codex, size: 16, color: true)
-                        RelationLine(inEffect: true)
-                        Text("in effect").foregroundStyle(.secondary)
-                        RelationLine(inEffect: false)
-                        Text("not").foregroundStyle(.secondary)
-                    }
-                }
             }
             .font(.callout)
-            EmptyState(title: "No Deliveries Yet", glyph: .artifact, description: "Files an agent names in a reply to you appear here.")
-                .frame(height: 160)
+            EmptyState(title: "No Deliveries Yet", glyph: .artifact, description: "Files an agent names in a reply to you appear here.") {
+                Button("Read Again") {}
+            }
+            .frame(height: 240)
+        }
+    }
+}
+
+struct RelationsSection: View {
+    var body: some View {
+        Part(title: "Relations", caption: "Solid in effect, dashed not; the end says the rest") {
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(["report.md", "board-report.md", "board-report-final.md"].enumerated()), id: \.offset) { index, name in
+                    HStack(spacing: Space.s) {
+                        RelationNode(into: index > 0, out: index < 2, end: .solid)
+                        FileIcon(path: name, size: 16)
+                        Text(name)
+                        Name(index == 0 ? "joined by you" : "")
+                    }
+                    .font(.callout)
+                    .frame(minHeight: 26)
+                }
+            }
+            HStack(spacing: Space.s) {
+                RelationLine(inEffect: false, end: .cross, length: 14)
+                Text("Kept revenue.png and revenue-v2.png apart")
+                Name("declined, still shown")
+            }
+            .font(.caption)
+            .padding(.top, Space.xs)
+            ForEach([true, false], id: \.self) { on in
+                HStack(spacing: Space.s) {
+                    AgentMark(.codex, size: 20, color: true).saturation(on ? 1 : 0)
+                    RelationLine(inEffect: on)
+                    Text("magpie").font(.caption).foregroundStyle(.secondary)
+                        .padding(.horizontal, Space.s).padding(.vertical, 2)
+                        .overlay(Capsule().strokeBorder(Color(nsColor: .separatorColor)))
+                    RelationLine(inEffect: on)
+                    HStack(spacing: Space.xs + 2) {
+                        VendorMark(vendor: .kimi, size: 16)
+                        VendorMark(vendor: .openai, size: 16)
+                    }
+                    .foregroundStyle(on ? .primary : .tertiary)
+                    Name(on ? "agent → provider → models, read" : "off: not in effect")
+                }
+                .padding(.top, Space.xs)
+            }
         }
     }
 }

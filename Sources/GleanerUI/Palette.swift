@@ -5,9 +5,11 @@ import SwiftUI
 /// gone, the change colors mark changed text and only that, and the one accent marks what waits
 /// on the person. Everything else is the system's: label inks, separators, selection, materials.
 ///
-/// Each color has a light and a dark value, and a stronger one for each under Increase Contrast;
-/// washes keep their value there, and the ink and edge on them get stronger instead. The values
-/// follow the window's appearance, so the contrast ones show only with the system's setting on.
+/// Each color has a light and a dark value, and a stronger one for each under Increase Contrast.
+/// An ink moves away from its background. A wash deepens a little in light, so it still parts
+/// from the window, and keeps its value in dark, where the ink and edge on it get stronger
+/// instead. The values follow the window's appearance, so the contrast ones show only with the
+/// system's setting on.
 public enum Palette {
     public static let attention = color(.attention)
     public static let attentionFill = color(.attentionFill)

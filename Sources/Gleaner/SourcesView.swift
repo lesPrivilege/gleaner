@@ -69,8 +69,7 @@ struct AgentSourcePage: View {
                         Text(on ? "Connected" : "Off").font(.callout).foregroundStyle(.secondary)
                     }
                     Spacer()
-                    Switch("Read \(Wording.provider(provider))", isOn: Binding(get: { on }, set: { value in Task { await model.setSource(provider, on: value) } }),
-                           role: .standalone)
+                    Switch("Read \(Wording.provider(provider))", isOn: Binding(get: { on }, set: { value in Task { await model.setSource(provider, on: value) } }))
                         .help(on ? "Stop reading these logs and hide their deliveries" : "Read these logs again")
                 }
                 .padding(.vertical, Space.xs)

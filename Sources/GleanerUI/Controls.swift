@@ -42,7 +42,7 @@ public struct Switch: View {
     @Binding public var isOn: Bool
     public var role: ControlRole
 
-    public init(_ label: String, isOn: Binding<Bool>, role: ControlRole = .inline) {
+    public init(_ label: String, isOn: Binding<Bool>, role: ControlRole = .standalone) {
         self.label = label
         _isOn = isOn
         self.role = role
@@ -57,8 +57,9 @@ public struct Switch: View {
 }
 
 /// The three states of a control you can act on: at rest, under the pointer, and pressed. Hover
-/// only confirms what the control already says; nothing needed is hover-only.
-public enum Feedback: CaseIterable, Sendable {
+/// only confirms what the control already says; nothing needed is hover-only. Each text control
+/// draws its look from its state, so the gallery can draw the states no pointer reaches.
+enum Feedback: CaseIterable, Sendable {
     case rest, hover, press
 }
 
@@ -80,24 +81,23 @@ public struct LinkButton: View {
     }
 }
 
-/// Text that acts, with no bezel: a link, or a command said quietly beside what it acts on
-/// ("3 More", "Show Fewer"). The pointer is a hand over either; hover eases in at the feedback
-/// duration.
-public struct TextButtonStyle: ButtonStyle {
-    public enum Kind: Sendable {
+/// Text that acts, with no bezel: a link, or a command said quietly beside what it acts on. The
+/// pointer is a hand over either; hover eases in at the feedback duration.
+struct TextButtonStyle: ButtonStyle {
+    enum Kind: Sendable {
         /// Goes somewhere: ink with a standing underline that darkens under the pointer.
         case link
         /// A small command in secondary text that takes the label ink under the pointer.
         case quiet
     }
 
-    public var kind: Kind
+    var kind: Kind
 
-    public init(_ kind: Kind) {
+    init(_ kind: Kind) {
         self.kind = kind
     }
 
-    public func makeBody(configuration: Configuration) -> some View {
+    func makeBody(configuration: Configuration) -> some View {
         Look(kind: kind, configuration: configuration)
     }
 
@@ -133,9 +133,37 @@ public struct TextButtonStyle: ButtonStyle {
     }
 }
 
-extension ButtonStyle where Self == TextButtonStyle {
-    /// A small command in secondary text, such as "3 More".
-    public static var quiet: TextButtonStyle { TextButtonStyle(.quiet) }
+/// Shows the rest of a list in place, or hides it again: "3 More" or "Show Fewer", said quietly,
+/// with a chevron that points where the list goes. The chevron is the standing cue that it is a
+/// command and not a count; at rest it reads in secondary text, as the list's own notes do.
+public struct MoreButton: View {
+    public var hidden: Int
+    @Binding public var expanded: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    public init(hidden: Int, expanded: Binding<Bool>) {
+        self.hidden = hidden
+        _expanded = expanded
+    }
+
+    public var body: some View {
+        Button {
+            withAnimation(Motion.state(reduceMotion)) { expanded.toggle() }
+        } label: {
+            Self.label(hidden: hidden, expanded: expanded)
+        }
+        .buttonStyle(TextButtonStyle(.quiet))
+    }
+
+    static func label(hidden: Int, expanded: Bool) -> some View {
+        HStack(spacing: 3) {
+            Text(expanded ? "Show Fewer" : "\(hidden) More")
+            Image(systemName: expanded ? "chevron.up" : "chevron.down")
+                .imageScale(.small)
+                .fontWeight(.semibold)
+                .accessibilityHidden(true)
+        }
+    }
 }
 
 /// A command that copies text, then says "Copied" in its place for a moment, with the done mark:

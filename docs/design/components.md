@@ -11,42 +11,49 @@ The window looks as it did. The refinements are listed under [What changed in th
 
 ## The library
 
-`GleanerUI` is a target of its own (`Sources/GleanerUI`). It imports only SwiftUI and AppKit. It holds no Gleaner wording beyond "Copied" and "More Info", and no type from `GleanerCore`. The app binds its library to the components in three places:
+`GleanerUI` is a target of its own (`Sources/GleanerUI`). It imports only SwiftUI and AppKit. It holds no Gleaner wording beyond a few control words ("Copied", "More Info", "3 More", "Show Fewer"), and no type from `GleanerCore`. The app binds its library to the components in three places:
 
 - `AgentMark+Provider.swift`: an agent's mark from the `Provider` a log names (`AgentMark(provider:)`).
 - `ComparePane.swift`: `DiffItem.items(_:)` turns `TextDiff`'s rows and folds into the comparison's lines.
 - `Wording.swift`: every sentence, label and `Statement`. `Wording.provider` takes the agent's name from `AgentMark.Agent`, which owns it, as `ModelVendor` owns the vendors' names.
 
-Each component's look is a function of its state. The views that track a pointer (`TextButtonStyle`, `hoverWash`) draw each state from one face, so the gallery can draw the hover and press states that no pointer reaches off screen.
+Each component's look is a function of its state. The views that track a pointer (links, `MoreButton`, `hoverWash`) draw each state from one face, so the gallery can draw the hover and press states that no pointer reaches off screen. Those faces are internal: the gallery reaches them through `@testable import`.
 
 | Aspect | API | File |
 |---|---|---|
 | Marks | `Glyph`, `GlyphView`, `GlyphLabel`, `RowGlyph` | `Glyph.swift`, `SVGPath.swift` |
 | Brand marks | `AgentMark` (`.claudeCode`, `.codex`), `ModelVendor`, `VendorMark` | `AgentMarks.swift`, `VendorMarks.swift` |
 | File icons | `FileIcon` | `FileIcon.swift` |
-| Status | `Mark`, `Statement`, `StatusLabel`, `StatusPanel` | `Status.swift` |
+| Status | `Mark`, `Statement`, `StatusMark`, `StatusLabel`, `StatusPanel` | `Status.swift` |
 | Color | `Palette` | `Palette.swift` |
 | Surfaces | `Surface`, `.surface(_:)`, `.surface(_:in:)` | `Surfaces.swift` |
-| Hover and press | `Feedback`, `.hoverWash(_:)`, `TextButtonStyle` (`.quiet`) | `Surfaces.swift`, `Controls.swift` |
-| Controls | `ControlRole`, `.controlRole(_:)`, `Switch`, `LinkButton`, `InfoButton`, `CopyButton` | `Controls.swift` |
-| Motion | `Motion` (`.feedback`, `.state`, `.move`, `arrive`), `announce` | `Tokens.swift` |
-| Layout | `Space`, `Radius`, `DetailSection`, `InfoRow`, `EmptyState`, `FlowLayout`, `RelationLine` | `Tokens.swift`, `Layout.swift`, `Relations.swift` |
+| Hover and press | `.hoverWash(_:)`; links and `MoreButton` carry their own | `Surfaces.swift`, `Controls.swift` |
+| Controls | `ControlRole`, `.controlRole(_:)`, `Switch`, `LinkButton`, `MoreButton`, `InfoButton`, `CopyButton` | `Controls.swift` |
+| Relations | `RelationEnd`, `RelationLine`, `RelationNode` | `Relations.swift` |
+| Motion | `Motion` (`.feedback`, `.state`, `arrive`), `announce` | `Tokens.swift` |
+| Layout | `Space`, `Radius`, `DetailSection`, `InfoRow`, `EmptyState`, `FlowLayout` | `Tokens.swift`, `Layout.swift` |
 | Comparison | `DiffLine`, `DiffItem`, `DiffRows` | `DiffRows.swift` |
 
 ## Each aspect, designed on its own
 
 ### Marks and icons
 
-- **Where marks go.** Native chrome keeps the system's SF Symbols: the toolbar, menus, ⓘ, and the system's own empty states. Gleaner's marks go only where they carry one of Gleaner's meanings: a kind of object, a state, a flow, a relation's end.
+- **Where marks go.** Native chrome keeps the system's SF Symbols: the toolbar, menus, ⓘ, disclosure chevrons, and the system's own empty states. The toolbar's Sources button follows it: connections (`point.3.connected.trianglepath.dotted`), or `exclamationmark.triangle` in amber when a source needs a look. Gleaner's marks go only where they carry one of Gleaner's meanings: a kind of object, a state, a flow, a relation's end. The sidebar's rows carry Gleaner's marks, drawn to the row as SF Symbols would be.
 - **How they are drawn.** Each mark is SVG geometry on the kit's 24-point grid, with a 1.5 stroke that scales with the size, never under a point, and round caps and joins. The parts are read once, not on every redraw.
-- **Words.** A mark always repeats a word beside it. It is hidden from VoiceOver, which reads the word.
-- **In a sidebar**, `RowGlyph` follows the row as an SF Symbol would. It takes the person's sidebar icon size (14, 16 or 20) and turns white on an emphasized selection. The gallery draws all three sizes on a selected row, which [window-polish.md](window-polish.md) listed as unchecked.
+- **Words.** A mark always stands for a word, in one of the three tiers under [Status marks](#status-marks): beside it, or, when all is as it should be, in its help tag and as its VoiceOver label.
+- **In a sidebar**, `RowGlyph` follows the row as an SF Symbol would. It takes the person's sidebar icon size (14, 16 or 20) and turns white on an emphasized selection. The gallery draws the three sizes, and the mark's answer to an emphasized selection on a stand-in for it: the system draws its own selected row only on screen.
 - **Brand marks** are lobe-icons' drawings, the set Magpie bundles. An agent appears in its own colors where it is named on its own, and in one ink where it repeats on rows. A model's vendor is always one ink, a step below the agent. A model that matches no vendor gets no mark.
 - **Files** are drawn with the icon Finder uses for their type, so no badge repeats the extension.
 
 ### Status marks
 
-There are three tiers: the mark, a label of one to three words, and the sentence behind ⓘ. `Mark` names the eleven states. Each has a silhouette that stays distinct in grey, and a color that only repeats it.
+A state is said in three tiers, each only as far as it is needed:
+
+1. **The mark alone** (`StatusMark`), for a state that is as it should be, as a Mac list marks only the exception. Its word is the help tag, and what VoiceOver reads. The Versions table marks each delivery this way.
+2. **The mark and its label** (`StatusLabel`), one to three words, for a state that needs a look.
+3. **The sentence**: why, behind ⓘ, or inline in a `StatusPanel` where the person must decide what to do.
+
+`Mark` names the eleven states. Each has a silhouette that stays distinct in grey, and a color that only repeats it. "Not on disk" is brackets around nothing; "lost" puts a cross between them (`Glyph.lost`, Gleaner's own), so the two never differ by color alone.
 
 - **Ink:** confirmed (solid), not confirmed (hollow) and done.
 - **Secondary:** no value, doesn't apply, declined and running.
@@ -68,10 +75,10 @@ There are three tiers: the mark, a label of one to three words, and the sentence
 | `change`, `changeBlock`, `changeInk` | Changed text in a comparison, and nothing else (Courtwork) |
 | `mark` | A mark beside its words |
 
-- **Under Increase Contrast**, every ink has a stronger value in light and in dark, and the washes keep theirs. The edges and inks on a wash get stronger instead.
+- **Under Increase Contrast**, every ink has a stronger value in light and in dark. A wash deepens a little in light, so it still parts from the window, and keeps its value in dark, where the edge and ink on it get stronger instead.
 - **Dark under Increase Contrast** is new: the amber, red and accent inks had no stronger dark value before.
 - **The comparison's colors** stay Courtwork's, with no stronger dark value.
-- **`TokenTests`** checks that a contrast value only ever moves away from its background.
+- **`TokenTests`** checks that a contrast ink only ever moves away from its background, and that a wash deepens a little in light and holds in dark.
 
 ### Surfaces and materials
 
@@ -94,14 +101,14 @@ Grouping is done with space, alignment and type (Praxis references U04). Only fi
 
 ### Hover and press
 
-`Feedback` names three states: rest, hover and press. Hover only confirms what a control already says. Nothing needed is hover-only.
+Each control you can act on has three states: rest, hover and press. Hover only confirms what a control already says. Nothing needed is hover-only.
 
 | Control | Hover | Press |
 |---|---|---|
 | System buttons (bordered, borderless, ⓘ) | The system's | The system's |
 | Link (`LinkButton`) | Its standing underline darkens to the ink; the pointer is a hand | Dims to 60%, as a plain Mac button does |
-| Quiet command (`.buttonStyle(.quiet)`: "3 More", "Show Fewer") | Secondary text takes the label ink; the pointer is a hand | Dims to 60% |
-| The file to drag (`.hoverWash`) | A wash of the label ink: 6%, or 12% under Increase Contrast | The drag itself |
+| `MoreButton` ("3 More ⌄", "Show Fewer ⌃") | Secondary text takes the label ink; the pointer is a hand | Dims to 60% |
+| The file to drag (`.hoverWash`) | A wash of the label ink: 6%, or 12% under Increase Contrast. The whole wash is the target, and the pointer and the drag share its rect | The drag itself |
 
 Lists and tables don't wash their rows, as Finder and Mail don't: the system's selection is their feedback. Hover eases in at the feedback duration, and at once under Reduce Motion.
 
@@ -111,16 +118,28 @@ A control's size follows its place, as in first-party apps.
 
 | Role | Size | Examples |
 |---|---|---|
-| `standalone` (the default) | The place's own: regular in a window, small for a grouped form's switches, as System Settings draws them | The detail's Open and Show in Finder, an agent page's switch, an empty state's way out, a sheet's buttons |
+| `standalone` (the default, `Switch`'s too) | The place's own: regular in a window, small for a grouped form's switches, as System Settings draws them | The detail's Open and Show in Finder, an agent page's switch, an empty state's way out, a sheet's buttons |
 | `inline` | Small, so the row keeps its text's height | Compare, Copy, Join, Keep Apart, Undo, Try Again, a source row's switch |
 
 `.controlRole(.standalone)` sets no size. A grouped `Form` sizes its switches without saying so in the environment, so any size set there would override it.
 
 - **`Switch`** is the system's switch. Its label is for VoiceOver; the words beside it say what it switches.
 - **`LinkButton`** goes somewhere and is ink with a standing underline. It is never the accent.
+- **`MoreButton`** shows the rest of a list in place, or hides it again. At rest it reads in secondary text, as the list's notes do; its chevron, pointing where the list goes, is the standing cue that it is a command and not a count.
+- **Marks on buttons** come in pairs: Join carries `merge` and Keep Apart `rejected`, the mark Corrections lists it by; Show Apart carries `branch`.
 - **`InfoButton`** opens the sentence behind a label in a popover. The sentence is also its help tag and its VoiceOver value.
 - **`CopyButton`** says "Copied" with the done mark in its own place for a moment. Both labels keep one width, so nothing beside it moves.
 - **Bezels** stay the system's bordered buttons, with no custom bezel.
+
+### Relations
+
+The kit's relation grammar, as components: a line that is solid while the relation is in effect and dashed while it is not, ending in what it says of its far end (`RelationEnd`: confirmed, not confirmed, declined).
+
+| Component | Drawn as | In the window |
+|---|---|---|
+| `RelationNode` | A node on a line drawn down a list: the line in from the row above and out to the row below, stopping at the end's edge | A work's files hung on one solid line with filled ends, because the person joined them (Project) |
+| `RelationLine(inEffect: false, end: .cross)` | A short dashed line ending in a cross | A pair the person kept apart, still shown |
+| `RelationLine(inEffect:)` | A line between two marks, with no end | An agent → its provider → its models' vendors, dashed while the agent is off (Sources) |
 
 ### Motion
 
@@ -128,21 +147,21 @@ A control's size follows its place, as in first-party apps.
 |---|---|---|---|
 | `Motion.feedback` | 120 ms | out (0.2, 0, 0, 1) | Hover and press |
 | `Motion.state` | 200 ms | out | A state switching, something arriving or leaving |
-| `Motion.move` | 240 ms | in-out (0.45, 0, 0.25, 1) | Something moving to where it now is |
+
+The kit's third duration, 240 ms for a move, has no token. Nothing in the window moves to a new place: a selection swaps at once, and nothing flies. It becomes a token when something does.
 
 - **Calling a token.** A token is called with the person's Reduce Motion setting, as in `withAnimation(Motion.state(reduceMotion))`. It returns nil under Reduce Motion, so nothing moves.
 - **Arrivals.** `Motion.arrive` rises 8 points as it fades in and leaves by fading only. Under Reduce Motion it only fades.
 - **The model leads.** Motion follows the model, which has already changed. A new click reverses or replaces an animation, and nothing waits for one.
-- **`TokenTests`** checks the three durations, and that every token is off under Reduce Motion.
+- **`TokenTests`** checks the durations, and that every token is off under Reduce Motion.
 
 ### Layout
 
 - **Space:** a 4-point step: 4, 8, 12, 16, 24, 32. A detail's sections stand 24 apart, and the items inside them 8.
-- **Radius:** two values: 4 for tags and small rows, 10 for cards.
+- **Radius:** three values: 4 for tags, 6 for a selected row in a table, 10 for cards.
 - **`DetailSection`** titles a section as Finder's preview pane does: a heading, a rule, then the content.
 - **`InfoRow`** labels facts as Get Info does, with the label right-aligned in its column.
 - **`EmptyState`** draws its mark large, with a short title, one line, and what to do.
-- **`RelationLine`** is the kit's relation line: solid while in effect, dashed while not.
 
 ### Comparison
 
@@ -152,7 +171,9 @@ A control's size follows its place, as in first-party apps.
 - **Markers.** Both line numbers and the `+`/`−` mark stay, so color never carries the difference alone.
 - **Folds.** An unchanged run folds into "⋯ N unchanged lines", which opens in place.
 
-Only its input changed. It now takes `DiffLine`s and folded runs, so the view doesn't depend on `GleanerCore`. `TextDiff` still decides what folds.
+Its language is unchanged. Two things changed around it:
+- **Input.** It takes `DiffLine`s and folded runs, so the view doesn't depend on `GleanerCore`. `TextDiff` still decides what folds.
+- **Size.** The rows are as tall as they are, measured, up to 420 points, past which they scroll; they used to take a height guessed from their count, so a short diff floated in empty space. They stay at the top left, and a fold's label starts at the text column.
 
 ## The gallery
 
@@ -175,7 +196,8 @@ GLEANER_GALLERY=<folder> swift test --filter GalleryTests
   - the palette's contrast values, as swatches from its own table.
 
   Status inks and system colors on those sheets show their standard values. In the window, the system's setting picks the contrast values.
-- **Liquid Glass** composites in the window server, so the plain floating label draws without its glass. Its Reduce Transparency fallback draws in full.
+- **Liquid Glass** composites in the window server, so the plain floating label draws without its glass; in dark it is unreadable there, and the sheet says the sample isn't representative. Its Reduce Transparency fallback draws in full. Drawing through a real window on screen would need screen recording, which a test shouldn't ask for.
+- **The sidebar's selected row** is the system's, drawn only on screen. The sheet draws `RowGlyph` on a stand-in for it.
 - **Controls draw as in a window behind others.** The test host isn't the active app, so a switch that is on draws grey, not in the accent.
 
 ## What changed in the window
@@ -187,7 +209,14 @@ The tour (`GLEANER_TOUR`) was drawn before and after the move and compared pixel
 
 The tour's last picture, the sheet of every mark, is now part of the gallery, which draws it in every appearance.
 
-These refinements show only under a setting, a pointer or a newer system, and none of them is in the tour:
+A design review asked for the refinements below, and they are deliberate. Those the tour shows:
+- **"Lost"** draws a cross between the brackets, apart from "not on disk".
+- **Keep Apart** carries its mark beside Join's.
+- **Versions** shortens its dates, as Mail does, when the table is too narrow for its labels, for every row at once, so "Same as delivery 2" isn't cut to "Sa…d 2". The full date stays in the help tag.
+- **The comparison** is as tall as its rows, up to 420 points.
+- **"3 More"** carries its chevron.
+
+These show only under a setting, a pointer or a newer system, and none of them is in the tour:
 - **Increase Contrast:**
   - edges of tinted panels and suggestions take the full ink;
   - a link's standing underline goes from tertiary to secondary label;
@@ -199,7 +228,8 @@ These refinements show only under a setting, a pointer or a newer system, and no
 - **Press and hover:**
   - links and quiet commands dim when pressed;
   - "3 More" takes the label ink under the pointer;
-  - the file at the top of the detail washes over the wash's own area, 8 points wider each side than before.
+  - the file at the top of the detail washes, takes the pointer and drags over one rect, the wash's, 8 points wider each side than its text.
+- **The toolbar's Sources button** takes SF Symbols, as the toolbar's other buttons do.
 
 ## Adding a component
 

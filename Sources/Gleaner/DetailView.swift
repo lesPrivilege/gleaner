@@ -133,9 +133,9 @@ struct DetailHeader: View {
         }
         .padding(.vertical, Space.xs)
         .padding(.horizontal, Space.s)
+        // The wash, the pointer and the drag share one rect: the wash's, which then reaches past
+        // the text column by its own padding.
         .hoverWash(ready)
-        .padding(.horizontal, -Space.s)
-        .contentShape(RoundedRectangle(cornerRadius: Radius.card))
         .pointerStyle(ready ? .grabIdle : nil)
         .onDrag {
             // Decided now, not when the tile was drawn: the copy may have changed since.
@@ -147,6 +147,7 @@ struct DetailHeader: View {
         .accessibilityLabel("\(artifact.name), \(plan.map { Wording.tileVersion(staged: staged, plan: $0, delivery: delivery, in: artifact) } ?? Wording.compareTitle(delivery))")
         .accessibilityValue(status.text)
         .accessibilityHint(ready ? "Drag into another app, or choose File > Open Verified Copy." : "")
+        .padding(.horizontal, -Space.s)
     }
 
     /// The tile's status, in a word or two: what the panel below says in full.
@@ -410,10 +411,7 @@ struct InformationSection: View {
                                     .transition(Motion.arrive(reduceMotion))
                             }
                             if others.count > Self.shown {
-                                Button(showsAll ? "Show Fewer" : "\(others.count - Self.shown) More") {
-                                    withAnimation(Motion.state(reduceMotion)) { showsAll.toggle() }
-                                }
-                                .buttonStyle(.quiet)
+                                MoreButton(hidden: others.count - Self.shown, expanded: $showsAll)
                             }
                         }
                     }
@@ -457,11 +455,14 @@ struct InformationSection: View {
 
 /// Every delivery of the work, across its files, newest first, as one table: picking a row
 /// switches the file above and its bytes together. Gleaner saw most deliveries' bytes as they
-/// arrived, so that row shows only its mark; the exceptions say so in words.
+/// arrived, so that row shows only its mark; the exceptions say so in words. Where the table is
+/// too narrow for its words, dates shorten as Mail's do and the columns close up, for every row at
+/// once, so they still line up.
 struct VersionsSection: View {
     @Environment(LibraryModel.self) private var model
     var work: Work
     var selected: Delivery
+    @State private var width: CGFloat = .infinity
 
     var body: some View {
         DetailSection(title: "Versions") {
@@ -471,33 +472,40 @@ struct VersionsSection: View {
                     row(delivery)
                 }
             }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         }
+    }
+
+    /// The columns, their gaps, and room for a label such as "Same as delivery 2 (first seen later)".
+    var compact: Bool {
+        width < (work.files.count > 1 ? 765 : 585)
     }
 
     func row(_ delivery: Delivery) -> some View {
         let isSelected = delivery.id == selected.id
         let provenance = Wording.provenanceShort(delivery.capture)
         let earlier = sameAs(delivery)
-        return HStack(spacing: Space.m) {
-            GlyphView(glyph: provenance.0.glyph, size: 12).foregroundStyle(provenance.0.color)
+        return HStack(spacing: compact ? Space.s : Space.m) {
+            StatusMark(mark: provenance.0, word: provenance.1)
                 .frame(width: 16)
-                .help(provenance.1)
             Text("Delivery \(delivery.number)").fontWeight(isSelected ? .semibold : .regular)
                 .frame(width: 84, alignment: .leading)
             if work.files.count > 1 {
                 Text((delivery.path as NSString).lastPathComponent).lineLimit(1).truncationMode(.middle)
                     .frame(width: 180, alignment: .leading)
             }
-            Text(Wording.date(delivery.deliveredAt)).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
-                .frame(width: 150, alignment: .leading)
+            Text(compact ? Wording.shortDate(delivery.deliveredAt) : Wording.date(delivery.deliveredAt))
+                .foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+                .frame(width: compact ? 72 : 150, alignment: .leading)
+                .help(Wording.date(delivery.deliveredAt))
             AgentMark(provider: delivery.provider, size: 13).foregroundStyle(.secondary)
             if provenance.0 != .solid {
-                Text(provenance.1).foregroundStyle(.secondary).lineLimit(1)
+                Text(provenance.1).foregroundStyle(.secondary).lineLimit(1).layoutPriority(1)
             }
             if let earlier {
                 Text(earlier.path == delivery.path ? "Same as \(Wording.number(earlier))"
                      : "Same as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))")
-                    .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).layoutPriority(1)
             }
             Spacer(minLength: Space.s)
             // Every row keeps the column, so the right edge holds.
@@ -514,7 +522,7 @@ struct VersionsSection: View {
         .padding(.horizontal, Space.s)
         .frame(minHeight: 30)
         .background(isSelected ? Color(nsColor: .unemphasizedSelectedContentBackgroundColor) : .clear,
-                    in: RoundedRectangle(cornerRadius: Radius.tag + 2))
+                    in: RoundedRectangle(cornerRadius: Radius.row))
         .contentShape(Rectangle())
         .onTapGesture { model.chosenDelivery = delivery.id }
         .accessibilityElement(children: .combine)
