@@ -74,6 +74,8 @@ final class LibraryModel {
     /// The prepared copy's text, read once it was verified, for the preview: never read again from
     /// the copy while it is shown, so the preview stays the bytes that were checked.
     private(set) var preparedText: (sha: String, text: String, truncated: Bool)?
+    /// The copy `staging` names as ready, with what tells whether it is still the file hashed.
+    private var prepared: ContentStore.Prepared?
     /// Bumped when hand-off copies are cleared: the selection's copy is prepared again, and a
     /// preparation started before the clear is never shown after it.
     private(set) var stagingGeneration = 0
@@ -288,17 +290,13 @@ final class LibraryModel {
         isQuickLookOpen = !isQuickLookOpen && selectedHandoffURL != nil
     }
 
-    /// Opens the selection's verified copy (or folder) in its app, or says why it couldn't. The
-    /// copy is hashed again first, and made again if it no longer holds the selected bytes.
+    /// Opens the selection's verified copy (or folder) in its app, or says why it couldn't. A copy
+    /// is opened only while it is the file Gleaner hashed (`selectedHandoffURL`).
     func openSelected() {
-        guard let (artifact, delivery, plan) = selectedHandoff, let prepared = selectedHandoffURL else { return }
+        guard let (artifact, delivery, _) = selectedHandoff, let url = selectedHandoffURL else { return }
         actionFailure = nil
-        let store = indexer.store, name = artifact.name, source = artifact.path
         Task {
             do {
-                let url = if let sha = plan.sha, plan != .folder {
-                    try await Task.detached(priority: .userInitiated) { try store.stage(sha: sha, name: name, source: source) }.value
-                } else { prepared }
                 _ = try await NSWorkspace.shared.open(url, configuration: NSWorkspace.OpenConfiguration())
             } catch CocoaError.userCancelled {
                 // The person said no: nothing failed.
@@ -404,15 +402,31 @@ final class LibraryModel {
         return provider
     }
 
-    /// What ⌘C puts on the clipboard: the selection's hand-off copy as a file, hashed again first
-    /// and made again if it no longer holds the selected version's bytes; a delivered folder as it
-    /// is. Nil when nothing is ready, or the bytes can't be had.
+    /// What ⌘C puts on the clipboard: the selection's hand-off copy as a file, while it is the file
+    /// Gleaner hashed (`isPreparedIntact`), or a delivered folder as it is. A copy changed since is
+    /// prepared again first, and nothing is copied meanwhile.
     func copyItem() -> NSItemProvider? {
-        guard let (artifact, _, plan) = selectedHandoff, selectedHandoffURL != nil else { return nil }
+        guard let (artifact, _, plan) = selectedHandoff else { return nil }
         if plan == .folder { return NSItemProvider(contentsOf: URL(fileURLWithPath: artifact.path)) }
-        guard case .ready(_, let sha) = staging(for: plan.sha),
-              let url = try? indexer.store.stage(sha: sha, name: artifact.name, source: artifact.path) else { return nil }
+        guard case .ready(let url, _) = staging(for: plan.sha) else {
+            if case .ready = staging { prepareAgain() }
+            return nil
+        }
         return NSItemProvider(contentsOf: url)
+    }
+
+    /// False when the copy shown as ready is no longer the file Gleaner hashed: another app replaced,
+    /// removed or wrote to it. Checked by its inode, so asking costs no read of its bytes.
+    var isPreparedIntact: Bool {
+        guard case .ready(_, let sha) = staging, let prepared, prepared.sha == sha else { return true }
+        return indexer.store.isIntact(prepared)
+    }
+
+    /// Prepares the selection's copy again, from its saved copy or the original, when the one shown
+    /// as ready was changed outside Gleaner.
+    func prepareAgain() {
+        guard !isPreparedIntact else { return }
+        restage()
     }
 
     /// A delivered folder for a drag, as it is when the receiving app asks for it, and only while
@@ -473,12 +487,18 @@ final class LibraryModel {
         return (prepared.text, prepared.truncated)
     }
 
-    /// The hand-off state for the version `sha`; idle when what is staged belongs to another one.
+    /// The hand-off state for the version `sha`; idle when what is staged belongs to another one,
+    /// and preparing while a copy shown as ready is no longer the file hashed (`prepareAgain`).
     func staging(for sha: String?) -> Staging {
-        sha != nil && staging.sha == sha ? staging : .idle
+        guard let sha, staging.sha == sha else { return .idle }
+        if case .ready = staging, !isPreparedIntact { return .preparing(sha: sha) }
+        return staging
     }
 
-    func clearStaging() { staging = .idle }
+    func clearStaging() {
+        staging = .idle
+        prepared = nil
+    }
 
     /// Checks the file now (hash and git), and which of its versions the store holds, off the main
     /// thread. When it is Gleaner's first read of a file whose bytes a delivery never had, the
@@ -508,24 +528,25 @@ final class LibraryModel {
     func stage(sha: String, artifact: Artifact) async {
         let generation = stagingGeneration
         switch staging {
-        case .ready(_, sha: sha): break
+        case .ready(_, sha: sha) where isPreparedIntact: break
         default: staging = .preparing(sha: sha)
         }
         let store = indexer.store
         let name = artifact.name
         let source = artifact.path
         let result = await Task.detached(priority: .userInitiated) {
-            Swift.Result { () throws -> (URL, (text: String, truncated: Bool)?) in
-                let url = try store.stage(sha: sha, name: name, source: source)
-                return (url, TextPreview.load(url))
+            Swift.Result { () throws -> (ContentStore.Prepared, (text: String, truncated: Bool)?) in
+                let prepared = try store.prepare(sha: sha, name: name, source: source)
+                return (prepared, TextPreview.load(prepared.url))
             }
         }.value
         // The selection moved on, another version is being prepared, or the copies were cleared:
         // this result is stale.
         guard !Task.isCancelled, generation == stagingGeneration, staging.sha == sha else { return }
         switch result {
-        case .success(let (url, text)):
-            staging = .ready(url, sha: sha)
+        case .success(let (prepared, text)):
+            self.prepared = prepared
+            staging = .ready(prepared.url, sha: sha)
             preparedText = text.map { (sha, $0.text, $0.truncated) }
         case .failure(ContentStore.Failure.changed):
             staging = .failed("The file changed while Gleaner was copying it. Check again.", sha: sha)

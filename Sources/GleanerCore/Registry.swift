@@ -171,14 +171,15 @@ public final class Registry: @unchecked Sendable {
             """, [logPath, path] + times.map { $0 as Any? }).compactMap { $0["delivery_id"] as? String }
     }
 
-    /// True when the delivery `id` has a capture that records no reply time: one made before Gleaner
-    /// kept it whose delivery a reread had dropped, or one of a reply whose records carry no time.
-    /// Only its id ties it to a reply.
-    public func hasUnplacedCapture(_ id: String) throws -> Bool {
-        try !db.rows("SELECT 1 FROM captures WHERE delivery_id = ? AND reply_at IS NULL", [id]).isEmpty
+    /// The time of the record a delivery's capture was made for: nil when there is no capture,
+    /// `.some(nil)` for a capture that records none (made before Gleaner kept it, or for records
+    /// that carry no time), tied to its reply only by its id.
+    public func captureReplyTime(_ id: String) throws -> Date?? {
+        guard let row = try db.rows("SELECT reply_at FROM captures WHERE delivery_id = ?", [id]).first else { return nil }
+        return .some((row["reply_at"] as? Double).map(Date.init(timeIntervalSince1970:)))
     }
 
-    /// Records the reply a capture without one belongs to (`hasUnplacedCapture`).
+    /// Records the reply a capture without one belongs to (`captureReplyTime`).
     public func place(capture id: String, logPath: String, path: String, replyAt: Date?) throws {
         try db.run("UPDATE captures SET log_path = ?, path = ?, reply_at = ? WHERE delivery_id = ? AND reply_at IS NULL",
                    [logPath, path, replyAt, id])

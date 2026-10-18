@@ -122,9 +122,10 @@ import Testing
         #expect(after?.sha256 == before.delivery.sha256)
     }
 
-    /// Two replies Gleaner can't tell apart by the times of their records: neither takes the other's
-    /// capture, and reading again settles on the same deliveries instead of capturing anew each time.
-    @Test func repliesWithTheSameTimesNeverTakeEachOthersBytes() async throws {
+    /// Two replies whose records share their time: the time can't tell them apart, so each is
+    /// found by its place, as before Gleaner kept the times. A log that only grows keeps each one's
+    /// bytes, read after read, inside the window where a new capture would count as at delivery.
+    @Test func repliesWithTheSameTimesKeepTheirBytesAsTheLogGrows() async throws {
         let first = try record("user", "first version", then) + record("assistant", "[report](report.md)", then)
         try writeFile("VERSION ONE", then)
         try first.write(to: log, atomically: true, encoding: .utf8)
@@ -133,17 +134,26 @@ import Testing
         try writeFile("VERSION TWO", then.addingTimeInterval(1))
         try both.write(to: log, atomically: true, encoding: .utf8)
         _ = try indexer.run(now: { then.addingTimeInterval(2) })
+        try (both + record("user", "anything else?", then.addingTimeInterval(4))).write(to: log, atomically: true, encoding: .utf8)
+        #expect(try indexer.run(now: { then.addingTimeInterval(5) }).newDeliveries == 0)
         #expect(try await handedOver("first version").bytes == "VERSION ONE")
+        #expect(try await handedOver("second version").bytes == "VERSION TWO")
+        #expect(try indexer.registry.db.rows("SELECT COUNT(*) AS n FROM captures").first?["n"] as? Int64 == 2)
+    }
 
-        try ("{\"type\":\"system\"}\n" + both).write(to: log, atomically: true, encoding: .utf8)
+    /// A rewritten log that puts a reply Gleaner never captured, written at the same time as one it
+    /// did, before it: that time is shared, so neither is found by it, and the new reply doesn't
+    /// take the captured one's bytes from its time alone.
+    @Test func aNewReplyWithAnotherReplysTimeNeverTakesItsCaptureByThatTime() async throws {
+        let mine = try record("user", "first version", then) + record("assistant", "[report](report.md)", then)
+        try writeFile("VERSION ONE", then)
+        try mine.write(to: log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { then.addingTimeInterval(1) })
+        let other = try record("user", "second version", then) + record("assistant", "[report](report.md)", then)
+        try writeFile("VERSION TWO", then.addingTimeInterval(1))
+        try ("{\"type\":\"system\"}\n{\"type\":\"system\"}\n{\"type\":\"system\"}\n" + other + mine)
+            .write(to: log, atomically: true, encoding: .utf8)
         _ = try indexer.run(now: { then.addingTimeInterval(9999) })
-        let moved = try await handedOver("first version")
-        // Never VERSION TWO as what the first request was given: the bytes there now, first seen later.
-        #expect(moved.delivery.request == "first version")
-        #expect(moved.delivery.capture?.provenance == .firstSeenAfterDelivery)
-        let count = try indexer.registry.db.rows("SELECT COUNT(*) AS n FROM captures").first?["n"] as? Int64
-        try ("{\"type\":\"system\"}\n" + both + "\n").write(to: log, atomically: true, encoding: .utf8)
-        _ = try indexer.run(now: { then.addingTimeInterval(19999) })
-        #expect(try indexer.registry.db.rows("SELECT COUNT(*) AS n FROM captures").first?["n"] as? Int64 == count)
+        #expect(try await handedOver("second version").delivery.capture?.provenance == .firstSeenAfterDelivery)
     }
 }

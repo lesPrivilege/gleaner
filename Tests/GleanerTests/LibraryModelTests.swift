@@ -438,19 +438,48 @@ import UniformTypeIdentifiers
         return video
     }
 
-    @Test func theTileHandsOverTheSelectedBytesWhenItsPreparedCopyWasReplaced() async throws {
+    @Test func aReplacedCopyIsOfferedNowhereUntilItIsPreparedAgain() async throws {
         let model = LibraryModel(indexer: indexer)
         let video = try await replacedCopy(model)
-        let staged = try #require(model.staging(for: video.latest.sha256).sha)
-        #expect(try await dropped(model.handoffItem(sha: staged, artifact: video)).contents == "video v2")
+        let sha = try #require(video.latest.sha256)
+        model.isQuickLookOpen = true
+        // The tile, Open, ⌘C and Quick Look all go by the copy being the file Gleaner hashed.
+        #expect(!model.isPreparedIntact)
+        #expect(model.staging(for: sha) == .preparing(sha: sha))
+        #expect(model.selectedHandoffURL == nil)
+        #expect(model.quickLookURL == nil)
+        let generation = model.stagingGeneration
+        #expect(model.copyItem() == nil)
+        #expect(model.stagingGeneration == generation + 1)
+        // Prepared again, as the detail view does: the selected bytes, under the file's name.
+        await model.stage(sha: sha, artifact: video)
+        #expect(model.isPreparedIntact)
+        #expect(try await dropped(model.copyItem()).contents == "video v2")
+        #expect(try String(contentsOf: try #require(model.selectedHandoffURL), encoding: .utf8) == "video v2")
     }
 
-    @Test func copyHandsOverTheSelectedBytesWhenItsPreparedCopyWasReplacedOrRemoved() async throws {
+    @Test func aCopyRemovedOrWrittenToIsPreparedAgainToo() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try await selectVideo(model)
+        let sha = try #require(video.latest.sha256)
+        await model.stage(sha: sha, artifact: video)
+        let url = try #require(model.selectedHandoffURL)
+        try FileManager.default.removeItem(at: url)
+        #expect(model.selectedHandoffURL == nil)
+        await model.stage(sha: sha, artifact: video)
+        let again = try #require(model.selectedHandoffURL)
+        // Written in place, keeping its size and modification date: its change time tells.
+        let modified = try FileManager.default.attributesOfItem(atPath: again.path)[.modificationDate] as! Date
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: again.path)
+        try Data("video v9".utf8).write(to: again)
+        try FileManager.default.setAttributes([.modificationDate: modified], ofItemAtPath: again.path)
+        #expect(model.selectedHandoffURL == nil)
+    }
+
+    @Test func theRowDragHandsOverTheSelectedBytesWhenThePreparedCopyWasReplaced() async throws {
         let model = LibraryModel(indexer: indexer)
         _ = try await replacedCopy(model)
-        #expect(try await dropped(model.copyItem()).contents == "video v2")
-        try FileManager.default.removeItem(at: try #require(model.selectedHandoffURL))
-        #expect(try await dropped(model.copyItem()).contents == "video v2")
+        #expect(try await dropped(model.dragItem(for: try #require(model.selected))).contents == "video v2")
     }
 
     @Test func thePreviewShowsTheTextThatWasVerified() async throws {

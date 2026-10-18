@@ -43,6 +43,8 @@ struct DetailView: View {
             model.clearStaging()
             await model.observe(artifact)
         }
+        // A ready copy another app changed is prepared again, whenever the view looks at it.
+        .task(id: model.isPreparedIntact) { model.prepareAgain() }
         .task(id: "\(artifact.id)|\(delivery.id)|\(observation?.checkedAt.timeIntervalSince1970 ?? 0)|\(model.stagingGeneration)") {
             if case .ready(let sha, _, _) = plan {
                 await model.stage(sha: sha, artifact: artifact)
@@ -274,10 +276,11 @@ struct HandoffPanel: View {
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(ready == nil ? Color(nsColor: .separatorColor) : Palette.selection.opacity(0.6)))
         .opacity(ready == nil ? 0.55 : 1)
         .onDrag {
+            guard let ready else { return NSItemProvider() }
             // A delivered folder is the live one: the receiver gets a copy, never the folder to move.
-            if plan == .folder, ready != nil { return LibraryModel.folderItem(artifact.path) }
-            guard let staged else { return NSItemProvider() }
-            return model.handoffItem(sha: staged, artifact: artifact)
+            if plan == .folder { return LibraryModel.folderItem(artifact.path) }
+            // The copy as a file, while it is the one Gleaner hashed (`openURL` checks).
+            return NSItemProvider(contentsOf: ready) ?? NSItemProvider()
         }
         .help(ready == nil ? "Nothing to drag for this version" : "Drag into Finder, a chat, or an upload field")
         .accessibilityElement(children: .ignore)

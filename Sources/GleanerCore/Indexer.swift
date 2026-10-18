@@ -205,10 +205,23 @@ public final class Indexer: @unchecked Sendable {
         try registry.upsert(log.session)
         var added = 0
         var admitted = Set<String>()
-        for turn in log.turns {
-            for (rank, candidate) in MentionExtractor.candidates(in: turn).enumerated() where Admission.admits(candidate) {
+        let turns = log.turns.map { turn in
+            (turn, MentionExtractor.candidates(in: turn).enumerated().filter { Admission.admits($0.element) })
+        }
+        // Record times two replies naming the same file share: they don't tell those replies apart.
+        var seen: [String: Set<Date>] = [:], shared: [String: Set<Date>] = [:]
+        for (turn, candidates) in turns {
+            let times = Set(turn.parts.compactMap(\.at))
+            for (_, candidate) in candidates {
+                shared[candidate.path, default: []].formUnion(times.intersection(seen[candidate.path] ?? []))
+                seen[candidate.path, default: []].formUnion(times)
+            }
+        }
+        for (turn, candidates) in turns {
+            for (rank, candidate) in candidates {
                 let first = candidate.evidence[0]
-                let id = try deliveryID(of: candidate, in: turn, logPath: log.session.logPath, taken: admitted)
+                let id = try deliveryID(of: candidate, in: turn, logPath: log.session.logPath, taken: admitted,
+                                        shared: shared[candidate.path] ?? [])
                 admitted.insert(id)
                 let isNew = try !registry.hasCapture(id)
                 try registry.upsertDelivery(
@@ -241,32 +254,38 @@ public final class Indexer: @unchecked Sendable {
     /// A delivery keeps the id, and the capture, it was first given: a new capture would record the
     /// bytes as they are now. Its reply finds that capture by the time of one of its records, so a
     /// later extractor may find the reply's first mention of the path in another record, a reread
-    /// may admit it again after dropping it, and a rewritten log may move it to other lines. A reply
-    /// never takes the capture made for another one at its old place (SPEC §5.1).
-    /// `taken` holds the ids other replies in the log were given in this read.
-    func deliveryID(of candidate: DeliveryCandidate, in turn: Turn, logPath: String, taken: Set<String>) throws -> String {
+    /// may admit it again after dropping it, and a rewritten log may move it to other lines; a reply
+    /// never takes the capture made for another one at its old place (SPEC §9). A time another
+    /// reply naming the file shares (`shared`), or no time at all, can't tell replies apart: such a
+    /// reply is found by its place in the log, as before Gleaner kept the times. `taken` holds the
+    /// ids other replies in the log were given in this read.
+    func deliveryID(of candidate: DeliveryCandidate, in turn: Turn, logPath: String, taken: Set<String>,
+                    shared: Set<Date>) throws -> String {
         let fresh = candidate.id(logPath: logPath)
-        let replyAt = candidate.evidence[0].part.at
-        let mine = try registry.captures(logPath: logPath, path: candidate.path, at: Set(turn.parts.compactMap(\.at)))
-            .filter { !taken.contains($0) }
-        if mine.count == 1 { return mine[0] }
-        if mine.isEmpty {
-            // A capture with no reply time is tied to its reply only by its id, which came from the
-            // reply's place: made before Gleaner kept the time, or for records that carry none.
-            let placed = turn.parts.map { DeliveryCandidate.id(logPath: logPath, line: $0.line, path: candidate.path) }
-            if let unplaced = try ([fresh] + placed).first(where: { try !taken.contains($0) && registry.hasUnplacedCapture($0) }) {
-                try registry.place(capture: unplaced, logPath: logPath, path: candidate.path, replyAt: replyAt)
-                return unplaced
-            }
-            // A reply Gleaner hasn't captured. The id its place gives may be held by another reply's
-            // capture, made there before the log was rewritten.
-            guard try taken.contains(fresh) || registry.hasCapture(fresh) else { return fresh }
+        let times = Set(turn.parts.compactMap(\.at))
+        let placed = [fresh] + turn.parts.map { DeliveryCandidate.id(logPath: logPath, line: $0.line, path: candidate.path) }
+        let own = times.subtracting(shared)
+        if !own.isEmpty {
+            let mine = try registry.captures(logPath: logPath, path: candidate.path, at: own).filter { !taken.contains($0) }
+            if let id = mine.first(where: placed.contains) ?? mine.first { return id }
         }
-        // Two captures could each be this reply's, or its place is held by another: Gleaner records
-        // its bytes anew rather than choose, under an id of its own that each reread finds again.
-        let times = turn.parts.compactMap(\.at).map { String($0.timeIntervalSince1970) }.sorted()
-        let distinct = (mine.isEmpty ? [replyAt.map { String($0.timeIntervalSince1970) } ?? "-"] : ["ambiguous"] + times).joined(separator: " ")
-        return DeliveryCandidate.id(logPath: logPath, line: candidate.evidence[0].part.line, path: candidate.path, distinct: distinct)
+        // A capture made at the reply's place, unless it records a time of another reply: then it is
+        // that reply's, from before the log was rewritten.
+        for id in placed where !taken.contains(id) {
+            guard case .some(let at) = try registry.captureReplyTime(id) else { continue }
+            guard at.map(times.contains) ?? true else { continue }
+            if at == nil { try registry.place(capture: id, logPath: logPath, path: candidate.path, replyAt: candidate.evidence[0].part.at) }
+            return id
+        }
+        // A reply Gleaner hasn't captured. The id its place gives may be held by another reply's
+        // capture: it gets one of its own, which its record time finds on each reread.
+        var id = fresh, n = 0
+        while try taken.contains(id) || registry.hasCapture(id) {
+            n += 1
+            id = DeliveryCandidate.id(logPath: logPath, line: candidate.evidence[0].part.line, path: candidate.path,
+                                      distinct: (candidate.evidence[0].part.at.map { String($0.timeIntervalSince1970) } ?? "-") + " \(n)")
+        }
+        return id
     }
 
     /// Over the save limit: tracked by hash, and saved only when the person asks (SPEC §6). A

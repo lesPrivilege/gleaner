@@ -82,16 +82,56 @@ public struct ContentStore: Sendable {
         }
     }
 
+    /// A hand-off copy Gleaner hashed, and how to tell it is still that file: its identity then.
+    public struct Prepared: Sendable, Equatable {
+        public var url: URL
+        public var sha: String
+        let identity: Identity
+    }
+
+    /// What a file's inode says about it. Writing to the file changes its change time, which no
+    /// app can set back, and replacing it gives the path another inode: while this is the same, the
+    /// file holds the bytes it held when this was read.
+    struct Identity: Sendable, Equatable {
+        var device: Int32, inode: UInt64, size: Int64
+        var modified: Int, modifiedNanos: Int, changed: Int, changedNanos: Int
+
+        init?(_ url: URL) {
+            var info = stat()
+            guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+            device = info.st_dev
+            inode = info.st_ino
+            size = info.st_size
+            modified = info.st_mtimespec.tv_sec
+            modifiedNanos = info.st_mtimespec.tv_nsec
+            changed = info.st_ctimespec.tv_sec
+            changedNanos = info.st_ctimespec.tv_nsec
+        }
+    }
+
+    /// True while the prepared copy is the very file Gleaner hashed, unchanged since.
+    public func isIntact(_ prepared: Prepared) -> Bool {
+        Identity(prepared.url) == prepared.identity
+    }
+
     /// An immutable copy of the version `sha`, named `name`, ready to hand to another app.
+    public func stage(sha: String, name: String, source: String?) throws -> URL {
+        try prepare(sha: sha, name: name, source: source).url
+    }
+
+    /// `stage`, with what tells later whether the copy is still the one hashed (`isIntact`).
     /// It is copied from the saved copy when there is one, else from `source`, and handed out only
     /// if the copy itself hashes to `sha`. The copy is made under a name of its own and published
     /// whole by one rename, so overlapping stages of a version never remove or truncate each
-    /// other's file, and clearing hand-off copies meanwhile never removes it.
-    public func stage(sha: String, name: String, source: String?) throws -> URL {
+    /// other's file, and clearing hand-off copies meanwhile never removes it. A copy already there
+    /// is hashed again and used only while it hashes to `sha` and stayed the same file throughout.
+    public func prepare(sha: String, name: String, source: String?) throws -> Prepared {
         let fm = FileManager.default
         let directory = staging.appendingPathComponent(sha)
         let target = directory.appendingPathComponent(name)
-        if fm.fileExists(atPath: target.path), Locator.sha256(target.path) == sha { return target }
+        if let before = Identity(target), Locator.sha256(target.path) == sha, Identity(target) == before {
+            return Prepared(url: target, sha: sha, identity: before)
+        }
 
         let origin: String
         if has(sha) {
@@ -110,13 +150,19 @@ public struct ContentStore: Sendable {
             preparations.lock.withLock { _ = preparations.names.remove(incoming) }
         }
         try fm.copyItem(at: URL(fileURLWithPath: origin).resolvingSymlinksInPath(), to: temporary)
-        let found = Self.isRegularFile(temporary) ? Locator.sha256(temporary.path) ?? "" : ""
-        guard found == sha else { throw Failure.changed(expected: sha, found: found) }
         try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: temporary.path)
+        let hashed = Identity(temporary)
+        let found = hashed != nil ? Locator.sha256(temporary.path) ?? "" : ""
+        guard found == sha else { throw Failure.changed(expected: sha, found: found) }
         try preparations.lock.withLock {
             try fm.createDirectory(at: directory, withIntermediateDirectories: true)
             guard rename(temporary.path, target.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
         }
-        return target
+        // The rename may stamp a new change time; the inode and the bytes' modification time say it
+        // is still the file hashed.
+        guard let published = Identity(target), let hashed, published.inode == hashed.inode,
+              published.size == hashed.size, published.modified == hashed.modified,
+              published.modifiedNanos == hashed.modifiedNanos else { throw Failure.changed(expected: sha, found: "") }
+        return Prepared(url: target, sha: sha, identity: published)
     }
 }
