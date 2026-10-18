@@ -51,7 +51,7 @@ struct GleanerApp: App {
                     .disabled(model?.canHandOver != true)
             }
             CommandGroup(replacing: .appSettings) {
-                Button("Sources and Storage…") { model?.place = .sources }
+                Button("Sources…") { model?.place = .sources }
                     .keyboardShortcut(",")
             }
             CommandGroup(replacing: .help) {

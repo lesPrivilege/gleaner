@@ -6,6 +6,7 @@ import SwiftUI
 /// and the selected work.
 struct LibraryView: View {
     @Environment(LibraryModel.self) private var model
+    @Environment(\.undoManager) private var undoManager
     // Search, filters and place survive relaunch; selection does not, since results may have changed.
     @SceneStorage("query") private var savedQuery = ""
     @SceneStorage("kind") private var savedKind = ""
@@ -24,10 +25,13 @@ struct LibraryView: View {
         } detail: {
             DetailColumn()
         }
-        .searchable(text: $model.query, placement: .toolbar, prompt: "What you asked for, file name, project…")
+        .searchable(text: $model.query, placement: .toolbar, prompt: "Search Deliveries")
         .quickLookPreview(Binding(get: { quickLookURL }, set: { model.isQuickLookOpen = $0 != nil }))
         .onChange(of: model.selectedHandoffURL) { if model.selectedHandoffURL == nil { model.isQuickLookOpen = false } }
         .onAppear(perform: restore)
+        // Decisions go on the window's Edit › Undo, as a Mac app's edits do.
+        .onAppear { model.undoManager = undoManager }
+        .onChange(of: undoManager) { model.undoManager = undoManager }
         .onChange(of: model.query) { savedQuery = model.query }
         .onChange(of: model.kind) { savedKind = model.kind?.rawValue ?? "" }
         .onChange(of: model.place) { savedPlace = Self.encode(model.place) }
@@ -35,7 +39,7 @@ struct LibraryView: View {
         .toolbar {
             ToolbarItem {
                 Button("Check for New Deliveries", systemImage: "arrow.clockwise") { model.reindex() }
-                    .help("Read new agent replies now (⌘R). Gleaner also watches the log folders while it is open.")
+                    .help("Check for New Deliveries (⌘R)")
             }
         }
     }
@@ -77,26 +81,34 @@ struct Sidebar: View {
     var body: some View {
         let place = Binding<Place?>(get: { model.place }, set: { if let place = $0 { model.place = place } })
         List(selection: place) {
-            Label("All Deliveries", systemImage: "tray.full")
+            GlyphLabel(title: "All Deliveries", glyph: .artifact)
                 .tag(Place.all)
             Section("Projects") {
                 ForEach(model.projects) { project in
-                    Label { Text(project.name).lineLimit(1).truncationMode(.middle) } icon: { Image(systemName: Wording.projectIcon(project.origin)) }
+                    Label { Text(project.name).lineLimit(1).truncationMode(.middle) } icon: {
+                        RowGlyph(glyph: Wording.projectGlyph(project.origin))
+                    }
+                        .accessibilityLabel("\(project.name), \(Wording.projectOrigin(project.origin)), \(Wording.count(project.works.count, "work"))")
                         .badge(project.works.count)
                         .tag(Place.project(project.key))
-                        .help(Wording.projectSummary(project))
+                        .help("\(Wording.projectOrigin(project.origin)) · \(Wording.projectCounts(project))")
                         .contextMenu { menu(project) }
                 }
             }
             Section("Library") {
-                Label {
-                    Text("Sources")
-                } icon: {
-                    Image(systemName: model.logTrouble == nil ? "antenna.radiowaves.left.and.right" : "exclamationmark.triangle")
-                        .foregroundStyle(model.logTrouble == nil ? Color.secondary : Palette.attention)
+                // A source that needs a look shows the triangle at the row's end, as Mail marks a
+                // mailbox it couldn't read; the agent's mark stays the agent's.
+                HStack {
+                    GlyphLabel(title: "Sources", glyph: .agent)
+                    Spacer(minLength: Space.xs)
+                    if model.logTrouble != nil {
+                        GlyphView(glyph: .warning, size: 14).foregroundStyle(Palette.attention)
+                    }
                 }
+                .accessibilityElement(children: .combine)
+                .accessibilityValue(model.logTrouble.map { "Needs a look: " + $0 } ?? "")
                 .tag(Place.sources)
-                .help(model.logTrouble ?? "What Gleaner reads, your corrections, and what it keeps")
+                .help(model.logTrouble ?? "Agent logs, your corrections, and storage")
             }
         }
         .alert("Rename Project", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
@@ -107,7 +119,7 @@ struct Sidebar: View {
         .confirmationDialog("Delete “\(removing?.name ?? "")”?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Delete Project", role: .destructive) { if let removing { Task { await model.remove(removing) } } }
         } message: {
-            Text("Its work goes back to the projects Gleaner found it in. No file is touched.")
+            Text("Its work goes back where Gleaner found it. No file changes.")
         }
     }
 
@@ -158,10 +170,8 @@ struct DetailColumn: View {
         } else if let result = model.selected {
             DetailView(result: result)
         } else if !model.artifacts.isEmpty {
-            ContentUnavailableView(
-                "Pick a delivered file",
-                systemImage: "tray.full",
-                description: Text("Search for what you asked an agent to make, or open a project. Gleaner lists only files an agent named in a reply to you."))
+            EmptyState(title: "No Selection", glyph: .artifact,
+                       description: model.currentProject == nil ? "Select a file, or search for what you asked for." : "Select a file in this project.")
         }
     }
 }
@@ -177,7 +187,7 @@ struct ListHandoff: ViewModifier {
                     // The file the row shows and drags, which may be an earlier one of the work's.
                     let artifact = model.result(for: work).map(model.file(in:)) ?? work.latest
                     if id == model.selection {
-                        Button("Open Verified Copy") { model.openSelected() }.disabled(!model.canHandOver)
+                        Button("Open") { model.openSelected() }.disabled(!model.canHandOver)
                         Button("Quick Look") { model.toggleQuickLook() }.disabled(!model.canHandOver)
                         Divider()
                     }
@@ -211,7 +221,8 @@ struct ResultsList: View {
                     let file = model.file(in: result)
                     let row = ResultRow(result: result, file: file, delivery: model.delivery(in: result),
                                         project: model.currentProject == nil ? model.projectName(result.work) : nil,
-                                        showFolder: repeated.contains(result.work.name), status: model.rowStatus(result))
+                                        showFolder: repeated.contains(result.work.name), status: model.rowStatus(result),
+                                        placement: nil)
                         .tag(result.id)
                     // A row with nothing to hand over starts no drag, rather than one that fails at drop.
                     if model.rowHandoff(result) != nil {
@@ -231,11 +242,11 @@ struct ResultsList: View {
     func emptyState(_ results: [SearchResult]) -> some View {
         if model.artifacts.isEmpty {
             if !model.indexed {
-                ContentUnavailableView("Reading agent logs…", systemImage: "hourglass",
-                                       description: Text("The first read takes a moment. Results appear when it finishes."))
+                EmptyState(title: "Reading Agent Logs…", glyph: .running,
+                           description: "Deliveries appear when the first read finishes.")
             } else if model.canReadAgain, let trouble = model.logTrouble {
                 ContentUnavailableView {
-                    Label("Gleaner couldn’t read every agent log", systemImage: "exclamationmark.triangle")
+                    Label("Some Logs Couldn’t Be Read", systemImage: "exclamationmark.triangle")
                 } description: {
                     Text(trouble)
                 } actions: {
@@ -243,25 +254,22 @@ struct ResultsList: View {
                 }
             } else if model.sources?.values.allSatisfy({ $0.folder == .absent }) == true {
                 ContentUnavailableView {
-                    Label("No agent logs found", systemImage: "folder.badge.questionmark")
+                    Label("No Agent Logs", systemImage: "folder.badge.questionmark")
                 } description: {
-                    Text("Gleaner reads Claude Code and Codex logs. It looked in:\n"
+                    Text("Gleaner looked in:\n"
                          + model.indexer.sources.watchedDirectories.map { ($0 as NSString).abbreviatingWithTildeInPath }.joined(separator: "\n"))
                 }
             } else {
-                ContentUnavailableView("No delivered files yet", systemImage: "tray",
-                                       description: Text("When an agent names a file in a reply to you, it appears here."
-                                                         + (model.logTrouble.map { "\n\n" + $0 } ?? "")))
+                EmptyState(title: "No Deliveries Yet", glyph: .artifact,
+                           description: "Files an agent names in a reply to you appear here." + (model.logTrouble.map { "\n\n" + $0 } ?? ""))
             }
         } else if results.isEmpty {
             ContentUnavailableView {
-                Label("No matches", systemImage: "magnifyingglass")
+                Label("No Results", systemImage: "magnifyingglass")
             } description: {
-                Text(model.currentProject == nil
-                     ? "Every word has to appear in one delivery: your request, the reply, the file name, or the project."
-                     : "Every word has to appear in one delivery of this project: your request, the reply, the file name.")
+                Text("Each word must appear in one delivery’s request, reply, file name or project.")
             } actions: {
-                Button("Clear Search and Filters") { model.clearFilters() }
+                Button("Clear Search") { model.clearFilters() }
                 if model.currentProject != nil { Button("Search All Deliveries") { model.place = .all } }
             }
         }
@@ -276,12 +284,12 @@ struct FilterBar: View {
         @Bindable var model = model
         HStack(spacing: 8) {
             if let project = model.currentProject {
-                Label(project.name, systemImage: Wording.projectIcon(project.origin))
+                GlyphLabel(title: project.name, glyph: Wording.projectGlyph(project.origin), size: 14)
                     .font(.callout.weight(.semibold)).lineLimit(1)
             }
             Spacer(minLength: 0)
             Picker("Kind", selection: $model.kind) {
-                Text("All kinds").tag(Artifact.Kind?.none)
+                Text("All Kinds").tag(Artifact.Kind?.none)
                 Divider()
                 ForEach(Artifact.Kind.allCases, id: \.self) { kind in
                     Text(Wording.kindName(kind)).tag(Artifact.Kind?.some(kind))
@@ -291,8 +299,8 @@ struct FilterBar: View {
             .labelsHidden()
             .fixedSize()
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, Space.m)
+        .padding(.vertical, Space.s)
     }
 }
 
@@ -306,37 +314,23 @@ struct TroubleBar: View {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 StatusLabel(mark: .attention, text: trouble).font(.caption).lineLimit(2)
                     .help(trouble)
-                Spacer(minLength: 8)
+                Spacer(minLength: Space.s)
                 if model.canReadAgain {
                     Button("Try Again") { model.reindex() }
                         .controlSize(.small)
-                        .help("Read the agent logs again. Sources shows each one.")
+                        .help("Read the agent logs again")
                 }
                 Button("Sources") { model.place = .sources }
                     .controlSize(.small)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, Space.m)
+            .padding(.vertical, Space.s)
         }
     }
 }
 
-struct TypeBadge: View {
-    var artifact: Artifact
-
-    var body: some View {
-        // Widens for a long extension rather than cutting it.
-        Text(Wording.kindLabel(artifact.kind, path: artifact.path))
-            .font(.system(size: 10, weight: .semibold))
-            .tracking(0.4)
-            .foregroundStyle(.secondary)
-            .fixedSize()
-            .frame(minWidth: 40, minHeight: 18)
-            .padding(.horizontal, 4)
-            .background(.quaternary, in: RoundedRectangle(cornerRadius: 4))
-    }
-}
-
+/// One delivered work in a list, read as Mail reads a message: the file and its date, what you
+/// asked for, then where it is and anything that needs a look.
 struct ResultRow: View {
     var result: SearchResult
     /// The file the row shows and hands over: the one holding `delivery`.
@@ -349,50 +343,64 @@ struct ResultRow: View {
     var showFolder: Bool
     /// What the row says beside the date (`LibraryModel.rowStatus`).
     var status: (mark: (Mark, String)?, number: String?)
+    /// Who put the work in the project the outline shows, when not Gleaner.
+    var placement: Organization.Placement?
 
     var body: some View {
         let work = result.work
         // The work by its newest file's name; the context says when the row shows another of its files.
         let context = [project,
                        file.inWorktree ? file.place : nil,
-                       showFolder ? file.folder : nil,
+                       showFolder ? Wording.folder(file.folder) : nil,
                        work.files.count > 1 ? "\(work.files.count) files" + (file.path == work.latest.path ? "" : ", showing \(file.name)") : nil,
+                       placed,
         ].compactMap { $0 }
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-                TypeBadge(artifact: work.latest)
-                Text(work.name).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
-            }
-            if !context.isEmpty {
-                Text(context.joined(separator: " · "))
-                    .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-            }
-            if let request = delivery.request {
-                Text("“\(request)”").font(.callout).lineLimit(2)
-            }
-            HStack(spacing: 10) {
-                if let mark = status.mark {
-                    StatusLabel(mark: mark.0, text: mark.1)
+        HStack(alignment: .top, spacing: Space.s + 2) {
+            FileIcon(path: work.latest.path, folder: work.latest.kind == .folder, size: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                    Text(work.name).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: Space.xs)
+                    ProviderMark(provider: delivery.provider, size: 12).foregroundStyle(.secondary)
+                    Text(Wording.shortDate(delivery.deliveredAt)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        .help(Wording.date(delivery.deliveredAt))
                 }
-                Text(delivery.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "Unknown date")
-                    .foregroundStyle(.secondary)
-                if let number = status.number {
-                    Text(number).foregroundStyle(.secondary)
+                if let request = delivery.request {
+                    Text(request).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                }
+                if !context.isEmpty || status.mark != nil || status.number != nil {
+                    HStack(spacing: Space.s) {
+                        if let mark = status.mark { StatusLabel(mark: mark.0, text: mark.1, size: 11) }
+                        if !context.isEmpty {
+                            Text(context.joined(separator: " · ")).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                        }
+                        if let number = status.number { Text(number).foregroundStyle(.secondary).monospacedDigit() }
+                    }
+                    .font(.caption)
                 }
             }
-            .font(.caption)
         }
-        .padding(.vertical, 5)
+        .padding(.vertical, Space.xs)
+        .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken(context: context))
     }
 
+    var placed: String? {
+        switch placement {
+        case .moved?: "moved here by you"
+        case .combined?: "shown inside"
+        default: nil
+        }
+    }
+
     /// One sentence VoiceOver reads for the row, in the order the eye reads it.
     func spoken(context: [String]) -> String {
-        var parts = [result.work.name] + context
+        var parts = [result.work.name, Wording.kindLabel(result.work.latest.kind, path: result.work.latest.path) + " file"] + context
         if let mark = status.mark { parts.append(mark.1.lowercased()) }
-        parts.append("delivered " + (delivery.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "on an unknown date"))
-        if let number = status.number { parts.append(number.lowercased()) }
+        parts.append("delivered " + (delivery.deliveredAt?.formatted(date: .abbreviated, time: .shortened) ?? "at an unknown time"))
+        parts.append("by " + Wording.provider(delivery.provider))
+        if let number = status.number { parts.append("delivery " + number) }
         if let request = delivery.request { parts.append("you asked: \(request.prefix(160))") }
         return parts.joined(separator: ", ")
     }

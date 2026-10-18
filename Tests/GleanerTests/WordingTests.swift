@@ -37,12 +37,12 @@ import Testing
     @Test func anUnavailableDeliverySaysWhyGleanerHasNoCopy() {
         let changed = state(.file, sha: "c")
         func detail(_ d: Delivery, large: Bool = false) -> String { handoff(d, in: artifact(d), now: changed, large: large).detail }
-        #expect(detail(delivery(1, .missing)).contains("Gleaner never saw delivery 1: nothing was at this path when it first looked."))
-        #expect(detail(delivery(1, .special)).contains("Gleaner never read delivery 1: it wasn’t a regular file when Gleaner first looked."))
-        #expect(detail(delivery(1, .unreadable)).contains("Gleaner never read delivery 1: it couldn’t be read when Gleaner first looked."))
+        #expect(detail(delivery(1, .missing)).contains("Gleaner never saw delivery 1: nothing was at this path then."))
+        #expect(detail(delivery(1, .special)).contains("Gleaner never read delivery 1: it wasn’t a regular file then."))
+        #expect(detail(delivery(1, .unreadable)).contains("Gleaner never read delivery 1: it couldn’t be read then."))
         #expect(detail(delivery(1, .directory)).contains("Delivery 1 was a folder."))
-        #expect(detail(delivery(1, .file, sha: "a"), large: true).contains("too large to have been saved"))
-        #expect(detail(delivery(1, .file, sha: "a")).contains("Saving a copy of delivery 1 failed"))
+        #expect(detail(delivery(1, .file, sha: "a"), large: true).contains("too large to save"))
+        #expect(detail(delivery(1, .file, sha: "a")).contains("Saving delivery 1 failed"))
         // Gleaner never read delivery 1, so it can't say the file changed, or that the delivery was
         // ever available; the current file is offered by name.
         let unread = detail(delivery(1, .missing))
@@ -56,11 +56,11 @@ import Testing
         let changed = state(.file, sha: "c")
         for large in [false, true] {
             let detail = handoff(saved, in: artifact(saved), now: changed, large: large).detail
-            #expect(detail.contains("Gleaner saved a copy of delivery 2, but it is no longer in Gleaner’s store."))
+            #expect(detail.contains("Gleaner’s saved copy of delivery 2 is no longer in its store."))
             #expect(!detail.contains("failed") && !detail.contains("too large"))
         }
         #expect(Wording.storage(saved, hasSaved: false, large: false, now: changed).1
-                == "Saved copy no longer in Gleaner’s store (4 MB) · the file on disk no longer holds it")
+                == "Saved copy gone from Gleaner’s store, 4 MB; the file on disk no longer holds it")
     }
 
     @Test func anUnreadablePathIsNeverCalledChangedGoneOrSeen() {
@@ -84,13 +84,13 @@ import Testing
     }
 
     @Test func aDeliveryNeverReadSaysWhatWasAtThePath() {
-        #expect(Wording.provenance(delivery(1, .missing).capture).1 == "Never seen · nothing was at this path when Gleaner first looked")
-        #expect(Wording.provenance(delivery(1, .special).capture).1 == "Never read · not a regular file when Gleaner first looked")
-        #expect(Wording.provenanceShort(delivery(1, .special).capture).1 == "Never read · not a regular file")
-        #expect(Wording.storage(delivery(1, .missing), hasSaved: false, large: false, now: nil).1 == "Not saved · Gleaner never read it")
+        #expect(Wording.provenance(delivery(1, .missing).capture).1 == "Never seen: nothing at this path")
+        #expect(Wording.provenance(delivery(1, .special).capture).1 == "Never read: not a regular file")
+        #expect(Wording.provenanceShort(delivery(1, .special).capture).1 == "Never read")
+        #expect(Wording.storage(delivery(1, .missing), hasSaved: false, large: false, now: nil).1 == "Not saved: never read")
         let small = delivery(1, .file, sha: "a")
         #expect(Wording.storage(small, hasSaved: false, large: false, now: state(.file, sha: "b")).1
-                == "Not saved · saving it failed (4 MB) · the file on disk no longer holds it")
+                == "Not saved: saving failed, 4 MB; the file on disk no longer holds it")
     }
 
     @Test func lostSaysWhatGitWasAskedAndNeverAsksItAboutAFolder() {
@@ -121,7 +121,7 @@ import Testing
     @Test func aLogFoundShorterThanWhenReadBeforeIsNamedAsSuch() {
         // Still true once the log has grown again: the records it lost stay lost.
         let source = Indexer.Report.Source(folder: .listed, shortenedLogs: ["/logs/a.jsonl"])
-        #expect(Wording.sourcesLine([.claudeCode: source]) == "Claude Code: read with problems (1 log found shorter than when read before)")
+        #expect(Wording.sourcesLine([.claudeCode: source]) == "Claude Code: read with problems (1 log shorter than before)")
     }
 
     // MARK: "First seen later" (A9)
@@ -130,7 +130,7 @@ import Testing
         let later = delivery(1, .file, sha: "a", provenance: .firstSeenAfterDelivery)
         let changed = FileObservation(state: state(.file, sha: "c"), checkedAt: delivered)
         #expect(handoff(later, in: artifact(later), now: changed.state, large: true).title == "Delivery 1 (first seen later) is no longer available")
-        #expect(Wording.onDisk(.changed(since: 1), in: artifact(later), now: changed).title == "Changed since delivery 1 (first seen later)")
+        #expect(Wording.onDisk(.changed(since: 1), in: artifact(later), now: changed).detail.contains("Changed since delivery 1 (first seen later)."))
         let gone = state(.missing, git: .lost)
         #expect(handoff(later, in: artifact(later), now: gone, large: true).title == "Delivery 1 (first seen later) is lost")
     }
@@ -139,7 +139,10 @@ import Testing
         let later = delivery(1, .file, sha: "a", provenance: .firstSeenAfterDelivery)
         let again = delivery(2, .file, sha: "a")
         let both = artifact(later, again)
-        #expect(Wording.handoffHeading(later) == "Hand off delivery 1 (first seen later)")
+        // The header names the bytes it shows and hands over.
+        #expect(Wording.bytesCaption(nil, staged: nil, delivery: later) == "Delivery 1 (first seen later)")
+        #expect(Wording.bytesCaption(.ready(sha: "a", from: .original, firstSeen: delivered), staged: "a", delivery: later)
+                == "Delivery 1 · file on disk · first seen later")
         // The tile names what it carries, before and after its copy is ready.
         let plan = Handoff.ready(sha: "a", from: .original, firstSeen: delivered)
         #expect(Wording.tileVersion(staged: nil, plan: plan, delivery: later, in: artifact(later)) == "delivery 1 (first seen later)")

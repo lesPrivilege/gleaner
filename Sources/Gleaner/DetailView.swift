@@ -3,10 +3,12 @@ import GleanerCore
 import Quartz
 import SwiftUI
 
-/// One delivered file, preview first. Always visible: the bytes, what they are, how to hand them
-/// over and any caveat about them. On demand: other deliveries and the full record (rulings §5).
+/// One delivered file, laid out as Finder's preview pane lays out a file: the file itself to drag
+/// and open, its bytes, then its information. What needs a look is said under the file's name;
+/// what is as it should be is said by a mark (rulings §5).
 struct DetailView: View {
     @Environment(LibraryModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var result: SearchResult
 
     var body: some View {
@@ -17,29 +19,31 @@ struct DetailView: View {
         let onDisk = observation.map { artifact.onDisk($0, hasSaved: model.hasSaved) }
         let plan = observation.map { artifact.handoff(delivery, now: $0, hasSaved: model.hasSaved) }
         let staging = model.staging(for: plan?.sha)
+        let suggestions = model.organization.suggestions(for: work)
 
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                header(work, artifact)
+            VStack(alignment: .leading, spacing: Space.xl) {
+                VStack(alignment: .leading, spacing: Space.m) {
+                    // A new selection is a new view: nothing animates between two files.
+                    DetailHeader(artifact: artifact, delivery: delivery, plan: plan, staging: staging, observation: observation)
+                        .id("\(artifact.id)|\(delivery.id)")
+                    ForEach(suggestions) { SuggestionView(suggestion: $0, from: work).transition(Motion.arrive(reduceMotion)) }
+                }
+                .animation(Motion.state(reduceMotion), value: suggestions.map(\.id))
                 if let comparison = model.comparison {
                     ComparePane(artifact: artifact, from: comparison.from, to: comparison.to)
                 } else {
-                    PreviewPane(artifact: artifact, delivery: delivery, plan: plan, staging: staging)
+                    PreviewPane(artifact: artifact, plan: plan, staging: staging)
                 }
-                if let plan, let onDisk, let observation {
-                    HandoffPanel(artifact: artifact, delivery: delivery, plan: plan, onDisk: onDisk, observation: observation)
-                } else {
-                    ProgressView("Checking the file…").controlSize(.small)
-                }
-                ReplySection(artifact: artifact, delivery: delivery)
+                InformationSection(artifact: artifact, delivery: delivery, plan: plan, onDisk: onDisk, observation: observation)
                 if work.deliveries.count > 1 {
-                    DeliveriesSection(work: work, selected: delivery)
+                    VersionsSection(work: work, selected: delivery)
                 }
-                WorkSection(work: work)
-                DetailsSection(artifact: artifact, delivery: delivery, observation: observation)
+                WorkSection(work: work).id(work.id)
+                MoreInfoSection(artifact: artifact, delivery: delivery, observation: observation)
             }
-            .padding(24)
-            .frame(maxWidth: 900, alignment: .leading)
+            .padding(Space.xl)
+            .frame(maxWidth: 880, alignment: .leading)
         }
         .task(id: artifact.id) {
             model.clearStaging()
@@ -55,63 +59,174 @@ struct DetailView: View {
             }
         }
     }
-
-    func header(_ work: Work, _ artifact: Artifact) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(artifact.name).font(.title2.weight(.semibold)).textSelection(.enabled)
-            Text(([model.projectName(work), artifact.inWorktree ? artifact.place : nil] as [String?]).compactMap { $0 }.joined(separator: " · "))
-                .font(.callout).foregroundStyle(.secondary)
-            if work.files.count > 1 {
-                Text("One work in \(work.files.count) files: " + work.files.map(\.name).joined(separator: " → "))
-                    .font(.callout).foregroundStyle(.secondary).lineLimit(2)
-            }
-            // What this work may be is said with what it is, before its bytes.
-            ForEach(model.organization.suggestions(for: work)) { SuggestionView(suggestion: $0, from: work).padding(.top, 6) }
-        }
-    }
 }
 
-/// The eyebrow-titled status block. Amber or red only when the person needs to look.
-struct Panel<Actions: View>: View {
-    var statement: Statement
-    var eyebrow: String?
-    @ViewBuilder var actions: Actions
+/// The file, as the thing you drag: its own icon and name, which bytes they are, and whether
+/// Gleaner vouches for them. Open and Show in Finder sit beside it; the rest is in the menu. When
+/// the version can't be handed over, the reason and what can be done instead follow.
+struct DetailHeader: View {
+    @Environment(LibraryModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovering = false
+    var artifact: Artifact
+    var delivery: Delivery
+    var plan: Handoff?
+    var staging: Staging
+    var observation: FileObservation?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let eyebrow {
-                Text(eyebrow.uppercased()).font(.caption2.weight(.semibold)).tracking(0.8).foregroundStyle(.secondary)
+        let statement = plan.map { Wording.handoff($0, delivery: delivery, in: artifact, now: observation!.state, large: model.isLarge(delivery)) }
+        VStack(alignment: .leading, spacing: Space.m) {
+            HStack(alignment: .center, spacing: Space.m) {
+                tile(statement)
+                Spacer(minLength: Space.s)
+                Button("Open") { model.openSelected() }
+                    .disabled(openURL == nil)
+                    .help("Open the verified copy (⌘O)")
+                Button("Show in Finder") { model.reveal(artifact) }
+                    .help(sourceExists ? "Show the original in Finder (⇧⌘R)" : "The file is gone; show its folder")
+                Menu {
+                    menu
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("More")
+                .accessibilityLabel("More")
             }
-            StatusLabel(mark: statement.mark, text: statement.title).font(.headline)
-            Text(statement.detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            actions
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(fill, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(stroke))
-    }
-
-    var fill: Color {
-        switch statement.mark {
-        case .attention: Palette.attentionFill
-        case .cross: Palette.lostFill
-        default: Color(nsColor: .controlBackgroundColor)
+            if let statement, let plan, showsPanel(statement, plan) {
+                StatusPanel(statement: statement) { actions(plan) }
+            }
+            if case .failed(let why, _) = staging {
+                StatusPanel(statement: Statement(mark: .attention, title: "Couldn’t prepare a copy", detail: why)) {
+                    Button("Check Again") { Task { await model.checkAgain(artifact) } }
+                }
+            }
+            if let failure = model.actionFailure(artifact, delivery) {
+                StatusLabel(mark: .attention, text: failure).font(.callout)
+            }
         }
     }
 
-    var stroke: Color {
-        switch statement.mark {
-        case .attention: Palette.attention.opacity(0.35)
-        case .cross: Palette.lost.opacity(0.3)
-        default: Color(nsColor: .separatorColor)
+    /// The thing you drag, labeled with the exact version it carries.
+    func tile(_ statement: Statement?) -> some View {
+        let ready = openURL != nil
+        let status = caption(statement)
+        return HStack(spacing: Space.m) {
+            FileIcon(path: artifact.path, folder: artifact.kind == .folder, size: 48)
+                .opacity(ready ? 1 : 0.45)
+                .overlay(alignment: .bottomTrailing) {
+                    if staging.isPreparing { ProgressView().controlSize(.mini).offset(x: 4, y: 4) }
+                }
+            VStack(alignment: .leading, spacing: 3) {
+                Text(artifact.name).font(.title2.weight(.semibold)).lineLimit(1).truncationMode(.middle)
+                    .textSelection(.enabled)
+                HStack(spacing: Space.s) {
+                    StatusLabel(mark: status.mark, text: status.text)
+                    Text(Wording.bytesCaption(plan, staged: staged, delivery: delivery)).foregroundStyle(.secondary)
+                    if let staged { Text(staged.prefix(8)).font(.system(.caption, design: .monospaced)).foregroundStyle(.tertiary) }
+                }
+                .font(.callout)
+                .lineLimit(1)
+            }
+        }
+        .padding(.vertical, Space.xs)
+        .padding(.horizontal, Space.s)
+        .background(hovering ? Color.primary.opacity(0.06) : .clear, in: RoundedRectangle(cornerRadius: Radius.card))
+        .padding(.horizontal, -Space.s)
+        .contentShape(RoundedRectangle(cornerRadius: Radius.card))
+        .onHover { hovering in withAnimation(Motion.feedback(reduceMotion)) { self.hovering = hovering && ready } }
+        .pointerStyle(ready ? .grabIdle : nil)
+        .onDrag {
+            // Decided now, not when the tile was drawn: the copy may have changed since.
+            guard ready, let plan else { return NSItemProvider() }
+            return model.tileItem(plan, artifact: artifact)
+        }
+        .help(ready ? "Drag to hand over \(Wording.tileVersion(staged: staged, plan: plan ?? .folder, delivery: delivery, in: artifact))" : "Nothing to hand over for this version")
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(artifact.name), \(plan.map { Wording.tileVersion(staged: staged, plan: $0, delivery: delivery, in: artifact) } ?? Wording.compareTitle(delivery))")
+        .accessibilityValue(status.text)
+        .accessibilityHint(ready ? "Drag into another app, or choose File > Open Verified Copy." : "")
+    }
+
+    /// The tile's status, in a word or two: what the panel below says in full.
+    func caption(_ statement: Statement?) -> (mark: Mark, text: String) {
+        switch (plan, staging) {
+        case (nil, _): (.running, "Checking…")
+        case (_, .preparing): (.running, "Verifying…")
+        case (_, .failed): (.attention, "Not prepared")
+        case (.folder?, _): (.na, "Folder")
+        case (.ready?, _): (statement!.mark, statement!.title)
+        case (.unavailable(_, let current?)?, .ready(_, let sha)) where sha == current: (.attention, "Not a found delivery")
+        case (.lost?, _): (.cross, "Lost")
+        case (.restoreFromGit?, _): (.dashed, "In git only")
+        case (.unavailable?, _): (.attention, "Unavailable")
         }
     }
-}
 
-extension Panel where Actions == EmptyView {
-    init(statement: Statement, eyebrow: String? = nil) {
-        self.init(statement: statement, eyebrow: eyebrow) { EmptyView() }
+    /// The panel says what the caption can't: a caveat, or why nothing can be handed over.
+    func showsPanel(_ statement: Statement, _ plan: Handoff) -> Bool {
+        switch plan {
+        case .ready(_, _, nil), .folder: false
+        default: true
+        }
+    }
+
+    @ViewBuilder func actions(_ plan: Handoff) -> some View {
+        switch plan {
+        case .unavailable(let k?, _):
+            if let other = artifact.deliveries.first(where: { $0.number == k }) {
+                Button("Hand Off Delivery \(Wording.number(other)) Instead") { model.chosenDelivery = other.id }
+            }
+        case .unavailable(nil, let current?):
+            Button("Hand Off the Current File") { Task { await model.stage(sha: current, artifact: artifact) } }
+        case .restoreFromGit:
+            if let command = observation?.state.restoreCommand {
+                HStack {
+                    Text(command).font(.system(.caption, design: .monospaced)).textSelection(.enabled).lineLimit(2)
+                    CopyButton(title: "Copy Command", text: command) { model.copy($0) }.id(command)
+                }
+            }
+        default:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder var menu: some View {
+        Button("Quick Look") { model.toggleQuickLook() }.disabled(openURL == nil)
+        Divider()
+        Button("Copy Path") { model.copyPath(artifact) }
+        if case .command(let command) = model.resume(delivery) {
+            Button("Copy Resume Command") { model.copy(command) }
+        }
+        if canSave {
+            Divider()
+            Button("Save a Copy (\(sizeText))") { Task { await model.saveCopy(of: delivery, artifact: artifact) } }
+        }
+    }
+
+    var sourceExists: Bool { observation?.state.kind != .missing }
+
+    /// The bytes ready to drag, when a copy is.
+    var staged: String? {
+        if case .ready(_, let sha) = staging { sha } else { nil }
+    }
+
+    var canSave: Bool {
+        guard let sha = delivery.sha256, !model.hasSaved(sha) else { return false }
+        return observation?.state.sha256 == sha
+    }
+
+    var sizeText: String {
+        observation?.state.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? ""
+    }
+
+    var openURL: URL? {
+        if plan == .folder { return URL(fileURLWithPath: artifact.path) }
+        if case .ready(let url, _) = staging { return url }
+        return nil
     }
 }
 
@@ -119,13 +234,65 @@ extension Staging {
     var isPreparing: Bool { if case .preparing = self { true } else { false } }
 }
 
-/// The selected version's bytes, with one line saying exactly which bytes they are.
+/// A state that needs more than its label: the mark and label, the sentence, then what to do. It
+/// stands in a tinted box only when the person needs to look (amber) or something is gone (red);
+/// otherwise it is plain text in its place, so boxes don't stack inside boxes. A new statement
+/// takes the old one's place rather than stacking under it.
+struct StatusPanel<Actions: View>: View {
+    var statement: Statement
+    @ViewBuilder var actions: Actions
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    var body: some View {
+        let tinted = statement.mark.needsLook
+        VStack(alignment: .leading, spacing: Space.s) {
+            ZStack(alignment: .leading) {
+                StatusLabel(mark: statement.mark, text: statement.title, size: 14).font(.headline)
+                    .id(statement.title).transition(.opacity)
+            }
+            Text(statement.detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: Space.s) { actions }
+        }
+        .padding(tinted ? Space.m : 0)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(fill, in: RoundedRectangle(cornerRadius: Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(stroke))
+        .animation(Motion.state(reduceMotion), value: statement.title)
+    }
+
+    var fill: Color {
+        switch statement.mark {
+        case .attention, .failed: Palette.attentionFill
+        case .cross: Palette.lostFill
+        default: .clear
+        }
+    }
+
+    var stroke: Color {
+        switch statement.mark {
+        case .attention, .failed: Palette.attention.opacity(0.35)
+        case .cross: Palette.lost.opacity(0.3)
+        default: .clear
+        }
+    }
+}
+
+extension StatusPanel where Actions == EmptyView {
+    init(statement: Statement) {
+        self.init(statement: statement) { EmptyView() }
+    }
+}
+
+/// The selected version's bytes, drawn as a page: as tall as the text, up to a limit past which it
+/// scrolls. The header above names which bytes they are.
 struct PreviewPane: View {
     @Environment(LibraryModel.self) private var model
     var artifact: Artifact
-    var delivery: Delivery
     var plan: Handoff?
     var staging: Staging
+    @State private var textHeight: CGFloat = 0
+
+    static let tallest: CGFloat = 480
 
     var body: some View {
         let url: URL? = switch (plan, staging) {
@@ -134,34 +301,47 @@ struct PreviewPane: View {
         default: nil
         }
         let text = plan == .folder ? nil : model.preparedText(for: staging.sha)
-        let caption = Wording.bytesCaption(plan, staged: staging.sha, delivery: delivery)
-        VStack(alignment: .leading, spacing: 6) {
-            ZStack {
-                if let url, let text, ["md", "markdown"].contains(url.pathExtension.lowercased()) {
-                    MarkdownPreview(text.text)
-                } else if let text {
-                    TextPreview(text: text.text)
-                } else if let url, !Self.neverPreviewed.contains(url.pathExtension.lowercased()) {
-                    QuickLookPreview(url: url)
-                } else {
-                    VStack(spacing: 6) {
-                        Image(systemName: url == nil ? "eye.slash" : "shippingbox").font(.title2)
-                        Text(url != nil ? "No preview for this kind of file. Open it to look inside."
-                             : staging.isPreparing ? "Preparing a verified copy…"
-                             : plan == nil ? "Checking the file…" : "No preview: these bytes aren’t available")
+        Group {
+            if let url, let text {
+                ScrollView {
+                    Group {
+                        if ["md", "markdown"].contains(url.pathExtension.lowercased()) {
+                            MarkdownPreview(text.text)
+                        } else {
+                            Text(text.text).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
                     }
-                    .foregroundStyle(.secondary)
+                    .padding(Space.l)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textHeight = $0 }
                 }
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 320)
-            .background(Color(nsColor: .underPageBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
-            if let caption {
-                Text(caption + (text?.truncated == true ? " · showing the first 64 KB, Open to read all" : ""))
-                    .font(.caption).foregroundStyle(.secondary)
+                .scrollDisabled(textHeight <= Self.tallest)
+                .frame(height: min(max(textHeight, 96), Self.tallest))
+                .overlay(alignment: .bottomTrailing) {
+                    if text.truncated {
+                        Text("First 64 KB").font(.caption).foregroundStyle(.secondary)
+                            .padding(.horizontal, Space.s).padding(.vertical, 2)
+                            .background(.regularMaterial, in: Capsule())
+                            .padding(Space.s)
+                            .help("Open it to read the rest.")
+                    }
+                }
+            } else if let url, !Self.neverPreviewed.contains(url.pathExtension.lowercased()) {
+                QuickLookPreview(url: url).frame(height: 360)
+            } else {
+                VStack(spacing: Space.s) {
+                    FileIcon(path: artifact.path, folder: artifact.kind == .folder, size: 64).opacity(url == nil ? 0.4 : 1)
+                    Text(url != nil ? "No preview" : staging.isPreparing ? "Verifying…" : plan == nil ? "Checking…" : "No bytes to show")
+                        .font(.callout).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .frame(height: 180)
             }
         }
+        .frame(maxWidth: .infinity)
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: Radius.card))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(Color(nsColor: .separatorColor)))
     }
 
     /// Installers and apps are never opened, mounted or previewed by selection.
@@ -169,9 +349,7 @@ struct PreviewPane: View {
 }
 
 /// Quick Look's compact view leaves plain text and Markdown blank, so those are shown directly.
-struct TextPreview: View {
-    var text: String
-
+enum TextPreview {
     nonisolated static let textTypes: Set<String> = ["md", "markdown", "txt", "json", "tsv", "csv", "log", "yaml", "yml", "toml", "swift", "py", "js", "ts"]
     nonisolated static let limit = 64 << 10
 
@@ -180,15 +358,6 @@ struct TextPreview: View {
               let handle = try? FileHandle(forReadingFrom: url),
               let data = try? handle.read(upToCount: limit + 1) else { return nil }
         return (String(decoding: data.prefix(limit), as: UTF8.self), data.count > limit)
-    }
-
-    var body: some View {
-        ScrollView {
-            Text(text).font(.system(.callout, design: .monospaced))
-                .textSelection(.enabled)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-        }
     }
 }
 
@@ -206,141 +375,112 @@ struct QuickLookPreview: NSViewRepresentable {
     }
 }
 
-/// Hand-off: the tile and Open act on the verified copy; the Original row acts on the file's
-/// location. Each says which.
-struct HandoffPanel: View {
+/// What the delivery is: the request, the reply that handed it over, the agent and conversation,
+/// when, where the file is now, and what else that reply named.
+struct InformationSection: View {
     @Environment(LibraryModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var artifact: Artifact
     var delivery: Delivery
-    var plan: Handoff
-    var onDisk: OnDisk
-    var observation: FileObservation
+    var plan: Handoff?
+    var onDisk: OnDisk?
+    var observation: FileObservation?
+    @State private var showsAll = false
 
-    /// What is staged for this panel's version only.
-    var staging: Staging { model.staging(for: plan.sha) }
+    /// Siblings listed before "Show All".
+    static let shown = 6
 
     var body: some View {
-        let statement = Wording.handoff(plan, delivery: delivery, in: artifact, now: observation.state, large: model.isLarge(delivery))
-        let disk = Wording.onDisk(onDisk, in: artifact, now: observation)
-        VStack(alignment: .leading, spacing: 12) {
-            Text(Wording.handoffHeading(delivery)).font(.headline)
-            HStack(spacing: 10) {
-                tile
-                Button("Open") { model.openSelected() }
-                    .disabled(openURL == nil)
-                    .help("Open the verified copy in its app (⌘O). ⌘C in the list copies it as a file.")
-                if let ends = diskComparison {
-                    Button("Compare with File on Disk") { model.comparison = ends }
-                        .help("Show what changed between delivery \(Wording.number(delivery)) and the file on disk now.")
+        let others = model.siblings[delivery.id] ?? []
+        DetailSection(title: "Information") {
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: Space.m, verticalSpacing: Space.s + 2) {
+                if let request = delivery.request {
+                    InfoRow(label: "Request") { Text("“\(request)”").lineLimit(6).textSelection(.enabled) }
                 }
-                if canSave {
-                    Button("Save a Copy (\(sizeText))") { Task { await model.saveCopy(of: delivery, artifact: artifact) } }
-                        .help("Keep these bytes in Gleaner, so this version survives later edits.")
+                if !delivery.evidence.isEmpty {
+                    InfoRow(label: "Reply") {
+                        VStack(alignment: .leading, spacing: Space.xs) {
+                            // The agent's own words, quoted beside a rule: what the reply said, not a status.
+                            ForEach(Array(delivery.evidence.enumerated()), id: \.offset) { _, item in
+                                Text(Self.excerpt(item.excerpt))
+                                    .textSelection(.enabled)
+                                    .padding(.leading, Space.s + 2)
+                                    .overlay(alignment: .leading) { Rectangle().fill(.quaternary).frame(width: 3) }
+                                    .help(item.excerpt)
+                            }
+                        }
+                    }
                 }
-            }
-            .controlSize(.large)
-            Panel(statement: statement) { actions }
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Text("On disk now:").foregroundStyle(.secondary)
-                    StatusLabel(mark: disk.mark, text: disk.title)
+                InfoRow(label: "Agent") {
+                    HStack(spacing: Space.s) {
+                        ProviderMark(provider: delivery.provider, size: 16, color: true)
+                        Text(delivery.sessionTitle ?? "Untitled conversation").lineLimit(1).truncationMode(.tail)
+                        resume
+                    }
                 }
-                HStack(spacing: 8) {
-                    Text("Original:").foregroundStyle(.secondary)
-                    Text((artifact.path as NSString).abbreviatingWithTildeInPath)
-                        .font(.system(.callout, design: .monospaced)).lineLimit(1).truncationMode(.middle)
-                        .textSelection(.enabled)
-                    Spacer(minLength: 8)
-                    Button(sourceExists ? "Show in Finder" : "Show Folder") { model.reveal(artifact) }
-                        .help(sourceExists ? "Select the original file in Finder." : "The file isn’t there; show the folder it was in.")
-                    Button("Copy Path") { model.copyPath(artifact) }
-                        .help("Copies where the original lives. The file there may change; drag or ⌘C hands over the verified copy.")
+                InfoRow("Delivered", Wording.date(delivery.deliveredAt))
+                if let onDisk, let observation {
+                    let disk = Wording.onDisk(onDisk, in: artifact, now: observation)
+                    InfoRow(label: "On Disk") {
+                        HStack(spacing: Space.s) {
+                            StatusLabel(mark: disk.mark, text: disk.title).id(disk.title)
+                            InfoButton(text: disk.detail)
+                            if let ends = diskComparison {
+                                Button("Compare") { model.comparison = ends }
+                                    .controlSize(.small)
+                                    .help("Compare delivery \(Wording.number(delivery)) with the file on disk")
+                            }
+                        }
+                    }
+                }
+                InfoRow(label: "Location") {
+                    HStack(spacing: Space.s) {
+                        Text(Wording.tilde(artifact.path)).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                            .help(artifact.path)
+                        CopyButton(title: "Copy", text: artifact.path) { model.copy($0) }
+                            .controlSize(.small)
+                            .help("Copy the original’s path. The file there may change; drag the file above to hand over the verified copy.")
+                            .id(artifact.path)
+                    }
+                }
+                if !others.isEmpty {
+                    InfoRow(label: "Delivered With") {
+                        FlowLayout(spacing: Space.m) {
+                            ForEach(showsAll ? others : Array(others.prefix(Self.shown))) { other in
+                                LinkButton(title: (other.path as NSString).lastPathComponent) { model.select(other) }
+                                    .help(Wording.siblingHelp(other))
+                                    .transition(Motion.arrive(reduceMotion))
+                            }
+                            if others.count > Self.shown {
+                                Button(showsAll ? "Show Fewer" : "\(others.count - Self.shown) More") {
+                                    withAnimation(Motion.state(reduceMotion)) { showsAll.toggle() }
+                                }
+                                .buttonStyle(.plain)
+                                .foregroundStyle(.secondary)
+                                .pointerStyle(.link)
+                            }
+                        }
+                    }
                 }
             }
             .font(.callout)
-            .controlSize(.small)
         }
-        .padding(14)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(nsColor: .separatorColor)))
+        .onChange(of: delivery.id) { showsAll = false }
     }
 
-    /// The thing you drag: the file itself, labeled with the exact version it carries.
-    @ViewBuilder var tile: some View {
-        let ready = openURL
-        HStack(spacing: 10) {
-            Image(systemName: "line.3.horizontal").foregroundStyle(.secondary).accessibilityHidden(true)
-            TypeBadge(artifact: artifact)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(artifact.name).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
-                Text(tileCaption).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
-            }
-            if staging.isPreparing { ProgressView().controlSize(.small) }
-        }
-        .padding(.horizontal, 12)
-        .frame(minHeight: 52)
-        .frame(maxWidth: 360, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(ready == nil ? Color(nsColor: .separatorColor) : Palette.selection.opacity(0.6)))
-        .opacity(ready == nil ? 0.55 : 1)
-        .onDrag {
-            // Decided now, not when the tile was drawn: the copy may have changed since.
-            guard ready != nil else { return NSItemProvider() }
-            return model.tileItem(plan, artifact: artifact)
-        }
-        .help(ready == nil ? "Nothing to drag for this version" : "Drag into Finder, a chat, or an upload field")
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Drag \(artifact.name), \(Wording.tileVersion(staged: staged, plan: plan, delivery: delivery, in: artifact))")
-        .accessibilityValue(tileCaption)
-        .accessibilityHint(ready == nil ? "" : "Drag into another app, or choose File > Open Verified Copy.")
-    }
-
-    /// The bytes ready to drag, when a copy is.
-    var staged: String? {
-        if case .ready(_, let sha) = staging { sha } else { nil }
-    }
-
-    var tileCaption: String {
-        switch staging {
-        case .ready(_, let sha):
-            return "\(Wording.tileVersion(staged: sha, plan: plan, delivery: delivery, in: artifact)) · \(sha.prefix(12))…"
-        case .preparing: return "verifying…"
-        case .failed(let why, _): return why
-        case .idle: return plan == .folder ? "folder as it is now" : "not available"
+    /// Going back to the conversation: a command to copy where the agent documents one and the
+    /// conversation can still be resumed, else why not. Gleaner never opens a log as if it were it.
+    @ViewBuilder var resume: some View {
+        switch model.resume(delivery) {
+        case .command(let command):
+            CopyButton(title: "Copy Resume Command", text: command) { model.copy($0) }
+                .controlSize(.small)
+                .help("Copies “\(command)”. Paste it in Terminal to continue in \(Wording.provider(delivery.provider)).")
+                .id(delivery.id)
+        case let other:
+            Text(Wording.resume(other)).foregroundStyle(.secondary)
         }
     }
-
-    @ViewBuilder var actions: some View {
-        switch plan {
-        case .unavailable(let k?, _):
-            if let other = artifact.deliveries.first(where: { $0.number == k }) {
-                Button("Hand Off Delivery \(Wording.number(other)) Instead") { model.chosenDelivery = other.id }
-            }
-        case .unavailable(nil, let current?):
-            Button("Hand Off the Current File") { Task { await model.stage(sha: current, artifact: artifact) } }
-        case .restoreFromGit:
-            if let command = observation.state.restoreCommand {
-                HStack {
-                    Text(command).font(.system(.caption, design: .monospaced)).textSelection(.enabled).lineLimit(2)
-                    Button("Copy Command") { copy(command) }
-                }
-            }
-        default:
-            EmptyView()
-        }
-        if case .failed(let why, _) = staging {
-            HStack {
-                StatusLabel(mark: .attention, text: why).font(.callout)
-                Button("Check Again") { Task { await model.checkAgain(artifact) } }
-                    .help("Check the file now and prepare its copy again.")
-            }
-        }
-        if let failure = model.actionFailure(artifact, delivery) {
-            StatusLabel(mark: .attention, text: failure).font(.callout)
-        }
-    }
-
-    var sourceExists: Bool { observation.state.kind != .missing }
 
     /// Offered when the file on disk is no longer this delivery and both versions can be read.
     var diskComparison: (from: Comparison.End, to: Comparison.End)? {
@@ -349,103 +489,13 @@ struct HandoffPanel: View {
         return (delivered, current)
     }
 
-    var canSave: Bool {
-        guard let sha = delivery.sha256, !model.hasSaved(sha) else { return false }
-        return observation.state.sha256 == sha
-    }
-
-    var sizeText: String {
-        observation.state.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? ""
-    }
-
-    var openURL: URL? {
-        if plan == .folder { return URL(fileURLWithPath: artifact.path) }
-        if case .ready(let url, _) = staging { return url }
-        return nil
-    }
-
-    func copy(_ text: String) {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(text, forType: .string)
-    }
-}
-
-/// Why this file is here: the request and the reply that handed it over, what else that reply
-/// named, and how to go back to the conversation.
-struct ReplySection: View {
-    @Environment(LibraryModel.self) private var model
-    var artifact: Artifact
-    var delivery: Delivery
-    @State private var showsAll = false
-
-    /// Siblings listed before "Show All".
-    static let shown = 6
-
-    var body: some View {
-        let others = model.siblings[delivery.id] ?? []
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Delivered \(Wording.date(delivery.deliveredAt)) by \(Wording.provider(delivery.provider)) · “\(delivery.sessionTitle ?? "Untitled session")”")
-                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            if let request = delivery.request {
-                (Text("You asked: ").foregroundStyle(.secondary) + Text("“\(request)”"))
-                    .font(.callout).lineLimit(4).textSelection(.enabled)
-            }
-            ForEach(Array(delivery.evidence.enumerated()), id: \.offset) { _, item in
-                Text(item.excerpt)
-                    .font(.callout)
-                    .textSelection(.enabled)
-                    .padding(.horizontal, 10).padding(.vertical, 7)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
-            }
-            if !others.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Delivered with (\(others.count)):").font(.caption).foregroundStyle(.secondary)
-                    FlowLayout(spacing: 10) {
-                        ForEach(showsAll ? others : Array(others.prefix(Self.shown))) { other in
-                            Button((other.path as NSString).lastPathComponent) { model.select(other) }
-                                .buttonStyle(.link).font(.caption)
-                                .help(Wording.siblingHelp(other))
-                        }
-                        if others.count > Self.shown {
-                            Button(showsAll ? "Show Fewer" : "Show All \(others.count)") { showsAll.toggle() }
-                                .buttonStyle(.link).font(.caption.weight(.semibold))
-                        }
-                    }
-                }
-            }
-            ConversationRow(delivery: delivery)
-        }
-        .onChange(of: delivery.id) { showsAll = false }
-    }
-}
-
-/// Going back to the conversation: a command to copy where the agent documents one and the
-/// conversation can still be resumed, else why not. Gleaner never opens a log as if it were it.
-struct ConversationRow: View {
-    @Environment(LibraryModel.self) private var model
-    var delivery: Delivery
-    @State private var copied = false
-
-    var body: some View {
-        let resume = model.resume(delivery)
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("Conversation:").font(.caption).foregroundStyle(.secondary)
-            switch resume {
-            case .command(let command):
-                Text(command).font(.system(.caption, design: .monospaced)).lineLimit(1).truncationMode(.middle)
-                    .textSelection(.enabled)
-                Button(copied ? "Copied" : "Copy Resume Command") {
-                    model.copy(command)
-                    copied = true
-                }
-                .controlSize(.small)
-                .help(Wording.resumeHelp(delivery.provider))
-            default:
-                Text(Wording.resume(resume)).font(.caption).foregroundStyle(.secondary)
-            }
-        }
-        .onChange(of: delivery.id) { copied = false }
+    /// The reply's own Markdown, read as text: emphasis and code kept, links not clickable.
+    static func excerpt(_ text: String) -> AttributedString {
+        guard var attributed = try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))
+        else { return AttributedString(text) }
+        let links = attributed.runs.filter { $0.link != nil }.map(\.range)
+        for range in links { attributed[range].link = nil }
+        return attributed
     }
 }
 
@@ -490,30 +540,72 @@ struct FlowLayout: Layout {
     }
 }
 
-/// One line per delivery of the work, across its files; picking one switches the preview and the
-/// hand-off together.
-struct DeliveriesSection: View {
+/// Every delivery of the work, across its files, newest first, as one table: picking a row
+/// switches the file above and its bytes together. Gleaner saw most deliveries' bytes as they
+/// arrived, so that row shows only its mark; the exceptions say so in words.
+struct VersionsSection: View {
     @Environment(LibraryModel.self) private var model
     var work: Work
     var selected: Delivery
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Deliveries").font(.headline)
-            ForEach(work.deliveries) { delivery in
-                HStack(spacing: 8) {
-                    Button { model.chosenDelivery = delivery.id } label: { row(delivery) }
-                        .buttonStyle(.plain)
-                        .accessibilityLabel(spoken(delivery))
-                        .accessibilityAddTraits(delivery.id == selected.id ? .isSelected : [])
-                    if let ends = ends(delivery) {
-                        Button("Compare") { model.comparison = ends }
-                            .controlSize(.small)
-                            .help("Show what changed between this delivery and the selected one.")
-                    }
+        DetailSection(title: "Versions") {
+            VStack(spacing: 0) {
+                ForEach(Array(work.deliveries.enumerated()), id: \.element.id) { index, delivery in
+                    if index > 0 { Divider().padding(.leading, 28) }
+                    row(delivery)
                 }
             }
         }
+    }
+
+    func row(_ delivery: Delivery) -> some View {
+        let isSelected = delivery.id == selected.id
+        let provenance = Wording.provenanceShort(delivery.capture)
+        let earlier = sameAs(delivery)
+        return HStack(spacing: Space.m) {
+            GlyphView(glyph: provenance.0.glyph, size: 12).foregroundStyle(provenance.0.color)
+                .frame(width: 16)
+                .help(provenance.1)
+            Text("Delivery \(delivery.number)").fontWeight(isSelected ? .semibold : .regular)
+                .frame(width: 84, alignment: .leading)
+            if work.files.count > 1 {
+                Text((delivery.path as NSString).lastPathComponent).lineLimit(1).truncationMode(.middle)
+                    .frame(width: 180, alignment: .leading)
+            }
+            Text(Wording.date(delivery.deliveredAt)).foregroundStyle(.secondary).monospacedDigit().lineLimit(1)
+                .frame(width: 150, alignment: .leading)
+            ProviderMark(provider: delivery.provider, size: 13).foregroundStyle(.secondary)
+            if provenance.0 != .solid {
+                Text(provenance.1).foregroundStyle(.secondary).lineLimit(1)
+            }
+            if let earlier {
+                Text(earlier.path == delivery.path ? "Same as \(Wording.number(earlier))"
+                     : "Same as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))")
+                    .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            }
+            Spacer(minLength: Space.s)
+            // Every row keeps the column, so the right edge holds.
+            ZStack(alignment: .trailing) {
+                Color.clear.frame(width: 72, height: 1)
+                if let ends = ends(delivery) {
+                    Button("Compare") { model.comparison = ends }
+                        .controlSize(.small)
+                        .help("Compare with delivery \(Wording.number(selected))")
+                }
+            }
+        }
+        .font(.callout)
+        .padding(.horizontal, Space.s)
+        .frame(minHeight: 30)
+        .background(isSelected ? Color(nsColor: .unemphasizedSelectedContentBackgroundColor) : .clear,
+                    in: RoundedRectangle(cornerRadius: Radius.tag + 2))
+        .contentShape(Rectangle())
+        .onTapGesture { model.chosenDelivery = delivery.id }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(spoken(delivery))
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+        .accessibilityAction { model.chosenDelivery = delivery.id }
     }
 
     /// This delivery against the selected one, older first, when both versions can be read and differ.
@@ -538,75 +630,45 @@ struct DeliveriesSection: View {
         if let earlier, earlier.path != delivery.path {
             line += ", same bytes as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))"
         }
+        if delivery.id == selected.id { line += ", shown" }
         return work.files.count > 1 ? (delivery.path as NSString).lastPathComponent + ", " + line : line
-    }
-
-    func row(_ delivery: Delivery) -> some View {
-        let isSelected = delivery.id == selected.id
-        let provenance = Wording.provenanceShort(delivery.capture)
-        let earlier = sameAs(delivery)
-        let name = (delivery.path as NSString).lastPathComponent
-        return HStack(spacing: 12) {
-            if work.files.count > 1 { Text(name).fontWeight(isSelected ? .semibold : .regular).lineLimit(1).truncationMode(.middle) }
-            Text("Delivery \(delivery.number)").fontWeight(isSelected && work.files.count == 1 ? .semibold : .regular)
-            Text(Wording.date(delivery.deliveredAt)).foregroundStyle(.secondary)
-            Text(Wording.provider(delivery.provider)).foregroundStyle(.secondary)
-            Spacer()
-            if let earlier {
-                Text(earlier.path == delivery.path ? "same as \(Wording.number(earlier))"
-                     : "same bytes as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))")
-                    .foregroundStyle(.secondary)
-            }
-            StatusLabel(mark: provenance.0, text: provenance.1)
-        }
-        .font(.callout)
-        .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(isSelected ? Palette.selection.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(isSelected ? Palette.selection : Color(nsColor: .separatorColor),
-                                                              lineWidth: isSelected ? 1.5 : 1))
-        .contentShape(Rectangle())
     }
 }
 
 /// The full record for the selected delivery, for when the short answer isn't enough.
-struct DetailsSection: View {
+struct MoreInfoSection: View {
     @Environment(LibraryModel.self) private var model
     var artifact: Artifact
     var delivery: Delivery
     var observation: FileObservation?
 
     var body: some View {
-        DisclosureGroup("Details") {
+        DisclosureGroup("More Info") {
             let capture = delivery.capture
             let provenance = Wording.provenance(capture)
             let storage = Wording.storage(delivery, hasSaved: delivery.sha256.map(model.hasSaved) ?? false,
                                           large: model.isLarge(delivery), now: observation?.state)
-            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 6) {
-                row("Path", artifact.path, mono: true)
+            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: Space.m, verticalSpacing: Space.s) {
+                InfoRow(label: "Path") { mono(artifact.path) }
+                InfoRow(label: "Delivery \(delivery.number)") { StatusLabel(mark: provenance.0, text: provenance.1) }
+                InfoRow(label: "Copy") { StatusLabel(mark: storage.0, text: storage.1) }
+                InfoRow(label: "SHA-256") { mono(delivery.sha256 ?? "Not recorded") }
+                if let capture { InfoRow("First Looked", Wording.date(capture.observedAt)) }
+                if let saved = capture?.savedAt { InfoRow("Saved", Wording.date(saved)) }
                 if let observation {
-                    row("On disk", [observation.state.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) },
-                                    "git " + observation.state.git.rawValue.replacingOccurrences(of: "_", with: " "),
-                                    "checked \(Wording.date(observation.checkedAt))"].compactMap { $0 }.joined(separator: " · "))
+                    InfoRow("On Disk", [observation.state.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) },
+                                        "git " + observation.state.git.rawValue.replacingOccurrences(of: "_", with: " "),
+                                        "checked \(Wording.date(observation.checkedAt))"].compactMap { $0 }.joined(separator: " · "))
                 }
-                row("Delivery \(delivery.number)", provenance.1)
-                row("Storage", storage.1)
-                row("sha256", delivery.sha256 ?? "not recorded", mono: true)
-                if let capture { row("First looked", Wording.date(capture.observedAt)) }
-                if let saved = capture?.savedAt { row("Saved", Wording.date(saved)) }
-                row("Session log", delivery.logPath, mono: true)
+                InfoRow(label: "Session Log") { mono(delivery.logPath) }
             }
-            .padding(.top, 8)
+            .font(.callout)
+            .padding(.top, Space.s)
         }
-        .font(.callout)
+        .font(.headline)
     }
 
-    func row(_ label: String, _ value: String, mono: Bool = false) -> some View {
-        GridRow {
-            Text(label).foregroundStyle(.secondary).gridColumnAlignment(.trailing)
-            Text(value)
-                .font(mono ? .system(.caption, design: .monospaced) : .callout)
-                .textSelection(.enabled)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+    func mono(_ text: String) -> some View {
+        Text(text).font(.system(.caption, design: .monospaced)).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
     }
 }

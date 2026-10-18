@@ -380,6 +380,17 @@ final class LibraryModel {
     /// Decisions are recorded one at a time, in the order they were made.
     private let correctionQueue = DispatchQueue(label: "gleaner.corrections", qos: .userInitiated)
 
+    /// The window's undo manager: each decision goes on Edit › Undo under its own name.
+    @ObservationIgnored weak var undoManager: UndoManager?
+
+    /// Puts the decisions recorded since `before` on Edit › Undo, as `name`.
+    private func undoable(_ name: String, since before: Set<Correction.ID>) {
+        let made = corrections.filter { !before.contains($0.id) }
+        guard !made.isEmpty, let undoManager else { return }
+        undoManager.registerUndo(withTarget: self) { model in Task { await model.undo(made) } }
+        undoManager.setActionName(name)
+    }
+
     /// Records a decision off the main thread, after the log being read if there is one, then
     /// shows the library with it; or says why it couldn't be recorded, and leaves the library as
     /// it was.
@@ -402,9 +413,14 @@ final class LibraryModel {
             reorganize()
             return value
         case .failure(let error):
-            correctionFailure = "Gleaner couldn’t record that: \(error)"
+            correctionFailure = "Couldn’t record that: \(error.localizedDescription)"
             return nil
         }
+    }
+
+    /// Says a decision's result to VoiceOver once it is recorded; a failure is said where it shows.
+    private func said(_ text: String) {
+        announce(correctionFailure ?? text)
     }
 
     /// Shows the work holding `path` where it now is: selected, in its project when the window
@@ -417,17 +433,27 @@ final class LibraryModel {
 
     /// Puts the work, every one of its files, in the project `key`.
     func move(_ work: Work, to key: String) async {
-        let paths = work.files.map(\.path), before = (place, selection)
+        let paths = work.files.map(\.path), before = (place, selection), made = Set(corrections.map(\.id))
         await correcting { try $0.correct(.project, subjects: paths, target: key, at: Date()) }
+        undoable("Move", since: made)
         follow(work.id, from: before)
+        said("Moved \(work.name) to \(organization.projectName(key))")
     }
 
     /// Makes a project of the person's own and puts the work in it.
     func move(_ work: Work, toNewProject name: String) async {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines), paths = work.files.map(\.path), before = (place, selection)
         guard !name.isEmpty else { return }
+        let existing = Set(userProjects.map(\.key))
         await correcting { try $0.addProject(named: name, at: Date(), moving: paths) }
+        if let made = userProjects.first(where: { !existing.contains($0.key) }), let undoManager {
+            undoManager.registerUndo(withTarget: self) { model in
+                Task { if let project = model.organization.project(made.key) { await model.remove(project) } }
+            }
+            undoManager.setActionName("Move")
+        }
         follow(work.id, from: before)
+        said("Moved \(work.name) to \(name)")
     }
 
     /// Gleaner puts the work back where it found it.
@@ -435,18 +461,24 @@ final class LibraryModel {
         let moves = corrections.filter { $0.kind == .project && work.contains($0.subject) }.map(\.id), before = (place, selection)
         await correcting { try $0.undo(moves) }
         follow(work.id, from: before)
+        said("Put \(work.name) back")
     }
 
     /// The two files are versions of one work, from now on and after every reread.
     func join(_ a: String, _ b: String) async {
-        let before = (place, selection)
+        let before = (place, selection), made = Set(corrections.map(\.id))
         await correcting { try $0.correct(.sameWork, subject: a, target: b, at: Date()) }
+        undoable("Join", since: made)
         follow(a, from: before)
+        said("Joined \((a as NSString).lastPathComponent) and \((b as NSString).lastPathComponent)")
     }
 
     /// The two files are not one work: Gleaner stops suggesting it.
     func keepApart(_ a: String, _ b: String) async {
+        let made = Set(corrections.map(\.id))
         await correcting { try $0.correct(.notSameWork, subject: a, target: b, at: Date()) }
+        undoable("Keep Apart", since: made)
+        said("Kept \((a as NSString).lastPathComponent) and \((b as NSString).lastPathComponent) apart")
     }
 
     /// Undoes decisions made together, such as moving every file of a work. With `following`,
@@ -455,6 +487,7 @@ final class LibraryModel {
         let ids = corrections.map(\.id), before = (place, selection)
         await correcting { try $0.undo(ids) }
         if following, let selected = before.1 { follow(selected, from: before) }
+        said("Undone")
     }
 
     func undo(_ correction: Correction, following: Bool = true) async {
@@ -468,8 +501,11 @@ final class LibraryModel {
 
     /// Shows the project `folder` inside the project `key`.
     func combine(_ folder: String, into key: String) async {
+        let made = Set(corrections.map(\.id))
         await correcting { try $0.correct(.combine, subject: folder, target: key, at: Date()) }
+        undoable("Show Inside", since: made)
         place = .project(key)
+        said("Showed \(organization.projectName(folder)) inside \(organization.projectName(key))")
     }
 
     func rename(_ project: Organization.Project, to name: String) async {
@@ -503,18 +539,18 @@ final class LibraryModel {
     /// What decisions made together did, in a sentence.
     func describe(_ group: [Correction]) -> String {
         guard group.count > 1, let first = group.first, first.kind == .project else { return group.first.map(describe) ?? "" }
-        return group.sorted { $0.id < $1.id }.map { ($0.subject as NSString).lastPathComponent }.joined(separator: ", ")
-            + " moved to " + organization.projectName(first.target)
+        return "Moved " + group.sorted { $0.id < $1.id }.map { ($0.subject as NSString).lastPathComponent }.joined(separator: ", ")
+            + " to " + organization.projectName(first.target)
     }
 
     /// What a correction did, in a sentence, for the list of corrections.
     func describe(_ correction: Correction) -> String {
         let name = { (path: String) in (path as NSString).lastPathComponent }
         return switch correction.kind {
-        case .project: "\(name(correction.subject)) moved to \(organization.projectName(correction.target))"
-        case .combine: "\(organization.projectName(correction.subject)) shown inside \(organization.projectName(correction.target))"
-        case .sameWork: "\(name(correction.subject)) and \(name(correction.target)) are one work"
-        case .notSameWork: "\(name(correction.subject)) and \(name(correction.target)) are not one work"
+        case .project: "Moved \(name(correction.subject)) to \(organization.projectName(correction.target))"
+        case .combine: "Showed \(organization.projectName(correction.subject)) inside \(organization.projectName(correction.target))"
+        case .sameWork: "Joined \(name(correction.subject)) and \(name(correction.target))"
+        case .notSameWork: "Kept \(name(correction.subject)) and \(name(correction.target)) apart"
         }
     }
 

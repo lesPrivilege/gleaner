@@ -18,6 +18,9 @@ app=build/Gleaner.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
 cp .build/release/Gleaner "$app/Contents/MacOS/Gleaner"
+# The notices for the drawings the app carries.
+mkdir -p "$app/Contents/Resources"
+cp THIRD-PARTY-NOTICES.md "$app/Contents/Resources/THIRD-PARTY-NOTICES.md"
 # The owner's icon, when there is one: Resources/AppIcon.icns.
 icon=""
 if [ -f Resources/AppIcon.icns ]; then

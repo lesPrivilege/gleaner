@@ -196,7 +196,7 @@ import Testing
         #expect(model.place == .all || model.place == .project(mine))
         let group = try #require(model.correctionGroups.first)
         #expect(group.count == 2)
-        #expect(model.describe(group) == "board-draft.md, board-final.md moved to Board meeting")
+        #expect(model.describe(group) == "Moved board-draft.md, board-final.md to Board meeting")
         model.place = .project(mine)
         await model.undo(group)
         let back = try #require(model.organization.work(containing: suggestion.later))
