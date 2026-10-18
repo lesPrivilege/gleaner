@@ -89,3 +89,7 @@ Each check runs against a synthetic home, never the person's library:
 - The session listed the skill as `gleaner`. Asked for "the recovery guide's first version" and to hand it off, it invoked the skill, ran its example, `gleaner find recovery guide --kind document` (five documents), then `show` and `handoff` on guide.md's delivery 1.
 - It said this was the only delivery of guide.md, and gave the copy's path, the delivery's date, id and request, pasting none of the file. The copy has the delivery's hash.
 - Neither run chose among versions: after `initial`, guide.md has one delivery.
+
+**Rerun on 2026-10-18**, built at `86018e6`, the same way on the MCP rerun's home, after `second`. That home has two deliveries of guide.md, and only Gleaner's saved copy holds delivery 1:
+- The calls were the same: the skill, its example `find` (which matched delivery 1), then `show` and `handoff`. Before handing it off, it said this was delivery 1 of 2 and that the file on disk now holds version 2.
+- The new copy has delivery 1's hash. The session said the copy isn't the file at `path`, gave the delivery's id and request, and offered `open "gleaner://delivery/<id>"` for the person to run, without running it.

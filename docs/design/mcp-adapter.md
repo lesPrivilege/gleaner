@@ -44,3 +44,7 @@ Each check runs against a synthetic home, never the person's library:
 - It took delivery 1, the only delivery of guide.md, and said so. The hand-off copy is read-only, and its hash is the delivery's `sha256`.
 - It gave the copy's path, the delivery's date and request, and that latest.md has the same hash. No call was refused.
 - Claude Code deferred the six tools behind its tool search, so the session loaded them before the first call.
+
+**Rerun on 2026-10-18**, built at `86018e6`, on a new home after `initial` and `second`, read to generation 2. Now guide.md has two deliveries: delivery 2 is on disk, and delivery 1 is only in a saved copy. `find recovery guide` matches delivery 1 alone, since delivery 2's request doesn't name the guide.
+- The calls were the same: `gleaner_find` (nine files, not truncated), then `gleaner_show` and `gleaner_handoff` on delivery 1. From `deliveries` the session said the file on disk is now version 2, so version 1 comes from Gleaner's saved copy.
+- The copy holds version one's text, and its hash is delivery 1's `sha256`. It named delivery #1, its date and request, and the hash on disk now.
