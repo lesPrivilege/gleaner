@@ -51,9 +51,10 @@ extension DeliveryCandidate {
         Self.id(logPath: logPath, line: evidence[0].part.line, path: path)
     }
 
-    /// The id of a delivery of `path` whose first mention is in the reply record at `line`.
-    static func id(logPath: String, line: Int, path: String) -> String {
-        let key = "\(logPath)\n\(line)\n\(path)"
+    /// The id of a delivery of `path` whose first mention is in the reply record at `line`. With
+    /// `distinct`, the id for when that one already belongs to another reply's capture.
+    static func id(logPath: String, line: Int, path: String, distinct: String? = nil) -> String {
+        let key = "\(logPath)\n\(line)\n\(path)" + (distinct.map { "\n" + $0 } ?? "")
         return SHA256.hash(data: Data(key.utf8)).prefix(10).map { String(format: "%02x", $0) }.joined()
     }
 }
@@ -206,17 +207,10 @@ public final class Indexer: @unchecked Sendable {
         var admitted = Set<String>()
         for turn in log.turns {
             for (rank, candidate) in MentionExtractor.candidates(in: turn).enumerated() where Admission.admits(candidate) {
-                // A delivery keeps the id, and the capture, it was first given. A later extractor may
-                // find the reply's first mention of the path in another of its records, or admit it
-                // again after a reread dropped it; a new capture would record the bytes as they are now.
-                let fresh = candidate.id(logPath: log.session.logPath)
-                let known = try ([fresh] + turn.parts.map {
-                    DeliveryCandidate.id(logPath: log.session.logPath, line: $0.line, path: candidate.path)
-                }).first(where: registry.hasCapture)
-                let id = known ?? fresh
-                admitted.insert(id)
-                let isNew = known == nil
                 let first = candidate.evidence[0]
+                let id = try deliveryID(of: candidate, in: turn, logPath: log.session.logPath, taken: admitted)
+                admitted.insert(id)
+                let isNew = try !registry.hasCapture(id)
                 try registry.upsertDelivery(
                     id: id, sessionID: log.session.id, logPath: log.session.logPath, path: candidate.path, deliveredAt: first.part.at,
                     replyLine: turn.parts[0].line, replyRank: rank, cwd: first.part.cwd, request: turn.request,
@@ -227,7 +221,7 @@ public final class Indexer: @unchecked Sendable {
                     })
                 if isNew {
                     let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
-                    try registry.addCapture(captured, for: id)
+                    try registry.addCapture(captured, for: id, logPath: log.session.logPath, path: candidate.path, replyAt: first.part.at)
                     // Gleaner's first read of the file for an earlier delivery whose bytes it never had.
                     if captured.sha256 != nil { try registry.complete(capturesOf: candidate.path, with: captured) }
                     added += 1
@@ -242,6 +236,37 @@ public final class Indexer: @unchecked Sendable {
         }
         if isComplete { try registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
         return added
+    }
+
+    /// A delivery keeps the id, and the capture, it was first given: a new capture would record the
+    /// bytes as they are now. Its reply finds that capture by the time of one of its records, so a
+    /// later extractor may find the reply's first mention of the path in another record, a reread
+    /// may admit it again after dropping it, and a rewritten log may move it to other lines. A reply
+    /// never takes the capture made for another one at its old place (SPEC §5.1).
+    /// `taken` holds the ids other replies in the log were given in this read.
+    func deliveryID(of candidate: DeliveryCandidate, in turn: Turn, logPath: String, taken: Set<String>) throws -> String {
+        let fresh = candidate.id(logPath: logPath)
+        let replyAt = candidate.evidence[0].part.at
+        let mine = try registry.captures(logPath: logPath, path: candidate.path, at: Set(turn.parts.compactMap(\.at)))
+            .filter { !taken.contains($0) }
+        if mine.count == 1 { return mine[0] }
+        if mine.isEmpty {
+            // A capture with no reply time is tied to its reply only by its id, which came from the
+            // reply's place: made before Gleaner kept the time, or for records that carry none.
+            let placed = turn.parts.map { DeliveryCandidate.id(logPath: logPath, line: $0.line, path: candidate.path) }
+            if let unplaced = try ([fresh] + placed).first(where: { try !taken.contains($0) && registry.hasUnplacedCapture($0) }) {
+                try registry.place(capture: unplaced, logPath: logPath, path: candidate.path, replyAt: replyAt)
+                return unplaced
+            }
+            // A reply Gleaner hasn't captured. The id its place gives may be held by another reply's
+            // capture, made there before the log was rewritten.
+            guard try taken.contains(fresh) || registry.hasCapture(fresh) else { return fresh }
+        }
+        // Two captures could each be this reply's, or its place is held by another: Gleaner records
+        // its bytes anew rather than choose, under an id of its own that each reread finds again.
+        let times = turn.parts.compactMap(\.at).map { String($0.timeIntervalSince1970) }.sorted()
+        let distinct = (mine.isEmpty ? [replyAt.map { String($0.timeIntervalSince1970) } ?? "-"] : ["ambiguous"] + times).joined(separator: " ")
+        return DeliveryCandidate.id(logPath: logPath, line: candidate.evidence[0].part.line, path: candidate.path, distinct: distinct)
     }
 
     /// Over the save limit: tracked by hash, and saved only when the person asks (SPEC §6). A

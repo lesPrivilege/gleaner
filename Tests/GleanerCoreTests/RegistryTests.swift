@@ -40,7 +40,7 @@ import Testing
         try registry.upsertDelivery(id: "d", sessionID: "s", logPath: "/a.jsonl", path: "/r/a.md", deliveredAt: nil,
                                     replyLine: 1, replyRank: 0, cwd: nil, request: nil, evidence: [])
         try registry.addCapture(Capture(sha256: "abc", size: 1, modifiedAt: nil, observedAt: Date(), savedAt: nil,
-                                        provenance: .atDelivery, kind: .file), for: "d")
+                                        provenance: .atDelivery, kind: .file), for: "d", logPath: "/a.jsonl", path: "/r/a.md", replyAt: nil)
         try registry.record(repository: "/r", checkout: "/r-feature", of: "d")
         #expect(try registry.artifacts().first?.projectFolder == "/r")
         #expect(try registry.artifacts().first?.checkout == Checkout(folder: "/r-feature", repository: "/r"))
@@ -85,7 +85,7 @@ import Testing
         #expect(try !registry.db.rows("PRAGMA table_info(captures)").contains { $0["name"] as? String == "is_directory" })
         #expect(try registry.db.rows("SELECT kind FROM captures").map { $0["kind"] as? String } == ["file"])
         try registry.addCapture(Capture(sha256: "def", size: 1, modifiedAt: nil, observedAt: Date(), savedAt: nil,
-                                        provenance: .atDelivery, kind: .file), for: "new")
+                                        provenance: .atDelivery, kind: .file), for: "new", logPath: "/a.jsonl", path: "/a.md", replyAt: nil)
     }
 
     @Test func aLibraryFromBeforeCapturesSaidWhatTheyFoundGainsIt() throws {

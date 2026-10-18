@@ -111,6 +111,7 @@ extension Staging {
 
 /// The selected version's bytes, with one line saying exactly which bytes they are.
 struct PreviewPane: View {
+    @Environment(LibraryModel.self) private var model
     var artifact: Artifact
     var delivery: Delivery
     var plan: Handoff?
@@ -122,7 +123,7 @@ struct PreviewPane: View {
         case (_, .ready(let url, _)): url
         default: nil
         }
-        let text = url.flatMap(TextPreview.load)
+        let text = plan == .folder ? nil : model.preparedText(for: staging.sha)
         let caption = Wording.bytesCaption(plan, staged: staging.sha, delivery: delivery)
         VStack(alignment: .leading, spacing: 6) {
             ZStack {
@@ -273,10 +274,10 @@ struct HandoffPanel: View {
         .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(ready == nil ? Color(nsColor: .separatorColor) : Palette.selection.opacity(0.6)))
         .opacity(ready == nil ? 0.55 : 1)
         .onDrag {
-            guard let ready else { return NSItemProvider() }
             // A delivered folder is the live one: the receiver gets a copy, never the folder to move.
-            if plan == .folder { return LibraryModel.folderItem(artifact.path) }
-            return NSItemProvider(contentsOf: ready) ?? NSItemProvider()
+            if plan == .folder, ready != nil { return LibraryModel.folderItem(artifact.path) }
+            guard let staged else { return NSItemProvider() }
+            return model.handoffItem(sha: staged, artifact: artifact)
         }
         .help(ready == nil ? "Nothing to drag for this version" : "Drag into Finder, a chat, or an upload field")
         .accessibilityElement(children: .ignore)

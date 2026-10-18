@@ -89,10 +89,7 @@ struct ResultsList: View {
                 model.toggleQuickLook()
                 return .handled
             }
-            .onCopyCommand {
-                guard let url = model.selectedHandoffURL, let provider = NSItemProvider(contentsOf: url) else { return [] }
-                return [provider]
-            }
+            .onCopyCommand { model.copyItem().map { [$0] } ?? [] }
             .overlay { emptyState(results) }
             if !model.artifacts.isEmpty, let trouble = model.logTrouble {
                 Divider()

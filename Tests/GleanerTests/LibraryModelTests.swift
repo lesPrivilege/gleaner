@@ -427,6 +427,44 @@ import UniformTypeIdentifiers
         #expect(model.quickLookURL == shown)
     }
 
+    // MARK: A prepared copy is checked again where it is used (A2)
+
+    /// The selected video's copy prepared, then replaced in the cache with other bytes, as an app
+    /// that owns the cache folder could.
+    func replacedCopy(_ model: LibraryModel) async throws -> Artifact {
+        let video = try await selectVideo(model)
+        await model.stage(sha: try #require(video.latest.sha256), artifact: video)
+        try "CHANGED CACHE".write(to: try #require(model.selectedHandoffURL), atomically: true, encoding: .utf8)
+        return video
+    }
+
+    @Test func theTileHandsOverTheSelectedBytesWhenItsPreparedCopyWasReplaced() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try await replacedCopy(model)
+        let staged = try #require(model.staging(for: video.latest.sha256).sha)
+        #expect(try await dropped(model.handoffItem(sha: staged, artifact: video)).contents == "video v2")
+    }
+
+    @Test func copyHandsOverTheSelectedBytesWhenItsPreparedCopyWasReplacedOrRemoved() async throws {
+        let model = LibraryModel(indexer: indexer)
+        _ = try await replacedCopy(model)
+        #expect(try await dropped(model.copyItem()).contents == "video v2")
+        try FileManager.default.removeItem(at: try #require(model.selectedHandoffURL))
+        #expect(try await dropped(model.copyItem()).contents == "video v2")
+    }
+
+    @Test func thePreviewShowsTheTextThatWasVerified() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let notes = try artifact(model, "notes.md")
+        model.selection = notes.path
+        await model.observe(notes)
+        let sha = try #require(notes.latest.sha256)
+        await model.stage(sha: sha, artifact: notes)
+        try "CHANGED CACHE".write(to: try #require(model.selectedHandoffURL), atomically: true, encoding: .utf8)
+        #expect(model.preparedText(for: sha)?.text == "notes n1")
+        #expect(model.preparedText(for: try #require(try artifact(model, "demo.mp4").latest.sha256)) == nil)
+    }
+
     // MARK: Compare (D3)
 
     @Test func aComparisonIsShownOnlyForThePairItWasAskedFor() {

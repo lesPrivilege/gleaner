@@ -71,6 +71,9 @@ final class LibraryModel {
     var status = "Starting…"
     var observations: [String: FileObservation] = [:]
     private(set) var staging: Staging = .idle
+    /// The prepared copy's text, read once it was verified, for the preview: never read again from
+    /// the copy while it is shown, so the preview stays the bytes that were checked.
+    private(set) var preparedText: (sha: String, text: String, truncated: Bool)?
     /// Bumped when hand-off copies are cleared: the selection's copy is prepared again, and a
     /// preparation started before the clear is never shown after it.
     private(set) var stagingGeneration = 0
@@ -285,12 +288,17 @@ final class LibraryModel {
         isQuickLookOpen = !isQuickLookOpen && selectedHandoffURL != nil
     }
 
-    /// Opens the selection's verified copy (or folder) in its app, or says why it couldn't.
+    /// Opens the selection's verified copy (or folder) in its app, or says why it couldn't. The
+    /// copy is hashed again first, and made again if it no longer holds the selected bytes.
     func openSelected() {
-        guard let (artifact, delivery, _) = selectedHandoff, let url = selectedHandoffURL else { return }
+        guard let (artifact, delivery, plan) = selectedHandoff, let prepared = selectedHandoffURL else { return }
         actionFailure = nil
+        let store = indexer.store, name = artifact.name, source = artifact.path
         Task {
             do {
+                let url = if let sha = plan.sha, plan != .folder {
+                    try await Task.detached(priority: .userInitiated) { try store.stage(sha: sha, name: name, source: source) }.value
+                } else { prepared }
                 _ = try await NSWorkspace.shared.open(url, configuration: NSWorkspace.OpenConfiguration())
             } catch CocoaError.userCancelled {
                 // The person said no: nothing failed.
@@ -372,23 +380,39 @@ final class LibraryModel {
     /// as it is then, so a drop never moves a project's file or folder (SPEC §4).
     func dragItem(for result: SearchResult) -> NSItemProvider? {
         switch rowHandoff(result) {
-        case nil:
-            return nil
-        case .folder:
-            return Self.folderItem(result.artifact.path)
-        case .bytes(let sha):
-            let store = indexer.store, name = result.artifact.name, source = result.artifact.path
-            let provider = NSItemProvider()
-            provider.suggestedName = name
-            let type = UTType(filenameExtension: (name as NSString).pathExtension) ?? .data
-            provider.registerFileRepresentation(forTypeIdentifier: type.identifier, fileOptions: [], visibility: .all) { done in
-                DispatchQueue.global(qos: .userInitiated).async {
-                    do { done(try store.stage(sha: sha, name: name, source: source), false, nil) } catch { done(nil, false, error) }
-                }
-                return nil
-            }
-            return provider
+        case nil: nil
+        case .folder: Self.folderItem(result.artifact.path)
+        case .bytes(let sha): handoffItem(sha: sha, artifact: result.artifact)
         }
+    }
+
+    /// The version `sha` of `artifact`'s file for another app, under the file's own name: a
+    /// hand-off copy staged and hashed when the receiver asks for it. A copy prepared earlier is
+    /// handed over only while it still holds those bytes, else made again from the saved copy or
+    /// the original (SPEC §6), however the drag started.
+    func handoffItem(sha: String, artifact: Artifact) -> NSItemProvider {
+        let store = indexer.store, name = artifact.name, source = artifact.path
+        let provider = NSItemProvider()
+        provider.suggestedName = name
+        let type = UTType(filenameExtension: (name as NSString).pathExtension) ?? .data
+        provider.registerFileRepresentation(forTypeIdentifier: type.identifier, fileOptions: [], visibility: .all) { done in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do { done(try store.stage(sha: sha, name: name, source: source), false, nil) } catch { done(nil, false, error) }
+            }
+            return nil
+        }
+        return provider
+    }
+
+    /// What ⌘C puts on the clipboard: the selection's hand-off copy as a file, hashed again first
+    /// and made again if it no longer holds the selected version's bytes; a delivered folder as it
+    /// is. Nil when nothing is ready, or the bytes can't be had.
+    func copyItem() -> NSItemProvider? {
+        guard let (artifact, _, plan) = selectedHandoff, selectedHandoffURL != nil else { return nil }
+        if plan == .folder { return NSItemProvider(contentsOf: URL(fileURLWithPath: artifact.path)) }
+        guard case .ready(_, let sha) = staging(for: plan.sha),
+              let url = try? indexer.store.stage(sha: sha, name: artifact.name, source: artifact.path) else { return nil }
+        return NSItemProvider(contentsOf: url)
     }
 
     /// A delivered folder for a drag, as it is when the receiving app asks for it, and only while
@@ -443,6 +467,12 @@ final class LibraryModel {
         }
     }
 
+    /// The text the preview shows for the version `sha`, when its copy is ready and is text.
+    func preparedText(for sha: String?) -> (text: String, truncated: Bool)? {
+        guard let sha, case .ready(_, sha) = staging, let prepared = preparedText, prepared.sha == sha else { return nil }
+        return (prepared.text, prepared.truncated)
+    }
+
     /// The hand-off state for the version `sha`; idle when what is staged belongs to another one.
     func staging(for sha: String?) -> Staging {
         sha != nil && staging.sha == sha ? staging : .idle
@@ -485,13 +515,18 @@ final class LibraryModel {
         let name = artifact.name
         let source = artifact.path
         let result = await Task.detached(priority: .userInitiated) {
-            Swift.Result { try store.stage(sha: sha, name: name, source: source) }
+            Swift.Result { () throws -> (URL, (text: String, truncated: Bool)?) in
+                let url = try store.stage(sha: sha, name: name, source: source)
+                return (url, TextPreview.load(url))
+            }
         }.value
         // The selection moved on, another version is being prepared, or the copies were cleared:
         // this result is stale.
         guard !Task.isCancelled, generation == stagingGeneration, staging.sha == sha else { return }
         switch result {
-        case .success(let url): staging = .ready(url, sha: sha)
+        case .success(let (url, text)):
+            staging = .ready(url, sha: sha)
+            preparedText = text.map { (sha, $0.text, $0.truncated) }
         case .failure(ContentStore.Failure.changed):
             staging = .failed("The file changed while Gleaner was copying it. Check again.", sha: sha)
         case .failure: staging = .failed("Gleaner couldn’t read these bytes.", sha: sha)

@@ -24,7 +24,8 @@ public final class Registry: @unchecked Sendable {
             CREATE INDEX IF NOT EXISTS deliveries_path ON deliveries(path);
             CREATE TABLE IF NOT EXISTS captures (
                 delivery_id TEXT PRIMARY KEY, sha256 TEXT, size INTEGER, mtime REAL, observed_at REAL NOT NULL,
-                saved_at REAL, provenance TEXT NOT NULL, kind TEXT NOT NULL, repository TEXT, checkout TEXT);
+                saved_at REAL, provenance TEXT NOT NULL, kind TEXT NOT NULL, repository TEXT, checkout TEXT,
+                log_path TEXT, path TEXT, reply_at REAL);
             """)
         // Each change of several statements is made whole or not at all: a launch that stops partway,
         // say while another copy of Gleaner holds the library, leaves all of it to the next launch.
@@ -84,6 +85,22 @@ public final class Registry: @unchecked Sendable {
                 }
             }
         }
+        // Each capture keeps the reply it was made for: its log, its file and the time of the
+        // record that named the file. A delivery's id comes from where its reply sat in the log, so a
+        // log rewritten with its replies moved would hand one reply's capture to another; the reply
+        // finds its own capture by these instead. Filled from each delivery's row; a capture whose
+        // delivery a reread dropped has none and is found by its id as before.
+        if try !has("captures", "reply_at") {
+            try db.transaction {
+                try db.execute("""
+                    ALTER TABLE captures ADD COLUMN log_path TEXT; ALTER TABLE captures ADD COLUMN path TEXT;
+                    ALTER TABLE captures ADD COLUMN reply_at REAL;
+                    UPDATE captures SET (log_path, path, reply_at) =
+                        (SELECT log_path, path, delivered_at FROM deliveries WHERE deliveries.id = captures.delivery_id);
+                    """)
+            }
+        }
+        try db.execute("CREATE INDEX IF NOT EXISTS captures_reply ON captures(log_path, path);")
         let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
         if version != Int64(Self.extractorVersion) {
             // No log has this modification time, so every log is read again; each keeps the size
@@ -144,6 +161,29 @@ public final class Registry: @unchecked Sendable {
         try !db.rows("SELECT 1 FROM captures WHERE delivery_id = ?", [id]).isEmpty
     }
 
+    /// The deliveries whose captures were made for `path` from the log at `logPath`, by a record
+    /// written at one of `times`: the same reply's, wherever the reply sits in the log now.
+    public func captures(logPath: String, path: String, at times: Set<Date>) throws -> [String] {
+        guard !times.isEmpty else { return [] }
+        let marks = Array(repeating: "?", count: times.count).joined(separator: ", ")
+        return try db.rows("""
+            SELECT delivery_id FROM captures WHERE log_path = ? AND path = ? AND reply_at IN (\(marks)) ORDER BY delivery_id
+            """, [logPath, path] + times.map { $0 as Any? }).compactMap { $0["delivery_id"] as? String }
+    }
+
+    /// True when the delivery `id` has a capture that records no reply time: one made before Gleaner
+    /// kept it whose delivery a reread had dropped, or one of a reply whose records carry no time.
+    /// Only its id ties it to a reply.
+    public func hasUnplacedCapture(_ id: String) throws -> Bool {
+        try !db.rows("SELECT 1 FROM captures WHERE delivery_id = ? AND reply_at IS NULL", [id]).isEmpty
+    }
+
+    /// Records the reply a capture without one belongs to (`hasUnplacedCapture`).
+    public func place(capture id: String, logPath: String, path: String, replyAt: Date?) throws {
+        try db.run("UPDATE captures SET log_path = ?, path = ?, reply_at = ? WHERE delivery_id = ? AND reply_at IS NULL",
+                   [logPath, path, replyAt, id])
+    }
+
     /// `replyLine` and `replyRank` place it in its reply (`Delivery`).
     public func upsertDelivery(id: String, sessionID: String, logPath: String, path: String, deliveredAt: Date?,
                                replyLine: Int, replyRank: Int, cwd: String?, request: String?, evidence: [Evidence]) throws {
@@ -166,14 +206,15 @@ public final class Registry: @unchecked Sendable {
             """, [logPath, keep])
     }
 
-    /// Records what Gleaner first saw of a delivery's bytes. A delivery has one capture; it is
+    /// Records what Gleaner first saw of a delivery's bytes, with the reply it was made for: the
+    /// log, the file, and the time of the record that named it. A delivery has one capture; it is
     /// never replaced, only completed once when it has no hash (`complete(capturesOf:with:)`).
-    public func addCapture(_ capture: Capture, for deliveryID: String) throws {
+    public func addCapture(_ capture: Capture, for deliveryID: String, logPath: String, path: String, replyAt: Date?) throws {
         try db.run("""
-            INSERT INTO captures (delivery_id, sha256, size, mtime, observed_at, saved_at, provenance, kind)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO captures (delivery_id, sha256, size, mtime, observed_at, saved_at, provenance, kind, log_path, path, reply_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [deliveryID, capture.sha256, capture.size, capture.modifiedAt, capture.observedAt, capture.savedAt,
-                  capture.provenance.rawValue, capture.kind.rawValue])
+                  capture.provenance.rawValue, capture.kind.rawValue, logPath, path, replyAt])
     }
 
     /// True when a delivery of `path` has a capture without a hash that a read could complete:
