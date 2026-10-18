@@ -20,9 +20,17 @@ Gleaner 0.1.0 需要 macOS 15 或更高版本。这是早期版本：哪些文�
 
 输入记得的词：当初的要求、回复里的话、文件名或项目名。所有词都出现在同一次交付里才算匹配，分属两次对话的词不会拼成一个结果。结果打开在自身文字（你的要求、回复、会话标题）匹配到的最新一次交付上；只有文件名或项目名匹配时，打开最新一次交付。显示的也是那次交付的日期。改动搜索词后，你切换到别的交付的结果会回到匹配的那一次。
 
-列表上方有两个菜单，分别按项目和类型筛选。项目指存放该文件的 git 仓库，同一仓库的各个 worktree 无论放在哪里都归在一起；不在 git 里的，取 agent 工作时所在的文件夹，并在该行注明“outside git”。两个项目同名时还会显示上级文件夹；文件在 worktree 里时，标出是哪个 worktree。类型共十种：Documents、Images、Video & Audio、Web Pages、Code、Data、3D & CAD、Builds & Archives、Folders、Other。界面目前只有英文，本文提到界面文字时照录原文。
+侧栏列出 All Deliveries、每个项目和 Sources。项目指存放该文件的 git 仓库，同一仓库的各个 worktree 无论放在哪里都归在一起；不在 git 里的，取 agent 工作时所在的文件夹，并注明“outside git”。两个项目同名时还会显示上级文件夹；文件在 worktree 里时，标出是哪个 worktree。在项目里搜索，只搜这个项目。结果上方的菜单按类型筛选，共十种：Documents、Images、Video & Audio、Web Pages、Code、Data、3D & CAD、Builds & Archives、Folders、Other。界面目前只有英文，本文提到界面文字时照录原文。
 
 详情栏依次是预览、一行说明当前显示的是哪份字节、用来拖出文件的转交卡片，以及交付这个文件的那次要求和回复。Markdown 直接在应用内渲染，其他格式多数用 Quick Look 预览。**Deliveries** 列出同一路径的每次交付，一次一行；选中一行，预览和转交卡片一起切换。**Compare** 显示两次交付之间，或某次交付与磁盘上当前文件之间的差异：文本逐行对比，图片并排显示，其他格式比较大小和哈希。两个版本只差换行符或末尾换行时，Compare 会如实说明。
+
+## 项目与作品
+
+打开一个项目，先看到它的概览：它是什么、为什么归在这里，最近交付的作品，Gleaner 建议合并的文件，再按所在文件夹列出每件作品。一件作品是一个文件，或你确认属于同一件作品的几个文件，比如从 draft 改名为 final 的报告；详情里列出每个文件的每次交付。Gleaner 从不自行合并文件，只在有可查证的理由时提出建议：后一个文件带着前一个文件最后的同样字节出现，而前一个已经不在原处；或者同一文件夹里两个名字只差一个版本标记（`v2`、`draft`、`final`、日期）。选 **Same Work** 或 **Not the Same**；拒绝过的建议不会再提。
+
+作品详情里的 **Where This Belongs** 说明它为什么归在这个项目（文件所在的仓库、agent 工作时所在的仓库，或 git 之外的文件夹），并提供 **Move to Project…**（移到另一个项目，或你新建的项目）和 **Join With Another File…**。侧栏里项目的菜单可以把一个推导出的项目显示在另一个项目之内。这些决定只改变 Gleaner 的呈现方式，不改动任何文件、交付或状态；重新读取日志也会保留。**Sources → Your Corrections** 逐条列出，每条可 Undo，也可 Undo All。
+
+回复下方的 **Copy Resume Command** 复制 `claude --resume <id>` 或 `codex resume <id>`，连同进入会话起始文件夹的 `cd`，在终端里继续那次会话。只在会话日志和那个文件夹都还在时提供；否则那一行说明为什么无法继续。**Delivered with** 能到达那次回复提到的每个文件。
 
 ## 状态
 
@@ -85,7 +93,7 @@ Gleaner 没见过或没读到的交付，会在 Gleaner 第一次读到该文件
 
 **列表中**，每行最多一个标记，只在需要留意时出现：*Not available* 并说明原因（never seen、never read、not on disk、can't be read、not a regular file、a folder is there now、changed），*Not on disk*，*Changed*，或 *First seen later*。绘制列表时从不读取磁盘，所以只有在应用打开后核查过的文件才会标 *Changed*。交付过不止一次的文件显示“Delivery N of M”。
 
-**agent 日志**，见设置（Settings），需要留意时也会在列表下方用一行显示：*Read*；*Read with problems*（有未知的记录类型、有格式错误的行或曾被发现比之前读时短的日志、读不了的日志或文件夹）；*Can't be read*；*Not on this Mac*。重读可能有用时会出现 Try Again，已经找到的内容照常显示。
+**agent 日志**，见 Sources（⌘,），需要留意时也会在列表下方用一行显示：*Read*；*Read with problems*（有未知的记录类型、有格式错误的行或曾被发现比之前读时短的日志、读不了的日志或文件夹）；*Can't be read*；*Not on this Mac*。重读可能有用时会出现 Try Again，已经找到的内容照常显示。
 
 ## 转交
 
@@ -120,7 +128,7 @@ Gleaner 只读每一轮的最终回复，回复把文件交到你手上，才收
 
 - **读取** `~/.claude/projects` 下的 Claude Code 日志、`~/.codex` 下的 Codex 日志，以及回复里提到的文件。应用开着时监视日志文件夹，启动后才出现的也一样。通过读取 `.git` 条目找到文件所属的仓库，在仓库里只运行只读的 git 命令：文件在磁盘上时运行 `git status --porcelain --ignored`；文件已不在时运行 `git rev-parse` 和 `git log --all`，找出包含它的提交。每条命令都带 `--no-optional-locks`，git 不会改写索引；也不会运行仓库配置的任何东西：关闭 `core.fsmonitor`，不启动钩子或守护进程；关闭签名校验，`git log` 不启动签名程序；在部分克隆（partial clone）里，不去拉取克隆缺少的内容。git 比较文件时，clean filter（例如 Git LFS）仍可能运行。
 - **保存**回复和要求的摘录，不存完整日志。摘录截短之前，先抹去形似密钥的字符串：API key 和访问令牌、bearer token、`key=value` 形式的密钥、URL 里的凭据，以及 40 个以上字母和数字组成、大小写字母和数字混杂的串。小写十六进制串（哈希、ID）保留。索引和存档副本放在 `~/Library/Application Support/Gleaner`。64 MB 以内的文件，第一次读到时就存一份；更大的文件只记哈希，磁盘上的文件仍与交付一致时，可以用 **Save a Copy** 存下。存档副本是交付时的原样字节，不做抹除。
-- **转交副本**放在 `~/Library/Caches/Gleaner`。设置（Settings）里能看到占用并清除；清除时保留剪贴板上的那份（粘贴时还要读它），也不会动存档副本。
+- **转交副本**放在 `~/Library/Caches/Gleaner`。Sources → Storage 里能看到占用并清除；清除时保留剪贴板上的那份（粘贴时还要读它），也不会动存档副本。
 - **不写入**项目文件夹。Gleaner 自身不发网络请求；用 Quick Look 预览网页时，页面可能加载它引用的资源，链接只在你点击时打开。
 
 ## v0.1 的限制

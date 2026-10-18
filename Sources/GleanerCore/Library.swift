@@ -60,6 +60,9 @@ public struct Delivery: Sendable, Identifiable {
     /// Where the reply names this file among the files it names, from 0.
     public var replyRank = 0
     public var provider: Provider
+    /// The agent's own id for the conversation, and the folder it started in.
+    public var sessionID = ""
+    public var sessionCwd: String?
     public var sessionTitle: String?
     public var request: String?
     public var cwd: String?
@@ -301,7 +304,13 @@ extension Artifact {
     /// combine (SPEC §10). Otherwise the index of the newest delivery whose own words matched, or
     /// 0 when the name or project alone matched.
     public func match(_ tokens: [String]) -> Int? {
-        guard !tokens.isEmpty else { return 0 }
+        matches(tokens, project: project)?.index
+    }
+
+    /// `match`, with the project as the library shows it, and whether the delivery's own words
+    /// matched or only the name or project did.
+    public func matches(_ tokens: [String], project: String) -> (index: Int, ownWords: Bool)? {
+        guard !tokens.isEmpty else { return (0, false) }
         // The file name and its folder, not the whole path: words like "users" or "projects" in
         // every path would otherwise match everything.
         let place = folder.hasPrefix("~") || folder.hasPrefix("/")
@@ -316,9 +325,10 @@ extension Artifact {
             return tokens.allSatisfy { all.contains($0) }
         }
         guard let first = matching.first else { return nil }
-        return matching.first { i in
+        let byOwnWords = matching.first { i in
             own(deliveries[i]).contains { field in tokens.contains { field.contains($0) } }
-        } ?? first
+        }
+        return byOwnWords.map { ($0, true) } ?? (first, false)
     }
 }
 

@@ -3,11 +3,25 @@ import GleanerCore
 import Observation
 import UniformTypeIdentifiers
 
-/// One search result: the artifact, and the delivery the search matched.
+/// One search result: the work, and the delivery the search matched in it.
 struct SearchResult: Identifiable {
-    var artifact: Artifact
-    var deliveryIndex: Int
-    var id: String { artifact.id }
+    var work: Work
+    var matched: Delivery
+    var id: Work.ID { work.id }
+}
+
+/// Where the library window is: every delivery, one project, or what Gleaner reads and keeps.
+enum Place: Hashable {
+    case all
+    case project(String)
+    case sources
+}
+
+/// A page of what Gleaner reads and keeps.
+enum SourcePage: Hashable {
+    case agent(Provider)
+    case corrections
+    case storage
 }
 
 /// A verified copy prepared for dragging, or why there isn't one. Every state names the version
@@ -33,9 +47,16 @@ final class LibraryModel {
             siblings = Artifact.deliveredWith(artifacts)
             missing = Self.missing(artifacts)
             saved = Self.saved(artifacts, in: indexer.store)
-            projectNames = Projects.names(artifacts.map(\.projectFolder))
+            reorganize()
         }
     }
+    /// Projects and works as the person sees them: what Gleaner found, with their corrections.
+    private(set) var organization = Organization(artifacts: [])
+    /// The person's corrections and projects, read from the library; kept apart from what Gleaner found.
+    private(set) var corrections: [Correction] = []
+    private(set) var userProjects: [UserProject] = []
+    /// Why the last correction couldn't be recorded.
+    private(set) var correctionFailure: String?
     /// Paths not on disk, checked once per load and refreshed when a file is observed, so list
     /// rows never touch the disk while drawing.
     private(set) var missing: Set<String> = []
@@ -44,8 +65,6 @@ final class LibraryModel {
     private(set) var saved: Set<String> = []
     /// The other files named in the same reply, as their deliveries from it, keyed by delivery id.
     private(set) var siblings: [Delivery.ID: [Delivery]] = [:]
-    /// What each project folder is shown as; a name two projects share carries its parent folder.
-    private(set) var projectNames: [String: String] = [:]
     /// False until the first read of the logs finishes.
     private(set) var indexed = false
     /// How each agent's log folder read in the latest run; nil until a run finishes, and after one
@@ -54,13 +73,18 @@ final class LibraryModel {
     /// Why the latest run stopped before reading the logs, or why the library couldn't be read
     /// after it. What the library already showed stays.
     private(set) var indexFailure: String?
+    /// When the latest run finished.
+    private(set) var lastRead: Date?
     var query = "" {
         didSet { if query != oldValue { chosenDelivery = nil } }
     }
     var kind: Artifact.Kind?
-    /// The project folder shown, which tells apart projects with the same name; nil shows every project.
-    var project: String?
-    var selection: Artifact.ID? {
+    var place: Place = .all {
+        didSet { if place != oldValue, case .project = place { kind = nil } }
+    }
+    var sourcePage: SourcePage = .agent(.claudeCode)
+    /// The work shown: its id, or any of its files' paths.
+    var selection: Work.ID? {
         didSet { if selection != oldValue { chosenDelivery = nil; comparison = nil } }
     }
     /// Set when the person picks a delivery; otherwise the delivery the search matched.
@@ -108,11 +132,17 @@ final class LibraryModel {
 
     init(indexer: Indexer) {
         self.indexer = indexer
+        corrections = (try? indexer.registry.corrections()) ?? []
+        userProjects = (try? indexer.registry.userProjects()) ?? []
         artifacts = (try? indexer.registry.artifacts()) ?? []
         siblings = Artifact.deliveredWith(artifacts)
         missing = Self.missing(artifacts)
         saved = Self.saved(artifacts, in: indexer.store)
-        projectNames = Projects.names(artifacts.map(\.projectFolder))
+        reorganize()
+    }
+
+    private func reorganize() {
+        organization = Organization(artifacts: artifacts, corrections: corrections, projects: userProjects, missing: missing)
     }
 
     /// Only what is shown to be gone: a file Gleaner can't reach is unreadable, not missing.
@@ -137,28 +167,51 @@ final class LibraryModel {
         indexFailure != nil || sources?.values.contains(where: \.isIncomplete) == true
     }
 
-    /// Each project once, by its most recently delivered file, most recent first.
-    var projects: [Artifact] {
-        var seen = Set<String>()
-        return artifacts.filter { seen.insert($0.projectFolder).inserted }
+    /// Projects, newest activity first.
+    var projects: [Organization.Project] { organization.projects }
+
+    /// The project a work is shown in, as shown.
+    func projectName(_ work: Work) -> String {
+        let name = organization.projectName(work.project)
+        return organization.project(work.project)?.origin == .folder ? Wording.project(name, inRepository: false) : name
     }
 
-    /// The project `artifact` belongs to, as shown.
-    func projectName(_ artifact: Artifact) -> String {
-        Wording.project(projectNames[artifact.projectFolder] ?? artifact.project, inRepository: artifact.inRepository)
+    /// The folder a work is listed under in a project's outline: where its newest file is, from the
+    /// checkout or folder holding it, with the worktree named; outside it, the folder itself. In a
+    /// project the person made, the project Gleaner found it in comes first. Empty at the top level.
+    func outlineFolder(_ work: Work, in project: Organization.Project) -> String {
+        let file = work.latest
+        let directory = (file.path as NSString).deletingLastPathComponent
+        let base = file.checkout?.folder ?? project.folder ?? file.projectFolder
+        var folder = directory == base ? ""
+            : directory.hasPrefix(base + "/") ? String(directory.dropFirst(base.count + 1))
+            : (file.inRepository ? "Outside the repository: " : "Elsewhere: ") + (directory as NSString).abbreviatingWithTildeInPath
+        if file.inWorktree { folder = file.place + (folder.isEmpty ? "" : " › " + folder) }
+        if project.origin == .yours || file.projectFolder != project.key && project.folder != base {
+            let found = organization.projectName(file.projectFolder)
+            folder = found + (folder.isEmpty ? "" : " › " + folder)
+        }
+        return folder
+    }
+
+    /// The project shown, when the window is on one.
+    var currentProject: Organization.Project? {
+        if case .project(let key) = place { organization.project(key) } else { nil }
     }
 
     func clearFilters() {
         query = ""
         kind = nil
-        project = nil
     }
 
-    /// Shows `delivery` itself, not just its file, clearing filters that would hide it. A delivery's
-    /// path is its artifact's id.
+    /// Shows `delivery` itself, not just its file, clearing filters that would hide it, and
+    /// going to its work's project when the window shows another.
     func select(_ delivery: Delivery) {
-        if !results.contains(where: { $0.id == delivery.path }) { clearFilters() }
-        selection = delivery.path
+        guard let work = organization.work(containing: delivery.path) else { return }
+        if case .project(let key) = place, key != work.project { place = .project(work.project) }
+        if place == .sources { place = .all }
+        if !results.contains(where: { $0.id == work.id }) { clearFilters() }
+        selection = work.id
         chosenDelivery = delivery.id
     }
 
@@ -187,6 +240,7 @@ final class LibraryModel {
                 if case .success(let artifacts) = library { self.artifacts = artifacts }
                 self.progress = nil
                 self.indexed = true
+                self.lastRead = Date()
                 switch outcome {
                 case .success(let report):
                     self.sources = report.sources
@@ -207,20 +261,30 @@ final class LibraryModel {
 
     var tokens: [String] { query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init) }
 
+    /// The works the window lists, newest first: in the project shown, of the kind chosen, matching the search.
     var results: [SearchResult] {
         let tokens = tokens
-        return artifacts.compactMap { artifact in
-            guard kind == nil || artifact.kind == kind, project == nil || artifact.projectFolder == project,
-                  let index = artifact.match(tokens) else { return nil }
-            return SearchResult(artifact: artifact, deliveryIndex: index)
+        let project: String? = if case .project(let key) = place { key } else { nil }
+        return organization.works.compactMap { work in
+            guard kind == nil || work.kind == kind, project == nil || work.project == project,
+                  let matched = work.match(tokens, project: organization.projectName(work.project)) else { return nil }
+            return SearchResult(work: work, matched: matched)
         }
     }
 
-    var selected: SearchResult? { results.first { $0.id == selection } }
+    var selected: SearchResult? {
+        guard let selection else { return nil }
+        return results.first { $0.work.contains(selection) }
+    }
 
     func delivery(in result: SearchResult) -> Delivery {
-        if let chosen = chosenDelivery, let d = result.artifact.deliveries.first(where: { $0.id == chosen }) { return d }
-        return result.artifact.deliveries[result.deliveryIndex]
+        if let chosen = chosenDelivery, let d = result.work.deliveries.first(where: { $0.id == chosen }) { return d }
+        return result.matched
+    }
+
+    /// The file a result shows and hands over: the one holding the delivery it shows.
+    func file(in result: SearchResult) -> Artifact {
+        result.work.file(of: delivery(in: result))
     }
 
     func hasSaved(_ sha: String) -> Bool { saved.contains(sha) }
@@ -230,9 +294,10 @@ final class LibraryModel {
 
     /// What the selection would hand over now, once its file has been checked.
     var selectedHandoff: (artifact: Artifact, delivery: Delivery, plan: Handoff)? {
-        guard let result = selected, let observation = observations[result.artifact.path] else { return nil }
-        let delivery = delivery(in: result)
-        return (result.artifact, delivery, result.artifact.handoff(delivery, now: observation, hasSaved: hasSaved))
+        guard let result = selected else { return nil }
+        let artifact = file(in: result), delivery = delivery(in: result)
+        guard let observation = observations[artifact.path] else { return nil }
+        return (artifact, delivery, artifact.handoff(delivery, now: observation, hasSaved: hasSaved))
     }
 
     /// The verified copy (or folder) the selection hands over, when it is ready.
@@ -263,6 +328,110 @@ final class LibraryModel {
               let sha = observation.state.sha256 else { return nil }
         return Comparison.End(title: "File on disk", source: "checked \(observation.checkedAt.formatted(date: .omitted, time: .shortened))",
                               sha: sha, url: URL(fileURLWithPath: artifact.path))
+    }
+
+    // MARK: Corrections
+
+    /// Records a decision and shows the library with it; or says why it couldn't be recorded,
+    /// and leaves the library as it was.
+    private func correcting(_ change: (Registry) throws -> Void) {
+        let registry = indexer.registry
+        do {
+            try change(registry)
+            correctionFailure = nil
+        } catch {
+            correctionFailure = "Gleaner couldn’t record that: \(error)"
+        }
+        corrections = (try? registry.corrections()) ?? corrections
+        userProjects = (try? registry.userProjects()) ?? userProjects
+        reorganize()
+    }
+
+    /// Puts the work, every one of its files, in the project `key`.
+    func move(_ work: Work, to key: String) {
+        correcting { try $0.correct(.project, subjects: work.files.map(\.path), target: key, at: Date()) }
+        if case .project = place { place = .project(key) }
+        selection = work.id
+    }
+
+    /// Makes a project of the person's own and puts the work in it.
+    func move(_ work: Work, toNewProject name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        var created: UserProject?
+        correcting { created = try $0.addProject(named: name, at: Date()) }
+        if let created { move(work, to: created.key) }
+    }
+
+    /// Gleaner puts the work back where it found it.
+    func undoMove(_ work: Work) {
+        let moves = corrections.filter { $0.kind == .project && work.contains($0.subject) }
+        correcting { try $0.undo(moves.map(\.id)) }
+        selection = work.id
+    }
+
+    /// The two files are versions of one work, from now on and after every reread.
+    func join(_ a: String, _ b: String) {
+        correcting { try $0.correct(.sameWork, subject: a, target: b, at: Date()) }
+        if let work = organization.work(containing: a) {
+            selection = work.id
+            if case .project(let key) = place, key != work.project { place = .project(work.project) }
+        }
+    }
+
+    /// The two files are not one work: Gleaner stops suggesting it.
+    func keepApart(_ a: String, _ b: String) {
+        correcting { try $0.correct(.notSameWork, subject: a, target: b, at: Date()) }
+    }
+
+    /// Undoes one decision, whichever it was.
+    func undo(_ correction: Correction) {
+        correcting { try $0.undo(correction.id) }
+    }
+
+    func undoAllCorrections() {
+        correcting { try $0.undoAllCorrections() }
+        if case .project(let key) = place, organization.project(key) == nil { place = .all }
+    }
+
+    /// Shows the project `folder` inside the project `key`.
+    func combine(_ folder: String, into key: String) {
+        correcting { try $0.correct(.combine, subject: folder, target: key, at: Date()) }
+        place = .project(key)
+    }
+
+    func rename(_ project: Organization.Project, to name: String) {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard project.origin == .yours, !name.isEmpty else { return }
+        correcting { try $0.renameProject(project.key, to: name) }
+    }
+
+    /// Removes a project the person made; its work goes back where Gleaner found it.
+    func remove(_ project: Organization.Project) {
+        guard project.origin == .yours else { return }
+        correcting { try $0.removeProject(project.key) }
+        if place == .project(project.key) { place = .all }
+    }
+
+    /// What a correction did, in a sentence, for the list of corrections.
+    func describe(_ correction: Correction) -> String {
+        let name = { (path: String) in (path as NSString).lastPathComponent }
+        return switch correction.kind {
+        case .project: "\(name(correction.subject)) moved to \(organization.projectName(correction.target))"
+        case .combine: "\(organization.projectName(correction.subject)) shown inside \(organization.projectName(correction.target))"
+        case .sameWork: "\(name(correction.subject)) and \(name(correction.target)) are one work"
+        case .notSameWork: "\(name(correction.subject)) and \(name(correction.target)) are not one work"
+        }
+    }
+
+    /// How to go back to the conversation that made `delivery`, checked now.
+    func resume(_ delivery: Delivery) -> Resume {
+        delivery.resume { path, kind in Locator.stat(path).kind == kind }
+    }
+
+    func copy(_ text: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
     }
 
     // MARK: Actions shared by buttons, menus and the right-click menu
@@ -316,7 +485,7 @@ final class LibraryModel {
         } else if Locator.stat(folder.path).kind != .missing {
             NSWorkspace.shared.open(folder)
         } else {
-            selection = artifact.id
+            selection = artifact.path
             actionFailure = (artifact.id, nil, Wording.folderGone(folder.path))
         }
     }
@@ -340,7 +509,7 @@ final class LibraryModel {
     /// the file, never by reading the disk, so a row can ask while it is drawn. The drop verifies
     /// what it hands over.
     func rowHandoff(_ result: SearchResult) -> RowHandoff? {
-        let artifact = result.artifact, delivery = delivery(in: result)
+        let artifact = file(in: result), delivery = delivery(in: result)
         if let observation = rowObservation(artifact.path) {
             switch artifact.handoff(delivery, now: observation, hasSaved: hasSaved) {
             case .ready(let sha, _, _): return .bytes(sha: sha)
@@ -362,7 +531,7 @@ final class LibraryModel {
     /// What `result`'s row says beside its date, from what the library holds and the newest check
     /// of the file: rows never read the disk while they are drawn, so "changed" waits for a check.
     func rowStatus(_ result: SearchResult) -> (mark: (Mark, String)?, number: String?) {
-        let artifact = result.artifact, observation = rowObservation(artifact.path)
+        let artifact = file(in: result), observation = rowObservation(artifact.path)
         let changed = observation.map { now in
             // No saved copy is asked about: only the missing case would, and it isn't "changed".
             if case .changed = artifact.onDisk(now, hasSaved: { _ in false }) { true } else { false }
@@ -379,8 +548,8 @@ final class LibraryModel {
     func dragItem(for result: SearchResult) -> NSItemProvider? {
         switch rowHandoff(result) {
         case nil: nil
-        case .folder: Self.folderItem(result.artifact.path)
-        case .bytes(let sha): handoffItem(sha: sha, artifact: result.artifact)
+        case .folder: Self.folderItem(file(in: result).path)
+        case .bytes(let sha): handoffItem(sha: sha, artifact: file(in: result))
         }
     }
 
@@ -446,7 +615,7 @@ final class LibraryModel {
     }
 
     /// Bytes Gleaner keeps: saved copies, and disposable hand-off copies.
-    func storageUsage() -> (saved: Int64, handoff: Int64) {
+    nonisolated func storageUsage() -> (saved: Int64, handoff: Int64) {
         (Self.size(of: indexer.store.objects), Self.size(of: indexer.store.staging))
     }
 
@@ -473,7 +642,7 @@ final class LibraryModel {
         restage()
     }
 
-    private static func size(of directory: URL) -> Int64 {
+    nonisolated private static func size(of directory: URL) -> Int64 {
         let keys: [URLResourceKey] = [.totalFileAllocatedSizeKey]
         guard let files = FileManager.default.enumerator(at: directory, includingPropertiesForKeys: keys) else { return 0 }
         return files.reduce(Int64(0)) { total, item in

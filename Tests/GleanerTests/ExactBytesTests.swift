@@ -49,8 +49,8 @@ import Testing
         let result = try #require(model.results.first)
         model.selection = result.id
         let delivery = model.delivery(in: result)
-        await model.observe(result.artifact)
-        await model.stage(sha: try #require(delivery.sha256), artifact: result.artifact)
+        await model.observe(model.file(in: result))
+        await model.stage(sha: try #require(delivery.sha256), artifact: model.file(in: result))
         return (delivery, try String(contentsOf: try #require(model.selectedHandoffURL), encoding: .utf8))
     }
 

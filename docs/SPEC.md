@@ -36,7 +36,7 @@ In v0.1:
 - Delivery extraction from user-facing final replies.
 - Registry of sessions, deliveries (mentions) and captures in SQLite. Locator state (git, availability) is recomputed when a file is checked, not stored.
 - Content-addressed snapshots under a size policy.
-- Library window: search, preview (Quick Look, text, Markdown), compare versions, reveal in Finder, copy path, drag out.
+- Library window: projects and the works in each, search, preview (Quick Look, text, Markdown), compare versions, reveal in Finder, copy path, drag out, and a Sources page for what Gleaner reads, the person's corrections and what it keeps (§5.3).
 
 Deferred: review states and approvals, comments, Work Units, MCP or `artifact://` resolvers, agent-initiated submission, remote-agent handoff, cross-device sync, cloud deliveries (ChatGPT, claude.ai), automatic HTML dependency bundling, Claude Code hooks as a capture path, runtime extensions and model reasoning (§14), release groups (§15).
 
@@ -51,7 +51,7 @@ The core is a library (`GleanerCore`), not logic inside the UI, so that the Spik
 
 ## 5. Data model
 
-Four core objects. Project is a derived label (from cwd and git repository), not a stored entity with its own lifecycle.
+Four core objects, recorded from the logs and the files. Projects and works, which the person sees and may correct, are built over them (§5.3).
 
 | Object | Holds |
 |---|---|
@@ -60,7 +60,7 @@ Four core objects. Project is a derived label (from cwd and git repository), not
 | **Locator** | resolved path, worktree / repository root, git state (`committed`, `modified`, `untracked`, `ignored`, `not_in_repo`; when missing: `recoverable_from_head`, `recoverable_from_history`, `lost`), availability (`file`, `directory`, `special`, `unreadable`, `missing`), last verified time |
 | **Capture** | `observed_at`, sha256, size, optional snapshot reference (`captured_at`), the capture's provenance, and what was at the path (a file, a folder, or, without a hash, nothing, an unreadable file, or not a regular file) |
 
-Artifact identity in v0.1 is the path. A renamed or moved file appears as a separate artifact; re-linking is deferred, and Gleaner never guesses identity across paths. A project is the git repository holding the file (every worktree folds into its repository), else the one its cwd belongs to, else the folder name (rulings §2). Projects are told apart by the repository's main folder (for a bare repository, its own folder, named without `.git`) and shown by its name. Each delivery records, with its capture, the repository it resolved to and the checkout it was in (the main folder or a worktree's own folder), only while the file's folder is there to show them. The record outlives a reread that drops the delivery, and the earliest one wins over any later resolution: a deleted worktree keeps its project and its name, and a file committed on its branch is still looked up in the repository's history at its path within that checkout. A delivery never resolved stays explicitly outside any repository.
+Artifact identity in v0.1 is the path. A renamed or moved file appears as a separate artifact until the person joins it to the work it continues (§5.3); Gleaner never joins files across paths by itself. Paths keep one spelling whether or not they exist: `/private/var`, `/private/tmp` and `/private/etc` read as `/var`, `/tmp` and `/etc`, and the folder an agent worked in is compared in that spelling. A project is the git repository holding the file (every worktree folds into its repository), else the one its cwd belongs to, else the folder name (rulings §2). Projects are told apart by the repository's main folder (for a bare repository, its own folder, named without `.git`) and shown by its name. Each delivery records, with its capture, the repository it resolved to and the checkout it was in (the main folder or a worktree's own folder), only while the file's folder is there to show them. The record outlives a reread that drops the delivery, and the earliest one wins over any later resolution: a deleted worktree keeps its project and its name, and a file committed on its branch is still looked up in the repository's history at its path within that checkout. A delivery never resolved stays explicitly outside any repository.
 
 ### 5.1 Time semantics
 
@@ -81,6 +81,14 @@ A capture with a hash is never rewritten. A file that is there but cannot be ope
 Gleaner never labels a file "latest" unconditionally. It shows the time of the last verification.
 
 When the latest delivery's capture is `first_seen_after_delivery`, the on-disk status reads "unchanged since first seen", never "same as delivery N". A match with a capture made after delivery is not a match with the delivery.
+
+### 5.1a Projects, works and corrections
+
+What the person navigates is built over the four objects, never stored in them (review-rulings §3, foundation 2; `docs/design/projects-and-works.md`):
+
+- **Project:** the one derived above, or one the person made. The person can move a work into another project, and show a derived project inside another. Each work says why it is in its project.
+- **Work:** a file, or several files the person said are versions of one work. Its revisions are its files' deliveries, numbered per file. Gleaner may suggest a join, with its reason (the later file first came with the bytes the earlier one last had after that one was gone; or the two names in one folder differ only by a version mark), and never joins files itself.
+- **Corrections** are kept in their own tables. They never change a delivery, a capture or a status; rereading the logs and relaunching keep them; each can be undone, and all can be undone at once.
 
 ### 5.2 Versions
 

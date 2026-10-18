@@ -26,6 +26,9 @@ public final class Registry: @unchecked Sendable {
                 delivery_id TEXT PRIMARY KEY, sha256 TEXT, size INTEGER, mtime REAL, observed_at REAL NOT NULL,
                 saved_at REAL, provenance TEXT NOT NULL, kind TEXT NOT NULL, repository TEXT, checkout TEXT,
                 log_path TEXT, path TEXT, reply_at REAL);
+            CREATE TABLE IF NOT EXISTS projects (key TEXT PRIMARY KEY, name TEXT NOT NULL, created_at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS corrections (
+                id INTEGER PRIMARY KEY, kind TEXT NOT NULL, subject TEXT NOT NULL, target TEXT NOT NULL, made_at REAL NOT NULL);
             """)
         // Each change of several statements is made whole or not at all: a launch that stops partway,
         // say while another copy of Gleaner holds the library, leaves all of it to the next launch.
@@ -255,7 +258,7 @@ public final class Registry: @unchecked Sendable {
     public func artifacts() throws -> [Artifact] {
         let rows = try db.rows("""
             SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.request, d.evidence,
-                   s.provider, s.title, d.log_path,
+                   s.provider, s.title, d.log_path, d.session_id, s.cwd AS session_cwd,
                    c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind, c.repository, c.checkout
             FROM deliveries d JOIN sessions s ON s.id = d.session_id
             LEFT JOIN captures c ON c.delivery_id = d.id
@@ -293,6 +296,7 @@ public final class Registry: @unchecked Sendable {
                 replyLine: (row["reply_line"] as? Int64).map(Int.init),
                 replyRank: (row["reply_rank"] as? Int64).map(Int.init) ?? 0,
                 provider: Provider(rawValue: row["provider"] as? String ?? "") ?? .claudeCode,
+                sessionID: row["session_id"] as? String ?? "", sessionCwd: row["session_cwd"] as? String,
                 sessionTitle: row["title"] as? String, request: row["request"] as? String,
                 cwd: row["cwd"] as? String, evidence: evidence,
                 logPath: row["log_path"] as? String ?? "", capture: capture))

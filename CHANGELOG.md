@@ -9,9 +9,18 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - Reads Claude Code logs (`~/.claude/projects`) and Codex logs (`~/.codex`), skipping sub-agent replies, and watches them for new deliveries while the app is open, including a log folder created after launch. ⌘R checks at once.
 - Admits a file named in a final reply by a link, an image, or a path with a folder; skips line-anchored code references, fenced examples (a fence left open runs to the end of the reply) and placeholder paths.
 - Searches requests, replies, session titles, file names and projects; every word must appear in one delivery. A result opens on the newest delivery whose own words matched, and returns to it when the search changes.
-- Filters by project (the git repository's folder, with worktrees folded in, those of a bare repository too; two projects with one name show their parent folder, and a file outside git says so) and by ten kinds. A file in a deleted worktree keeps its project and its worktree after a restart, even when a later reply delivers it again or a reread drops and restores it, and a worktree kept outside its repository is named as one.
+- Groups by project (the git repository's folder, with worktrees folded in, those of a bare repository too; two projects with one name show their parent folder, and a file outside git says so) and filters by ten kinds. A file in a deleted worktree keeps its project and its worktree after a restart, even when a later reply delivers it again or a reread drops and restores it, and a worktree kept outside its repository is named as one.
 - Tells apart a first index still running, missing log folders, an empty library and no matches. Says per source when logs can't be read or were read with problems, offers Try Again when reading again can help, and keeps showing what it already found.
 - Removes a delivery only when a log read whole no longer names it. A log with malformed lines removes nothing and is reported; a log found shorter than when Gleaner read it lost records, so it removes nothing from then on, however it grows again, and is reported. A path keeps one spelling whether or not it exists, so a file under `/private/var` or `/private/tmp` that is gone at a reread keeps its history, and a folder there is one project with its files. A delivery named again gets back what Gleaner first saw of it, and a log rewritten with its replies on other lines keeps each reply's bytes, found by the times of the reply's records (by its place, as before, when another reply naming the file shares those times or the records carry none).
+
+### Organize work
+
+- A sidebar lists every project, with All Deliveries and Sources. A project opens on an outline: what it is and why, the works delivered last, the joins Gleaner suggests, then every work by the folder it is in; search inside a project searches that project.
+- A work is a file, or several files you said are versions of one work, with every delivery of each. Gleaner suggests a join only with its reason (the later file arrived with the bytes the earlier one last had after that one was gone, or their names differ only by a version mark), and never joins files itself; Not the Same stops the suggestion.
+- Move to Project… puts a work, and its files' later deliveries, in another project or a new one of your own; a derived project can be shown inside another. Each work says why it is in its project.
+- Every correction is kept apart from what Gleaner observed, survives reading the logs again and relaunching, and can be undone one by one or all at once in Sources → Your Corrections.
+- Delivered with reaches every file the reply named. Copy Resume Command gives `claude --resume` or `codex resume` for the conversation, run from the folder it started in, while its log and that folder are there, and says why not otherwise.
+- Sources (⌘,) shows each agent's log folder, how and when it was last read, its deliveries and conversations, the logs behind each read problem, and what Gleaner reads and leaves out; Your Corrections; and Storage.
 
 ### Identify the version
 
@@ -42,7 +51,7 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 
 - Keeps redacted excerpts, not whole logs, and never writes to project folders. Redacts before cutting an excerpt to length, so a secret at its edge is still caught. Makes no model calls or network requests of its own.
 - Runs only read-only git commands, and runs nothing the repository configures while checking a file: no fsmonitor hook or daemon, no signature program for `git log`, and no fetch in a partial clone.
-- Settings shows how each log folder read, the size of saved copies, and clears hand-off copies, except the one on the clipboard; the selected file's copy is prepared again.
+- Sources shows how each log folder read; Storage shows the size of saved copies, and clears hand-off copies, except the one on the clipboard; the selected file's copy is prepared again.
 
 ### Known limits
 

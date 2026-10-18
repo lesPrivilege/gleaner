@@ -219,7 +219,7 @@ import UniformTypeIdentifiers
         model.selection = notes.path
         model.select(sibling)
         #expect(model.kind == nil)
-        #expect(model.selected?.artifact.path == video.path)
+        #expect(model.selected.map(model.file(in:))?.path == video.path)
         #expect(model.selected.map(model.delivery(in:))?.id == sibling.id)
     }
 
@@ -249,7 +249,7 @@ import UniformTypeIdentifiers
         model.chosenDelivery = video.deliveries[1].id
         #expect(try await dropped(model.dragItem(for: try #require(model.selected))).contents == "video v1")
         // Any other row: the delivery it shows.
-        let notes = try #require(model.results.first { $0.artifact.name == "notes.md" })
+        let notes = try #require(model.results.first { $0.work.name == "notes.md" })
         #expect(try await dropped(model.dragItem(for: notes)).contents == "notes n1")
     }
 
@@ -261,7 +261,7 @@ import UniformTypeIdentifiers
         try "about".write(to: site.appendingPathComponent("about.html"), atomically: true, encoding: .utf8)
 
         let model = LibraryModel(indexer: indexer)
-        let row = try #require(model.results.first { $0.artifact.name == "site" })
+        let row = try #require(model.results.first { $0.work.name == "site" })
         let drop = try await dropped(model.dragItem(for: row))
         #expect(drop.contents == "about.html,index.html")
         // The receiver gets its own copy: a drop never moves the project's folder.
@@ -285,7 +285,7 @@ import UniformTypeIdentifiers
         let model = LibraryModel(indexer: indexer)
         await model.observe(try artifact(model, "app.dmg"))
         for name in ["never.mp4", "app.dmg", "clip.mov"] {
-            let row = try #require(model.results.first { $0.artifact.name == name })
+            let row = try #require(model.results.first { $0.work.name == name })
             #expect(model.dragItem(for: row) == nil, "\(name)")
         }
     }
@@ -293,7 +293,7 @@ import UniformTypeIdentifiers
     // MARK: List rows (A3, A9, A10)
 
     func row(_ model: LibraryModel, _ name: String) throws -> SearchResult {
-        try #require(model.results.first { $0.artifact.name == name })
+        try #require(model.results.first { $0.work.name == name })
     }
 
     @Test func aRowMarksWhatTheLibraryHoldsAndWhatThisSessionChecked() async throws {
