@@ -40,7 +40,7 @@ Not part of 0.1.0: these changes come after it is tagged.
 - Counts each log's records, known records, answered turns, final replies and candidates, and reports in the source status: unknown fields in known record types, logs without a final reply, and logs with fewer replies than before. A last turn still under way, or one that ended on a tool call, doesn't count as lacking a final reply. An agent's Sources page lists those logs, and each unknown field with its count, as it lists unknown record types.
 - Knows Claude Code's `pr-link` record, which holds no reply, instead of reporting it as an unknown record type.
 - Decides a path's one form by its text alone, never asking the disk, wherever Gleaner reads one: a reply, the folder an agent worked in, git's repository folder, or a project an agent asks for. Libraries from before are rewritten to it once, and every log is read again.
-- CI runs `swift test` on every push and pull request. An adapter change merges only with passing fixture tests and the owner's review.
+- An adapter change merges only with passing fixture tests and the owner's review.
 
 ## 0.1.0 (Unreleased)
 
