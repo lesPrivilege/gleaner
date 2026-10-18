@@ -108,7 +108,11 @@ Show in Finder and Copy Path act on the original location, which may have change
 
 ## The gleaner command
 
-`gleaner` lets a coding agent on your Mac (Claude Code, Codex) find the file you mean, select its exact version, read only what it needs, and hand those bytes on, without reading logs itself. It is built from source, beside the app: `swift build -c release --product gleaner` puts it at `.build/release/gleaner`. The release zip holds only the app.
+`gleaner` lets a coding agent on your Mac (Claude Code, Codex) find the file you mean, select its exact version, read only what it needs, and hand those bytes on, without reading logs itself. It is built from source, beside the app: `swift build -c release --product gleaner` puts it at `.build/release/gleaner`. The release zip holds only the app. Agents run it as `gleaner`, so link it into a folder on your PATH, such as `/usr/local/bin`, which macOS puts on every shell's PATH (`sudo` if the folder isn't yours); the link follows each rebuild:
+
+```bash
+ln -s "$PWD/.build/release/gleaner" /usr/local/bin/gleaner
+```
 
 | Command | Answers |
 |---|---|
@@ -129,7 +133,30 @@ The command never indexes, and opens the library read-only: it answers from what
 claude mcp add gleaner -- <path to gleaner> mcp
 ```
 
+To add it to the DeepSeek Harness, insert a row for its MCP client, in `$DSH_HOME/cordis.patch.yml` (merged into what is there) or in a file you pass with `--patch`:
+
+```yaml
+- insert:
+    - id: mcp-gleaner
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: gleaner
+        transport: stdio
+        command: <path to gleaner>
+        args: [mcp]
+```
+
 `<path to gleaner>` is the command you built, such as the full path of `.build/release/gleaner`. `--home <folder>` after `mcp` serves the library kept for another home folder.
+
+**As a skill.** `extensions/gleaner` is an [Agent Skills](https://agentskills.io) folder that tells an agent when to use Gleaner and how: find a file an agent delivered earlier from your own description of it, open it in Gleaner with its `gleaner://delivery/<id>` link, and hand on its exact version with `handoff` or `read`, giving you the hand-off path or the reference rather than pasting the file. It runs only the `gleaner` command, and `open` for a `gleaner://` link; it keeps nothing of its own. Claude Code, Codex and the DeepSeek Harness read the same folder. Gleaner never installs it: link (or copy) it where each one reads skills, from the repository:
+
+```bash
+mkdir -p ~/.claude/skills ~/.agents/skills
+ln -s "$PWD/extensions/gleaner" ~/.claude/skills/gleaner   # Claude Code
+ln -s "$PWD/extensions/gleaner" ~/.agents/skills/gleaner   # Codex and the DeepSeek Harness
+```
+
+A project's own `.claude/skills` or `.agents/skills` folder works too. The skill expects `gleaner` on PATH, or you tell the agent where it is.
 
 From the app, **Copy Reference** (⇧⌘C, in the Edit menu and in a row's or a delivery's context menu) copies a delivery's reference as `gleaner resolve` gives it, to paste to an agent. **Show in Log** selects the session log in Finder, and the detail pane gives the line of the reply that named the file. A `gleaner://delivery/<id>` link opens Gleaner on that delivery, and says so when the link names no delivery in this library.
 
@@ -174,9 +201,10 @@ swift test                      # fixture tests
 - `Sources/Gleaner`: the macOS app (SwiftUI and AppKit, Quick Look).
 - `Sources/gleaner-cli`: the `gleaner` command, the catalog's answers as JSON, and `gleaner mcp`, the same answers as MCP tools.
 - `Sources/gleaner-spike`: Spike A, read-only extraction over local logs that writes a labeling sheet.
+- `extensions/gleaner`: the skill that Claude Code, Codex and the DeepSeek Harness read.
 - `Tests/GleanerCoreTests`: fixture tests built from sanitized record shapes, the library flow (concurrent edits, deleted worktrees, rollback, backfill, verified staging), and the catalog's queries.
 - `Tests/GleanerTests`: the app's decisions on a synthetic library (which delivery a click lands on, which bytes Quick Look, Compare and a drag use) and its wording.
-- `Tests/GleanerCommandTests`: the built `gleaner` run as an agent's shell runs it: its JSON, its exit codes, and that it writes neither the library nor the project; and `gleaner mcp` run as a host runs it, each tool's answer and refusal compared with the command's own.
+- `Tests/GleanerCommandTests`: the built `gleaner` run as an agent's shell runs it: its JSON, its exit codes, and that it writes neither the library nor the project; `gleaner mcp` run as a host runs it, each tool's answer and refusal compared with the command's own; and every command the skill shows, checked against the built command.
 
 The decisions behind v0.1 are in [docs/SPEC.md](docs/SPEC.md); the design exploration and its rulings are in [docs/design/](docs/design/README.md).
 

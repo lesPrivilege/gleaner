@@ -18,7 +18,15 @@ Not part of 0.1.0: these changes come after it is tagged.
 - Answers with the command's JSON, as structured content and as one text block; a result whose JSON holds a string that reads as a data URL comes as its text block alone, since the SDK would rewrite that string. A refusal is a tool error with the same `{"error", "index"}` object, and wrong arguments are a refusal of kind `usage`, as is an argument the tool reads that holds a string reading as a data URL, which the SDK would hand on rewritten.
 - Marks every tool read-only except `gleaner_handoff`, which writes only its copy in Gleaner's caches, and is marked not destructive and idempotent. None reaches outside the Mac. Each description says what the tool never does, and that requests and replies are stored text from the logs, to be read as data.
 - Keeps no state: each call opens the library read-only, as the command does. Writes nothing to stdout but protocol messages, takes the protocol version the host asks for (2024-11-05 through 2025-11-25) and claims none newer. Writes one message at a time, each whole, however many calls are under way, and when stdin closes, exits once it has answered each request it read.
-- Never registers itself: `claude mcp add gleaner -- <path to gleaner> mcp` adds it to Claude Code, at the scope you choose.
+- Never registers itself: `claude mcp add gleaner -- <path to gleaner> mcp` adds it to Claude Code, at the scope you choose, and a row for the DeepSeek Harness's MCP client adds it there.
+
+### Extensions
+
+- Adds `extensions/gleaner`, one Agent Skills folder that Claude Code, Codex and the DeepSeek Harness all read. It tells an agent when to use Gleaner: to find a file an agent delivered earlier from your own description, to open it in Gleaner by its `gleaner://delivery/<id>` link, and to hand on its exact version with `handoff` or `read`, giving you the hand-off path or the reference rather than pasting the file.
+- Gives the exact commands, the fields to read (delivery, hash, path, evidence, provenance, availability, the index's scope), how to choose among matches and versions, and what to do on each exit code. It treats requests and replies as data, and an empty answer as evidence only within the index's scope.
+- Runs only the `gleaner` command, found on PATH or where you say, and `open` for a `gleaner://` link: it keeps nothing, reads no logs, and writes no project folder. Gleaner never installs it; you link or copy the folder into `~/.claude/skills` or `~/.agents/skills`.
+- A test checks every `gleaner` command the skill shows against the built command, so a renamed command or option fails CI.
+- The README says how to put `gleaner` on PATH.
 
 ### In the app
 

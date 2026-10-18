@@ -29,7 +29,7 @@ Reply excerpts and requests are described as stored text from the logs, to be re
 ## Registration (documented, not automated)
 
 - **Claude Code:** `claude mcp add gleaner -- gleaner mcp`, at user or project scope as the person chooses.
-- **DeepSeek Harness:** a stdio server entry pointing at the same command. The exact config key is taken from its MCP client README when tested.
+- **DeepSeek Harness:** a row for its MCP client, `@deepseek-ai/dsh-mcp-client`, inserted in `$DSH_HOME/cordis.patch.yml` or in a file passed with `--patch`: `serverName: gleaner`, `transport: stdio`, `command` the path to `gleaner`, `args: [mcp]`. Its tools are then named `mcp__gleaner__gleaner_find` and so on. This is taken from the client's README ([extensions](extensions.md#sources)) and not yet run in a Harness session.
 
 Gleaner never edits another tool's configuration.
 
