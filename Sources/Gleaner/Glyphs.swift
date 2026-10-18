@@ -173,13 +173,17 @@ struct GlyphView: View {
     var glyph: Glyph
     var size: CGFloat = 16
 
+    /// Each glyph's parts, read from their SVG once: lists draw many marks, many times.
+    nonisolated(unsafe) private static let parts: [Glyph: [(element: GlyphElement, path: Path)]] =
+        Dictionary(uniqueKeysWithValues: Glyph.allCases.map { glyph in (glyph, glyph.spec.elements.map { ($0, $0.path) }) })
+
     var body: some View {
         let spec = glyph.spec
         let scale = size / spec.viewBox.width
         let transform = CGAffineTransform(scaleX: scale, y: scale).translatedBy(x: -spec.viewBox.minX, y: -spec.viewBox.minY)
         ZStack {
-            ForEach(Array(spec.elements.enumerated()), id: \.offset) { _, element in
-                let path = element.path.applying(transform)
+            ForEach(Array((Self.parts[glyph] ?? []).enumerated()), id: \.offset) { _, part in
+                let element = part.element, path = part.path.applying(transform)
                 if element.filled {
                     path.fill()
                 } else {
