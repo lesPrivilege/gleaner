@@ -13,12 +13,17 @@ let package = Package(
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.8.2"),
+        .package(url: "https://github.com/modelcontextprotocol/swift-sdk", from: "0.12.1"),
     ],
     targets: [
         .target(name: "GleanerCore"),
         .executableTarget(
             name: "gleaner-cli",
-            dependencies: ["GleanerCore", .product(name: "ArgumentParser", package: "swift-argument-parser")]
+            dependencies: [
+                "GleanerCore",
+                .product(name: "ArgumentParser", package: "swift-argument-parser"),
+                .product(name: "MCP", package: "swift-sdk"),
+            ]
         ),
         .executableTarget(name: "gleaner-spike", dependencies: ["GleanerCore"]),
         .executableTarget(name: "Gleaner", dependencies: ["GleanerCore"]),

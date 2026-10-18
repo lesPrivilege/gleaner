@@ -3,11 +3,11 @@ import Foundation
 import GleanerCore
 
 /// The `gleaner` command: the catalog's answers as JSON, for a local shell agent
-/// (docs/design/query-core.md "Commands"). It reads the library the app keeps and never indexes,
-/// never writes the library, and never writes a project folder; `handoff` stages its copy in
-/// Gleaner's own caches.
+/// (docs/design/query-core.md "Commands"), and `gleaner mcp`, the same answers as MCP tools
+/// (`Serve`). It reads the library the app keeps and never indexes, never writes the library, and
+/// never writes a project folder; `handoff` stages its copy in Gleaner's own caches.
 @main
-struct Gleaner: ParsableCommand {
+struct Gleaner: AsyncParsableCommand {
     static let configuration = CommandConfiguration(
         commandName: "gleaner",
         abstract: "Find what coding agents delivered, select its exact version, and hand those bytes on.",
@@ -17,16 +17,20 @@ struct Gleaner: ParsableCommand {
             the message on stderr too. Exit codes: 0 success; 1 not found, no bytes for that version, \
             or another failure; 2 usage; 3 no library, or the wrong version (open Gleaner).
             """,
-        subcommands: [Find.self, Show.self, Read.self, Resolve.self, Handoff.self, Verify.self])
+        subcommands: [Find.self, Show.self, Read.self, Resolve.self, Handoff.self, Verify.self, Serve.self])
 
-    /// Runs the command as `ParsableCommand.main` does, with the contract's exit codes: a failure
-    /// exits with its own, and a usage error with 2, where ArgumentParser would give 64. A refusal's
-    /// answer is written by the command refused (`write(_:)`); a usage error is refused before any
-    /// library is open, so it is written here, without an index.
-    static func main() {
+    /// Runs the command as `AsyncParsableCommand.main` does, with the contract's exit codes: a
+    /// failure exits with its own, and a usage error with 2, where ArgumentParser would give 64. A
+    /// refusal's answer is written by the command refused (`write(_:)`); a usage error is refused
+    /// before any library is open, so it is written here, without an index.
+    static func main() async {
         do {
             var command = try parseAsRoot()
-            try command.run()
+            if var serving = command as? AsyncParsableCommand {
+                try await serving.run()
+            } else {
+                try command.run()
+            }
         } catch let refusal as Refusal {
             fail("Error: \(refusal.failure)", status: refusal.failure.exitCode)
         } catch let error where exitCode(for: error) == .validationFailure {
@@ -49,6 +53,8 @@ extension Gleaner {
     struct Find: ParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Find the files whose words match every term, newest first, each by the delivery that matched.")
+        /// The most files listed unless asked, here and by `gleaner_find`.
+        static let limit = 20
 
         @Argument(help: "Words to find together in one delivery's request, reply or session, or in the file's name or project.")
         var terms: [String]
@@ -57,7 +63,7 @@ extension Gleaner {
         @Option(help: "Only this kind of file.")
         var kind: Artifact.Kind?
         @Option(help: "The most files to list.")
-        var limit = 20
+        var limit = Find.limit
         @OptionGroup var library: Library
 
         func run() throws {
@@ -81,6 +87,8 @@ extension Gleaner {
     struct Read: ParsableCommand {
         static let configuration = CommandConfiguration(
             abstract: "Read the text of a delivery's exact bytes: its saved copy, or the original only while it still holds them.")
+        /// The most bytes given unless asked, here and by `gleaner_read`.
+        static let max = 16 << 10
 
         @Argument(help: "The delivery's id.")
         var delivery: String
@@ -89,7 +97,7 @@ extension Gleaner {
         @Option(help: ArgumentHelp("Bytes from A up to, not including, B, counted from 0.", valueName: "A:B"))
         var bytes: Bounds?
         @Option(help: "The most bytes to give.")
-        var max = 16 << 10
+        var max = Read.max
         @OptionGroup var library: Library
 
         func validate() throws {
@@ -180,8 +188,8 @@ struct Library: ParsableArguments {
     }
 }
 
-/// A call's answer, apart from where it is written: one JSON object, and the failure it reports,
-/// if any, which the command exits with.
+/// A call's answer, as the command writes it and its tool returns it: one JSON object, and the
+/// failure it reports, if any, which the command exits with and the tool marks as an error.
 struct Answer {
     var object: any Encodable
     var failure: Catalog.Failure?
