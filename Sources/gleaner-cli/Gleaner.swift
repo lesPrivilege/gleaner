@@ -35,7 +35,11 @@ struct Gleaner: AsyncParsableCommand {
             fail("Error: \(refusal.failure)", status: refusal.failure.exitCode)
         } catch let error where exitCode(for: error) == .validationFailure {
             // Written as any refusal is, but said on stderr in ArgumentParser's words, with the usage.
-            try? write(Answer(refusing: Catalog.Failure.usage(message(for: error)), index: nil))
+            // `mcp`'s stdout is the protocol's, so there it is only said; the root takes no options,
+            // so the first argument names the command.
+            if CommandLine.arguments.dropFirst().first != Serve.configuration.commandName {
+                try? write(Answer(refusing: Catalog.Failure.usage(message(for: error)), index: nil))
+            }
             fail(fullMessage(for: error), status: 2)
         } catch {
             // Help, and the like: not a failure.

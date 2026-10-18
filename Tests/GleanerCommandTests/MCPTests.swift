@@ -238,6 +238,16 @@ extension CommandTests {
         try host.close()
     }
 
+    @Test func mcpRefusesAWrongUsageOnStderrAlone() throws {
+        // stdout is the protocol's even when no session starts: the command says why on stderr,
+        // with its usage, and exits 2.
+        for arguments in [["mcp", "--hom", "x"], ["mcp", "extra"]] {
+            let run = try gleaner(arguments)
+            #expect(run.status == 2 && run.output.isEmpty, "\(arguments): \(String(decoding: run.output, as: UTF8.self))")
+            #expect(run.error.contains("Usage: gleaner mcp"), "\(arguments): \(run.error)")
+        }
+    }
+
     @Test func mcpListsTheSixCommandsAsTools() throws {
         let host = try Host(home: home)
         try host.initialize()
