@@ -27,7 +27,7 @@ The Harness reads the folder Codex reads, so one link serves both. Its base bund
 - **Open.** `open "gleaner://delivery/<id>"` shows that delivery in Gleaner ([query-core](query-core.md#in-the-app)), for preview, Compare and drag.
 - **Handoff.** `show`'s `handoff.action` says what handing the version on gives now. `gleaner handoff` gives the path of a verified, read-only copy; `gleaner read` gives bounded text of the exact bytes; `gleaner resolve` gives the reference. The agent gives the person the reference or the hand-off path, not the content pasted.
 
-The skill also says how the agent finds the command (`gleaner` on PATH, as the README tells the person to arrange it, or a path the person gives), what each field means, and what to do on each exit code: on 1, by `error.kind`; on 2, correct the command; on 3, ask the person to open Gleaner. Where the host offers Gleaner's MCP tools instead, the same instructions hold for them.
+The skill also says how the agent finds the command (`gleaner` on PATH, as the README tells the person to arrange it, or a path the person gives), what each field means, and what to do on each exit code: on 1, by `error.kind`; on 2, correct the command; on 3, ask the person to open Gleaner. Where the host offers Gleaner's MCP tools instead, the same instructions hold for them, and the skill names their arguments. One differs in form: `gleaner_verify` reads no file, so a reference kept in one is passed as its JSON, not its path ([mcp-adapter](mcp-adapter.md#shape)).
 
 ## What it never does
 

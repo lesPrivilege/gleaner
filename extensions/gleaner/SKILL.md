@@ -12,7 +12,7 @@ Gleaner is a Mac app that keeps a library of the files coding agents named in th
 Run `gleaner` when `command -v gleaner` finds it, or the path the person gave you for it. If there is neither, tell the person that Gleaner's command isn't on PATH: it is built from Gleaner's source and put on PATH as Gleaner's README says. Don't build or install it yourself, and never read the agents' logs or Gleaner's library instead.
 
 ```
-gleaner find <words…> [--project <name or folder>] [--kind <kind>] [--limit <n>]
+gleaner find <terms…> [--project <name or folder>] [--kind <kind>] [--limit <n>]
 gleaner show <delivery>
 gleaner read <delivery> [--lines A:B | --bytes A:B] [--max <bytes>]
 gleaner resolve <delivery>
@@ -22,7 +22,7 @@ gleaner verify <delivery or reference file>
 
 Each one prints one JSON object on stdout, for an answer and for a failure alike. Parse it; stderr only repeats a failure's message. `<delivery>` is a delivery's id, 20 hex characters, as `reference.delivery` gives it.
 
-If this host offers Gleaner's MCP tools (`gleaner_find`, `gleaner_show`, `gleaner_read`, `gleaner_resolve`, `gleaner_handoff`, `gleaner_verify`, perhaps under a prefix), they take the same arguments by the same names and give the same JSON; a failure is a tool error that carries the same `error`. Use them the same way.
+If this host offers Gleaner's MCP tools (`gleaner_find`, `gleaner_show`, `gleaner_read`, `gleaner_resolve`, `gleaner_handoff`, `gleaner_verify`, perhaps under a prefix), use them the same way. They give the same JSON, and a failure is a tool error that carries the same `error`. Their arguments keep the command's names: `gleaner_find` takes `terms`, a list of words, and `project`, `kind` and `limit`; `gleaner_show`, `gleaner_resolve` and `gleaner_handoff` take `delivery`; `gleaner_read` takes `delivery`, `lines` or `bytes` as `"A:B"`, and `max`. `gleaner_verify` takes `reference` but reads no file: give it a delivery's id, or the reference itself as `resolve` gives it (its whole answer, or its `reference`). For a reference kept in a file, pass the file's JSON, never its path, which the tool would take for an id.
 
 ## Reading an answer
 
