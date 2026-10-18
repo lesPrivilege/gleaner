@@ -271,10 +271,12 @@ import Testing
         #expect(try observed().isEmpty)
 
         for skipped in ["/", "/Users", "/var", "/tmp", "/private", "/Applications", "/System/Library", "/usr/local/src",
-                        "/Library/Caches", home.path, home.path + "/Library/Mobile Documents", NSHomeDirectory()] {
+                        "/Library/Caches", home.path, home.path + "/Library", NSHomeDirectory(), NSHomeDirectory() + "/Library"] {
             #expect(Workspace.isSkipped(skipped, home: home.path), "\(skipped)")
         }
-        for walked in [home.path + "/Projects/x", "/tmp/x", "/var/folders/ab/T/x", "/opt/project"] {
+        // iCloud Drive and cloud storage keep documents inside the home's Library.
+        for walked in [home.path + "/Projects/x", "/tmp/x", "/var/folders/ab/T/x", "/opt/project", "/Volumes/Work/site",
+                       home.path + "/Library/Mobile Documents/com~apple~CloudDocs/Essay"] {
             #expect(!Workspace.isSkipped(walked, home: home.path), "\(walked)")
         }
     }

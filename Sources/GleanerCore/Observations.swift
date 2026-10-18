@@ -135,14 +135,18 @@ public enum Workspace {
         return Projects.resolve(folder)?.folder ?? folder
     }
 
-    /// True for the home folder and the folders holding it, and for system folders: a session
-    /// working there has no workspace of its own. The real home is skipped whatever `home` is.
+    /// True for the home folder, the folders holding it and its Library, and for system folders: a
+    /// session working there has no workspace of its own. The real home is skipped whatever `home`
+    /// is. A folder inside the home's Library is walked: iCloud Drive and cloud storage keep the
+    /// person's documents there.
     public static func isSkipped(_ workspace: String, home: String) -> Bool {
         let homes = Set([home, NSHomeDirectory()].map(standardPath))
-        if workspace == "/" || homes.contains(where: { $0 == workspace || $0.hasPrefix(workspace + "/") }) { return true }
+        if workspace == "/" || homes.contains(where: { $0 == workspace || $0 + "/Library" == workspace || $0.hasPrefix(workspace + "/") }) {
+            return true
+        }
         if ["/Applications", "/Volumes", "/private", "/var", "/tmp", "/opt", "/cores", "/Network"].contains(workspace) { return true }
-        let system = ["/System", "/Library", "/usr", "/bin", "/sbin", "/etc", "/dev", "/private/etc"] + homes.map { $0 + "/Library" }
-        return system.contains { workspace == $0 || workspace.hasPrefix($0 + "/") }
+        return ["/System", "/Library", "/usr", "/bin", "/sbin", "/etc", "/dev", "/private/etc"]
+            .contains { workspace == $0 || workspace.hasPrefix($0 + "/") }
     }
 
     /// Lists every regular file under `root`, by name, size, dates and identity; never opens one.
