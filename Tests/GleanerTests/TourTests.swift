@@ -153,6 +153,29 @@ import Testing
         window.appearance = NSAppearance(named: .aqua)
         try await shot("dark-switched-to-light")
         window.close()
+
+        // Every mark, at the sizes the window uses it.
+        let sheet = VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(stride(from: 0, to: Glyph.allCases.count, by: 7)), id: \.self) { start in
+                HStack(spacing: 18) {
+                    ForEach(Array(Glyph.allCases[start..<min(start + 7, Glyph.allCases.count)].enumerated()), id: \.offset) { _, glyph in
+                        VStack(spacing: 4) {
+                            GlyphView(glyph: glyph, size: 32)
+                            HStack(spacing: 6) { GlyphView(glyph: glyph, size: 16); GlyphView(glyph: glyph, size: 11) }
+                            Text(String(describing: glyph)).font(.system(size: 10))
+                        }
+                        .frame(width: 76)
+                    }
+                }
+            }
+        }
+        .padding(20).background(Color.white).foregroundStyle(Color.black)
+        let renderer = ImageRenderer(content: sheet)
+        renderer.scale = 2
+        let image = try #require(renderer.nsImage?.tiffRepresentation.flatMap(NSBitmapImageRep.init(data:)))
+        step += 1
+        try #require(image.representation(using: .png, properties: [:]))
+            .write(to: out.appendingPathComponent(String(format: "%02d-marks.png", step)))
     }
 
     static func window(_ model: LibraryModel, appearance: NSAppearance? = nil) -> NSWindow {

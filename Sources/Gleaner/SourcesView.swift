@@ -25,10 +25,10 @@ struct SourcesList: View {
                 }
             }
             Section("Library") {
-                Label("Your Corrections", systemImage: "arrow.uturn.backward")
+                GlyphLabel(title: "Your Corrections", glyph: .person)
                     .badge(model.correctionGroups.count + model.userProjects.count)
                     .tag(SourcePage.corrections)
-                Label("Storage", systemImage: "internaldrive")
+                GlyphLabel(title: "Storage", glyph: .database)
                     .tag(SourcePage.storage)
             }
         }

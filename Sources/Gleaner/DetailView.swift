@@ -66,45 +66,54 @@ struct DetailView: View {
                     .font(.callout).foregroundStyle(.secondary).lineLimit(2)
             }
             // What this work may be is said with what it is, before its bytes.
-            ForEach(model.organization.suggestions(for: work)) { SuggestionView(suggestion: $0, from: work).padding(.top, 6) }
+            ForEach(model.organization.suggestions(for: work)) {
+                SuggestionView(suggestion: $0, from: work).padding(.top, Space.xs + 2).transition(Motion.arrive)
+            }
         }
     }
 }
 
-/// The eyebrow-titled status block. Amber or red only when the person needs to look.
+/// A status statement: the mark and its words, then what they mean. It stands in a tinted box
+/// only when the person needs to look (amber) or something is gone (red); otherwise it is plain
+/// text in its place, so boxes don't stack inside boxes.
 struct Panel<Actions: View>: View {
     var statement: Statement
     var eyebrow: String?
     @ViewBuilder var actions: Actions
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        VStack(alignment: .leading, spacing: Space.xs + 2) {
             if let eyebrow {
                 Text(eyebrow.uppercased()).font(.caption2.weight(.semibold)).tracking(0.8).foregroundStyle(.secondary)
             }
-            StatusLabel(mark: statement.mark, text: statement.title).font(.headline)
+            StatusLabel(mark: statement.mark, text: statement.title, size: 15).font(.headline)
+                .id(statement.title).transition(.opacity)
             Text(statement.detail).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             actions
         }
-        .padding(14)
+        .padding(tinted ? Space.m + 2 : 0)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(fill, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(stroke))
+        .background(fill, in: RoundedRectangle(cornerRadius: Radius.card))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(stroke))
+        .animation(Motion.state(reduceMotion), value: statement.title)
     }
+
+    var tinted: Bool { [.attention, .cross, .failed].contains(statement.mark) }
 
     var fill: Color {
         switch statement.mark {
-        case .attention: Palette.attentionFill
+        case .attention, .failed: Palette.attentionFill
         case .cross: Palette.lostFill
-        default: Color(nsColor: .controlBackgroundColor)
+        default: .clear
         }
     }
 
     var stroke: Color {
         switch statement.mark {
-        case .attention: Palette.attention.opacity(0.35)
+        case .attention, .failed: Palette.attention.opacity(0.35)
         case .cross: Palette.lost.opacity(0.3)
-        default: Color(nsColor: .separatorColor)
+        default: .clear
         }
     }
 }
@@ -210,6 +219,8 @@ struct QuickLookPreview: NSViewRepresentable {
 /// location. Each says which.
 struct HandoffPanel: View {
     @Environment(LibraryModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var tileHover = false
     var artifact: Artifact
     var delivery: Delivery
     var plan: Handoff
@@ -253,36 +264,42 @@ struct HandoffPanel: View {
                     Spacer(minLength: 8)
                     Button(sourceExists ? "Show in Finder" : "Show Folder") { model.reveal(artifact) }
                         .help(sourceExists ? "Select the original file in Finder." : "The file isn’t there; show the folder it was in.")
-                    Button("Copy Path") { model.copyPath(artifact) }
+                    CopyButton(title: "Copy Path", text: artifact.path) { model.copy($0) }
                         .help("Copies where the original lives. The file there may change; drag or ⌘C hands over the verified copy.")
                 }
             }
             .font(.callout)
             .controlSize(.small)
         }
-        .padding(14)
-        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color(nsColor: .separatorColor)))
+        .padding(Space.l)
+        .background(Color(nsColor: .textBackgroundColor), in: RoundedRectangle(cornerRadius: Radius.card + 2))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card + 2).strokeBorder(Color(nsColor: .separatorColor)))
     }
 
     /// The thing you drag: the file itself, labeled with the exact version it carries.
     @ViewBuilder var tile: some View {
         let ready = openURL
-        HStack(spacing: 10) {
-            Image(systemName: "line.3.horizontal").foregroundStyle(.secondary).accessibilityHidden(true)
+        HStack(spacing: Space.m - 2) {
+            // The file handed over: the artifact mark, where a drag starts.
+            GlyphView(glyph: .artifact, size: 22).foregroundStyle(ready == nil ? .tertiary : .secondary)
             TypeBadge(artifact: artifact)
             VStack(alignment: .leading, spacing: 2) {
                 Text(artifact.name).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
+                    .foregroundStyle(ready == nil ? .secondary : .primary)
                 Text(tileCaption).font(.system(.caption, design: .monospaced)).foregroundStyle(.secondary).lineLimit(1)
+                    .contentTransition(.opacity)
             }
             if staging.isPreparing { ProgressView().controlSize(.small) }
         }
-        .padding(.horizontal, 12)
+        .padding(.horizontal, Space.m)
         .frame(minHeight: 52)
         .frame(maxWidth: 360, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(ready == nil ? Color(nsColor: .separatorColor) : Palette.selection.opacity(0.6)))
-        .opacity(ready == nil ? 0.55 : 1)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: Radius.card))
+        // Nothing to hand over reads in the outline too, not only in a fainter tile.
+        .overlay(RoundedRectangle(cornerRadius: Radius.card).strokeBorder(
+            ready == nil ? Color(nsColor: .separatorColor) : Color.primary.opacity(tileHover ? 0.5 : 0.22),
+            style: StrokeStyle(lineWidth: 1, dash: ready == nil ? [5, 4] : [])))
+        .onHover { hovering in withAnimation(Motion.feedback(reduceMotion)) { tileHover = hovering && ready != nil } }
         .onDrag {
             // Decided now, not when the tile was drawn: the copy may have changed since.
             guard ready != nil else { return NSItemProvider() }
@@ -374,6 +391,7 @@ struct HandoffPanel: View {
 /// named, and how to go back to the conversation.
 struct ReplySection: View {
     @Environment(LibraryModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var artifact: Artifact
     var delivery: Delivery
     @State private var showsAll = false
@@ -390,26 +408,31 @@ struct ReplySection: View {
                 (Text("You asked: ").foregroundStyle(.secondary) + Text("“\(request)”"))
                     .font(.callout).lineLimit(4).textSelection(.enabled)
             }
+            // The agent's own words, quoted beside a rule: what the reply said, not a status.
             ForEach(Array(delivery.evidence.enumerated()), id: \.offset) { _, item in
                 Text(item.excerpt)
                     .font(.callout)
                     .textSelection(.enabled)
-                    .padding(.horizontal, 10).padding(.vertical, 7)
+                    .padding(.leading, Space.m)
+                    .padding(.vertical, 2)
                     .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                    .overlay(alignment: .leading) { Rectangle().fill(.quaternary).frame(width: 2) }
             }
             if !others.isEmpty {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Delivered with (\(others.count)):").font(.caption).foregroundStyle(.secondary)
                     FlowLayout(spacing: 10) {
                         ForEach(showsAll ? others : Array(others.prefix(Self.shown))) { other in
-                            Button((other.path as NSString).lastPathComponent) { model.select(other) }
-                                .buttonStyle(.link).font(.caption)
+                            LinkButton(title: (other.path as NSString).lastPathComponent) { model.select(other) }
+                                .font(.caption)
                                 .help(Wording.siblingHelp(other))
+                                .transition(Motion.arrive)
                         }
                         if others.count > Self.shown {
-                            Button(showsAll ? "Show Fewer" : "Show All \(others.count)") { showsAll.toggle() }
-                                .buttonStyle(.link).font(.caption.weight(.semibold))
+                            Button(showsAll ? "Show Fewer" : "Show All \(others.count)") {
+                                withAnimation(Motion.state(reduceMotion)) { showsAll.toggle() }
+                            }
+                            .buttonStyle(.link).font(.caption.weight(.semibold))
                         }
                     }
                 }
@@ -425,27 +448,24 @@ struct ReplySection: View {
 struct ConversationRow: View {
     @Environment(LibraryModel.self) private var model
     var delivery: Delivery
-    @State private var copied = false
 
     var body: some View {
         let resume = model.resume(delivery)
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text("Conversation:").font(.caption).foregroundStyle(.secondary)
+        HStack(alignment: .center, spacing: Space.s) {
+            GlyphView(glyph: .terminal, size: 14).foregroundStyle(.secondary)
+            Text("Conversation").font(.caption).foregroundStyle(.secondary)
             switch resume {
             case .command(let command):
                 Text(command).font(.system(.caption, design: .monospaced)).lineLimit(1).truncationMode(.middle)
                     .textSelection(.enabled)
-                Button(copied ? "Copied" : "Copy Resume Command") {
-                    model.copy(command)
-                    copied = true
-                }
-                .controlSize(.small)
-                .help(Wording.resumeHelp(delivery.provider))
+                CopyButton(title: "Copy Resume Command", text: command) { model.copy($0) }
+                    .controlSize(.small)
+                    .help(Wording.resumeHelp(delivery.provider))
+                    .id(delivery.id)
             default:
                 Text(Wording.resume(resume)).font(.caption).foregroundStyle(.secondary)
             }
         }
-        .onChange(of: delivery.id) { copied = false }
     }
 }
 
@@ -499,7 +519,7 @@ struct DeliveriesSection: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Deliveries").font(.headline)
+            Text("Deliveries, newest first").font(.headline)
             ForEach(work.deliveries) { delivery in
                 HStack(spacing: 8) {
                     Button { model.chosenDelivery = delivery.id } label: { row(delivery) }
@@ -546,11 +566,12 @@ struct DeliveriesSection: View {
         let provenance = Wording.provenanceShort(delivery.capture)
         let earlier = sameAs(delivery)
         let name = (delivery.path as NSString).lastPathComponent
-        return HStack(spacing: 12) {
+        return HStack(spacing: Space.m) {
             if work.files.count > 1 { Text(name).fontWeight(isSelected ? .semibold : .regular).lineLimit(1).truncationMode(.middle) }
             Text("Delivery \(delivery.number)").fontWeight(isSelected && work.files.count == 1 ? .semibold : .regular)
-            Text(Wording.date(delivery.deliveredAt)).foregroundStyle(.secondary)
+            Text(Wording.date(delivery.deliveredAt)).foregroundStyle(.secondary).monospacedDigit()
             Text(Wording.provider(delivery.provider)).foregroundStyle(.secondary)
+            if isSelected { Text("shown above").font(.caption).foregroundStyle(.secondary) }
             Spacer()
             if let earlier {
                 Text(earlier.path == delivery.path ? "same as \(Wording.number(earlier))"
@@ -561,9 +582,9 @@ struct DeliveriesSection: View {
         }
         .font(.callout)
         .padding(.horizontal, 12).padding(.vertical, 8)
-        .background(isSelected ? Palette.selection.opacity(0.08) : Color.clear, in: RoundedRectangle(cornerRadius: 8))
-        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(isSelected ? Palette.selection : Color(nsColor: .separatorColor),
-                                                              lineWidth: isSelected ? 1.5 : 1))
+        .background(isSelected ? Color.primary.opacity(0.06) : Color.clear, in: RoundedRectangle(cornerRadius: Radius.control + 2))
+        .overlay(RoundedRectangle(cornerRadius: Radius.control + 2).strokeBorder(
+            isSelected ? Color.primary.opacity(0.6) : Color(nsColor: .separatorColor), lineWidth: isSelected ? 1.5 : 1))
         .contentShape(Rectangle())
     }
 }
@@ -576,7 +597,7 @@ struct DetailsSection: View {
     var observation: FileObservation?
 
     var body: some View {
-        DisclosureGroup("Details") {
+        DisclosureGroup("Details: path, hashes, session log") {
             let capture = delivery.capture
             let provenance = Wording.provenance(capture)
             let storage = Wording.storage(delivery, hasSaved: delivery.sha256.map(model.hasSaved) ?? false,

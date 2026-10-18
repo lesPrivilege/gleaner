@@ -407,6 +407,11 @@ final class LibraryModel {
         }
     }
 
+    /// Says a decision's result to VoiceOver once it is recorded; a failure is said where it shows.
+    private func said(_ text: String) {
+        announce(correctionFailure ?? text)
+    }
+
     /// Shows the work holding `path` where it now is: selected, in its project when the window
     /// shows a project. Not when the person went elsewhere while the decision was recorded.
     private func follow(_ path: String, from before: (Place, Work.ID?)) {
@@ -420,6 +425,7 @@ final class LibraryModel {
         let paths = work.files.map(\.path), before = (place, selection)
         await correcting { try $0.correct(.project, subjects: paths, target: key, at: Date()) }
         follow(work.id, from: before)
+        said("\(work.name) moved to \(organization.projectName(key))")
     }
 
     /// Makes a project of the person's own and puts the work in it.
@@ -428,6 +434,7 @@ final class LibraryModel {
         guard !name.isEmpty else { return }
         await correcting { try $0.addProject(named: name, at: Date(), moving: paths) }
         follow(work.id, from: before)
+        said("\(work.name) moved to \(name)")
     }
 
     /// Gleaner puts the work back where it found it.
@@ -435,6 +442,7 @@ final class LibraryModel {
         let moves = corrections.filter { $0.kind == .project && work.contains($0.subject) }.map(\.id), before = (place, selection)
         await correcting { try $0.undo(moves) }
         follow(work.id, from: before)
+        said("\(work.name) is back where Gleaner found it")
     }
 
     /// The two files are versions of one work, from now on and after every reread.
@@ -442,11 +450,13 @@ final class LibraryModel {
         let before = (place, selection)
         await correcting { try $0.correct(.sameWork, subject: a, target: b, at: Date()) }
         follow(a, from: before)
+        said("\((a as NSString).lastPathComponent) and \((b as NSString).lastPathComponent) are one work")
     }
 
     /// The two files are not one work: Gleaner stops suggesting it.
     func keepApart(_ a: String, _ b: String) async {
         await correcting { try $0.correct(.notSameWork, subject: a, target: b, at: Date()) }
+        said("Kept apart: \((a as NSString).lastPathComponent) and \((b as NSString).lastPathComponent)")
     }
 
     /// Undoes decisions made together, such as moving every file of a work. With `following`,
@@ -455,6 +465,7 @@ final class LibraryModel {
         let ids = corrections.map(\.id), before = (place, selection)
         await correcting { try $0.undo(ids) }
         if following, let selected = before.1 { follow(selected, from: before) }
+        said("Undone")
     }
 
     func undo(_ correction: Correction, following: Bool = true) async {

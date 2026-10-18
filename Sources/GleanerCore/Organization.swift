@@ -229,6 +229,12 @@ public struct Organization: Sendable {
         corrections.filter { $0.kind == .sameWork && (work.contains($0.subject) || work.contains($0.target)) }
     }
 
+    /// The pairs the person said are not one work, with one of this work's files: kept in view,
+    /// not in effect (`kit/design/foundations/standing.md`, rule 7).
+    public func declines(of work: Work) -> [Correction] {
+        corrections.filter { $0.kind == .notSameWork && (work.contains($0.subject) || work.contains($0.target)) }
+    }
+
     /// The joins Gleaner suggests for the work, to an earlier or a later file.
     public func suggestions(for work: Work) -> [Suggestion] {
         suggestions.filter { work.contains($0.earlier) || work.contains($0.later) }

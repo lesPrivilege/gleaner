@@ -1,10 +1,11 @@
 import GleanerCore
 import SwiftUI
 
-/// Where a work belongs and why: its project, the files that are versions of it, and the joins
-/// Gleaner suggests. Every decision here can be undone, and none changes a file on disk.
+/// Where a work belongs and why: its project, the files that are versions of it, and the pairs the
+/// person declined. Every decision here can be undone, and none changes a file on disk.
 struct WorkSection: View {
     @Environment(LibraryModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var work: Work
     @State private var moving = false
     @State private var joining = false
@@ -13,17 +14,23 @@ struct WorkSection: View {
         let organization = model.organization
         let placement = organization.placement(of: work)
         let project = organization.project(work.project)
-        VStack(alignment: .leading, spacing: 10) {
+        let links = organization.links(of: work), declines = organization.declines(of: work)
+        VStack(alignment: .leading, spacing: Space.m) {
             Text("Where This Belongs").font(.headline)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Label(model.projectName(work), systemImage: Wording.projectIcon(project?.origin ?? .folder))
-                    .font(.callout.weight(.semibold))
-                Spacer(minLength: 8)
+            HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                Label {
+                    Text(model.projectName(work)).font(.callout.weight(.semibold))
+                } icon: {
+                    GlyphView(glyph: Wording.projectGlyph(project?.origin ?? .folder), size: 16).foregroundStyle(.secondary)
+                }
+                Spacer(minLength: Space.s)
                 switch placement {
                 case .moved: Button("Put Back") { Task { await model.undoMove(work) } }.help("Return it to the project Gleaner found it in.")
                 case .combined(let folder, let correction):
-                    Button("Show Apart") { Task { await model.undo(correction) } }
-                        .help("Show \(organization.projectName(folder)) as its own project again, with all its work.")
+                    Button { Task { await model.undo(correction) } } label: {
+                        Label { Text("Show Apart") } icon: { GlyphView(glyph: .branch, size: 13) }
+                    }
+                    .help("Show \(organization.projectName(folder)) as its own project again, with all its work.")
                 case .found: EmptyView()
                 }
                 Button("Move to Project…") { moving = true }
@@ -32,39 +39,106 @@ struct WorkSection: View {
             Text(Wording.placement(placement, of: work, organization: organization))
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
 
-            if work.files.count > 1 {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Versions of this work, oldest first:").font(.callout).foregroundStyle(.secondary)
-                    ForEach(work.files, id: \.path) { file in
-                        HStack(spacing: 6) {
-                            TypeBadge(artifact: file)
-                            Text(file.name).font(.callout)
-                            Text("· \(Wording.count(file.deliveries.count, "delivery", "deliveries"))" + (file.folder == "." ? "" : " · \(file.folder)"))
-                                .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+            if work.files.count > 1 || !declines.isEmpty {
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    Text(work.files.count > 1 ? "Versions of this work, oldest first" : "Versions of this work")
+                        .font(.callout).foregroundStyle(.secondary)
+                    VersionsStrip(work: work)
+                    ForEach(links) { link in
+                        DecisionLine(text: "You said \(model.describe(link)) · \(Wording.date(link.madeAt))") {
+                            Task { await model.undo(link) }
                         }
+                        .transition(Motion.arrive)
                     }
-                    ForEach(organization.links(of: work)) { link in
-                        HStack(spacing: 6) {
-                            Text("You said \(model.describe(link)) on \(Wording.date(link.madeAt)).")
-                                .font(.caption).foregroundStyle(.secondary)
-                            Button("Undo") { Task { await model.undo(link) } }.controlSize(.mini)
-                        }
+                    ForEach(declines) { decline in
+                        DeclineLine(decline: decline, work: work)
+                            .transition(Motion.arrive)
                     }
                 }
             }
-            Button("Join With Another File…") { joining = true }
-                .controlSize(.small)
-                .help("Say that another file is a version of this work, such as a renamed draft.")
+            Button { joining = true } label: {
+                Label { Text("Join With Another File…") } icon: { GlyphView(glyph: .merge, size: 13) }
+            }
+            .controlSize(.small)
+            .help("Say that another file is a version of this work, such as a renamed draft.")
             if let failure = model.correctionFailure {
                 StatusLabel(mark: .attention, text: failure).font(.callout)
             }
         }
-        .padding(14)
+        .animation(Motion.state(reduceMotion), value: links.map(\.id))
+        .animation(Motion.state(reduceMotion), value: declines.map(\.id))
+        .padding(.top, Space.xs)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color(nsColor: .separatorColor)))
         .sheet(isPresented: $moving) { MoveSheet(work: work) }
         .sheet(isPresented: $joining) { JoinSheet(work: work) }
+    }
+}
+
+/// A work's files in the order they first arrived, hung on one line: solid, with filled ends,
+/// because the person joined them (the relation grammar's "in effect, confirmed"). Spacing says
+/// order only, never how long apart they came.
+struct VersionsStrip: View {
+    var work: Work
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(work.files.enumerated()), id: \.element.path) { index, file in
+                HStack(alignment: .center, spacing: Space.s) {
+                    ZStack {
+                        // The line into this node and out of it, solid: the join is in effect.
+                        VStack(spacing: 0) {
+                            Rectangle().fill(index == 0 ? Color.clear : Color.secondary).frame(width: 1.5)
+                            Rectangle().fill(index == work.files.count - 1 ? Color.clear : Color.secondary).frame(width: 1.5)
+                        }
+                        GlyphView(glyph: work.files.count > 1 ? .endSolid : .endHollow, size: 13).foregroundStyle(.secondary)
+                    }
+                    .frame(width: 14)
+                    TypeBadge(artifact: file)
+                    Text(file.name).font(.callout).lineLimit(1).truncationMode(.middle)
+                    Text(Wording.count(file.deliveries.count, "delivery", "deliveries") + (file.folder == "." ? "" : " · \(file.folder)"))
+                        .font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).monospacedDigit()
+                }
+                .frame(minHeight: 26)
+            }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Versions of this work, oldest first: " + work.files.map(\.name).joined(separator: ", "))
+    }
+}
+
+/// One of the person's decisions, said as theirs, with its Undo beside it.
+struct DecisionLine: View {
+    var text: String
+    var undo: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+            Text(text).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Button("Undo", action: undo).controlSize(.small).accessibilityLabel("Undo: \(text)")
+        }
+    }
+}
+
+/// A pair the person declined, still shown: a dashed line ending in a cross, not in effect.
+struct DeclineLine: View {
+    @Environment(LibraryModel.self) private var model
+    var decline: Correction
+    var work: Work
+
+    var body: some View {
+        let other = work.contains(decline.subject) ? decline.target : decline.subject
+        HStack(alignment: .center, spacing: Space.s) {
+            ZStack(alignment: .leading) {
+                Path { $0.move(to: CGPoint(x: 0, y: 6)); $0.addLine(to: CGPoint(x: 14, y: 6)) }
+                    .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [3, 3]))
+                GlyphView(glyph: .endCross, size: 9).offset(x: 14)
+            }
+            .frame(width: 26, height: 12, alignment: .leading)
+            .foregroundStyle(.secondary)
+            DecisionLine(text: "You said \((other as NSString).lastPathComponent) is not the same work · \(Wording.date(decline.madeAt))") {
+                Task { await model.undo(decline) }
+            }
+        }
     }
 }
 
@@ -84,7 +158,7 @@ struct MoveSheet: View {
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             List(selection: $target) {
                 ForEach(others) { project in
-                    Label(project.name, systemImage: Wording.projectIcon(project.origin)).tag(Optional(project.key))
+                    GlyphLabel(title: project.name, glyph: Wording.projectGlyph(project.origin)).tag(Optional(project.key))
                 }
             }
             .frame(minHeight: 180)

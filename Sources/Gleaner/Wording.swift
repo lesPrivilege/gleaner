@@ -3,26 +3,53 @@ import GleanerCore
 import SwiftUI
 
 /// Every status is a few words beside the thing it describes; the mark repeats them and never
-/// carries meaning alone (Praxis kit, foundations/standing.md).
+/// carries meaning alone (Praxis kit, foundations/standing.md). Each answers one question, with
+/// a shape that stays apart from the others in grey: an endpoint for whether Gleaner confirmed
+/// the bytes, brackets for a missing value, a triangle for a look, an octagon for a failed read,
+/// a diamond for what waits on the person, a crossed circle for what the person declined.
 enum Mark {
-    case solid, hollow, dashed, attention, cross
+    /// Confirmed: the filled endpoint.
+    case solid
+    /// Not confirmed (first seen later, a caveat): the hollow endpoint.
+    case hollow
+    /// No value here, nothing lost: brackets.
+    case dashed
+    /// Needs a look: the triangle, amber.
+    case attention
+    /// Gone for good: brackets, red.
+    case cross
+    /// Gleaner tried to read it and couldn't: the octagon.
+    case failed
+    /// Waits on the person's decision: the diamond, the one accent.
+    case awaiting
+    /// The person declined it; it stays shown: the crossed circle.
+    case declined
+    /// Under way, for as long as it takes: three dots, never a percentage.
+    case running
+    /// Done, such as copied: the check.
+    case done
 
-    var symbol: String {
+    var glyph: Glyph {
         switch self {
-        case .solid: "circle.fill"
-        case .hollow: "circle"
-        case .dashed: "circle.dashed"
-        case .attention: "exclamationmark.triangle"
-        case .cross: "xmark"
+        case .solid: .endSolid
+        case .hollow: .endHollow
+        case .dashed, .cross: .missing
+        case .attention: .warning
+        case .failed: .error
+        case .awaiting: .awaiting
+        case .declined: .rejected
+        case .running: .running
+        case .done: .done
         }
     }
 
     var color: Color {
         switch self {
-        case .solid, .hollow: .primary
-        case .dashed: .secondary
-        case .attention: Palette.attention
+        case .solid, .hollow, .done: .primary
+        case .dashed, .declined, .running: .secondary
+        case .attention, .failed: Palette.attention
         case .cross: Palette.lost
+        case .awaiting: Palette.awaiting
         }
     }
 }
@@ -39,7 +66,11 @@ enum Palette {
     static let change = dynamic(light: (0.63, 0.24, 0.21), dark: (0.89, 0.55, 0.51), contrast: (0.5, 0.14, 0.12))
     static let changeBlock = dynamic(light: (0.87, 0.44, 0.41), dark: (0.83, 0.41, 0.37), contrast: (0.75, 0.3, 0.27))
     static let changeInk = dynamic(light: (0.09, 0.13, 0.15), dark: (0.07, 0.09, 0.11), contrast: (0.0, 0.0, 0.0))
-    static let selection = dynamic(light: (0.18, 0.37, 0.82), dark: (0.45, 0.63, 1.0), contrast: (0.1, 0.27, 0.7))
+    /// Marks beside their words, in a plain color that holds on any material.
+    static let mark = Color(nsColor: .secondaryLabelColor)
+    /// The one accent: what waits on the person's decision, and only that (standing.md).
+    static let awaiting = dynamic(light: (0.11, 0.35, 0.81), dark: (0.45, 0.63, 1.0), contrast: (0.07, 0.25, 0.68))
+    static let awaitingWash = dynamic(light: (0.91, 0.94, 0.99), dark: (0.11, 0.16, 0.26), contrast: (0.88, 0.92, 0.99))
 
     private typealias RGB = (Double, Double, Double)
 
@@ -65,12 +96,14 @@ struct Statement {
 struct StatusLabel: View {
     var mark: Mark
     var text: String
+    /// The mark's size: caption text takes 12, a heading 15.
+    var size: CGFloat = 12
 
     var body: some View {
         Label {
             Text(text)
         } icon: {
-            Image(systemName: mark.symbol).font(.system(size: 9, weight: .bold)).accessibilityHidden(true)
+            GlyphView(glyph: mark.glyph, size: size)
         }
         .foregroundStyle(mark.color)
     }
@@ -134,7 +167,7 @@ enum Wording {
             return Statement(mark: .cross, title: "Not a regular file",
                              detail: "Gleaner doesn’t open pipes, sockets, or devices. \(when)")
         case .unreadable:
-            return Statement(mark: .attention, title: "Can’t be read",
+            return Statement(mark: .failed, title: "Can’t be read",
                              detail: "Something is at this path, but Gleaner can’t open or read it, so it can’t tell which version it is. \(when)")
         }
     }
@@ -248,7 +281,7 @@ enum Wording {
         if now.sha256 == sha { return (.hollow, "\(state) · the file on disk still holds it, checked by hash") }
         switch now.kind {
         case .missing: return (.cross, "\(state) · not on disk")
-        case .unreadable: return (.attention, "\(state) · the file on disk can’t be read")
+        case .unreadable: return (.failed, "\(state) · the file on disk can’t be read")
         default: return (.cross, "\(state) · the file on disk no longer holds it")
         }
     }
@@ -374,7 +407,7 @@ enum Wording {
     static func source(_ source: Indexer.Report.Source) -> (Mark, String) {
         switch source.folder {
         case .absent: (.dashed, "Not on this Mac")
-        case .unreadable: (.cross, "Can’t be read")
+        case .unreadable: (.failed, "Can’t be read")
         case .listed where source.hasProblems: (.attention, "Read with problems")
         case .listed: (.solid, "Read")
         }
@@ -424,11 +457,21 @@ enum Wording {
 
     // MARK: Projects, works and corrections
 
-    static func projectIcon(_ origin: Organization.Project.Origin) -> String {
+    /// A project's origin as a mark: a repository, a folder outside git, or the person's own.
+    static func projectGlyph(_ origin: Organization.Project.Origin) -> Glyph {
         switch origin {
-        case .repository: "arrow.triangle.branch"
-        case .folder: "folder"
-        case .yours: "square.stack"
+        case .repository: .repository
+        case .folder: .folder
+        case .yours: .person
+        }
+    }
+
+    /// What a project is, in words, for VoiceOver and anywhere its mark stands alone.
+    static func projectOrigin(_ origin: Organization.Project.Origin) -> String {
+        switch origin {
+        case .repository: "git repository"
+        case .folder: "folder outside git"
+        case .yours: "your project"
         }
     }
 
@@ -467,11 +510,17 @@ enum Wording {
         }
     }
 
-    static func suggestionReason(_ suggestion: Organization.Suggestion) -> String {
-        let earlier = (suggestion.earlier as NSString).lastPathComponent, later = (suggestion.later as NSString).lastPathComponent
-        return switch suggestion.reason {
-        case .moved: "\(later) first arrived with the exact bytes \(earlier) last had, and \(earlier) is no longer at its path: it may have been renamed or moved. Same bytes alone don’t make one work."
-        case .versionName: "They are in one folder, and their names differ only by a version mark. Similar names alone don’t make one work."
+    /// Gleaner's reason, naming the deliveries it compared: "latest" is not a version.
+    static func suggestionReason(_ suggestion: Organization.Suggestion, in organization: Organization) -> String {
+        let name = { (path: String) in (path as NSString).lastPathComponent }
+        let earlier = organization.work(containing: suggestion.earlier)?.files.first { $0.path == suggestion.earlier }
+        let later = organization.work(containing: suggestion.later)?.files.first { $0.path == suggestion.later }
+        switch suggestion.reason {
+        case .moved:
+            let last = earlier.map { " delivery \($0.latest.number)" } ?? "", first = later?.deliveries.last.map { " delivery \($0.number)" } ?? ""
+            return "\(name(suggestion.later))\(first) has the exact bytes of \(name(suggestion.earlier))\(last), and \(name(suggestion.earlier)) is no longer at its path: it may have been renamed or moved. Same bytes alone don’t make one work."
+        case .versionName:
+            return "They are in one folder, and their names differ only by a version mark. Similar names alone don’t make one work."
         }
     }
 

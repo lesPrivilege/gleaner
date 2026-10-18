@@ -77,11 +77,14 @@ struct Sidebar: View {
     var body: some View {
         let place = Binding<Place?>(get: { model.place }, set: { if let place = $0 { model.place = place } })
         List(selection: place) {
-            Label("All Deliveries", systemImage: "tray.full")
+            GlyphLabel(title: "All Deliveries", glyph: .artifact)
                 .tag(Place.all)
             Section("Projects") {
                 ForEach(model.projects) { project in
-                    Label { Text(project.name).lineLimit(1).truncationMode(.middle) } icon: { Image(systemName: Wording.projectIcon(project.origin)) }
+                    Label { Text(project.name).lineLimit(1).truncationMode(.middle) } icon: {
+                        GlyphView(glyph: Wording.projectGlyph(project.origin), size: 16).foregroundStyle(Palette.mark)
+                    }
+                        .accessibilityLabel("\(project.name), \(Wording.projectOrigin(project.origin)), \(Wording.count(project.works.count, "work"))")
                         .badge(project.works.count)
                         .tag(Place.project(project.key))
                         .help(Wording.projectSummary(project))
@@ -92,9 +95,10 @@ struct Sidebar: View {
                 Label {
                     Text("Sources")
                 } icon: {
-                    Image(systemName: model.logTrouble == nil ? "antenna.radiowaves.left.and.right" : "exclamationmark.triangle")
-                        .foregroundStyle(model.logTrouble == nil ? Color.secondary : Palette.attention)
+                    GlyphView(glyph: model.logTrouble == nil ? .agent : .warning, size: 16)
+                        .foregroundStyle(model.logTrouble == nil ? Palette.mark : Palette.attention)
                 }
+                .accessibilityValue(model.logTrouble ?? "Read")
                 .tag(Place.sources)
                 .help(model.logTrouble ?? "What Gleaner reads, your corrections, and what it keeps")
             }
@@ -158,10 +162,8 @@ struct DetailColumn: View {
         } else if let result = model.selected {
             DetailView(result: result)
         } else if !model.artifacts.isEmpty {
-            ContentUnavailableView(
-                "Pick a delivered file",
-                systemImage: "tray.full",
-                description: Text("Search for what you asked an agent to make, or open a project. Gleaner lists only files an agent named in a reply to you."))
+            EmptyState(title: "Pick a delivered file", glyph: .artifact,
+                       description: "Search for what you asked an agent to make, or open a project. Gleaner lists only files an agent named in a reply to you.")
         }
     }
 }
@@ -231,8 +233,8 @@ struct ResultsList: View {
     func emptyState(_ results: [SearchResult]) -> some View {
         if model.artifacts.isEmpty {
             if !model.indexed {
-                ContentUnavailableView("Reading agent logs…", systemImage: "hourglass",
-                                       description: Text("The first read takes a moment. Results appear when it finishes."))
+                EmptyState(title: "Reading agent logs…", glyph: .running,
+                           description: "The first read takes a moment. Results appear when it finishes.")
             } else if model.canReadAgain, let trouble = model.logTrouble {
                 ContentUnavailableView {
                     Label("Gleaner couldn’t read every agent log", systemImage: "exclamationmark.triangle")
@@ -249,9 +251,8 @@ struct ResultsList: View {
                          + model.indexer.sources.watchedDirectories.map { ($0 as NSString).abbreviatingWithTildeInPath }.joined(separator: "\n"))
                 }
             } else {
-                ContentUnavailableView("No delivered files yet", systemImage: "tray",
-                                       description: Text("When an agent names a file in a reply to you, it appears here."
-                                                         + (model.logTrouble.map { "\n\n" + $0 } ?? "")))
+                EmptyState(title: "No delivered files yet", glyph: .artifact,
+                           description: "When an agent names a file in a reply to you, it appears here." + (model.logTrouble.map { "\n\n" + $0 } ?? ""))
             }
         } else if results.isEmpty {
             ContentUnavailableView {
@@ -276,7 +277,7 @@ struct FilterBar: View {
         @Bindable var model = model
         HStack(spacing: 8) {
             if let project = model.currentProject {
-                Label(project.name, systemImage: Wording.projectIcon(project.origin))
+                GlyphLabel(title: project.name, glyph: Wording.projectGlyph(project.origin), size: 14)
                     .font(.callout.weight(.semibold)).lineLimit(1)
             }
             Spacer(minLength: 0)
@@ -375,9 +376,9 @@ struct ResultRow: View {
                     StatusLabel(mark: mark.0, text: mark.1)
                 }
                 Text(delivery.deliveredAt?.formatted(date: .abbreviated, time: .omitted) ?? "Unknown date")
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(.secondary).monospacedDigit()
                 if let number = status.number {
-                    Text(number).foregroundStyle(.secondary)
+                    Text(number).foregroundStyle(.secondary).monospacedDigit()
                 }
             }
             .font(.caption)

@@ -28,7 +28,7 @@ struct ProjectOutline: View {
                             .font(.caption).foregroundStyle(.secondary)
                     }
                 } header: {
-                    Text("Possibly one work")
+                    Label { Text("Possibly one work · waiting on you") } icon: { GlyphView(glyph: .awaiting, size: 12).foregroundStyle(Palette.awaiting) }
                         .help("Gleaner never joins files by itself. Joined files show as versions of one work; nothing on disk changes.")
                 }
             }
@@ -50,8 +50,7 @@ struct ProjectOutline: View {
         .modifier(ListHandoff())
         .overlay {
             if project.works.isEmpty {
-                ContentUnavailableView("Nothing here yet", systemImage: "tray",
-                                       description: Text("Move work here from its detail: Move to Project…"))
+                EmptyState(title: "Nothing here yet", glyph: .person, description: "Move work here from its detail: Move to Project…")
             } else if results.isEmpty {
                 ContentUnavailableView {
                     Label("No \(model.kind.map(Wording.kindName) ?? "works") here", systemImage: "line.3.horizontal.decrease.circle")
@@ -73,7 +72,7 @@ struct ProjectHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline) {
-                Label(project.name, systemImage: Wording.projectIcon(project.origin)).font(.title3.weight(.semibold))
+                GlyphLabel(title: project.name, glyph: Wording.projectGlyph(project.origin), size: 20).font(.title3.weight(.semibold))
                 Spacer()
                 if let folder = project.folder, Locator.stat(folder).kind == .directory {
                     Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: folder)]) }
@@ -93,11 +92,11 @@ struct ProjectHeader: View {
             let recent = project.works.prefix(3)
             if !recent.isEmpty {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("Latest:").font(.caption).foregroundStyle(.secondary)
+                    Text("Delivered last:").font(.caption).foregroundStyle(.secondary)
                     ForEach(Array(recent)) { work in
-                        Button(work.name) { model.select(work.deliveries[0]) }
-                            .buttonStyle(.link).font(.caption).lineLimit(1)
-                            .help("Delivered \(Wording.date(work.deliveries[0].deliveredAt))")
+                        LinkButton(title: work.name) { model.select(work.deliveries[0]) }
+                            .font(.caption).lineLimit(1)
+                            .help("Delivery \(work.deliveries[0].number), \(Wording.date(work.deliveries[0].deliveredAt))")
                     }
                 }
             }
@@ -106,7 +105,10 @@ struct ProjectHeader: View {
     }
 }
 
-/// Two files that may be versions of one work, with Gleaner's reason and the person's answer.
+/// Two files that may be versions of one work, with Gleaner's reason and the person's answer. It
+/// waits on the person, so it carries the one accent and the awaiting mark, and says who says so
+/// and that nothing is in effect yet; its dashed outline is the "not in effect" of the relation
+/// grammar (`kit/design/foundations/standing.md`). What a choice does is written, not hovered.
 struct SuggestionView: View {
     @Environment(LibraryModel.self) private var model
     var suggestion: Organization.Suggestion
@@ -117,35 +119,47 @@ struct SuggestionView: View {
 
     var body: some View {
         let earlier = (suggestion.earlier as NSString).lastPathComponent, later = (suggestion.later as NSString).lastPathComponent
-        VStack(alignment: .leading, spacing: 6) {
-            Group {
-                if let from, from.contains(suggestion.later) {
-                    Text("**\(earlier)** may be an earlier version of this file.")
-                } else if let from, from.contains(suggestion.earlier) {
-                    Text("**\(later)** may be a later version of this file.")
-                } else {
-                    Text("**\(earlier)** → **\(later)**")
+        HStack(alignment: .top, spacing: Space.m - 2) {
+            GlyphView(glyph: .awaiting, size: compact ? 16 : 20).foregroundStyle(Palette.awaiting).padding(.top, 1)
+            VStack(alignment: .leading, spacing: Space.xs + 2) {
+                Text("Gleaner suggests · not joined")
+                    .font(.caption.weight(.semibold)).foregroundStyle(Palette.awaiting)
+                Group {
+                    if let from, from.contains(suggestion.later) {
+                        Text("**\(earlier)** may be an earlier version of this file.")
+                    } else if let from, from.contains(suggestion.earlier) {
+                        Text("**\(later)** may be a later version of this file.")
+                    } else {
+                        Text("**\(earlier)** → **\(later)**")
+                    }
                 }
-            }
-            .font(.callout)
-            Text(Wording.suggestionReason(suggestion)).font(.caption).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Button("Same Work") { Task { await model.join(suggestion.earlier, suggestion.later) } }
-                    .help("Show both files as versions of one work. Nothing on disk changes; you can undo this.")
-                Button("Not the Same") { Task { await model.keepApart(suggestion.earlier, suggestion.later) } }
-                    .help("Keep them apart. Gleaner won’t suggest this again.")
-                if compact, let work = model.organization.work(containing: suggestion.later) {
-                    Button("Show") { model.select(work.deliveries[0]) }.buttonStyle(.link)
+                .font(.callout)
+                Text(Wording.suggestionReason(suggestion, in: model.organization)).font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: Space.s) {
+                    Button { Task { await model.join(suggestion.earlier, suggestion.later) } } label: {
+                        Label { Text("Same Work") } icon: { GlyphView(glyph: .merge, size: 13) }
+                    }
+                    Button("Not the Same") { Task { await model.keepApart(suggestion.earlier, suggestion.later) } }
+                    if compact, let work = model.organization.work(containing: suggestion.later) {
+                        LinkButton(title: "Show") { model.select(work.deliveries[0]) }
+                            .accessibilityLabel("Show \(later)")
+                    }
                 }
+                .controlSize(.small)
+                Text("Nothing on disk changes, and either answer can be undone.")
+                    .font(.caption2).foregroundStyle(.secondary)
             }
-            .controlSize(.small)
         }
-        .padding(.vertical, compact ? 4 : 10)
-        .padding(.horizontal, compact ? 0 : 12)
+        .padding(.vertical, compact ? Space.xs : Space.m - 2)
+        .padding(.horizontal, compact ? 0 : Space.m)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(compact ? Color.clear : Palette.selection.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-        .overlay { if !compact { RoundedRectangle(cornerRadius: 8).strokeBorder(Palette.selection.opacity(0.3)) } }
+        .overlay {
+            if !compact {
+                RoundedRectangle(cornerRadius: Radius.control + 2)
+                    .strokeBorder(Palette.awaiting.opacity(0.55), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
+            }
+        }
         .accessibilityElement(children: .contain)
     }
 }
