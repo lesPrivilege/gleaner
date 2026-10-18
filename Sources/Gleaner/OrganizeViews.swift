@@ -1,4 +1,5 @@
 import GleanerCore
+import GleanerUI
 import SwiftUI
 
 /// Where a work belongs: its project and why, the files joined as its versions, and the pairs the
@@ -17,7 +18,7 @@ struct WorkSection: View {
         let project = organization.project(work.project)
         let links = organization.links(of: work), declines = organization.declines(of: work)
         DetailSection(title: "Project") {
-            Button("Move to Project…") { moving = true }.controlSize(.small)
+            Button("Move to Project…") { moving = true }.controlRole(.inline)
         } content: {
             HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                 Label {
@@ -31,13 +32,13 @@ struct WorkSection: View {
                 switch placement {
                 case .moved:
                     Button("Put Back") { Task { await model.undoMove(work) } }
-                        .controlSize(.small)
+                        .controlRole(.inline)
                         .help("Return it to the project Gleaner found it in")
                 case .combined(let folder, let correction):
                     Button { Task { await model.undo(correction) } } label: {
                         Label { Text("Show Apart") } icon: { GlyphView(glyph: .branch, size: 12) }
                     }
-                    .controlSize(.small)
+                    .controlRole(.inline)
                     .help("Show \(organization.projectName(folder)) as its own project again")
                 case .found:
                     EmptyView()
@@ -64,7 +65,7 @@ struct WorkSection: View {
                 Button { joining = true } label: {
                     Label { Text("Join With Another File…") } icon: { GlyphView(glyph: .merge, size: 12) }
                 }
-                .controlSize(.small)
+                .controlRole(.inline)
                 .help("Say that another file is a version of this work, such as a renamed draft")
             }
             if let failure = model.correctionFailure {
@@ -126,7 +127,7 @@ struct DecisionLine: View {
             Text(text).lineLimit(1).truncationMode(.middle)
             Text(Wording.shortDate(date)).foregroundStyle(.secondary).monospacedDigit()
                 .help(Wording.date(date))
-            Button("Undo", action: undo).controlSize(.small).accessibilityLabel("Undo: \(text)")
+            Button("Undo", action: undo).controlRole(.inline).accessibilityLabel("Undo: \(text)")
         }
         .font(.caption)
     }
@@ -150,7 +151,7 @@ struct DeclineLine: View {
             Text(Wording.shortDate(decline.madeAt)).foregroundStyle(.secondary).monospacedDigit()
                 .help(Wording.date(decline.madeAt))
             Button("Undo") { Task { await model.undo(decline) } }
-                .controlSize(.small)
+                .controlRole(.inline)
                 .accessibilityLabel("Undo: \(model.describe(decline))")
         }
         .font(.caption)

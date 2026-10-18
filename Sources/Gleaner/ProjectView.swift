@@ -1,4 +1,5 @@
 import GleanerCore
+import GleanerUI
 import SwiftUI
 
 /// One project, to enter and resume: what it is and what arrived last, the joins Gleaner suggests,
@@ -104,7 +105,7 @@ struct ProjectHeader: View {
                     Button { Task { await model.undo(combined.correction, following: false) } } label: {
                         Label { Text("Show Apart") } icon: { GlyphView(glyph: .branch, size: 12) }
                     }
-                    .controlSize(.small)
+                    .controlRole(.inline)
                     .help("Show \(combined.name) as its own project again, as you set on \(Wording.date(combined.correction.madeAt))")
                 }
             }
@@ -189,11 +190,7 @@ struct SuggestionView: View {
                 }
                 .padding(.horizontal, Space.m)
                 .padding(.vertical, Space.s + 2)
-                .background(Palette.awaitingWash, in: RoundedRectangle(cornerRadius: Radius.card))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Radius.card)
-                        .strokeBorder(Palette.awaiting.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-                }
+                .surface(.awaiting)
             }
         }
         .accessibilityElement(children: .contain)
@@ -209,6 +206,6 @@ struct SuggestionView: View {
             Button("Keep Apart") { Task { await model.keepApart(suggestion.earlier, suggestion.later) } }
                 .help("Gleaner stops suggesting this")
         }
-        .controlSize(.small)
+        .controlRole(.inline)
     }
 }

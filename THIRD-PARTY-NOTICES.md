@@ -2,7 +2,7 @@
 
 ## lobe-icons
 
-Gleaner draws the Claude Code and Codex marks (`Sources/Gleaner/ProviderMarks.swift`) from the `claudecode` and `codex` icons of [lobe-icons](https://github.com/lobehub/lobe-icons), commit `8a1b282`.
+Gleaner draws the Claude Code and Codex marks (`Sources/GleanerUI/AgentMarks.swift`) from the `claudecode` and `codex` icons of [lobe-icons](https://github.com/lobehub/lobe-icons), commit `8a1b282`.
 
 ```
 MIT License

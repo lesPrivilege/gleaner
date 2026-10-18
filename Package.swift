@@ -11,13 +11,17 @@ let package = Package(
     ],
     targets: [
         .target(name: "GleanerCore"),
+        // Gleaner's components: marks, status, surfaces, controls, motion. SwiftUI and AppKit only;
+        // the app binds them to its library (docs/design/components.md).
+        .target(name: "GleanerUI"),
         .executableTarget(name: "gleaner-spike", dependencies: ["GleanerCore"]),
-        .executableTarget(name: "Gleaner", dependencies: ["GleanerCore"]),
+        .executableTarget(name: "Gleaner", dependencies: ["GleanerCore", "GleanerUI"]),
         .testTarget(
             name: "GleanerCoreTests",
             dependencies: ["GleanerCore"],
             resources: [.copy("Fixtures")]
         ),
-        .testTarget(name: "GleanerTests", dependencies: ["Gleaner", "GleanerCore"]),
+        .testTarget(name: "GleanerUITests", dependencies: ["GleanerUI"]),
+        .testTarget(name: "GleanerTests", dependencies: ["Gleaner", "GleanerCore", "GleanerUI"]),
     ]
 )

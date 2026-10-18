@@ -154,9 +154,11 @@ swift test                      # fixture tests
 `release.sh` refuses to run with uncommitted changes. A commit tagged `v0.1.0` builds as version 0.1.0; any other commit builds as `0.1.0-dev+<commit>`.
 
 - `Sources/GleanerCore`: provider adapters (Claude Code, Codex), mention extraction, locator, redaction, the registry (SQLite), the content store (saved copies, verified hand-off copies), the indexer, the log watcher, and the status logic (`Library.swift`).
+- `Sources/GleanerUI`: the component library the window draws with: marks, status, surfaces, controls and motion, after [docs/design/components.md](docs/design/components.md). SwiftUI and AppKit only.
 - `Sources/Gleaner`: the macOS app (SwiftUI and AppKit, Quick Look).
 - `Sources/gleaner-spike`: Spike A, read-only extraction over local logs that writes a labeling sheet.
 - `Tests/GleanerCoreTests`: fixture tests built from sanitized record shapes, and the library flow (concurrent edits, deleted worktrees, rollback, backfill, verified staging).
+- `Tests/GleanerUITests`: the marks, the tokens, and the gallery of every component (`GLEANER_GALLERY=<folder> swift test --filter GalleryTests`).
 - `Tests/GleanerTests`: the app's decisions on a synthetic library (which delivery a click lands on, which bytes Quick Look, Compare and a drag use) and its wording.
 
 The decisions behind v0.1 are in [docs/SPEC.md](docs/SPEC.md); the design exploration and its rulings are in [docs/design/](docs/design/README.md).

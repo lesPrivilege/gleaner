@@ -1,11 +1,10 @@
-import GleanerCore
 import SwiftUI
 
 /// The vendor of the model that wrote a reply, by its own mark: lobe-icons' monochrome drawings
 /// (github.com/lobehub/lobe-icons, MIT, commit 8a1b282; THIRD-PARTY-NOTICES.md), the set Magpie
 /// bundles. A model is matched to its vendor by its family name, as Magpie matches it; a model
 /// matched to none gets no mark, never a made-up one. The marks belong to their vendors.
-enum ModelVendor: String, CaseIterable, Sendable {
+public enum ModelVendor: String, CaseIterable, Sendable {
     case claude
     case openai
     case gemini
@@ -17,7 +16,7 @@ enum ModelVendor: String, CaseIterable, Sendable {
     case mistral
     case minimax
 
-    var name: String {
+    public var name: String {
         switch self {
         case .claude: "Anthropic"
         case .openai: "OpenAI"
@@ -34,7 +33,7 @@ enum ModelVendor: String, CaseIterable, Sendable {
 
     /// The vendor of `model`, as a log names it: a gateway's `vendor/model` reference, or a model
     /// id with a context or effort suffix, is matched by its model's family.
-    static func of(model: String?) -> ModelVendor? {
+    public static func of(model: String?) -> ModelVendor? {
         guard var id = model?.lowercased(), !id.isEmpty else { return nil }
         if let slash = id.lastIndex(of: "/") { id = String(id[id.index(after: slash)...]) }
         for (family, vendor) in families where id.hasPrefix(family) {
@@ -56,7 +55,7 @@ enum ModelVendor: String, CaseIterable, Sendable {
     /// overlapping blocks keep their ink.
     var paths: [Path] { Self.parts[self]! }
 
-    nonisolated(unsafe) private static let parts: [ModelVendor: [Path]] =
+    private static let parts: [ModelVendor: [Path]] =
         Dictionary(uniqueKeysWithValues: allCases.map { ($0, $0.data.map(SVGPath.parse)) })
 
     private var data: [String] {
@@ -76,11 +75,16 @@ enum ModelVendor: String, CaseIterable, Sendable {
 }
 
 /// A model vendor's mark, in the ink around it.
-struct VendorMark: View {
-    var vendor: ModelVendor
-    var size: CGFloat = 14
+public struct VendorMark: View {
+    public var vendor: ModelVendor
+    public var size: CGFloat
 
-    var body: some View {
+    public init(vendor: ModelVendor, size: CGFloat = 14) {
+        self.vendor = vendor
+        self.size = size
+    }
+
+    public var body: some View {
         Canvas { context, canvas in
             context.scaleBy(x: canvas.width / 24, y: canvas.width / 24)
             for path in vendor.paths { context.fill(path, with: .foreground, style: FillStyle(eoFill: true)) }

@@ -1,9 +1,9 @@
 import CoreGraphics
 import SwiftUI
 import Testing
-@testable import Gleaner
+@testable import GleanerUI
 
-@Suite struct GlyphTests {
+@Suite struct MarkTests {
     /// Every mark draws something, inside its own grid: a path copied in wrong shows here, not as
     /// a blank or a hang the first time the window draws it.
     @Test func everyMarkDrawsInsideItsGrid() {
@@ -13,7 +13,7 @@ import Testing
             #expect(!bounds.isEmpty, "\(glyph)")
             #expect(spec.viewBox.insetBy(dx: -0.01, dy: -0.01).contains(bounds), "\(glyph): \(bounds)")
         }
-        for path in [ProviderMark.claudeCode, ProviderMark.codex, ProviderMark.codexTile] + ModelVendor.allCases.flatMap(\.paths) {
+        for path in [AgentMark.claudeCode, AgentMark.codex, AgentMark.codexTile] + ModelVendor.allCases.flatMap(\.paths) {
             #expect(!path.boundingRect.isEmpty)
             #expect(CGRect(x: 0, y: 0, width: 24, height: 24).insetBy(dx: -0.01, dy: -0.01).contains(path.boundingRect))
         }
