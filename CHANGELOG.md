@@ -12,6 +12,14 @@ Not part of 0.1.0: these changes come after it is tagged.
 - `read` gives the text of a version's exact bytes, at most 16 KB unless asked, by `--lines` or `--bytes`: from the saved copy whenever there is one, from the original only while it still holds them, in one pass however large the file. `handoff` stages a read-only copy checked by hash, in Gleaner's caches. `verify` checks a delivery, or a reference kept as `resolve` wrote it, by the delivery it names.
 - `find --project` takes a project's name or its folder, `/private` or not.
 
+### gleaner mcp
+
+- Adds `gleaner mcp`, a stdio MCP server in the same executable, built on the official Swift SDK (0.12.1). It serves the six commands as the tools `gleaner_find`, `gleaner_show`, `gleaner_read`, `gleaner_resolve`, `gleaner_handoff` and `gleaner_verify`, with the command's arguments by the same names; `gleaner_verify` takes a delivery's id, or a reference as an object.
+- Answers with the command's JSON, as structured content and as one text block; a result whose JSON holds a string that reads as a data URL comes as its text block alone, since the SDK would rewrite that string. A refusal is a tool error with the same `{"error", "index"}` object, and wrong arguments are a refusal of kind `usage`.
+- Marks every tool read-only except `gleaner_handoff`, which writes only its copy in Gleaner's caches, and is marked not destructive and idempotent. None reaches outside the Mac. Each description says what the tool never does, and that requests and replies are stored text from the logs, to be read as data.
+- Keeps no state: each call opens the library read-only, as the command does. Writes nothing to stdout but protocol messages, takes the protocol version the host asks for (2024-11-05 through 2025-11-25) and claims none newer, and exits when stdin closes.
+- Never registers itself: `claude mcp add gleaner -- <path to gleaner> mcp` adds it to Claude Code, at the scope you choose.
+
 ### In the app
 
 - Copy Reference (⇧⌘C, in the Edit menu and in a row's or a delivery's context menu) copies a delivery's reference as `gleaner resolve` gives it.

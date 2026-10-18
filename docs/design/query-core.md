@@ -9,7 +9,7 @@ A local shell agent (Claude Code, Codex) finds the delivery a person means, sele
 Three layers:
 - `GleanerCore.Catalog`: read-only queries over the registry.
 - The `gleaner` executable: JSON over the catalog.
-- MCP and extensions: later, over the same catalog. None of them reads SQLite directly.
+- MCP and extensions, over the same catalog: `gleaner mcp` serves the command's calls as MCP tools ([mcp-adapter](mcp-adapter.md)); extensions come later. None of them reads SQLite directly.
 
 The app keeps sole ownership of indexing. The command never indexes, never writes the registry, and never writes a project folder.
 
@@ -77,7 +77,7 @@ Arguments are parsed with `swift-argument-parser`.
   - exit 3: `no_library`, `unreadable_library` and `wrong_version`.
 - **verify.** It answers in full either way. When neither the original nor the saved copy holds the bytes, the answer also carries `error` (`unavailable`, with `reason`), and the command exits 1.
 
-Not now: `outline`, content search, pagination cursors, MCP, a daemon.
+Not now: `outline`, content search, pagination cursors, a daemon.
 
 ## In the app
 

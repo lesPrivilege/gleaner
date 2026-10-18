@@ -123,6 +123,14 @@ Show in Finder 和 Copy Path 针对原文件所在位置，那里的文件可能
 
 命令从不建索引，以只读方式打开资料库：它按应用最近一次读到的内容回答。每个回答，以及资料库打开之后的每次失败，都带着这份 `index`（资料库、运行过几次、最近一次何时结束、各 agent 的日志读得怎样），所以过时或不完整的索引给出的空结果，不会被当成什么都没交付的证据。打开 Gleaner 就能更新它。命令从不写入资料库或项目文件夹；`handoff` 只写它的副本，放在 Gleaner 的缓存里。
 
+**给 agent 的宿主用。** `gleaner mcp` 通过 stdio，把同样的六个调用作为 MCP 工具提供：`gleaner_find`、`gleaner_show`、`gleaner_read`、`gleaner_resolve`、`gleaner_handoff` 和 `gleaner_verify`。参数与命令同名（`lines` 和 `bytes` 写成 `"A:B"`；命令接收引用文件的地方，`gleaner_verify` 接收交付的 id，或以对象形式给出的引用），回答是同样的 JSON，既作为结构化内容，也作为文本。失败时是一个工具错误，带着同样的 `{"error", "index"}` 对象。服务端不保留状态：每次调用都以只读方式打开资料库，stdout 上只写协议消息。Gleaner 从不自行注册到任何宿主。要把它加到 Claude Code，范围由你选定（默认是 local；`--scope user` 用于你的所有项目，`--scope project` 通过项目的 `.mcp.json` 共享）：
+
+```bash
+claude mcp add gleaner -- <path to gleaner> mcp
+```
+
+`<path to gleaner>` 是你构建好的命令，例如 `.build/release/gleaner` 的完整路径。在 `mcp` 后加 `--home <folder>`，就为另一个主文件夹保存的资料库提供服务。
+
 在应用里，**Copy Reference**（⇧⌘C，位于 Edit 菜单，以及列表行和交付行的右键菜单）把一次交付的引用按 `gleaner resolve` 给出的样子拷贝下来，可以贴给 agent。**Show in Log** 在 Finder 中选中会话日志，详情栏给出提到这个文件的那条回复所在的行。`gleaner://delivery/<id>` 链接会打开 Gleaner 并定位到那次交付；链接指向的交付不在这个资料库里时，如实说明。
 
 ## 交付的认定
@@ -164,11 +172,11 @@ swift test                      # fixture 测试
 
 - `Sources/GleanerCore`：各 agent 的日志适配器（Claude Code、Codex）、提及抽取、文件定位、脱敏、索引库（SQLite）、内容库（存档副本与核验过的转交副本）、索引器、日志监视，以及状态判断（`Library.swift`）。
 - `Sources/Gleaner`：macOS 应用（SwiftUI、AppKit、Quick Look）。
-- `Sources/gleaner-cli`：`gleaner` 命令，以 JSON 给出 catalog 的回答。
+- `Sources/gleaner-cli`：`gleaner` 命令，以 JSON 给出 catalog 的回答；以及 `gleaner mcp`，把同样的回答作为 MCP 工具提供。
 - `Sources/gleaner-spike`：Spike A，只读地抽取本地日志，输出一份标注表。
 - `Tests/GleanerCoreTests`：用脱敏后的日志记录结构写成的 fixture 测试，整个流程的测试（并发编辑、删除 worktree、回滚、补读旧日志、核验后转交），以及 catalog 的查询。
 - `Tests/GleanerTests`：在合成的资料库上检验应用的判断（点一下落在哪次交付上，Quick Look、Compare 和拖拽用的是哪份字节）及其措辞。
-- `Tests/GleanerCommandTests`：像 agent 的 shell 那样运行构建好的 `gleaner`：检验它的 JSON、退出码，以及它既不写资料库也不写项目。
+- `Tests/GleanerCommandTests`：像 agent 的 shell 那样运行构建好的 `gleaner`：检验它的 JSON、退出码，以及它既不写资料库也不写项目；再像宿主那样运行 `gleaner mcp`，把每个工具的回答和拒绝与命令自己的对照。
 
 v0.1 的设计决定见 [docs/SPEC.md](docs/SPEC.md)，设计探索与裁决见 [docs/design/](docs/design/README.md)。
 
