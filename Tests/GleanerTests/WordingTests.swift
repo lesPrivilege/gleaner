@@ -164,4 +164,39 @@ import Testing
         #expect(Wording.kindLabel(.document, path: "/p/out/notes.markdown") == "MARKDOWN")
         #expect(Wording.kindLabel(.folder, path: "/p/out/site") == "FOLDER")
     }
+
+    // MARK: Observations (docs/design/capture.md)
+
+    func observed(_ kind: Observed.Kind, title: String?) -> Observed {
+        Observed(path: "/p/out/voice/line-1.wav", kind: kind, logPath: "/logs/s.jsonl", sessionID: "s", provider: .claudeCode,
+                 sessionTitle: title, span: DateInterval(start: delivered, duration: 3600), workspace: "/p", size: 1,
+                 createdAt: delivered.addingTimeInterval(60), modifiedAt: delivered.addingTimeInterval(120), device: 1, inode: 1,
+                 repository: nil, checkout: nil, observedAt: delivered)
+    }
+
+    @Test func anObservationSaysWhenTheFileAppearedOrChangedNeverWhoMadeIt() {
+        let appeared = Wording.observed(observed(.appeared, title: "Reading list series"))
+        let changed = Wording.observed(observed(.changed, title: nil))
+        #expect(appeared.mark == .observed && changed.mark == .observed)
+        #expect(appeared.title == "Appeared during Reading list series")
+        #expect(changed.title == "Changed during an untitled conversation")
+        #expect(appeared.detail.hasPrefix("Its creation date, \(Wording.date(delivered.addingTimeInterval(60))), falls while Reading list series ran"))
+        #expect(changed.detail.hasPrefix("Its modification date, \(Wording.date(delivered.addingTimeInterval(120))),"))
+        for statement in [appeared, changed] {
+            #expect(!statement.title.lowercased().contains("made") && !statement.detail.lowercased().contains("made"))
+            #expect(!statement.title.lowercased().contains("deliver") && statement.detail.contains("not who wrote it"))
+            #expect(statement.detail.contains("hasn’t read its contents"))
+        }
+        // A modification date isn't new content (A18).
+        #expect(changed.detail.contains("not who wrote it or what changed"))
+    }
+
+    @Test func aFoldedFolderSaysItsCount() {
+        #expect(Wording.folded("out/voice", count: 211) == "out/voice · 211 files")
+        #expect(Wording.folded("", count: 1) == "Top level · 1 file")
+        var source = Indexer.Report.Source(folder: .listed)
+        source.workspaceProblems = ["/p: stopped after 100000 entries"]
+        #expect(Wording.problems(source) == "1 workspace problem")
+        #expect(Wording.source(source).1 == "Read with problems")
+    }
 }

@@ -113,6 +113,8 @@ struct AgentSourcePage: View {
                 ProblemSection(title: "Shorter Than Before", footer: "They lost records, so nothing they stopped naming is removed.", paths: source.shortenedLogs)
                 ProblemSection(title: "Unreadable Logs", footer: "What they delivered stays as it was.", paths: source.failures)
                 ProblemSection(title: "Unlisted Folders", footer: "Their logs went unread; what they delivered stays.", paths: source.unlistedFolders)
+                ProblemSection(title: "Workspaces Walked in Part", footer: "Files there may be missing from what Gleaner observed during sessions. Deliveries aren’t affected.",
+                               paths: source.workspaceProblems)
                 if !source.unknownRecordTypes.isEmpty {
                     Section {
                         ForEach(source.unknownRecordTypes.sorted { $0.key < $1.key }, id: \.key) { type, count in
@@ -275,6 +277,8 @@ struct CorrectionsPage: View {
         case .combine: .branch
         case .sameWork: .merge
         case .notSameWork: .rejected
+        case .notFromSession: .outside
+        case .related: .work
         }
     }
 }

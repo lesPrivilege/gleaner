@@ -70,6 +70,9 @@ final class LibraryModel {
             reorganize()
         }
     }
+    /// What Gleaner observed appearing or changing during sessions, whichever agent's: candidates
+    /// beside the deliveries, never deliveries (docs/design/capture.md).
+    private var observed: [Observed] = []
     /// Projects and works as the person sees them: what Gleaner found, with their corrections.
     private(set) var organization = Organization(artifacts: [])
     /// The person's corrections and projects, read from the library; kept apart from what Gleaner found.
@@ -149,12 +152,15 @@ final class LibraryModel {
         let caches = (library?.appendingPathComponent("Caches")
             ?? fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
         try fm.createDirectory(at: support, withIntermediateDirectories: true)
-        self.init(indexer: Indexer(
+        let indexer = Indexer(
             registry: try Registry(path: support.appendingPathComponent("registry.sqlite").path),
             store: ContentStore(objects: support.appendingPathComponent("objects"), staging: caches.appendingPathComponent("handoff")),
             sources: home.map {
                 LogSources(claudeProjects: $0.appendingPathComponent(".claude/projects"), codexHome: $0.appendingPathComponent(".codex"))
-            } ?? .standard))
+            } ?? .standard)
+        // A session working in the home folder has no workspace walked, the synthetic one included.
+        if let home { indexer.home = home.path }
+        self.init(indexer: indexer)
     }
 
     init(indexer: Indexer) {
@@ -162,6 +168,7 @@ final class LibraryModel {
         corrections = (try? indexer.registry.corrections()) ?? []
         userProjects = (try? indexer.registry.userProjects()) ?? []
         sourcesOff = (try? indexer.registry.sourcesOff()) ?? []
+        observed = (try? indexer.registry.observations()) ?? []
         library = (try? indexer.registry.artifacts()) ?? []
         artifacts = Self.shown(library, without: sourcesOff)
         siblings = Artifact.deliveredWith(artifacts)
@@ -171,7 +178,10 @@ final class LibraryModel {
     }
 
     private func reorganize() {
-        organization = Organization(artifacts: artifacts, corrections: corrections, projects: userProjects, missing: missing)
+        // An agent turned off has its observations hidden with its deliveries.
+        let observations = sourcesOff.isEmpty ? observed : observed.filter { !sourcesOff.contains($0.provider) }
+        organization = Organization(artifacts: artifacts, observations: observations, corrections: corrections,
+                                    projects: userProjects, missing: missing)
         organizationVersion += 1
         if indexed { updateStatus() }
     }
@@ -220,14 +230,27 @@ final class LibraryModel {
     /// project the person made, the project Gleaner found it in comes first. Empty at the top level.
     func outlineFolder(_ work: Work, in project: Organization.Project) -> String {
         let file = work.latest
-        let directory = (file.path as NSString).deletingLastPathComponent
-        let base = file.checkout?.folder ?? project.folder ?? file.projectFolder
+        return outlineFolder(file.path, checkout: file.checkout, projectFolder: file.projectFolder, inRepository: file.inRepository, in: project)
+    }
+
+    /// The folder an observed file is listed under, as a work there is: beside what was handed over.
+    func outlineFolder(_ candidate: Candidate, in project: Organization.Project) -> String {
+        outlineFolder(candidate.path, checkout: candidate.checkout, projectFolder: candidate.projectFolder,
+                      inRepository: candidate.inRepository, in: project)
+    }
+
+    private func outlineFolder(_ path: String, checkout: Checkout?, projectFolder: String, inRepository: Bool,
+                               in project: Organization.Project) -> String {
+        let directory = (path as NSString).deletingLastPathComponent
+        let base = checkout?.folder ?? project.folder ?? projectFolder
         var folder = directory == base ? ""
             : directory.hasPrefix(base + "/") ? String(directory.dropFirst(base.count + 1))
-            : (file.inRepository ? "Outside the repository: " : "Elsewhere: ") + (directory as NSString).abbreviatingWithTildeInPath
-        if file.inWorktree { folder = file.place + (folder.isEmpty ? "" : " › " + folder) }
-        if project.origin == .yours || file.projectFolder != project.key && project.folder != base {
-            let found = organization.projectName(file.projectFolder)
+            : (inRepository ? "Outside the repository: " : "Elsewhere: ") + (directory as NSString).abbreviatingWithTildeInPath
+        if let checkout, checkout.folder != checkout.repository {
+            folder = "worktree " + (checkout.folder as NSString).lastPathComponent + (folder.isEmpty ? "" : " › " + folder)
+        }
+        if project.origin == .yours || projectFolder != project.key && project.folder != base {
+            let found = organization.projectName(projectFolder)
             folder = found + (folder.isEmpty ? "" : " › " + folder)
         }
         return folder
@@ -315,10 +338,14 @@ final class LibraryModel {
                     Task { @MainActor [weak self] in self?.progress = total > 0 && done < total ? (done, total) : nil }
                 })
             }
-            let library = Swift.Result { try indexer.registry.artifacts() }
+            let library = Swift.Result { (try indexer.registry.artifacts(), try indexer.registry.observations()) }
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if case .success(let artifacts) = library { self.library = artifacts }
+                if case .success(let (artifacts, observed)) = library {
+                    // Set first: the library's change reorganizes with them.
+                    self.observed = observed
+                    self.library = artifacts
+                }
                 self.progress = nil
                 self.indexed = true
                 self.lastRead = Date()
@@ -607,6 +634,28 @@ final class LibraryModel {
         said("Kept \((a as NSString).lastPathComponent) and \((b as NSString).lastPathComponent) apart")
     }
 
+    /// The observed file at `path` isn't from the session whose log is `logPath`: its observation
+    /// stays recorded, and isn't shown with that session.
+    func detach(_ path: String, from logPath: String) async {
+        let made = Set(corrections.map(\.id))
+        await correcting { try $0.correct(.notFromSession, subject: path, target: logPath, at: Date()) }
+        undoable("Detach", since: made)
+        said("Detached \((path as NSString).lastPathComponent) from \(sessionName(logPath))")
+    }
+
+    /// The observed file at `path` goes with `work`: shown with it, never one of its versions.
+    func relate(_ path: String, to work: Work) async {
+        let made = Set(corrections.map(\.id)), target = work.latest.path
+        await correcting { try $0.correct(.related, subject: path, target: target, at: Date()) }
+        undoable("Relate", since: made)
+        said("Related \((path as NSString).lastPathComponent) to \(work.name)")
+    }
+
+    /// The session whose log is `logPath`, as its observations name it.
+    func sessionName(_ logPath: String) -> String {
+        Wording.session(observed.first { $0.logPath == logPath }?.sessionTitle)
+    }
+
     /// Undoes decisions made together, such as moving every file of a work. With `following`,
     /// the window follows the selected work to where it now is.
     func undo(_ corrections: [Correction], following: Bool = true) async {
@@ -677,6 +726,8 @@ final class LibraryModel {
         case .combine: "Showed \(organization.projectName(correction.subject)) inside \(organization.projectName(correction.target))"
         case .sameWork: "Joined \(name(correction.subject)) and \(name(correction.target))"
         case .notSameWork: "Kept \(name(correction.subject)) and \(name(correction.target)) apart"
+        case .notFromSession: "Detached \(name(correction.subject)) from \(sessionName(correction.target))"
+        case .related: "Related \(name(correction.subject)) to \(organization.work(containing: correction.target)?.name ?? name(correction.target))"
         }
     }
 

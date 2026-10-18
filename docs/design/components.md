@@ -53,10 +53,10 @@ A state is said in three tiers, each only as far as it is needed:
 2. **The mark and its label** (`StatusLabel`), one to three words, for a state that needs a look.
 3. **The sentence**: why, behind ⓘ, or inline in a `StatusPanel` where the person must decide what to do.
 
-`Mark` names the eleven states. Each has a silhouette that stays distinct in grey, and a color that only repeats it. "Not on disk" is brackets around nothing; "lost" puts a cross between them (`Glyph.lost`, Gleaner's own), so the two never differ by color alone.
+`Mark` names the twelve states. Each has a silhouette that stays distinct in grey, and a color that only repeats it. "Not on disk" is brackets around nothing; "lost" puts a cross between them (`Glyph.lost`, Gleaner's own), so the two never differ by color alone. "Observed" is the kit's unverified mark, a line to an open circle: a file seen on the disk during a session, never handed over ([capture.md](capture.md)).
 
 - **Ink:** confirmed (solid), not confirmed (hollow) and done.
-- **Secondary:** no value, doesn't apply, declined and running.
+- **Secondary:** no value, doesn't apply, declined, running and observed.
 - **Amber:** needs a look and couldn't read.
 - **Red:** gone.
 - **The accent:** awaits the person.

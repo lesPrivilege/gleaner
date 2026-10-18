@@ -23,6 +23,12 @@ public struct Correction: Sendable, Equatable, Identifiable {
         case sameWork = "same_work"
         /// The files `subject` and `target` are not one work: Gleaner stops suggesting it.
         case notSameWork = "not_same_work"
+        /// The file `subject`, observed during the session whose log is `target`, isn't from that
+        /// session: its observation stays recorded and isn't shown with the session.
+        case notFromSession = "not_from_session"
+        /// The observed file `subject` goes with the work holding the file `target`. It is shown with
+        /// that work, never as one of its versions, and shares none of its revisions or marks.
+        case related
     }
 
     public var id: Int64
@@ -96,7 +102,9 @@ extension Registry {
     }
 
     /// Records a decision. A file's work, or a folder's project, has one place: a new one replaces
-    /// the last. Two files are one work or not, so saying one replaces the other.
+    /// the last. Two files are one work or not, so saying one replaces the other. An observed file
+    /// may be detached from several sessions and related to several works; saying the same again
+    /// replaces it.
     public func correct(_ kind: Correction.Kind, subject: String, target: String, at date: Date) throws {
         try correct(kind, subjects: [subject], target: target, at: date)
     }
@@ -116,6 +124,8 @@ extension Registry {
             case .sameWork, .notSameWork:
                 try db.run("DELETE FROM corrections WHERE kind IN ('same_work', 'not_same_work') AND subject = ? AND target = ?",
                            [subject, target])
+            case .notFromSession, .related:
+                try db.run("DELETE FROM corrections WHERE kind = ? AND subject = ? AND target = ?", [kind.rawValue, subject, target])
             }
             try db.run("INSERT INTO corrections (kind, subject, target, made_at) VALUES (?, ?, ?, ?)",
                        [kind.rawValue, subject, target, date])

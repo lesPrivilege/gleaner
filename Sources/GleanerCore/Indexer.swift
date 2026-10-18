@@ -90,9 +90,15 @@ public final class Indexer: @unchecked Sendable {
             /// Folders in it that could not be listed, with the reason. Their logs went unread; what
             /// they delivered stays as it was.
             public var unlistedFolders: [String] = []
+            /// What the walks of its sessions' workspaces couldn't see, each with why: a walk stopped
+            /// at its bound, a folder in it couldn't be listed, or what it found couldn't be recorded.
+            /// Files there may be missing from what was observed; no delivery is affected.
+            public var workspaceProblems: [String] = []
 
             /// Listed, but not everything in it could be read or understood.
-            public var hasProblems: Bool { !unknownRecordTypes.isEmpty || !shortenedLogs.isEmpty || isIncomplete }
+            public var hasProblems: Bool {
+                !unknownRecordTypes.isEmpty || !shortenedLogs.isEmpty || !workspaceProblems.isEmpty || isIncomplete
+            }
 
             /// Something reading again may fix: the folder, a folder in it, or a log couldn't be read
             /// whole. Unknown record types stay until Gleaner learns them, and lost records stay lost.
@@ -118,6 +124,14 @@ public final class Indexer: @unchecked Sendable {
     public var liveWindow: TimeInterval = 600
     /// Log and file timestamps come from different writers; this absorbs their granularity only.
     public var clockTolerance: TimeInterval = 2
+    /// The folder taken for the person's home. A session working in it, or in a system folder, has
+    /// no workspace walked; the real home never is, whatever this says (docs/design/capture.md).
+    public var home = NSHomeDirectory()
+    /// How far a session's span reaches past its first and last record times, for the clocks of
+    /// the log's writer and the disk's.
+    public var spanGrace: TimeInterval = 60
+    /// Entries one workspace walk looks at before it stops (`Workspace.limit`).
+    public var walkLimit = Workspace.limit
 
     public init(registry: Registry, store: ContentStore, sources: LogSources) {
         self.registry = registry
@@ -140,6 +154,7 @@ public final class Indexer: @unchecked Sendable {
             index: sources.codexHome.appendingPathComponent("session_index.jsonl")))
 
         var changed: [(Provider, URL, Int64, Date, shortened: Bool)] = []
+        var read: [(provider: Provider, log: SessionLog)] = []
         for (provider, url) in files {
             let info = Locator.stat(url.path)
             guard let size = info.size, let mtime = info.modifiedAt else { continue }
@@ -191,12 +206,20 @@ public final class Indexer: @unchecked Sendable {
                     continue
                 }
                 if let log {
+                    read.append((provider, log))
                     report.sources[provider]?.unknownRecordTypes.merge(log.unknownRecordTypes, uniquingKeysWith: +)
                     if !log.isComplete { report.sources[provider]?.partialLogs.append(url.path) }
                     if shortened { report.sources[provider]?.shortenedLogs.append(url.path) }
                 }
                 report.logsRead += 1
             }
+        }
+
+        // Every log is in: each workspace is walked once, for every session read now that worked in it.
+        let unrecorded = observe(read, now: now())
+        let problems = try registry.workspaceProblems()
+        for provider in report.sources.keys {
+            report.sources[provider]?.workspaceProblems = (problems[provider] ?? []) + (unrecorded[provider] ?? [])
         }
         progress(changed.count, changed.count)
         return report
