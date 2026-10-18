@@ -718,11 +718,17 @@ final class LibraryModel {
     /// going back to that is `resume`. When the agent has removed the log, the delivery's panel says so.
     func revealLog(_ delivery: Delivery) {
         actionFailure = nil
-        if Locator.stat(delivery.logPath).kind != .missing {
+        if !isLogGone(delivery) {
             NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: delivery.logPath)])
         } else {
             fail(delivery, Wording.logGone(delivery.logPath))
         }
+    }
+
+    /// True when the agent has removed the log of the session that delivered `delivery`, checked now:
+    /// Show in Log has nothing to show, and the detail says so where it would be.
+    func isLogGone(_ delivery: Delivery) -> Bool {
+        Locator.stat(delivery.logPath).kind == .missing
     }
 
     /// Says why an action on `delivery` did nothing, in its hand-off panel, and shows the delivery

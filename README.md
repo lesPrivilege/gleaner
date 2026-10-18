@@ -169,7 +169,7 @@ ln -s "$PWD/extensions/gleaner" ~/.agents/skills/gleaner   # Codex and the DeepS
 
 A project's own `.claude/skills` or `.agents/skills` folder works too. The skill expects `gleaner` on PATH, or you tell the agent where it is.
 
-From the app, **Copy Reference** (⇧⌘C, in the Edit menu, the detail's ⋯ menu, and a row's or a version's context menu) copies a delivery's reference as `gleaner resolve` gives it, to paste to an agent. **Show in Log** (in the File menu, the ⋯ menu and the same context menus) selects the session log in Finder; More Info gives the line of the reply that named the file. Showing the log is not resuming the conversation: Copy Resume Command does that. A `gleaner://delivery/<id>` link opens Gleaner on that delivery, and says so when the link names no delivery in this library, or one whose agent is off in Sources.
+From the app, **Copy Reference** (⇧⌘C, in the Edit menu, the detail's ⋯ menu, and a row's or a version's context menu) copies a delivery's reference as `gleaner resolve` gives it, to paste to an agent. **Show in Log** (in the File menu, the ⋯ menu and the same context menus) selects the session log in Finder; More Info gives the line of the reply that named the file, or says the agent has removed the log. Showing the log is not resuming the conversation: Copy Resume Command does that. A `gleaner://delivery/<id>` link opens Gleaner on that delivery, and says so when the link names no delivery in this library, or one whose agent is off in Sources.
 
 ## What counts as a delivery
 

@@ -169,7 +169,7 @@ ln -s "$PWD/extensions/gleaner" ~/.agents/skills/gleaner   # Codex 和 DeepSeek 
 
 放在项目自己的 `.claude/skills` 或 `.agents/skills` 文件夹里也可以。skill 默认 `gleaner` 在 PATH 上，否则由你告诉 agent 它在哪里。
 
-在应用里，**Copy Reference**（⇧⌘C，位于 Edit 菜单、详情栏的 ⋯ 菜单，以及列表行和版本行的右键菜单）把一次交付的引用按 `gleaner resolve` 给出的样子拷贝下来，可以贴给 agent。**Show in Log**（位于 File 菜单、⋯ 菜单和同样的右键菜单）在 Finder 中选中会话日志；More Info 给出提到这个文件的那条回复所在的行。显示日志并不是恢复对话：恢复对话用 Copy Resume Command。`gleaner://delivery/<id>` 链接会打开 Gleaner 并定位到那次交付；链接指向的交付不在这个资料库里，或它的 agent 在 Sources 里已关闭时，如实说明。
+在应用里，**Copy Reference**（⇧⌘C，位于 Edit 菜单、详情栏的 ⋯ 菜单，以及列表行和版本行的右键菜单）把一次交付的引用按 `gleaner resolve` 给出的样子拷贝下来，可以贴给 agent。**Show in Log**（位于 File 菜单、⋯ 菜单和同样的右键菜单）在 Finder 中选中会话日志；More Info 给出提到这个文件的那条回复所在的行；agent 已删掉日志时则说明这一点。显示日志并不是恢复对话：恢复对话用 Copy Resume Command。`gleaner://delivery/<id>` 链接会打开 Gleaner 并定位到那次交付；链接指向的交付不在这个资料库里，或它的 agent 在 Sources 里已关闭时，如实说明。
 
 ## 交付的认定
 

@@ -380,7 +380,8 @@ enum Wording {
         delivery.evidence.first.map { "Line \($0.line)" }
     }
 
-    /// Said where Show in Log was pressed when the agent has removed the log.
+    /// Said in More Info in place of Show in Log when the agent has removed the log, and in the
+    /// detail's header when Show in Log is chosen from a menu.
     static func logGone(_ log: String) -> String {
         "The session log is gone: \(tilde(log))"
     }

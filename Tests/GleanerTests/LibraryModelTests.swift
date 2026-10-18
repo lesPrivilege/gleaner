@@ -667,8 +667,11 @@ import UniformTypeIdentifiers
         #expect(Wording.logLine(first) == "Line 2")
         #expect(Wording.logLine(video.latest) == "Line 6")
 
-        // The agent removed the log. Pressed on a delivery that isn't shown: it is shown, and says why.
+        // The agent removed the log: More Info says so in place of Show in Log. Pressed from a menu on
+        // a delivery that isn't shown: it is shown, and says why.
+        #expect(!model.isLogGone(first))
         try FileManager.default.removeItem(atPath: first.logPath)
+        #expect(model.isLogGone(first))
         model.revealLog(first)
         #expect(model.selected.map(model.delivery(in:))?.id == first.id)
         #expect(model.actionFailure(video, first) == "The session log is gone: \(first.logPath)")

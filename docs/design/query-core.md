@@ -84,7 +84,7 @@ Not now: `outline`, content search, pagination cursors, a daemon.
 ## In the app
 
 - **Copy Reference** (Edit menu, the detail header's ⋯ menu, a row's and a version's context menu) copies `resolve`'s JSON.
-- **Show in Log** (File menu and the same menus) reveals the delivering log in Finder. More Info shows its line. The log is not the conversation: Copy Resume Command is how the person goes back to that.
+- **Show in Log** (File menu and the same menus) reveals the delivering log in Finder. More Info shows its line, and once the agent has removed the log, says it is gone in place of the button. The log is not the conversation: Copy Resume Command is how the person goes back to that.
 - `gleaner://delivery/<id>` opens the app on that delivery, as clicking it in Delivered With does. A delivery whose agent is off in Sources is named as hidden, not as missing. The URL type is declared in the `Info.plist` that `bundle-app.sh` writes.
 
 ## Adapter maintenance (review-rulings §3 item 1)

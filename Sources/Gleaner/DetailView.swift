@@ -617,7 +617,9 @@ struct VersionsSection: View {
         .contentShape(Rectangle())
         .onTapGesture { model.chosenDelivery = delivery.id }
         .contextMenu {
-            Button("Show in Log") { model.revealLog(delivery) }
+            // A gone log would be said at the top of the detail, out of sight from here; More Info
+            // says it for the chosen version.
+            Button("Show in Log") { model.revealLog(delivery) }.disabled(model.isLogGone(delivery))
             Button("Copy Reference") { Task { await model.copyReference(delivery) } }
         }
         .accessibilityElement(children: .combine)
@@ -683,8 +685,16 @@ struct MoreInfoSection: View {
                         mono(delivery.logPath)
                         HStack(spacing: Space.s) {
                             if let line = Wording.logLine(delivery) { Text(line).foregroundStyle(.secondary) }
-                            LinkButton(title: "Show in Log") { model.revealLog(delivery) }
-                                .help("Select the session log in Finder")
+                            // Said here, where Show in Log would be: a failure is drawn at the top of
+                            // the detail, out of sight from this far down.
+                            if model.isLogGone(delivery) {
+                                StatusLabel(mark: .cross, text: "Gone")
+                                InfoButton(text: Wording.logGone(delivery.logPath))
+                            } else {
+                                Button("Show in Log") { model.revealLog(delivery) }
+                                    .controlSize(.small)
+                                    .help("Select the session log in Finder")
+                            }
                         }
                     }
                 }

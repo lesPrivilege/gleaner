@@ -32,7 +32,7 @@ Not part of 0.1.0: these changes come after it is tagged.
 ### In the app
 
 - Copy Reference (⇧⌘C, in the Edit menu, the detail's ⋯ menu, and a row's or a version's context menu) copies a delivery's reference as `gleaner resolve` gives it.
-- Show in Log (in the File menu, the ⋯ menu and the same context menus) selects the delivering session's log in Finder; More Info gives the reply's line.
+- Show in Log (in the File menu, the ⋯ menu and the same context menus) selects the delivering session's log in Finder; More Info gives the reply's line, or says that the agent has removed the log.
 - A `gleaner://delivery/<id>` link opens Gleaner on that delivery, and says so when it names none in this library, or when its agent is off in Sources.
 
 ### The agents' logs
