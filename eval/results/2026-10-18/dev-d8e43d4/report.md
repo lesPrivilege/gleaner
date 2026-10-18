@@ -2,7 +2,7 @@
 
 Seeds 1, 2, 3; 15 tasks; policies R, G. Run 2026-10-18T00:40:25+00:00 on macOS 27.0.1 at commit d8e43d4, with ripgrep 15.1.0, jq-1.7.1-apple, git version 2.50.1 (Apple Git-155) and Python 3.14.2. Seeds 1–3 are the development seeds, where the raw recipe is tuned and locked. 
 
-How it was made: [docs/design/evaluation-e0.md](../../../docs/design/evaluation-e0.md) and [eval/README.md](../../README.md). Every episode, with its commands and answer, is in `results.json`.
+How it was made: [docs/design/evaluation-e0.md](../../../../docs/design/evaluation-e0.md) and [eval/README.md](../../../README.md). Every episode, with its commands and answer, is in `results.json`.
 
 ## What this can and cannot show
 

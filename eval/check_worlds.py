@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Checks that the worlds hold what their gold presumes, once Gleaner has indexed them.
 
-    eval/check_worlds.py [--seeds 1 2 3 101 102] [--tasks T01 ...] [--out DIR] [--no-build] [--keep]
+    eval/check_worlds.py [--seeds 1 2 3] [--tasks T01 ...] [--out DIR] [--no-build] [--keep] [--results DIR]
 
 Builds the app (scripts/bundle-app.sh) and the gleaner command, writes each seed's worlds twice
 to show they are a function of the seed, prepares every world with the bundled app (prepare.py),
@@ -12,7 +12,10 @@ each agent's logs, the raw log facts a negative answer rests on, and, through `g
 `verify` and `handoff`, the availability, hand-off plan and restore command a task relies on.
 T25's drift is applied and undone to check that a hand-off still gives the delivered bytes.
 
-Writes a summary to eval/results/<date>/check_worlds.json and exits 1 if any check failed.
+Only the development seeds are checked here. The scored seeds' worlds are written only once the
+recipe is locked, and run.py checks each of them then, keeping pass or fail and no detail.
+
+Writes a summary to eval/results/<date>/dev/check_worlds.json and exits 1 if any check failed.
 """
 import argparse
 import contextlib
@@ -137,16 +140,16 @@ def check_restore(library, command, expected, name, fail):
         fail(f'{name}: commit {commit} does not hold the delivered bytes at {inside}')
 
 
-def check_drift(library, drift, folder, fail):
+def check_drift(library, drift, gold, fail):
     """T25: with the file rewritten, a hand-off still gives the delivered bytes; then the file is put back."""
     path = library.abs(drift['path'])
     rows = library.deliveries(drift['path'])
-    with open(os.path.join(folder, 'drift.json'), encoding='utf-8') as f:
+    with open(os.path.join(gold, 'drift.json'), encoding='utf-8') as f:
         hook = json.load(f)
     before = os.stat(path)
     with open(path, 'rb') as f:
         original = f.read()
-    shutil.copyfile(os.path.join(folder, hook['write']['source']), path)
+    shutil.copyfile(os.path.join(gold, hook['write']['source']), path)
     try:
         status, handed = library.gleaner('handoff', rows[-1]['id'])
         if status != 0 or file_sha256(handed['copy']) != drift['handoff_sha256']:
@@ -165,9 +168,9 @@ def check(folder):
     """Every way the prepared world in `folder` differs from its gold, as messages."""
     failures = []
     fail = failures.append
-    with open(os.path.join(folder, 'gold.json'), encoding='utf-8') as f:
+    with open(os.path.join(history.gold_folder(folder), 'gold.json'), encoding='utf-8') as f:
         gold = json.load(f)
-    with open(os.path.join(folder, 'prepared.json'), encoding='utf-8') as f:
+    with open(os.path.join(history.gold_folder(folder), 'prepared.json'), encoding='utf-8') as f:
         prepared = json.load(f)
     expected = gold['library']
     library = Library(os.path.join(folder, 'world'))
@@ -211,7 +214,7 @@ def check(folder):
                 fact['lines'], fact['last_line_complete']):
             fail(f"{fact['log']}: not {fact['lines']} lines ending as expected")
     if 'drift' in expected:
-        check_drift(library, expected['drift'], folder, fail)
+        check_drift(library, expected['drift'], history.gold_folder(folder), fail)
     return failures
 
 
@@ -229,28 +232,32 @@ def contents(root):
 
 
 def deterministic(seed, out, tasks):
-    """Writes the seed's worlds, then writes them again in the same place and compares the two;
-    returns the folders and the files that differ. The worlds stay where they were written,
-    because their logs record absolute paths."""
-    folder = os.path.join(out, f'seed-{seed}')
-    worlds.generate(seed, folder, tasks)
-    first = contents(history.place(folder))
-    shutil.rmtree(folder)
-    folders = worlds.generate(seed, folder, tasks)
-    again = contents(history.place(folder))
-    return folders, sorted(path for path in set(first) | set(again) if first.get(path) != again.get(path))
+    """Writes the seed's worlds and their gold, then writes them again in the same place and
+    compares the two; returns the folders and the files that differ. The worlds stay where they
+    were written, because their logs record absolute paths."""
+    folders = [os.path.join(out, f'seed-{seed}'), os.path.join(out, 'gold', f'seed-{seed}')]
+    worlds.generate(seed, folders[0], tasks)
+    first = {(n, path): data for n, folder in enumerate(folders) for path, data in contents(history.place(folder)).items()}
+    for folder in folders:
+        shutil.rmtree(folder)
+    made = worlds.generate(seed, folders[0], tasks)
+    again = {(n, path): data for n, folder in enumerate(folders) for path, data in contents(history.place(folder)).items()}
+    differ = [(n, path) for n, path in set(first) | set(again) if first.get((n, path)) != again.get((n, path))]
+    return made, sorted(os.path.join(folders[n], path) for n, path in differ)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-    parser.add_argument('--seeds', nargs='+', type=int, default=[1, 2, 3, 101, 102])
+    parser.add_argument('--seeds', nargs='+', type=int, default=[1, 2, 3], help='development seeds (below 101)')
     parser.add_argument('--tasks', nargs='+', default=list(worlds.TASKS))
     parser.add_argument('--out', help='a folder for the worlds, with no symbolic link in its path (default: a new '
                                       'one under build/, removed afterwards)')
     parser.add_argument('--no-build', action='store_true', help='use the app and command already built')
     parser.add_argument('--keep', action='store_true', help='keep the worlds')
-    parser.add_argument('--results', default=os.path.join(REPO, 'eval', 'results', datetime.date.today().isoformat()))
+    parser.add_argument('--results', default=os.path.join(REPO, 'eval', 'results', datetime.date.today().isoformat(), 'dev'))
     args = parser.parse_args()
+    if any(seed >= 101 for seed in args.seeds):
+        parser.error('seeds from 101 are scored: run.py checks their worlds once the recipe is locked')
     sys.stdout.reconfigure(line_buffering=True)
     if not args.no_build:
         build()

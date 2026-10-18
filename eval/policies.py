@@ -13,7 +13,9 @@ stdout, {"argv": [...]} or {"sh": "..."}, run in the home folder; the runner ans
 change a file between two commands, as the drift hook does. The policy's last line is {"answer": {...}}.
 
 - R, the locked raw recipe:
-  1. `rg` over the log folders for the typed words, one word at a time;
+  1. `rg` over the log folders for the typed words: one pipeline that keeps the logs holding
+     every word (one listing per word only to weigh partial matches: for a decision, or to
+     explain a negative), and Codex titles from its session index;
   2. `jq` to project the candidate logs' records and take the matching turn's request and final
      reply;
   3. each path the reply names, resolved against its record's cwd;
@@ -21,8 +23,9 @@ change a file between two commands, as the drift hook does. The policy's last li
      same way, and `git -C … log` for a file that is gone.
 - G: `gleaner find`; then `show`, `read`, `verify` or `handoff` as the question needs, and a raw
   read of the delivering session's log for what the catalog does not record (tool output, later
-  turns). It falls back to R when the index reports incomplete sources or find returns nothing,
-  and never states an absence beyond the scope it reports.
+  turns). Each gleaner answer is projected with `jq` to the fields G reads, the home folder
+  written ~, as R projects its logs. It falls back to R when the index reports incomplete
+  sources or find returns nothing, and never states an absence beyond the scope it reports.
 """
 import collections
 import datetime
@@ -35,8 +38,9 @@ import sys
 import urllib.parse
 
 LOG_ROOTS = ('.claude/projects', '.codex/sessions')
-SESSION_INDEX = '.codex/session_index.jsonl'
 LOG_GLOBS = ('-g', '*.jsonl', '-g', '!**/subagents/**')
+# Codex keeps its session titles in one index beside its sessions; this finds it when it is there.
+SESSION_INDEX = ('-g', 'session_index.jsonl', '.codex')
 
 # One line per record that matters, for both agents' logs: requests, assistant text, tool calls
 # and results, titles. The home folder is written ~, and long commands and outputs are cut.
@@ -74,13 +78,28 @@ elif .type == "user" then
   end
 elif .type == "assistant" then
   . as $r | (.message.content // [])[]
-  | if .type == "text" then ($r | at) + {k: "say", cwd: ($r.cwd | short), id: $r.message.id, text: (.text | short)}
+  | if .type == "text" then ($r | at) + {k: "say", cwd: ($r.cwd | short), text: (.text | short)}
     elif .type == "tool_use" then ($r | at) + {k: "tool", cwd: ($r.cwd | short), id, name,
           path: ((.input.file_path // .input.notebook_path) | short), cmd: ((.input.command // .input.description) | short | clip)}
     else empty end
 elif .type == "ai-title" then {l: input_line_number, k: "title", text: .aiTitle}
 elif .type == "custom-title" then {l: input_line_number, k: "title", text: .customTitle, custom: true}
 else empty end
+'''
+
+# Each gleaner answer, cut to the fields the gleaner policy reads, with the home folder written ~:
+# the index's scope (each source's state and partial logs), and for each delivery its reference,
+# project name, request and time. The bytes read for each command are what this prints.
+G_PROJECTION = r'''
+def short: if type != "string" then . elif . == $home then "~" else split($home + "/") | join("~/") end;
+def ref: del(.name);
+walk(if type == "string" then short else . end)
+| if has("index") then .index.sources |= map_values({state, partial_logs}) else . end
+| if has("results") then .results |= map(del(.kind, .project.folder) | .reference |= ref) else . end
+| if has("deliveries") then del(.reference, .request, .reply, .delivered_at, .number, .kind, .project, .on_disk.checked_at)
+    | .deliveries |= map(del(.delivered_at) | .reference |= ref) else . end
+| if has("reference") then .reference |= ref else . end
+| del(.range, .size)
 '''
 
 # The command a tool call ran, from either agent's record.
@@ -125,6 +144,11 @@ def seconds(stamp):
     if not stamp:
         return None
     return datetime.datetime.fromisoformat(stamp.replace('Z', '+00:00')).timestamp()
+
+
+def now():
+    """This moment in UTC, as the agents write times."""
+    return datetime.datetime.now(datetime.timezone.utc).isoformat(timespec='seconds').replace('+00:00', 'Z')
 
 
 def lower(words):
@@ -266,11 +290,16 @@ class Raw:
         self.observed = {}
         self.unreadable = []
         self.written = 0
+        self.clipped = 0
 
     # Commands
 
     def run(self, *argv):
         return self.shell.run(argv)
+
+    def diagnostics(self):
+        """What this policy saw cut short: fields its projection clipped at 240 characters."""
+        return dict(clipped_fields=self.clipped)
 
     def sh(self, script):
         return self.shell.sh(script)
@@ -298,31 +327,68 @@ class Raw:
 
     # Step 1: rg over the log folders
 
-    def search(self, words):
-        """Which logs hold each word, sub-agent transcripts left out; Codex titles from its index."""
+    def search(self, words, need_all=True):
+        """Which logs hold the words, sub-agent transcripts left out, each with the words it holds;
+        a Codex session's title counts as its own. With `need_all`, one pipeline keeps only the
+        logs that hold every word; otherwise each word is listed on its own, to weigh logs that
+        hold some of them."""
+        titles = self.codex_titles(words)
         found = collections.defaultdict(set)
-        index = False
-        for word in words:
-            result = self.run('rg', '-l', '-i', '-F', *LOG_GLOBS, '-e', word, *LOG_ROOTS, SESSION_INDEX)
-            self.note_errors(result)
-            for path in result.out.splitlines():
-                if path == SESSION_INDEX:
-                    index = True
-                else:
-                    found[path].add(word)
-        if index:
-            patterns = [arg for word in words for arg in ('-e', word)]
-            for line in self.run('rg', '-i', '-F', *patterns, SESSION_INDEX).out.splitlines():
-                try:
-                    entry = json.loads(line)
-                except ValueError:
+        if need_all:
+            for path in self.lines(self.sh(self.intersect(words, LOG_ROOTS))):
+                found[path] = set(words)
+            # A Codex session whose title holds some of the words need hold only the rest.
+            for session, held in sorted(titles.items()):
+                if any(session in path for path in found):
                     continue
-                title = entry.get('thread_name') or ''
-                self.titles[entry.get('id')] = title
-                for path in found:
-                    if entry.get('id') and entry['id'] in path:
-                        found[path] |= {word for word in words if word in title.lower()}
+                rest = [word for word in words if word not in held]
+                glob = ('-g', f'*{session}.jsonl')
+                command = (self.intersect(rest, ('.codex/sessions',), glob) if rest else
+                           ' '.join(['rg', '--files', *map(q, glob), '.codex/sessions']))
+                for path in self.lines(self.sh(command)):
+                    found[path] = set(words)
+            return found
+        for word in words:
+            for path in self.lines(self.run('rg', '-l', '-i', '-F', *LOG_GLOBS, '-e', word, *LOG_ROOTS)):
+                found[path].add(word)
+        for path in found:
+            for session, held in titles.items():
+                if session in path:
+                    found[path] |= held
         return found
+
+    @staticmethod
+    def intersect(words, roots, globs=LOG_GLOBS):
+        """One pipeline listing the logs under `roots` that hold every word: each stage keeps the
+        files of the one before that hold the next word."""
+        stages = []
+        for n, word in enumerate(words):
+            flag = '-l' if n == len(words) - 1 else '-l0'
+            if n == 0:
+                stages.append(' '.join(['rg', flag, '-i', '-F', *map(q, globs), '-e', q(word), *map(q, roots)]))
+            else:
+                stages.append(f'xargs -0 rg {flag} -i -F -e {q(word)}')
+        return ' | '.join(stages)
+
+    def codex_titles(self, words):
+        """The words each Codex session's title holds, from its session index when there is one."""
+        patterns = [arg for word in words for arg in ('-e', word)]
+        titles = {}
+        for line in self.lines(self.run('rg', '--no-filename', '-i', '-F', *patterns, *SESSION_INDEX)):
+            try:
+                entry = json.loads(line)
+            except ValueError:
+                continue
+            title = entry.get('thread_name') or ''
+            held = {word for word in words if word in title.lower()}
+            if entry.get('id') and held:
+                titles[entry['id']] = held
+                self.titles[entry['id']] = title
+        return titles
+
+    def lines(self, result):
+        self.note_errors(result)
+        return result.out.splitlines()
 
     def note_errors(self, result):
         """Keeps what rg could not read. A folder or index that is not there is not unread: there
@@ -356,6 +422,8 @@ class Raw:
                     records.append(json.loads(line))
                 except ValueError:
                     break
+            self.clipped += sum(1 for r in records for key in ('cmd', 'out')
+                                if isinstance(r.get(key), str) and r[key].endswith('…'))
             broken = None
             if result.status != 0:
                 match = re.search(r'line (\d+)', result.err)
@@ -447,7 +515,7 @@ class Raw:
     def matching(self, need_all=True, project=None):
         """The turns whose request, title, reply and project hold the words, best first: all of
         them, or as many as any turn holds. Ranked by the words in the request, then the newest."""
-        found = self.search(self.words)
+        found = self.search(self.words, need_all)
         if not found:
             return [], found
         most = max(len(words) for words in found.values())
@@ -485,7 +553,8 @@ class Raw:
             else:
                 mtime, size, kind = lines[0].split(' ', 2)
                 sha = lines[1].split()[0] if len(lines) > 1 and result.status == 0 else None
-                self.observed[path] = dict(exists=True, kind=kind, mtime=float(mtime), size=int(size), sha256=sha)
+                self.observed[path] = dict(exists=True, kind=kind, mtime=float(mtime), size=int(size), sha256=sha,
+                                           observed_at=now())
         return self.observed[path]
 
     def writes(self, turn, path, before):
@@ -615,11 +684,8 @@ class Raw:
             found['text'] = result.out
             found['sha256'] = hashlib.sha256(result.out.encode('utf-8')).hexdigest()
         elif want == 'file':
-            # A copy of what fits Gleaner's own save limit; a larger file is hashed and left in git.
             copy = self.keep(os.path.basename(path))
-            spec = q(commit['commit'] + ':' + rel)
-            result = self.sh(f'if [ "$(git -C {q(root)} cat-file -s {spec})" -le {64 << 20} ]; '
-                             f'then {show} > {q(copy)} && shasum -a 256 {q(copy)}; else {show} | shasum -a 256; fi')
+            result = self.sh(f'{show} > {q(copy)} && shasum -a 256 {q(copy)}')
             words = result.out.split()
             found['sha256'] = words[0] if words else None
             if len(words) > 1 and words[1] == copy:
@@ -651,7 +717,10 @@ class Raw:
         return getattr(self, asks)(turns)
 
     def none(self, found):
-        """No turn holds the words: a negative within the logs searched, never beyond them."""
+        """No turn holds the words: a negative within the logs searched, never beyond them. When
+        no log holds them all, each word is listed on its own, to say where the parts are."""
+        if not found:
+            found = self.search(self.words, need_all=False)
         held = sorted(((len(words), path, sorted(words)) for path, words in found.items()), reverse=True)
         most = held[0][0] if held else 0
         near = [dict(log=self.logpath(path), words=words) for n, path, words in held if n == most and n > 0]
@@ -756,11 +825,14 @@ class Raw:
         bytes_ = self.delivered(item, turn)
         now = bytes_['current']
         established = bytes_['source'] == 'file'
+        # Without a capture, the first observation of the file's bytes this policy has is its own read.
         return dict(status='found', established=established, delivery=self.ref(item), delivered_at=item.get('at'),
-                    sha256=now.get('sha256'), modified_at=now.get('mtime'), logged=bytes_.get('logged'),
+                    sha256=now.get('sha256'), observed_at=now.get('observed_at'), modified_at=now.get('mtime'),
+                    logged=bytes_.get('logged'),
                     note=('The file holds the bytes the turn logged writing.' if established else
-                          bytes_.get('note') or 'Nothing observed the bytes when they were delivered; a modification '
-                                                'time does not establish them.'))
+                          (bytes_.get('note') or 'Nothing observed the bytes when they were delivered') +
+                          f"; the first observation of these bytes is this read, at {now.get('observed_at')}. A "
+                          'modification time does not establish them.'))
 
     def recover(self, turns):
         turn = turns[0]
@@ -885,11 +957,10 @@ class Raw:
                 if bytes_['sha256'] == pointer['sha256']:
                     answer['bytes'] = dict(source=bytes_['source'], sha256=bytes_['sha256'],
                                            logged=bytes_.get('logged'), git=bytes_.get('git'))
-        moved = self.moved(path, pointer['sha256'])
-        if moved:
-            answer['moved_to'] = moved
-        if 'bytes' not in answer and moved:
-            answer['bytes'] = dict(source='moved', sha256=moved['sha256'])
+        if 'bytes' not in answer:
+            moved = self.moved(path, pointer['sha256'])
+            if moved:
+                answer.update(moved_to=moved, bytes=dict(source='moved', sha256=moved['sha256']))
         answer['note'] = ('The path holds other bytes now; the delivered version is located elsewhere.'
                           if 'bytes' in answer else 'The path holds other bytes now, and the delivered ones were not found.')
         return answer
@@ -930,16 +1001,36 @@ class Gleaner:
         self.words = lower(task['words'])
         self.raw = Raw(shell, task, home, scratch)
         self.index = None
+        self.truncated = []
 
     def gleaner(self, *args):
-        result = self.shell.run(['gleaner', *args, '--home', self.home], phase='catalog')
+        """A gleaner command, its answer projected with jq to what this policy reads (G_PROJECTION).
+        Its exit status is gleaner's."""
+        script = (f"set -o pipefail; gleaner {' '.join(q(a) for a in args)} --home {q(self.home)}"
+                  f" | jq -c --arg home {q(self.home)} {q(G_PROJECTION)}")
+        result = self.shell.sh(script, phase='catalog')
         try:
-            answer = json.loads(result.out)
+            answer = self.expand(json.loads(result.out))
         except ValueError:
             answer = None
         if answer and 'index' in answer:
             self.index = answer['index']
+        if answer and answer.get('truncated'):
+            self.truncated.append(args[0])
         return result.status, answer
+
+    def expand(self, value, key=None):
+        """An answer with the paths its projection wrote ~ made absolute again; text is left as it is."""
+        if isinstance(value, dict):
+            return {k: self.expand(v, k) for k, v in value.items()}
+        if isinstance(value, list):
+            return [self.expand(v, key) for v in value]
+        if isinstance(value, str) and key not in ('text', 'request', 'message', 'restore_command'):
+            return self.raw.expand(value) if value == '~' or value.startswith('~/') else value
+        return value
+
+    def diagnostics(self):
+        return dict(self.raw.diagnostics(), truncated=self.truncated)
 
     def scope(self):
         index = self.index or {}
@@ -1100,7 +1191,7 @@ class Gleaner:
 
     def check_restore(self, command, reference):
         """Whether the commit a restore command names holds the delivered bytes, hashed through git."""
-        words = shlex.split(command)
+        words = [self.raw.expand(w) if w.startswith('~') else w for w in shlex.split(command)]
         try:
             if 'worktree' in words:
                 repository = words[words.index('-C') + 1]
@@ -1213,6 +1304,7 @@ def main():
         answer = dict(status='failed', note=f'{type(error).__name__}: {error}')
         import traceback
         traceback.print_exc()
+    answer['diagnostics'] = policy.diagnostics()
     sys.stdout.write(json.dumps(dict(answer=answer), ensure_ascii=False) + '\n')
     sys.stdout.flush()
 

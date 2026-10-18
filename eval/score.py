@@ -7,10 +7,12 @@ Reads the episodes run.py wrote, scores each answer against its world's gold.jso
 back into results.json:
 - `rows`: one per episode: task, seed and policy; the answer's status and whether it is
   correct; the hard failures it commits; the evidence it cites and the scope it claims; bytes
-  read, commands run, wall time and the preparation cost charged to it;
-- `tables`: per policy, per family and per task, and the ratio of bytes read, G to R, overall
-  and per family.
-Then writes report.md beside it. The scorer knows the tasks; the policies never do.
+  read, commands and tool processes run, commands refused or timed out, what it saw cut short,
+  wall time, and for G the same with its world's preparation charged to it;
+- `tables`: per policy, per family and per task, the ratio of bytes read, G to R, overall and
+  per family, the preparation cost, and the queries at which preparation would repay itself.
+Then writes report.md beside it. With no path, it scores the newest results.json under
+eval/results/. The scorer knows the tasks; the policies never do.
 
 Hard failures, as the evaluation names them, plus the task-specific ones each gold lists:
 - false_global_absence: a negative beyond what its scope supports;
@@ -18,7 +20,10 @@ Hard failures, as the evaluation names them, plus the task-specific ones each go
 - hash_merge: two artifacts merged on a hash;
 - tool_only_as_delivery: a tool-only file called a delivery.
 """
+import datetime
+import glob
 import json
+import math
 import os
 import sys
 
@@ -37,6 +42,16 @@ class Check:
         self.episode = episode
         self.failures = []
         self.why = []
+
+    def absence(self):
+        """A negative where the gold holds the item is a false absence, unless the scope it states
+        is bounded and says it is incomplete: with no scope, or a complete one, it claims more than
+        it saw."""
+        if self.answer.get('status') != 'not_found':
+            return
+        scope = self.answer.get('scope')
+        if not scope or scope.get('complete'):
+            self.fail('false_global_absence', 'not found, where the gold holds it, over a complete scope or none')
 
     def rel(self, path):
         if not isinstance(path, str):
@@ -87,6 +102,7 @@ class Check:
     # By what the question asks
 
     def value(self):
+        self.absence()
         expected, answer = self.expected, self.answer
         delivery = answer.get('delivery') or {}
         path = expected['delivery']['path']
@@ -109,6 +125,7 @@ class Check:
         return ok
 
     def files(self):
+        self.absence()
         expected, answer = self.expected, self.answer
         got = {self.rel(f.get('path')) for f in answer.get('files') or []}
         ok = (self.need(answer.get('status') == 'found', 'not found')
@@ -125,6 +142,7 @@ class Check:
         chosen = answer.get('delivery') or {}
         status = answer.get('status')
         if 'delivery' in expected:
+            self.absence()
             ok = (self.need(status == 'found', 'not found')
                   & self.need(self.same(chosen, expected['delivery']), 'another file')
                   & self.need(chosen.get('claim') == 'delivery', 'not called a delivery')
@@ -143,7 +161,8 @@ class Check:
                   & self.need(chosen.get('claim') != 'delivery', 'the mention called a delivery'))
             if status == 'found' and chosen.get('claim') == 'delivery':
                 self.fail('mention_as_delivery', 'a bare file name in code called a delivery')
-            if status == 'not_found' and self.scope_logs() is not None:
+            # Only the catalog's own scope bounds a negative here: it admits no bare file name.
+            if status == 'not_found' and (answer.get('scope') or {}).get('kind') != 'catalog':
                 self.fail('false_global_absence', 'the logs hold the mention')
             if any(self.rel(chosen.get('path')) == e['path'] for e in expected.get('excluded', [])):
                 self.fail('wrong_project', 'the file of that name in another project')
@@ -157,16 +176,24 @@ class Check:
         return ok
 
     def same_item(self):
+        self.absence()
         expected, answer = self.expected, self.answer
-        got = {self.rel(a.get('path')) for a in answer.get('artifacts') or []}
+        artifacts = [a for a in answer.get('artifacts') or [] if isinstance(a, dict)]
+        got = {self.rel(a.get('path')): a for a in artifacts}
+        wanted = [got.get(a['path']) or {} for a in expected['artifacts']]
+        hashes = [a.get('sha256') for a in wanted]
         ok = (self.need(answer.get('status') == 'found', 'not found')
               & self.need(answer.get('same') is False, 'called one item')
-              & self.need(all(a['path'] in got for a in expected['artifacts']), 'an artifact missing'))
-        if answer.get('same') is True:
+              & self.need(all(a['path'] in got for a in expected['artifacts']), 'an artifact missing')
+              & self.need(all(h in (None, expected['sha256']) for h in hashes), 'another hash')
+              & self.need(answer.get('equal_bytes') is True or hashes.count(expected['sha256']) == len(hashes),
+                          'the equal hashes not reported'))
+        if answer.get('same') is True or (answer.get('status') == 'found' and len(got) < 2):
             self.fail('hash_merge', 'two artifacts merged on a hash')
         return ok
 
     def current_match(self):
+        self.absence()
         expected, answer = self.expected, self.answer
         ok = (self.need(answer.get('status') == 'found', 'not found')
               & self.need(answer.get('current_sha256') == expected['current_sha256'], 'another current hash')
@@ -177,24 +204,30 @@ class Check:
         return ok
 
     def provenance(self):
+        self.absence()
         expected, answer = self.expected, self.answer
+        observed = seconds(answer.get('observed_at'))
         ok = (self.need(answer.get('status') == 'found', 'not found')
               & self.need(answer.get('established') is False, 'said to be established')
-              & self.need(self.same(answer.get('delivery'), expected['delivery']), 'another delivery'))
+              & self.need(self.same(answer.get('delivery'), expected['delivery']), 'another delivery')
+              & self.need(observed is not None and observed > seconds(expected['delivered_at']) + 600,
+                          'no first observation stated, later than the delivery'))
         if answer.get('established') is True:
             self.fail('current_as_delivered', 'the bytes seen later passed off as the delivered ones')
             self.fail('certainty_from_mtime', 'certainty without an observation at delivery')
         return ok
 
     def offered(self, artifact):
-        """The hash of what an answer offers for an artifact: a file it gave, or what git holds."""
+        """The hash of what an answer offers for an artifact, as the runner hashed it: a file it
+        gave, or what its git restore command's commit holds at that path."""
         if artifact.get('bytes_file'):
             return self.episode['checked'].get(artifact['bytes_file'])
         if artifact.get('source') == 'git':
-            return artifact.get('git_sha256') or artifact.get('sha256')
+            return (self.episode.get('checked_git') or {}).get(artifact.get('path'))
         return None
 
     def recover(self):
+        self.absence()
         expected, answer = self.expected, self.answer
         got = {self.rel(a.get('path')): a for a in answer.get('artifacts') or []}
         ok = self.need(answer.get('status') == 'found', 'not found')
@@ -218,6 +251,7 @@ class Check:
         return bool(ok)
 
     def handed_over(self):
+        self.absence()
         expected, answer = self.expected, self.answer
         made = {self.rel(m.get('path')) for m in answer.get('generated') or []}
         delivered = {self.rel(p) for p in answer.get('reply_delivered') or []}
@@ -257,6 +291,7 @@ class Check:
         return ok
 
     def verify(self):
+        self.absence()
         expected, answer = self.expected, self.answer
         found = answer.get('bytes') or {}
         ok = (self.need(answer.get('status') == 'found', 'not found')
@@ -271,6 +306,7 @@ class Check:
         return ok
 
     def bytes(self):
+        self.absence()
         expected, answer = self.expected, self.answer
         offered = self.episode['checked'].get(answer.get('bytes_file')) if answer.get('bytes_file') else None
         drifted = expected['drifted_sha256']
@@ -287,23 +323,45 @@ def norm(value):
     return ' '.join(str(value).split()).lower() if value is not None else None
 
 
+def seconds(stamp):
+    """An ISO 8601 time as seconds since the epoch; None when there is none or it does not parse."""
+    if not isinstance(stamp, str):
+        return None
+    try:
+        return datetime.datetime.fromisoformat(stamp.replace('Z', '+00:00')).timestamp()
+    except ValueError:
+        return None
+
+
 def score_episode(record, episode):
-    check = Check(record, episode)
-    correct = bool(getattr(check, episode['asks'])()) and not check.failures and not episode.get('error')
-    if episode.get('error'):
-        check.why.append(episode['error'])
     answer = episode['answer'] or {}
+    if record.get('gold') is None:
+        correct, failures, why = False, [], [episode.get('error') or 'not run']
+    else:
+        check = Check(record, episode)
+        correct = bool(getattr(check, episode['asks'])()) and not check.failures and not episode.get('error')
+        failures, why = check.failures, check.why
+        if episode.get('error'):
+            why.append(episode['error'])
     scope = answer.get('scope') or {}
+    diagnostics = answer.get('diagnostics') or {}
+    preparation = record.get('preparation') if episode['policy'] == 'G' else None
     return dict(
         task=episode['task'], seed=episode['seed'], family=episode['family'], asks=episode['asks'],
-        policy=episode['policy'], status=answer.get('status'), correct=correct, hard_failures=check.failures,
-        why=check.why, fallback=answer.get('fallback'),
+        policy=episode['policy'], status=answer.get('status'), correct=correct, hard_failures=failures,
+        why=why, fallback=answer.get('fallback'), not_run=bool(episode.get('not_run')),
         evidence=answer.get('evidence') or [], scope=dict(kind=scope.get('kind'), complete=scope.get('complete')),
         bytes=episode['bytes']['total'], tilde_bytes=episode['bytes']['home_as_tilde'],
-        commands=episode['command_count'], seconds=episode['seconds'],
+        commands=episode['command_count'], processes=episode.get('processes', episode['command_count']),
+        refused=episode.get('refused', 0), timed_out=episode.get('timed_out', 0),
+        clipped=diagnostics.get('clipped_fields', 0),
+        truncated=len(diagnostics.get('truncated') or []) + bool(answer.get('truncated')),
+        seconds=episode['seconds'],
+        seconds_with_preparation=round(episode['seconds'] + (preparation or {}).get('index_seconds', 0), 3),
         catalog_bytes=episode['phases'].get('catalog', {}).get('bytes', 0),
         raw_bytes=episode['phases'].get('raw', {}).get('bytes', 0),
-        preparation=record['preparation'] if episode['policy'] == 'G' else None)
+        drift_after_command=episode.get('drift_after_command'),
+        preparation=preparation)
 
 
 def summary(rows):
@@ -311,14 +369,38 @@ def summary(rows):
     return dict(episodes=n, correct=sum(r['correct'] for r in rows),
                 hard_failures=sum(bool(r['hard_failures']) for r in rows),
                 general_failures=sum(any(f in GENERAL for f in r['hard_failures']) for r in rows),
-                fallbacks=sum(bool(r['fallback']) for r in rows),
+                fallbacks=sum(bool(r['fallback']) for r in rows), not_run=sum(r['not_run'] for r in rows),
                 bytes=sum(r['bytes'] for r in rows), tilde_bytes=sum(r['tilde_bytes'] for r in rows),
-                commands=sum(r['commands'] for r in rows),
-                seconds=round(sum(r['seconds'] for r in rows), 3))
+                commands=sum(r['commands'] for r in rows), processes=sum(r['processes'] for r in rows),
+                refused=sum(r['refused'] for r in rows), timed_out=sum(r['timed_out'] for r in rows),
+                clipped=sum(r['clipped'] for r in rows), truncated=sum(r['truncated'] for r in rows),
+                seconds=round(sum(r['seconds'] for r in rows), 3),
+                seconds_with_preparation=round(sum(r['seconds_with_preparation'] for r in rows), 3))
 
 
 def ratio(g, r):
     return round(g / r, 3) if r else None
+
+
+def break_even(rows, records):
+    """When G's preparation would repay itself, per world: with P its mean index time and d the
+    mean per-query saving in wall time (R's seconds less G's), ceil(P / d) queries, or none when
+    d is not positive (03, "Amortization"). Cost at 1, 10, 100 and 1000 queries a world beside it.
+    Bytes have no preparation counterpart: the index's reading of the logs is not read by a policy."""
+    by = {(r['seed'], r['task'], r['policy']): r for r in rows}
+    pairs = [(by[(w['seed'], w['task'], 'R')], by[(w['seed'], w['task'], 'G')], w['preparation'])
+             for w in records if w.get('preparation') and (w['seed'], w['task'], 'R') in by and (w['seed'], w['task'], 'G') in by]
+    if not pairs:
+        return None
+    n = len(pairs)
+    r_time = sum(r['seconds'] for r, _, _ in pairs) / n
+    g_time = sum(g['seconds'] for _, g, _ in pairs) / n
+    prep = sum(p['index_seconds'] for _, _, p in pairs) / n
+    saving = r_time - g_time
+    return dict(worlds=n, preparation_seconds=round(prep, 3), r_seconds=round(r_time, 4), g_seconds=round(g_time, 4),
+                saving_seconds=round(saving, 4), queries=math.ceil(prep / saving) if saving > 0 else None,
+                bytes_saving=round(sum(r['bytes'] - g['bytes'] for r, g, _ in pairs) / n, 1),
+                sensitivity={q: dict(R=round(q * r_time, 3), G=round(prep + q * g_time, 3)) for q in (1, 10, 100, 1000)})
 
 
 def tables(rows, records):
@@ -338,12 +420,38 @@ def tables(rows, records):
                 all=ratio(out['policies']['G'][key], out['policies']['R'][key]),
                 families={f: ratio(v['G'][key], v['R'][key]) for f, v in out['families'].items() if {'G', 'R'} <= set(v)},
                 tasks={t: ratio(v['G'][key], v['R'][key]) for t, v in out['tasks'].items() if {'G', 'R'} <= set(v)})
-    prep = [r['preparation'] for r in records]
-    out['preparation'] = dict(worlds=len(prep), index_runs=sum(p['index_runs'] for p in prep),
+        out['break_even'] = break_even(rows, records)
+    prep = [r['preparation'] for r in records if r.get('preparation')]
+    failures = [dict(seed=r['seed'], task=r['task'], **f) for r in records for f in r.get('preparation_failures') or []]
+    out['preparation'] = dict(worlds=len(records), prepared=len(prep), failed_attempts=len(failures), failures=failures,
+                              index_runs=sum(p['index_runs'] for p in prep),
                               index_seconds=round(sum(p['index_seconds'] for p in prep), 3),
                               library_bytes=sum(p['library_bytes'] for p in prep),
                               saved_copies=sum(p['saved_copies'] for p in prep))
+    checked = [r['gold_check'] for r in records if r.get('gold_check')]
+    out['gold_checks'] = dict(checked=len(checked), ok=sum(c['ok'] for c in checked))
+    reach = [r['distractors'] for r in records if r.get('distractors')]
+    if reach:
+        out['distractors'] = dict(
+            worlds=len(reach), logs=round(sum(d['logs'] for d in reach) / len(reach), 1),
+            per_word=round(sum(sum(d['holding'].values()) / len(d['holding']) for d in reach) / len(reach), 1),
+            every_word=round(sum(d['holding_every_word'] for d in reach) / len(reach), 1),
+            decoys=round(sum(d['decoys'] for d in reach) / len(reach), 1),
+            near_misses=round(sum(d['near_misses'] for d in reach) / len(reach), 1))
     return out
+
+
+def runs():
+    """Every results.json under eval/results/, newest first."""
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    found = []
+    for path in glob.glob(os.path.join(repo, 'eval', 'results', '**', 'results.json'), recursive=True):
+        with open(path, encoding='utf-8') as f:
+            results = json.load(f)
+        found.append(dict(path=os.path.relpath(path, repo), created=results.get('created'),
+                          seeds=results.get('seeds'), commit=(results.get('environment') or {}).get('commit'),
+                          episodes=len(results.get('episodes') or [])))
+    return sorted(found, key=lambda r: r['created'] or '', reverse=True)
 
 
 def write(path):
@@ -357,94 +465,189 @@ def write(path):
         json.dump(results, f, ensure_ascii=False, indent=1)
         f.write('\n')
     with open(os.path.join(os.path.dirname(path), 'report.md'), 'w', encoding='utf-8') as f:
-        f.write(report(results))
+        f.write(report(results, path))
     return results
 
 
-def report(results):
+def seeds_text(seeds):
+    if seeds == list(range(seeds[0], seeds[-1] + 1)) and len(seeds) > 2:
+        return f'Seeds {seeds[0]}–{seeds[-1]}'
+    return ('Seed ' if len(seeds) == 1 else 'Seeds ') + ', '.join(map(str, seeds))
+
+
+def report(results, path):
     t = results['tables']
     env = results['environment']
-    seeds = ('Seed ' if len(results['seeds']) == 1 else 'Seeds ') + ', '.join(map(str, results['seeds']))
     policies = list(t['policies'])
+    scored = results.get('scored', max(results['seeds']) >= 101)
+    lock = results.get('lock')
+    recipe = results.get('recipe') or {}
     lines = [
         '# Evaluation E0: results',
         '',
-        f"{seeds}; {len(results['tasks'])} tasks; policies {', '.join(policies)}. Run {results['created']} "
-        f"on macOS {env.get('macos')} at commit {(env.get('commit') or '')[:7]}, with {env.get('rg')}, {env.get('jq')}, "
-        f"{env.get('git')} and Python {env.get('python')}. "
-        + ('Seeds 1–3 are the development seeds, where the raw recipe is tuned and locked. '
-           if max(results['seeds']) < 100 else 'Seeds 101–110 are the scored seeds. '),
+        f"{seeds_text(results['seeds'])}; {len(results['tasks'])} tasks; policies {', '.join(policies)}. Run "
+        f"{results['created']} on macOS {env.get('macos')} ({env.get('machine')}) at commit {(env.get('commit') or '')[:7]}, "
+        f"with {env.get('rg')}, {env.get('jq')}, {env.get('git')} and Python {env.get('python')}.",
         '',
-        'How it was made: [docs/design/evaluation-e0.md](../../../docs/design/evaluation-e0.md) and '
-        '[eval/README.md](../../README.md). Every episode, with its commands and answer, is in `results.json`.',
+    ]
+    if scored and lock:
+        lines += [f"These are the scored seeds. The raw recipe was locked on development seeds {', '.join(map(str, lock['seeds']))} "
+                  f"at commit {lock['commit'][:7]} ({lock['locked_at']}), recorded in `eval/lock.json` with the sha256 of "
+                  f"every `eval/*.py`. The run checked that those files still had those hashes and that the tree was clean. "
+                  f"The development run that locked it is `{lock['results']}`.", '']
+    elif not scored:
+        lines += ['These are development seeds, where the raw recipe is tuned and locked. '
+                  + ('The tree was clean.' if recipe.get('clean') else 'The tree had uncommitted changes.'), '']
+    lines += [
+        'How it was made: [docs/design/evaluation-e0.md](' + rel_link(path, 'docs/design/evaluation-e0.md') + ') and '
+        '[eval/README.md](' + rel_link(path, 'eval/README.md') + '). Every episode, with its commands and answer, is in '
+        '`results.json`.',
         '',
         '## What this can and cannot show',
         '',
-        'Two scripted, deterministic policies answer the same questions over the same worlds. It shows whether '
-        'each answer is correct against mechanical gold, whether it stays within its evidence, and how many bytes '
-        'and commands each policy needed, with what the catalog cost to prepare. It cannot show how a model would '
-        'do, token savings, or benefit to real users. The worlds are synthetic and few; nothing here is a '
-        'production rate.',
+        'Two scripted, deterministic policies answer the same questions over the same worlds. This shows whether each '
+        'answer is correct against mechanical gold, whether it stays within its evidence, how many bytes and commands '
+        'each policy needed, and what the catalog cost to prepare. Nothing here calls a model. So it cannot show model '
+        'efficacy, token savings, or benefit to real users. Bytes read by a script are not tokens a model would spend. '
+        'The worlds are synthetic and few, and none of this is a production rate.',
+        '',
+        'Limits of this design:',
+        '',
+        '- **One template per task.** The scored seeds run the same 15 world builders as the development seeds. Only the '
+        'values, ids, order, timestamps and distractors are new. Both policies were written against these templates, '
+        'and `asks` alone names the task for 10 of the 15 (every `asks` but `value` and `delivery`). So correctness '
+        'here shows the policies hold up on new draws of templates they were built for. It does not show they '
+        'generalize to new kinds of question. The protocol (08) asks for a split by generator template; this split is '
+        'by seed.',
+        '- **One raw variant.** R projects each candidate log whole, which is close to the protocol\'s R-session. '
+        'R-search and R-section (01) were not run. The synthetic sessions are one or two turns long, so a section '
+        'read would differ little from a whole-log read here.',
+        '- **Equal tools.** Both policies may use `jq`, and G projects each `gleaner` answer to the fields it reads, '
+        'with the home folder written `~`, as R projects its logs. Commands count requests; processes count the '
+        'tools a pipeline starts.',
+        '- **One query per world.** Each world is prepared once and asked one question, so preparation is charged in '
+        'full to that one G episode. The break-even line below says how many queries a world would need.',
+        '- **T25.** The drift lands after the first output that holds the delivered hash. Gleaner hands off from its '
+        'saved copy, as the protocol\'s retained capture allows, so its check of a copy made from the changed '
+        'original is never reached.',
         '',
         '## How the policies ran',
         '',
-        '- **R**: `rg -l` over the two log folders for each word, sub-agent transcripts left out; a `jq` projection '
-        'of each log that holds them all; the turn whose request, title, final reply and project hold every word; '
-        "each path the final reply names, resolved against its record's cwd; then `stat` and `shasum -a 256` of the "
-        "file and of the turn's logged write of it, and `git log` for a file that is gone. The logged write stands "
-        'for the delivered bytes only while the file still has them, or changed after the reply.',
+        '- **R**: one `rg` pipeline over the two log folders keeps the logs that hold every word, sub-agent transcripts '
+        'left out, with Codex titles from its session index. A per-word listing is used only for a decision, which '
+        'weighs partial matches, and to explain a negative. Then a `jq` projection of each candidate log; the turn whose '
+        "request, title, final reply and project hold every word; each path the final reply names, resolved against "
+        "its record's cwd; then `stat` and `shasum -a 256` of the file and of the turn's logged write of it, and `git "
+        'log` for a file that is gone. The logged write stands for the delivered bytes only while the file still has '
+        'them, or changed after the reply.',
         '- **G**: `gleaner find` with the words, then only what the question needs: `read` for a value, `show` for '
-        'the other versions or a hand-off plan, `handoff` for bytes, `verify` for a pointer. It falls back to R, '
-        'counted in full, when the index reports a source read with problems or find returns nothing. For what the '
-        "catalog does not record (the delivering turn's tool output, later turns) it reads the log the delivery's "
-        "evidence names, with R's projection.",
+        'the other versions or a hand-off plan, `handoff` for bytes, `verify` for a pointer. Each answer is projected '
+        'with `jq`. G falls back to R, counted in full, when the index reports a source read with problems or find '
+        "returns nothing. For what the catalog does not record (the delivering turn's tool output, later turns), it "
+        "reads the log the delivery's evidence names, with R's projection.",
         '- Two points go beyond evaluation-e0.md, which has G always call `show` and names only the two fallback '
-        "conditions: G skips `show` when the answer does not need it, and it reads the delivering log for what is "
+        "conditions. G skips `show` when the answer does not need it, and it reads the delivering log for what is "
         'outside the catalog.',
+        '- The runner is each policy\'s only way to the world. The policy, and every command, run under '
+        '`sandbox-exec`. They can read and write nothing of the run\'s but that world and the policy\'s scratch '
+        'folder; R cannot read the world\'s catalog either. Gold lives outside every world.',
         '',
         '## Summary',
         '',
-        '| Policy | Correct | Hard failures | Fallbacks | Bytes read | Bytes, home as ~ | Commands | Wall time (s) |',
-        '|---|---|---|---|---|---|---|---|',
+        '| Policy | Correct | Hard failures | Fallbacks | Bytes read | Bytes, home as ~ | Commands | Processes | '
+        'Refused | Timed out | Wall time (s) | With preparation (s) |',
+        '|---|---|---|---|---|---|---|---|---|---|---|---|',
     ]
     for p, s in t['policies'].items():
         lines.append(f"| {p} | {s['correct']} of {s['episodes']} | {s['hard_failures']} | {s['fallbacks']} | "
-                     f"{s['bytes']:,} | {s['tilde_bytes']:,} | {s['commands']} | {s['seconds']} |")
+                     f"{s['bytes']:,} | {s['tilde_bytes']:,} | {s['commands']} | {s['processes']} | {s['refused']} | "
+                     f"{s['timed_out']} | {s['seconds']} | {s['seconds_with_preparation']} |")
     if 'bytes_ratio' in t:
         for name, label in (('bytes_ratio', 'Bytes read'), ('tilde_bytes_ratio', "With the home folder's path counted as ~")):
             r = t[name]
             lines += ['', f"{label}, G over R: **{r['all']}** overall; "
                       + '; '.join(f"{f} ({FAMILIES.get(f, f)}) {v}" for f, v in r['families'].items()) + '.']
+    lines += ['', 'R reported ' + f"{t['policies'].get('R', {}).get('clipped', 0)} projected fields clipped at 240 characters; "
+              f"G {t['policies'].get('G', {}).get('clipped', 0)} in its raw reads, and {t['policies'].get('G', {}).get('truncated', 0)} "
+              'gleaner answers marked truncated. Episodes that could not run: '
+              + ', '.join(f"{p} {s['not_run']}" for p, s in t['policies'].items()) + '.']
     prep = t['preparation']
-    lines += ['', f"Preparing the catalog, charged to G: {prep['worlds']} worlds, {prep['index_runs']} index runs, "
+    lines += ['', '## Preparation', '',
+              f"Charged to G: {prep['prepared']} of {prep['worlds']} worlds prepared, {prep['index_runs']} index runs, "
               f"{prep['index_seconds']} s of indexing, {prep['library_bytes']:,} library bytes on disk "
-              f"({prep['library_bytes'] // max(prep['worlds'], 1):,} per world), {prep['saved_copies']} saved copies. "
-              'R prepares nothing.']
-    lines += ['', '## By family', '', '| Family | Policy | Correct | Hard failures | Fallbacks | Bytes read | Bytes, home as ~ | Commands |',
-              '|---|---|---|---|---|---|---|---|']
+              f"({prep['library_bytes'] // max(prep['prepared'], 1):,} per world), {prep['saved_copies']} saved copies. "
+              f"Failed preparation attempts: {prep['failed_attempts']}"
+              + (' (' + '; '.join(f"seed {f['seed']} {f['task']} attempt {f['attempt']}: {f['reason']}" for f in prep['failures']) + ')'
+                 if prep['failures'] else '') + '. R prepares nothing.']
+    be = t.get('break_even')
+    if be:
+        timing = (f"saving {be['saving_seconds']} s a query, so preparation would repay itself in wall time after "
+                  f"**{be['queries']}** queries on one world." if be['queries'] else
+                  f"so G is {-be['saving_seconds']} s a query slower and **preparation never repays itself in wall time**.")
+        reading = (f"G read {be['bytes_saving']:,} fewer bytes a query than R" if be['bytes_saving'] >= 0 else
+                   f"G read {-be['bytes_saving']:,} more bytes a query than R")
+        lines += ['', f"Per world, G's preparation took {be['preparation_seconds']} s on average. Its episodes took "
+                  f"{be['g_seconds']} s against R's {be['r_seconds']} s, {timing} {reading}. Bytes have no preparation "
+                  "counterpart: the index reads every log, but no policy reads what it read.",
+                  '', '| Queries a world | R seconds | G seconds, preparation included |', '|---|---|---|']
+        for q, c in be['sensitivity'].items():
+            lines.append(f'| {q} | {c["R"]} | {c["G"]} |')
+        lines += ['', 'These counts are a sensitivity range, not observed workloads.']
+    lines += ['', '## By family', '',
+              '| Family | Policy | Correct | Hard failures | Fallbacks | Bytes read | Bytes, home as ~ | Commands | Processes '
+              '| Wall time (s) | With preparation (s) |',
+              '|---|---|---|---|---|---|---|---|---|---|---|']
     for f, by in t['families'].items():
         for p, s in by.items():
             lines.append(f"| {f} ({FAMILIES.get(f, f)}) | {p} | {s['correct']} of {s['episodes']} | {s['hard_failures']} | "
-                         f"{s['fallbacks']} | {s['bytes']:,} | {s['tilde_bytes']:,} | {s['commands']} |")
+                         f"{s['fallbacks']} | {s['bytes']:,} | {s['tilde_bytes']:,} | {s['commands']} | {s['processes']} | "
+                         f"{s['seconds']} | {s['seconds_with_preparation']} |")
     lines += ['', '## By task', '',
               '| Task | Asks | ' + ' | '.join(f'{p} correct | {p} bytes | {p} commands' for p in policies) + ' | G/R bytes |',
               '|---|---|' + '---|---|---|' * len(policies) + '---|']
-    asks = {w['task']: w['asks'] for w in results['worlds']}
+    asks = {w['task']: w['asks'] for w in results['worlds'] if w.get('asks')}
     for task, by in t['tasks'].items():
         cells = []
         for p in policies:
             s = by.get(p)
             cells.append(f"{s['correct']} of {s['episodes']} | {s['bytes'] // s['episodes']:,} | {s['commands'] / s['episodes']:.1f}"
                          if s else '– | – | –')
-        lines.append(f"| {task} | {asks[task]} | " + ' | '.join(cells) + f" | {t.get('bytes_ratio', {}).get('tasks', {}).get(task, '–')} |")
-    lines += ['', 'Bytes and commands per task are means per episode.', '',
-              '## Every episode', '',
+        lines.append(f"| {task} | {asks.get(task, '–')} | " + ' | '.join(cells)
+                     + f" | {t.get('bytes_ratio', {}).get('tasks', {}).get(task, '–')} |")
+    lines += ['', 'Bytes and commands per task are means per episode.', '', '## Hard failures', '']
+    failed = [r for r in results['rows'] if r['hard_failures']]
+    if failed:
+        lines += ['| Task | Seed | Policy | Failures | Why |', '|---|---|---|---|---|']
+        for r in sorted(failed, key=lambda r: (r['task'], r['seed'], r['policy'])):
+            lines.append(f"| {r['task']} | {r['seed']} | {r['policy']} | {', '.join(r['hard_failures'])} | "
+                         f"{'; '.join(r['why']).replace('|', '/')} |")
+    else:
+        lines.append(f"None in {len(results['rows'])} episodes. Each was checked for the four general classes "
+                     '(' + ', '.join(f'`{g}`' for g in GENERAL) + ') and for the task-specific ones its gold lists. Zero '
+                     'observed failures in this many synthetic episodes does not establish a failure rate.')
+    reach = t.get('distractors')
+    checks = t['gold_checks']
+    lines += ['', '## Worlds', '']
+    if reach:
+        lines.append(f"A world has {reach['logs']} session logs on average, sub-agent transcripts left out: {reach['decoys']} "
+                     f"decoys about other things and {reach['near_misses']} near misses that each hold exactly one query "
+                     f"word. A query word is in {reach['per_word']} logs on average; every word is in {reach['every_word']}. "
+                     'The per-world counts are in `results.json` (`worlds[].distractors`).')
+    lines.append('')
+    lines.append(f"After its episodes, each world was checked against its gold (check_worlds.check): {checks['ok']} of "
+                 f"{checks['checked']} hold what their gold presumes."
+                 + (' For scored worlds only pass or fail is kept.' if scored else ''))
+    lines += ['', '## Every episode', '',
               '| Task | Seed | Policy | Status | Correct | Hard failures | Bytes | Commands | Seconds | Notes |',
               '|---|---|---|---|---|---|---|---|---|---|']
     for row in sorted(results['rows'], key=lambda r: (r['task'], r['seed'], r['policy'])):
         notes = []
         if row['fallback']:
             notes.append(f"fallback: {row['fallback']}")
+        if row['refused'] or row['timed_out']:
+            notes.append(f"{row['refused']} refused, {row['timed_out']} timed out")
+        if row['drift_after_command']:
+            notes.append(f"drift after command {row['drift_after_command']}")
         if not row['correct'] and row['why']:
             notes.append('; '.join(row['why']))
         lines.append(f"| {row['task']} | {row['seed']} | {row['policy']} | {row['status']} | {'yes' if row['correct'] else 'no'} | "
@@ -453,28 +656,40 @@ def report(results):
     lines += ['', '## Measurement', '',
               '- Bytes read are every byte of standard output and standard error of every command a policy ran. '
               'The question itself is not counted. A pipeline counts what it prints, not what its stages pass between '
-              'them; `rg` and `git` read more than they print, so what they scan is not counted.',
+              'them. `rg`, `git` and `gleaner` read more than they print, so what they scan is not counted.',
               "- The worlds live deep in the repository, so every absolute path carries a long prefix. The second count "
               "writes the home folder's path, and its spelling in Claude Code's log folder names, as `~`, so where a "
-              'world was written weighs nothing. R already writes it so in its projection; G prints absolute paths.',
-              '- R projects log records with `jq` before reading them. G reads each `gleaner` answer whole, the index '
-              'block included.',
+              'world was written weighs nothing. Both projections already write the home folder as `~`. The log folder '
+              'names in `rg` listings and in `gleaner` evidence keep the long spelling.',
+              '- Commands are the requests a policy made; processes are the tools those requests started, so a pipeline '
+              'counts each tool in it. Refused and timed-out commands count as commands, with what they printed.',
               '- G falls back to R, counted in full, when find reports incomplete sources or returns nothing.',
-              '- Wall time includes starting each command and the policy itself.',
+              '- Wall time includes starting each command under `sandbox-exec`, about 7 ms a command on this machine, and '
+              "the policy itself. G's time with preparation adds its world's indexing time.",
               '- The earlier synthetic comparison (4,885 catalog bytes against 5,967 for targeted section reads) is '
               'motivation only; its definitions were not supplied, so its numbers are not comparable with these.',
-              '']
+              '', '## Runs', '', 'The results kept under `eval/results/`, newest first:', '',
+              '| Results | Created | Seeds | Commit | Episodes |', '|---|---|---|---|---|']
+    for run in runs():
+        lines.append(f"| `{run['path']}` | {run['created']} | {seeds_text(run['seeds']) if run['seeds'] else '–'} | "
+                     f"{(run['commit'] or '')[:7]} | {run['episodes']} |")
+    lines.append('')
     return '\n'.join(lines)
+
+
+def rel_link(results_path, target):
+    """A link from the report beside `results_path` to `target`, a path in the repository."""
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    return os.path.relpath(os.path.join(repo, target), os.path.dirname(os.path.abspath(results_path)))
 
 
 def main():
     path = sys.argv[1] if len(sys.argv) > 1 else None
     if not path:
-        folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'results')
-        dated = sorted(d for d in os.listdir(folder) if os.path.exists(os.path.join(folder, d, 'results.json')))
-        if not dated:
+        found = runs()
+        if not found:
             raise SystemExit('no results.json under eval/results/')
-        path = os.path.join(folder, dated[-1], 'results.json')
+        path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), found[0]['path'])
     results = write(path)
     for policy, s in results['tables']['policies'].items():
         print(f"{policy}: {s['correct']} of {s['episodes']} correct, {s['hard_failures']} with hard failures, "

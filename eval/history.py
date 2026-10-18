@@ -34,6 +34,15 @@ def place(path):
     return path
 
 
+def gold_folder(folder):
+    """Where the evaluator keeps a world's gold, history, drift and preparation record: for the
+    world at <out>/seed-<n>/<task>, <out>/gold/seed-<n>/<task>. That is neither inside nor beside
+    any world, and the runner's sandbox keeps every policy and command out of it."""
+    seed_folder, task = os.path.split(os.path.abspath(folder))
+    out, seed = os.path.split(seed_folder)
+    return os.path.join(out, 'gold', seed, task)
+
+
 def iso(seconds):
     """UTC with milliseconds, as both agents write timestamps."""
     moment = datetime.datetime.fromtimestamp(round(seconds, 3), datetime.timezone.utc)

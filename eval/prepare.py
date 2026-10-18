@@ -9,9 +9,10 @@ counts that run, and is then stopped, so the app never reads a world halfway thr
 later epoch starts only once its whole span lies after the last index, so the logs read in order.
 Nothing outside the world is read or written, apart from the app's own preferences.
 
-Writes prepared.json beside world/: when each epoch was applied, how long each index run took,
-the library's id and generation, and its size on disk. Those are the preparation costs charged
-to the gleaner policy.
+Reads history.json from the world's gold folder (history.gold_folder) and writes prepared.json
+there: when each epoch was applied, how long each index run took, the library's id and
+generation, and its size on disk. Those are the preparation costs charged to the gleaner policy.
+Both stay out of the policies' reach, since they say what changed after a delivery.
 """
 import argparse
 import contextlib
@@ -94,10 +95,11 @@ def prepare(folder, app=APP, say=print):
     """Applies the world's later epochs and indexes it; returns what prepared.json records."""
     folder = history.place(folder)
     world = os.path.join(folder, 'world')
-    record = os.path.join(folder, 'prepared.json')
+    gold = history.gold_folder(folder)
+    record = os.path.join(gold, 'prepared.json')
     if os.path.exists(record):
         raise SystemExit(f'{folder} is already prepared, or its preparation stopped partway: write the world again')
-    with open(os.path.join(folder, 'history.json'), encoding='utf-8') as f:
+    with open(os.path.join(gold, 'history.json'), encoding='utf-8') as f:
         epochs = json.load(f)['epochs']
     # Marks the world at once, so a preparation that stops partway is never applied twice.
     with open(record, 'w', encoding='utf-8') as f:

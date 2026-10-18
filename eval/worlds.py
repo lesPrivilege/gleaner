@@ -3,11 +3,13 @@
 
     eval/worlds.py <seed> <out>
 
-For each task, <out>/<task>/ holds:
+For each task, <out>/seed-<seed>/<task>/ holds what the policies may be given:
 - world/: the home folder both policies see: .claude/projects, .codex/sessions and work/,
   where the projects north, south and harbor are git repositories;
 - task.json: the question, the words a person would type for it, and what kind of answer it
-  asks for. It carries nothing from the answer (T23's pointer is the question itself);
+  asks for. It carries nothing from the answer (T23's pointer is the question itself).
+
+What the evaluator keeps from them goes to <out>/gold/seed-<seed>/<task>/ (history.gold_folder):
 - gold.json: the mechanically checkable answer, the sessions in scope, and what the prepared
   library must hold (`library`, checked by check_worlds.py);
 - history.json: the epochs prepare.py applies when it prepares the catalog (see history.py);
@@ -39,6 +41,7 @@ DAY = 86400
 # index, and changes after the last index span five.
 LIVE_SPAN, LATER_SPAN, AFTER_SPAN = 540, 20, 5
 SAVE_LIMIT = 64 << 20
+PROJECTS = ('north', 'south', 'harbor')
 CLAUDE_VERSION = '2.0.34'
 CLAUDE_MODEL = 'claude-fable-5'
 CODEX_VERSION = '0.46.0'
@@ -152,7 +155,7 @@ class World:
         return self.repos[name]
 
     def projects(self):
-        return {name: self.repo(name) for name in ('north', 'south', 'harbor')}
+        return {name: self.repo(name) for name in PROJECTS}
 
     # Sessions
 
@@ -168,49 +171,79 @@ class World:
 
     def decoys(self, words, old, new):
         """Sessions about other things, spread over the projects and both agents: `old` in epoch 0
-        and `new` just before the index. None of their own words holds any of `words`."""
-        topics = [topic for topic in DECOY_TOPICS
-                  if not any(word in ' '.join(topic).lower() for word in words)]
+        and `new` just before the index. They are drawn without regard to the question, except
+        that no topic may hold every one of its `words` (a project word, which any session's cwd
+        can supply, counts as held). Then one or two near misses: sessions that each hold exactly
+        one of the words and nothing else of the question, so every word reaches more logs than
+        the answer's."""
+        def answers(topic):
+            text = ' '.join(topic).lower()
+            return all(word in text or word in PROJECTS for word in words)
+
+        topics = [topic for topic in DECOY_TOPICS if not answers(topic)]
         self.rng.shuffle(topics)
         for n in range(old + new):
             request, rel, title, reply = topics[n]
-            project = self.rng.choice(['north', 'south', 'harbor'])
             name = os.path.basename(rel)
-            content = decoy_content(rel, title, self.rng)
-            if n < old and self.rng.random() < 0.3:
-                session = self.codex(project, self.old(), title)
-                c = Cursor(self.rng, session.start)
-                session.turn(c(), request)
-                session.say(c(), 'Looking at the project layout first.')
-                session.shell(c(), 'ls', 'README.md\nsrc\n')
-                session.shell(c(), f"mkdir -p {os.path.dirname(rel) or '.'} && cat > {rel} <<'EOF'\n{content}EOF", '',
-                              files=[(rel, content)])
-                session.final(c(), reply.format(link=f'[{name}]({rel})'))
-                continue
-            session = self.claude(project)
-            if n < old:
-                epoch, c = 0, Cursor(self.rng, self.old())
-            else:
-                epoch, c = 1, Cursor(self.rng, -self.rng.uniform(150, 260))
-            session.user(epoch, c(), request)
-            session.text(epoch, c(), self.rng.choice(['On it.', 'Let me look at the project first.', 'Writing it now.']))
-            session.write(epoch, c(), rel, content)
-            session.reply(epoch, c(2, 5), reply.format(link=f'[{name}]({rel})'))
-            session.title(epoch, title)
+            self.background(self.rng.choice(PROJECTS), n < old, request, rel, title,
+                            reply.format(link=f'[{name}]({rel})'), decoy_content(rel, title, self.rng), 'decoy')
+        if len(words) > 1:
+            for word in self.rng.sample(words, self.rng.randint(1, 2)):
+                self.near_miss(word, [w for w in words if w != word])
+
+    def near_miss(self, word, others):
+        """A session whose request, title, reply, file and project hold `word` and none of `others`."""
+        rel = f'docs/notes-{self.hex(4)}.md'
+        name = os.path.basename(rel)
+        request = self.rng.choice(NEAR_MISSES).format(word=word)
+        title = f'Notes on {word}'
+        content = f'# Notes on {word}\n\n- What came up about {word} this week.\n- Follow-ups are tracked separately.\n'
+        reply = f'Notes: [{name}]({rel}).'
+        project = self.rng.choice([p for p in PROJECTS if p not in others])
+        held = ' '.join([request, rel, title, content, reply, project]).lower()
+        assert not any(other in held for other in others), (self.task, word, others)
+        self.background(project, self.rng.random() < 0.5, request, rel, title, reply, content, 'near_miss')
+
+    def background(self, project, old, request, rel, title, reply, content, role):
+        """One session that writes `rel` and links it in its reply: in epoch 0 when `old`, by Codex
+        some of the time, else in epoch 1 just before the index."""
+        if old and self.rng.random() < 0.3:
+            session = self.codex(project, self.old(), title)
+            c = Cursor(self.rng, session.start)
+            session.turn(c(), request)
+            session.say(c(), 'Looking at the project layout first.')
+            session.shell(c(), 'ls', 'README.md\nsrc\n')
+            session.shell(c(), f"mkdir -p {os.path.dirname(rel) or '.'} && cat > {rel} <<'EOF'\n{content}EOF", '',
+                          files=[(rel, content)])
+            session.final(c(), reply)
+            session.role = role
+            return
+        session = self.claude(project)
+        session.role = role
+        if old:
+            epoch, c = 0, Cursor(self.rng, self.old())
+        else:
+            epoch, c = 1, Cursor(self.rng, -self.rng.uniform(150, 260))
+        session.user(epoch, c(), request)
+        session.text(epoch, c(), self.rng.choice(['On it.', 'Let me look at the project first.', 'Writing it now.']))
+        session.write(epoch, c(), rel, content)
+        session.reply(epoch, c(2, 5), reply)
+        session.title(epoch, title)
 
     # Output
 
     def manifest(self):
-        return [dict(id=s.id, provider=s.provider, project=s.project, log=s.log, **({'subagent': True} if s.subagent else {}))
+        return [dict(id=s.id, provider=s.provider, project=s.project, log=s.log, **({'subagent': True} if s.subagent else {}),
+                     **({'role': s.role} if s.role else {}))
                 for s in self.sessions]
 
-    def finish(self, task_dir):
+    def finish(self, gold_dir):
         """Applies epoch 0 and writes the later epochs for prepare.py."""
         os.makedirs(self.path('.claude/projects'), exist_ok=True)
         os.makedirs(self.path('.codex/sessions'), exist_ok=True)
         history.apply(self.root, self.epochs[0]['ops'], self.base)
         later = [dict(index=e['index'], span=e['span'], ops=merge(e['ops'])) for e in self.epochs[1:]]
-        dump(os.path.join(task_dir, 'history.json'), dict(base=history.iso(self.base), epochs=later))
+        dump(os.path.join(gold_dir, 'history.json'), dict(base=history.iso(self.base), epochs=later))
 
 
 def merge(ops):
@@ -245,6 +278,7 @@ class Claude:
         self.clock = None
         self.message = None
         self.replied = False
+        self.role = None
         world.sessions.append(self)
 
     def _append(self, epoch, record):
@@ -345,6 +379,7 @@ class Codex:
         self.lines = 0
         self.clock = None
         self.turn_id = None
+        self.role = None
         world.sessions.append(self)
         self._record(start, 'session_meta', dict(
             id=self.id, timestamp={'$t': start}, cwd=self.cwd, originator='codex_cli_rs', cli_version=CODEX_VERSION,
@@ -469,6 +504,11 @@ DECOY_TOPICS = [
     ('Collect the dependency licenses into one list.', 'out/licenses.md', 'Dependency licenses', 'List: {link}.'),
 ]
 
+# A near miss's request, about one word of the question.
+NEAR_MISSES = ['Collect what the team said about {word} into the wiki.',
+               'Write up the open questions about {word} for Friday.',
+               'List the tickets that mention {word}.']
+
 BULLETS = ['Owners are listed per section.', 'Open questions are marked TODO.', 'Numbers are from the last full week.',
            'Links point at the main branch.', 'Each item has one owner.', 'Dates are in UTC.',
            'Anything unclear is flagged for review.', 'The previous version is in git history.']
@@ -570,10 +610,10 @@ def t01(w):
 
     after = w.later(index=False)
     live = w.write(after, f'work/north/{rel}', -2.0, text=policy('north', 5))
-    w.decoys(['north', 'timeout', 'retry', 'policy'], rng.randint(1, 3), rng.randint(1, 2))
-
     words = ['north', 'timeout', 'retry', 'policy']
-    question = task(w, "Find the retry-policy file delivered for North's timeout request and state the retry count in "
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
+
+    question = task(w, "Find the retry-policy file delivered for North's timeout request and state its `retries` value in "
                        "that delivered version.", words, 'value', project='north', field='retries')
     answer = dict(delivery=ref(target, f'work/north/{rel}', line), sha256=delivered, value='3',
                   excluded=[dict(path=f'work/south/{rel}', value='7', why="South's file of the same name"),
@@ -637,10 +677,10 @@ def t02(w):
     second_sha = two.write(later, c(2, 3), rel, second)
     second_line = two.reply(later, c(2, 3), f'Updated [review.md]({rel}) as a one-page board summary.')
     two.title(later, 'Board summary of the checkout review')
-    w.decoys(['accessibility', 'review'], rng.randint(1, 3), rng.randint(1, 2))
+    words = ['accessibility', 'review']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
 
     path = f'work/harbor/{rel}'
-    words = ['accessibility', 'review']
     question = task(w, 'Retrieve the version of the review that answered the original accessibility request, and identify '
                        'its recommendation.', words, 'value', field='recommendation')
     answer = dict(delivery=ref(one, path, first_line), sha256=first_sha, value='increase contrast',
@@ -674,7 +714,7 @@ def t03(w):
     s = w.claude('south')
     c = Cursor(rng, -rng.uniform(470, 500))
     s.user(1, c(), 'Run the latency review on the checkout service and hand me the write-up, a chart and the fix.')
-    s.text(1, c(), 'Profiling first; raw samples go to tmp/profile-scratch.txt.')
+    s.text(1, c(), 'Profiling first.')
     t = c()
     s.bash(1, t, 'python3 scripts/profile.py --service checkout --out tmp/profile-scratch.txt',
            f'collected {rng.randint(3000, 6000)} samples -> tmp/profile-scratch.txt\np95 {rng.randint(380, 460)} ms')
@@ -699,9 +739,9 @@ def t03(w):
         f'{name},{rng.randint(100, 9000)}\n' for name in ('compute', 'storage', 'egress')))
     budget_line = s.reply(1, c(), 'Budget numbers: [budget.csv](out/budget.csv).')
     s.title(1, 'Checkout latency review')
-    w.decoys(['latency', 'review'], rng.randint(1, 3), rng.randint(1, 2))
-
     words = ['latency', 'review']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
+
     paths = [f'work/south/{rel}' for rel in order]
     question = task(w, 'Which files were handed over in the reply to the latency review request?', words, 'files')
     answer = dict(reply=dict(session=s.id, log=s.log, line=line), files=paths,
@@ -755,9 +795,9 @@ def t04(w):
     deck.user(1, c(), 'Build the slide outline for the board presentation.')
     deck.write(1, c(), 'out/board-deck.md', doc('Board deck outline', rng, ['Revenue', 'Hiring', 'Risks']))
     deck.reply(1, c(), 'Outline: [board-deck.md](out/board-deck.md).')
-    w.decoys(['retry', 'policy', 'board', 'presentation'], rng.randint(1, 3), rng.randint(1, 2))
-
     words = ['retry', 'policy', 'board', 'presentation']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
+
     path = f'work/north/{rel}'
     question = task(w, 'Find the delivery whose request mentions both retry policy and board presentation; if none is '
                        'evidenced in the supplied scope, explain.', words, 'delivery')
@@ -796,9 +836,9 @@ def t07(w):
             session.user(1, c(), "Set up a report template for South's monthly reporting.")
         shas[session.project] = session.write(1, c(), rel, template)
         lines[session.project] = session.reply(1, c(), f'Template: [report-template.md]({rel}).')
-    w.decoys(['report', 'template'], rng.randint(1, 3), rng.randint(1, 2))
-
     words = ['report', 'template']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
+
     question = task(w, "Do North and South share one work item because their report templates have the same hash?",
                     words, 'same_item', projects=['north', 'south'])
     answer = dict(same=False, sha256=shas['north'],
@@ -851,10 +891,10 @@ def t09(w):
     second_line = s.reply(later, c(2, 3), f'Updated [forecast.md]({rel}) with the new pipeline.')
     after = w.later(index=False)
     current = w.write(after, f'work/north/{rel}', -2.0, text=one)
-    w.decoys(['north', 'revenue', 'forecast'], rng.randint(1, 3), rng.randint(1, 2))
+    words = ['north', 'revenue', 'forecast']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
 
     path = f'work/north/{rel}'
-    words = ['north', 'revenue', 'forecast']
     question = task(w, "Does North's revenue forecast on disk match its most recent delivery, and which delivered version "
                        'does it match?', words, 'current_match', project='north')
     answer = dict(current_sha256=current, matches_latest=False,
@@ -903,10 +943,10 @@ def t10(w):
     launch.user(1, c(), 'Write the launch memo for South.')
     launch.write(1, c(), rel, doc('Launch memo', rng, ['Launch is on Tuesday.']))
     launch.reply(1, c(), f'Memo: [memo.md]({rel}).')
-    w.decoys(['incident', 'memo'], rng.randint(1, 3), rng.randint(1, 2))
+    words = ['incident', 'memo']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
 
     path = f'work/north/{rel}'
-    words = ['incident', 'memo']
     at = history.iso(w.base + reply_at)
     question = task(w, f'Can the saved file establish the exact bytes of the incident memo delivered at 10:00 UTC on '
                        f'{day:%Y-%m-%d}?', words, 'provenance', at=at[:19] + 'Z')
@@ -972,10 +1012,10 @@ def t12(w):
     first = s.reply(1, c(), 'The 用法 heading is in place, and its anchor resolves.')
     second = s.reply(1, c(0.2, 0.8), f'Guide: [说明.md]({rel}#用法). The slug comes from `src/main.swift:42`.', same=True)
     s.title(1, 'Unicode usage heading')
-    w.decoys(['unicode', 'heading'], rng.randint(1, 3), rng.randint(1, 2))
+    words = ['unicode', 'heading']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
 
     path = f'work/harbor/{rel}'
-    words = ['unicode', 'heading']
     question = task(w, 'Which artifact did the user-facing final reply deliver for the Unicode heading request?', words,
                     'delivery')
     answer = dict(delivery=ref(s, path, second), anchor='#用法', reply_lines=[first, second], sha256=guide_sha,
@@ -1030,9 +1070,9 @@ def t16(w):
     s.title(1, 'Launch demo video')
     after = w.later(index=False)
     w.git(after, 'work/north', -3.0, 'worktree', 'remove', '--force', f'.claude/worktrees/{name}')
-    w.decoys(['demo', 'video'], rng.randint(1, 3), rng.randint(1, 2))
-
     words = ['demo', 'video']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
+
     mov, wt_notes = f'{tree}/out/demo.mov', f'{tree}/out/demo-notes.md'
     question = task(w, 'Recover the demo video and notes delivered from the now-deleted worktree, or state exactly what '
                        'survives.', words, 'recover')
@@ -1081,9 +1121,9 @@ def t19(w):
     sha = s.write(1, c(), 'docs/checklist.md', checklist)
     line = s.reply(1, c(), 'The accessibility checklist is ready in `checklist.md`, grouped by screen.')
     s.title(1, 'Accessibility checklist')
-    w.decoys(['accessibility', 'checklist'], rng.randint(1, 3), rng.randint(1, 2))
-
     words = ['accessibility', 'checklist']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
+
     question = task(w, 'Which file did the final reply call the accessibility checklist?', words, 'delivery')
     answer = dict(found=False, scope='the catalog admits no bare file name (SPEC §9)',
                   raw=dict(session=s.id, log=s.log, line=line, mention='checklist.md', syntax='code',
@@ -1126,9 +1166,9 @@ def t20(w):
     summary = doc('Export job profile', rng, [f'{share}% of the time is spent serializing rows.'])
     s.shell(c(), f"cat > out/summary.md <<'EOF'\n{summary}EOF", '', files=[('out/summary.md', summary)])
     s.final(c(), 'The export job spends most of its time serializing rows; the findings are in [summary.md](out/summary.md).')
-    w.decoys(['latency', 'plot'], rng.randint(1, 3), rng.randint(1, 2))
-
     words = ['latency', 'plot']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
+
     question = task(w, 'Where was the latency plot actually generated, and was it handed over in the final reply?', words,
                     'handed_over')
     answer = dict(handed_over=False, generated=dict(path='work/harbor/tmp/plot.svg', sha256=plot_sha, session=s.id, log=s.log),
@@ -1181,9 +1221,9 @@ def t21(w):
                                    model=CLAUDE_MODEL, id='msg_01' + w.token(22), type='message', role='assistant',
                                    content=[dict(type='text', text='Decision: ' + 'x' * 80)])))
     s.raw(0, record[:record.index('"content"') + 12])
-    w.decoys(['billing', 'rollback', 'decision'], rng.randint(1, 3), rng.randint(1, 2))
-
     words = ['billing', 'rollback', 'decision']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
+
     question = task(w, "Is there a later decision about the billing migration rollback in that request's session?", words,
                     'decision')
     answer = dict(status='unknown', session=s.id, log=s.log, readable_lines=readable, malformed_line=readable + 1,
@@ -1228,10 +1268,10 @@ def t22(w):
     south.bash(0, t, 'pandoc docs/product-spec.md -o out/spec.pdf', '')
     spec_sha = w.write(0, 'work/south/out/spec.pdf', round(t + 1, 3), text=pdf('South product spec'))
     spec_line = south.reply(0, c(), 'The PDF is at [spec.pdf](out/spec.pdf).')
-    w.decoys(['spec.pdf', 'spec'], rng.randint(1, 3), rng.randint(1, 2))
+    words = ['spec.pdf']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
 
     north = [s for s in w.sessions if s.project == 'north']
-    words = ['spec.pdf']
     question = task(w, "Was spec.pdf referenced in North's sessions?", words, 'referenced', project='north', name='spec.pdf')
     answer = dict(referenced=False, scope=dict(project='north', sessions=[dict(id=s.id, provider=s.provider, log=s.log)
                                                                           for s in north]),
@@ -1278,12 +1318,12 @@ def t23(w):
     current = w.write(after, f'work/north/{rel}', -3.0, text=offsite)
     w.git(after, 'work/north', -2.0, 'add', rel)
     w.git(after, 'work/north', -2.0, 'commit', '-q', '-m', 'Start the offsite plan')
-    w.decoys(['ledger', 'migration', 'plan'], rng.randint(1, 3), rng.randint(1, 2))
+    words = ['ledger', 'migration', 'plan']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
 
     path = f'work/north/{rel}'
     pointer = dict(delivery=delivery_id(w.path(s.log), line, w.path(path)), name='plan.md', sha256=delivered,
                    path=w.path(path), evidence=dict(log=w.path(s.log), line=line))
-    words = ['ledger', 'migration', 'plan']
     question = task(w, 'Resolve the delivered plan using this catalog pointer and verify the version.', words, 'verify',
                     pointer=pointer)
     answer = dict(original=False, saved_copy=True, delivery=ref(s, path, line), delivered_sha256=delivered,
@@ -1323,11 +1363,11 @@ def t25(w):
     delivered = s.write(1, c(), rel, table(rows))
     line = s.reply(1, c(), f'KPI table: [kpis.csv]({rel}).')
     s.title(1, 'Quarterly KPI export')
-    w.decoys(['quarterly', 'kpi'], rng.randint(1, 3), rng.randint(1, 2))
+    words = ['quarterly', 'kpi']
+    w.decoys(words, rng.randint(1, 3), rng.randint(1, 2))
 
     drifted = table([(k, v + (7 if k == 'revenue_k' else 0)) for k, v in rows] + [('refunds_k', rng.randint(5, 30))])
     path = f'work/south/{rel}'
-    words = ['quarterly', 'kpi']
     question = task(w, 'Provide the bytes matching the delivered quarterly KPI table and explain any failed verification.',
                     words, 'bytes')
     answer = dict(sha256=delivered, delivery=ref(s, path, line), drifted_sha256=sha256(drifted),
@@ -1340,11 +1380,11 @@ def t25(w):
         find=[dict(words=words, paths=[path])],
         drift=dict(path=path, handoff_sha256=delivered, verify=dict(original=False, saved_copy=True)))
     extra = dict(drift={'kpis.csv': drifted},
-                 hook=dict(trigger=dict(after_output_containing='kpis.csv'),
+                 hook=dict(trigger=dict(after_output_containing=delivered),
                            write=dict(path=path, source='drift/kpis.csv'),
-                           note='Once per episode: after the first command whose standard output contains the file '
-                                "name, and before the policy's next command, the runner copies the source over the "
-                                'path. The same hook runs for every policy.'))
+                           note='Once per episode: after the first command whose standard output holds the delivered '
+                                "bytes' sha256, so the policy has seen the file verified, and before its next command, "
+                                'the runner copies the source over the path. The same hook runs for every policy.'))
     return question, gold(w, answer, library, ['current_as_delivered']), extra
 
 
@@ -1359,27 +1399,31 @@ def dump(path, value):
 
 
 def generate(seed, out, tasks=TASKS):
-    """Writes the worlds for `seed` under `out`, one folder per task; returns their folders."""
+    """Writes the worlds for `seed` under `out` (<root>/seed-<n>), one folder per task, and their
+    gold under history.gold_folder; returns the world folders."""
     out = history.place(out)
     folders = []
     for name in tasks:
         folder = os.path.join(out, name)
-        if os.path.exists(folder):
-            raise SystemExit(f'{folder} exists: a world is written once, into a new folder')
+        gold_dir = history.gold_folder(folder)
+        for made in (folder, gold_dir):
+            if os.path.exists(made):
+                raise SystemExit(f'{made} exists: a world is written once, into a new folder')
         os.makedirs(folder)
+        os.makedirs(gold_dir)
         world = World(name, os.path.join(folder, 'world'), random.Random(f'gleaner-e0:{seed}:{name}'))
         built = BUILDERS[name](world)
         question, expected = built[:2]
-        world.finish(folder)
+        world.finish(gold_dir)
         dump(os.path.join(folder, 'task.json'), question)
-        dump(os.path.join(folder, 'gold.json'), dict(expected, seed=seed))
+        dump(os.path.join(gold_dir, 'gold.json'), dict(expected, seed=seed))
         if len(built) > 2:
             extra = built[2]
-            os.makedirs(os.path.join(folder, 'drift'))
+            os.makedirs(os.path.join(gold_dir, 'drift'))
             for file, text in extra['drift'].items():
-                with open(os.path.join(folder, 'drift', file), 'w', encoding='utf-8') as f:
+                with open(os.path.join(gold_dir, 'drift', file), 'w', encoding='utf-8') as f:
                     f.write(text)
-            dump(os.path.join(folder, 'drift.json'), extra['hook'])
+            dump(os.path.join(gold_dir, 'drift.json'), extra['hook'])
         folders.append(folder)
     return folders
 
@@ -1387,7 +1431,8 @@ def generate(seed, out, tasks=TASKS):
 def main():
     if len(sys.argv) != 3 or not sys.argv[1].lstrip('-').isdigit():
         raise SystemExit(__doc__)
-    for folder in generate(int(sys.argv[1]), sys.argv[2]):
+    seed = int(sys.argv[1])
+    for folder in generate(seed, os.path.join(sys.argv[2], f'seed-{seed}')):
         print(folder)
 
 
