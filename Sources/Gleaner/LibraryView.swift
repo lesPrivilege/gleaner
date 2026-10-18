@@ -1,5 +1,6 @@
 import GleanerCore
 import QuickLook
+import GleanerUI
 import SwiftUI
 
 /// The library window: where you are (every delivery, a project, or the sources), what is there,
@@ -37,6 +38,9 @@ struct LibraryView: View {
         .onChange(of: model.place) { savedPlace = Self.encode(model.place) }
         .navigationSubtitle(model.progress.map { "Reading logs… \($0.done) of \($0.total)" } ?? model.status)
         .toolbar {
+            ToolbarItem {
+                ConnectionsButton()
+            }
             ToolbarItem {
                 Button("Check for New Deliveries", systemImage: "arrow.clockwise") { model.reindex() }
                     .help("Check for New Deliveries (⌘R)")
@@ -170,8 +174,7 @@ struct DetailColumn: View {
         } else if let result = model.selected {
             DetailView(result: result)
         } else if !model.artifacts.isEmpty {
-            EmptyState(title: "No Selection", glyph: .artifact,
-                       description: model.currentProject == nil ? "Select a file, or search for what you asked for." : "Select a file in this project.")
+            NoSelection()
         }
     }
 }
@@ -182,11 +185,11 @@ struct ListHandoff: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .contextMenu(forSelectionType: Work.ID.self) { ids in
-                if let id = ids.first, let work = model.organization.work(containing: id) {
-                    // The file the row shows and drags, which may be an earlier one of the work's.
-                    let artifact = model.result(for: work).map(model.file(in:)) ?? work.latest
-                    if id == model.selection {
+            .contextMenu(forSelectionType: OutlineRow.self) { rows in
+                if let row = rows.first, let work = model.organization.work(containing: row.work),
+                   let (artifact, _) = model.target(row) {
+                    // The file the row names and drags: a revision's own, or the one its work's row shows.
+                    if row == model.outlineSelection {
                         Button("Open") { model.openSelected() }.disabled(!model.canHandOver)
                         Button("Quick Look") { model.toggleQuickLook() }.disabled(!model.canHandOver)
                         Divider()
@@ -216,23 +219,15 @@ struct ResultsList: View {
         // Filters sit above the list, not over it: rows never scroll under the glass controls.
         VStack(spacing: 0) {
             FilterBar()
-            List(selection: $model.selection) {
+            List(selection: $model.outlineSelection) {
                 ForEach(results) { result in
-                    let file = model.file(in: result)
-                    let row = ResultRow(result: result, file: file, delivery: model.delivery(in: result),
-                                        project: model.currentProject == nil ? model.projectName(result.work) : nil,
-                                        showFolder: repeated.contains(result.work.name), status: model.rowStatus(result),
-                                        placement: nil)
-                        .tag(result.id)
-                    // A row with nothing to hand over starts no drag, rather than one that fails at drop.
-                    if model.rowHandoff(result) != nil {
-                        row.onDrag { model.dragItem(for: result) ?? NSItemProvider() }
-                    } else {
-                        row
-                    }
+                    WorkEntry(result: result,
+                              project: model.currentProject == nil ? model.organization.project(result.work.project) : nil,
+                              showFolder: repeated.contains(result.work.name))
                 }
             }
             .modifier(ListHandoff())
+            .modifier(FollowsSelection())
             .overlay { emptyState(results) }
             TroubleBar()
         }
@@ -242,8 +237,7 @@ struct ResultsList: View {
     func emptyState(_ results: [SearchResult]) -> some View {
         if model.artifacts.isEmpty {
             if !model.indexed {
-                EmptyState(title: "Reading Agent Logs…", glyph: .running,
-                           description: "Deliveries appear when the first read finishes.")
+                EmptyState(title: "Reading Agent Logs…", glyph: .running)
             } else if model.canReadAgain, let trouble = model.logTrouble {
                 ContentUnavailableView {
                     Label("Some Logs Couldn’t Be Read", systemImage: "exclamationmark.triangle")
@@ -258,16 +252,21 @@ struct ResultsList: View {
                 } description: {
                     Text("Gleaner looked in:\n"
                          + model.indexer.sources.watchedDirectories.map { ($0 as NSString).abbreviatingWithTildeInPath }.joined(separator: "\n"))
+                } actions: {
+                    Button("Sources") { model.place = .sources }
                 }
             } else {
                 EmptyState(title: "No Deliveries Yet", glyph: .artifact,
-                           description: "Files an agent names in a reply to you appear here." + (model.logTrouble.map { "\n\n" + $0 } ?? ""))
+                           description: model.indexer.sources.watchedDirectories.map(Wording.tilde).joined(separator: "\n")
+                               + (model.logTrouble.map { "\n\n" + $0 } ?? "")) {
+                    Button("Sources") { model.place = .sources }
+                }
             }
+        } else if results.isEmpty && model.query.isEmpty {
+            NoKind()
         } else if results.isEmpty {
             ContentUnavailableView {
                 Label("No Results", systemImage: "magnifyingglass")
-            } description: {
-                Text("Each word must appear in one delivery’s request, reply, file name or project.")
             } actions: {
                 Button("Clear Search") { model.clearFilters() }
                 if model.currentProject != nil { Button("Search All Deliveries") { model.place = .all } }
@@ -276,14 +275,16 @@ struct ResultsList: View {
     }
 }
 
-/// The project shown, and the kind filter, above a list.
+/// The project shown, and the kind filter, above a list. A project's outline names its project in
+/// its own head, so the bar leaves it out there.
 struct FilterBar: View {
     @Environment(LibraryModel.self) private var model
+    var named = true
 
     var body: some View {
         @Bindable var model = model
         HStack(spacing: 8) {
-            if let project = model.currentProject {
+            if named, let project = model.currentProject {
                 GlyphLabel(title: project.name, glyph: Wording.projectGlyph(project.origin), size: 14)
                     .font(.callout.weight(.semibold)).lineLimit(1)
             }
@@ -317,11 +318,11 @@ struct TroubleBar: View {
                 Spacer(minLength: Space.s)
                 if model.canReadAgain {
                     Button("Try Again") { model.reindex() }
-                        .controlSize(.small)
+                        .controlRole(.inline)
                         .help("Read the agent logs again")
                 }
                 Button("Sources") { model.place = .sources }
-                    .controlSize(.small)
+                    .controlRole(.inline)
             }
             .padding(.horizontal, Space.m)
             .padding(.vertical, Space.s)
@@ -330,7 +331,8 @@ struct TroubleBar: View {
 }
 
 /// One delivered work in a list, read as Mail reads a message: the file and its date, what you
-/// asked for, then where it is and anything that needs a look.
+/// asked for, then where it is and anything that needs a look. Open on its revisions, as Mail opens
+/// a conversation, it leaves the request to them.
 struct ResultRow: View {
     var result: SearchResult
     /// The file the row shows and hands over: the one holding `delivery`.
@@ -338,43 +340,63 @@ struct ResultRow: View {
     /// The delivery the row shows and hands over: the one chosen in the detail for the selected
     /// row, the matched one for any other.
     var delivery: Delivery
-    /// The project as shown, or nil when the list is one project's.
-    var project: String?
+    /// The project as shown, by its mark and name, or nil when the list is one project's.
+    var project: Organization.Project?
     var showFolder: Bool
     /// What the row says beside the date (`LibraryModel.rowStatus`).
     var status: (mark: (Mark, String)?, number: String?)
     /// Who put the work in the project the outline shows, when not Gleaner.
     var placement: Organization.Placement?
+    /// Its revisions are listed under it.
+    var open = false
 
     var body: some View {
         let work = result.work
-        // The work by its newest file's name; the context says when the row shows another of its files.
-        let context = [project,
-                       file.inWorktree ? file.place : nil,
+        // The work by its newest file's name; the context says when the row shows another of its
+        // files. Open, the revision chosen under it says that, and which delivery it is.
+        let context = [file.inWorktree ? file.place : nil,
                        showFolder ? Wording.folder(file.folder) : nil,
-                       work.files.count > 1 ? "\(work.files.count) files" + (file.path == work.latest.path ? "" : ", showing \(file.name)") : nil,
+                       work.files.count > 1 ? "\(work.files.count) files" + (open || file.path == work.latest.path ? "" : ", showing \(file.name)") : nil,
                        placed,
         ].compactMap { $0 }
+        let number = open ? nil : status.number
         HStack(alignment: .top, spacing: Space.s + 2) {
             FileIcon(path: work.latest.path, folder: work.latest.kind == .folder, size: 32)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                     Text(work.name).fontWeight(.semibold).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: Space.xs)
-                    ProviderMark(provider: delivery.provider, size: 12).foregroundStyle(.secondary)
-                    Text(Wording.shortDate(delivery.deliveredAt)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                        .help(Wording.date(delivery.deliveredAt))
+                    // How many revisions it has, said once, as Mail counts a conversation's messages.
+                    if work.deliveries.count > 1 {
+                        Text("\(work.deliveries.count)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                            .help(Wording.count(work.deliveries.count, "delivery", "deliveries"))
+                    }
+                    // Open, its revisions each carry their agent and date.
+                    if !open {
+                        AgentMark(provider: delivery.provider, size: 12).foregroundStyle(.secondary)
+                        Text(Wording.shortDate(delivery.deliveredAt)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                            .help(Wording.date(delivery.deliveredAt))
+                    }
                 }
-                if let request = delivery.request {
+                if !open, let request = delivery.request {
                     Text(request).font(.callout).foregroundStyle(.secondary).lineLimit(2)
                 }
-                if !context.isEmpty || status.mark != nil || status.number != nil {
+                if project != nil || !context.isEmpty || status.mark != nil || number != nil {
                     HStack(spacing: Space.s) {
                         if let mark = status.mark { StatusLabel(mark: mark.0, text: mark.1, size: 11) }
+                        // A project is named by its mark and name, wherever it is named.
+                        if let project {
+                            HStack(spacing: 3) {
+                                GlyphView(glyph: Wording.projectGlyph(project.origin), size: 11)
+                                Text(project.name).lineLimit(1)
+                            }
+                            .foregroundStyle(.secondary)
+                            .help(Wording.projectOrigin(project.origin))
+                        }
                         if !context.isEmpty {
                             Text(context.joined(separator: " · ")).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                         }
-                        if let number = status.number { Text(number).foregroundStyle(.secondary).monospacedDigit() }
+                        if let number { Text(number).foregroundStyle(.secondary).monospacedDigit() }
                     }
                     .font(.caption)
                 }
@@ -396,7 +418,11 @@ struct ResultRow: View {
 
     /// One sentence VoiceOver reads for the row, in the order the eye reads it.
     func spoken(context: [String]) -> String {
-        var parts = [result.work.name, Wording.kindLabel(result.work.latest.kind, path: result.work.latest.path) + " file"] + context
+        let work = result.work
+        var parts = [work.name, Wording.kindLabel(work.latest.kind, path: work.latest.path) + " file"]
+        if work.deliveries.count > 1 { parts.append(Wording.count(work.deliveries.count, "delivery", "deliveries")) }
+        if let project { parts.append("\(project.name), \(Wording.projectOrigin(project.origin).lowercased())") }
+        parts += context
         if let mark = status.mark { parts.append(mark.1.lowercased()) }
         parts.append("delivered " + (delivery.deliveredAt?.formatted(date: .abbreviated, time: .shortened) ?? "at an unknown time"))
         parts.append("by " + Wording.provider(delivery.provider))

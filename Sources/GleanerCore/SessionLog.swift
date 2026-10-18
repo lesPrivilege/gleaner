@@ -11,6 +11,10 @@ public struct SessionInfo: Sendable {
     public var title: String?
     public var cwd: String?
     public var logPath: String
+    /// The provider the agent sent its requests to, as its log names it: Codex records one per
+    /// session (`openai`, or another configured provider such as a local gateway). Nil when the
+    /// log doesn't say.
+    public var modelProvider: String? = nil
 }
 
 /// One record's worth of reply text. A reply can span several records; each keeps its own
@@ -28,6 +32,9 @@ public struct Turn: Sendable {
     /// The most recent human request in the session when this reply was written.
     public var request: String?
     public var parts: [ReplyPart]
+    /// The model that wrote the reply, as the log records it: Claude Code the model the provider
+    /// answered with, Codex the model the turn asked for. Nil when the log doesn't say.
+    public var model: String? = nil
 
     public var reply: String { parts.map(\.text).joined(separator: "\n\n") }
     public var deliveredAt: Date? { parts.last?.at }

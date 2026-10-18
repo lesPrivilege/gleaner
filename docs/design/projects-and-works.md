@@ -39,7 +39,7 @@ Sources → Corrections lists every decision with its date and an Undo (a work's
 ## The window
 
 - **Sidebar:** All Deliveries, then every project with its count, then Sources. ⌘, opens Sources.
-- **A project** opens on its outline: what it is (its counts, its folder, the latest three works to pick up from), the joins Gleaner suggests with Join and Keep Apart, then every work by the folder it is in, as the project's own folders lay it out. A file outside the project's folder is listed under that folder by name, never hidden. Searching inside a project searches that project.
+- **A project** opens on its outline: what it is (its counts, its folder, the latest three works to pick up from), the joins Gleaner suggests with Join and Keep Apart, then every work by the folder it is in, as the project's own folders lay it out, with each work's revisions under it ([outline.md](outline.md)). A file outside the project's folder is listed under that folder by name, never hidden. Searching inside a project searches that project.
 - **A work's detail** keeps the order of the delivery detail (rulings §5), laid out since as Finder's preview pane ([window-polish.md](window-polish.md), Fewer words): the file to hand off, its bytes, then the reply under Information. What the work may be (a suggestion) sits under its name, before its bytes. **Versions** lists every file's deliveries, named by file once there is more than one. **Project** says why the work is in its project (a short label, the sentence behind ⓘ), offers Move to Project…, Put Back or Show Apart, lists the files joined and each join's Undo, and Join With Another File…. Edit › Undo takes back a join, a keep-apart or a move.
 - **Delivered With** reaches every file the reply named: six, then the rest.
 
@@ -58,7 +58,7 @@ Gleaner opens no conversation itself and invents no URL scheme for one. A log fi
 
 ## Sources
 
-Sources → each agent shows its log folder, how the last read went and when (and why a run failed), how many deliveries and conversations it gave, each kind of read problem with the logs or folders behind it where Gleaner records them (unknown record types are counted per type), and Read Again. It also says what Gleaner reads and what it leaves out: sub-agent transcripts and side chains (Claude Code), sub-agent threads and messages a fork copied from its parent (Codex), examples, line references and placeholders. Admission does not change: a sub-agent's file appears once the main conversation hands it to the person. Gleaner draws no agent topology.
+Sources → each agent shows its log folder, how the last read went and when (and why a run failed), how many deliveries and conversations it gave, each kind of read problem with the logs or folders behind it where Gleaner records them (unknown record types are counted per type), and Read Again. It also says what Gleaner reads and what it leaves out: sub-agent transcripts and side chains (Claude Code), sub-agent threads and messages a fork copied from its parent (Codex), examples, line references and placeholders. Admission does not change: a sub-agent's file appears once the main conversation hands it to the person. Each agent can be switched off, and its page draws its line to the provider and the models behind its replies ([sources-plane.md](sources-plane.md)).
 
 ## Paths keep one spelling
 
@@ -68,8 +68,8 @@ Dogfooding the window on a synthetic home under `/var/folders` showed one folder
 
 - Folder rules that file future deliveries under a subfolder into another project (a monorepo holding two projects). Moving a work covers its files and their later deliveries; a rule per folder waits for a case where that is not enough.
 - Suggestions from a model, or from similarity of content.
-- Adding, changing or pausing a source folder.
-- An agent topology browser, fork or delegation views.
+- Adding or changing a source folder. (Pausing one, and the agent → provider → model line, came after: [sources-plane.md](sources-plane.md).)
+- Fork or delegation views.
 - PR #4's Thread and project Timeline, which stay for after the tag.
 
 ## Verification

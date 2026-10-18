@@ -1,5 +1,6 @@
 import AppKit
 import GleanerCore
+import GleanerUI
 import Observation
 import UniformTypeIdentifiers
 
@@ -8,6 +9,18 @@ struct SearchResult: Identifiable {
     var work: Work
     var matched: Delivery
     var id: Work.ID { work.id }
+}
+
+/// A row of a list: a work, or one of its revisions (a delivery) listed under it.
+enum OutlineRow: Hashable {
+    case work(Work.ID)
+    case revision(Work.ID, Delivery.ID)
+
+    var work: Work.ID {
+        switch self {
+        case .work(let id), .revision(let id, _): id
+        }
+    }
 }
 
 /// Where the library window is: every delivery, one project, or what Gleaner reads and keeps.
@@ -42,7 +55,14 @@ enum Staging: Equatable {
 
 @MainActor @Observable
 final class LibraryModel {
-    var artifacts: [Artifact] = [] {
+    /// Every delivery the library holds, whichever agent's.
+    private var library: [Artifact] = [] {
+        didSet { artifacts = Self.shown(library, without: sourcesOff) }
+    }
+    /// The agents whose logs the person turned off: not read, not watched, not shown.
+    private(set) var sourcesOff: Set<Provider> = []
+    /// What the window shows: the library without the deliveries of the agents turned off.
+    private(set) var artifacts: [Artifact] = [] {
         didSet {
             siblings = Artifact.deliveredWith(artifacts)
             missing = Self.missing(artifacts)
@@ -93,6 +113,9 @@ final class LibraryModel {
     }
     /// Set when the person picks a delivery; otherwise the delivery the search matched.
     var chosenDelivery: Delivery.ID?
+    /// Works the person opened or closed in a list this session, wherever it is listed; the rest
+    /// follow `opensByDefault`.
+    var disclosed: [Work.ID: Bool] = [:]
     /// Two exact versions shown in place of the preview, older first.
     var comparison: (from: Comparison.End, to: Comparison.End)?
     var progress: (done: Int, total: Int)?
@@ -138,7 +161,9 @@ final class LibraryModel {
         self.indexer = indexer
         corrections = (try? indexer.registry.corrections()) ?? []
         userProjects = (try? indexer.registry.userProjects()) ?? []
-        artifacts = (try? indexer.registry.artifacts()) ?? []
+        sourcesOff = (try? indexer.registry.sourcesOff()) ?? []
+        library = (try? indexer.registry.artifacts()) ?? []
+        artifacts = Self.shown(library, without: sourcesOff)
         siblings = Artifact.deliveredWith(artifacts)
         missing = Self.missing(artifacts)
         saved = Self.saved(artifacts, in: indexer.store)
@@ -172,13 +197,13 @@ final class LibraryModel {
     /// One line about the agents' logs when something needs a look: a run that failed, or a
     /// source that can't be read or was read with problems. What the library holds stays shown.
     var logTrouble: String? {
-        indexFailure ?? sources.flatMap(Wording.sourcesLine)
+        indexFailure ?? sources.flatMap { Wording.sourcesLine($0.filter { !sourcesOff.contains($0.key) }) }
     }
 
     /// True when reading the logs again may help: a run failed, or a source wasn't read whole.
     /// Unknown record types are reported, but a reread can't change them.
     var canReadAgain: Bool {
-        indexFailure != nil || sources?.values.contains(where: \.isIncomplete) == true
+        indexFailure != nil || sources?.contains(where: { !sourcesOff.contains($0.key) && $0.value.isIncomplete }) == true
     }
 
     /// Projects, newest activity first.
@@ -230,10 +255,52 @@ final class LibraryModel {
     }
 
     func start() {
-        watcher = LogWatcher(directories: indexer.sources.watchedDirectories, queue: work) { [weak self] in
+        watch()
+        reindex()
+    }
+
+    /// Watches the log folders of the agents that are on.
+    private func watch() {
+        let folders = Provider.allCases.filter { !sourcesOff.contains($0) }.map { indexer.sources.folder($0).path }
+        watcher = folders.isEmpty ? nil : LogWatcher(directories: folders, queue: work) { [weak self] in
             Task { @MainActor in self?.reindex() }
         }
-        reindex()
+    }
+
+    /// The library without `off`'s deliveries, and without the files left with none.
+    private static func shown(_ library: [Artifact], without off: Set<Provider>) -> [Artifact] {
+        guard !off.isEmpty else { return library }
+        return library.compactMap { $0.keeping { !off.contains($0.provider) } }
+    }
+
+    /// Turns an agent's logs on or off (`Registry.setSource`). On again, they are read at once.
+    func setSource(_ provider: Provider, on: Bool) async {
+        let registry: Registry
+        do { registry = try correctionsStore() } catch { return }
+        let queue = correctionQueue
+        let stored = await withCheckedContinuation { done in
+            queue.async { done.resume(returning: Result { try registry.setSource(provider, on: on, at: Date()); return try registry.sourcesOff() }) }
+        }
+        guard case .success(let off) = stored else { return }
+        sourcesOff = off
+        artifacts = Self.shown(library, without: off)
+        if watcher != nil || on { watch() }
+        if on { reindex() }
+        announce("\(Wording.provider(provider)) \(on ? "on" : "off")")
+    }
+
+    /// Every delivery the library holds from `provider`, shown or not.
+    func deliveries(of provider: Provider) -> [Delivery] {
+        library.flatMap(\.deliveries).filter { $0.provider == provider }
+    }
+
+    /// What each model wrote, for one agent: the provider it went through, the model, and how many
+    /// deliveries, the most first. Turned off, the agent's are still counted from the library.
+    func models(of provider: Provider) -> [(provider: String?, model: String?, deliveries: Int)] {
+        let deliveries = deliveries(of: provider)
+        let counts = Dictionary(grouping: deliveries) { [$0.modelProvider ?? "", $0.model ?? ""] }
+        return counts.map { key, list in (key[0].isEmpty ? nil : key[0], key[1].isEmpty ? nil : key[1], list.count) }
+            .sorted { $0.deliveries != $1.deliveries ? $0.deliveries > $1.deliveries : ($0.model ?? "") < ($1.model ?? "") }
     }
 
     func reindex() {
@@ -241,17 +308,17 @@ final class LibraryModel {
         indexing = true
         // A log folder that appeared since launch is watched from now on.
         watcher?.refresh()
-        let indexer = indexer
+        let indexer = indexer, on = Set(Provider.allCases).subtracting(sourcesOff)
         work.async {
             let outcome = Swift.Result {
-                try indexer.run(progress: { done, total in
+                try indexer.run(providers: on, progress: { done, total in
                     Task { @MainActor [weak self] in self?.progress = total > 0 && done < total ? (done, total) : nil }
                 })
             }
             let library = Swift.Result { try indexer.registry.artifacts() }
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if case .success(let artifacts) = library { self.artifacts = artifacts }
+                if case .success(let artifacts) = library { self.library = artifacts }
                 self.progress = nil
                 self.indexed = true
                 self.lastRead = Date()
@@ -318,6 +385,65 @@ final class LibraryModel {
     /// The file a result shows and hands over: the one holding the delivery it shows.
     func file(in result: SearchResult) -> Artifact {
         result.work.file(of: delivery(in: result))
+    }
+
+    // MARK: The outline
+
+    /// Whether a list shows the work's revisions under it. A work with one has nothing to show.
+    func isOpen(_ work: Work) -> Bool {
+        work.deliveries.count > 1 && (disclosed[work.id] ?? opensByDefault)
+    }
+
+    /// A project's outline opens each work on its revisions, since each is a step the person may
+    /// return to (a draft, a revision, the final), except in a git repository: agents revise code
+    /// quickly, the newest revision is the one picked up, and the repository's folders already
+    /// guide. Lists of what arrived, every delivery and search results, keep works closed.
+    var opensByDefault: Bool {
+        guard query.isEmpty, let project = currentProject else { return false }
+        return project.origin != .repository
+    }
+
+    /// The selected row: the revision shown, while its work is open; otherwise the work. Choosing a
+    /// row shows what it names, as choosing a delivery under Versions does; choosing the row
+    /// already selected changes nothing.
+    var outlineSelection: OutlineRow? {
+        get {
+            guard let selection, let work = organization.work(containing: selection) else { return selection.map(OutlineRow.work) }
+            if let chosen = chosenDelivery, isOpen(work), work.deliveries.contains(where: { $0.id == chosen }) {
+                return .revision(work.id, chosen)
+            }
+            return .work(work.id)
+        }
+        set {
+            guard newValue != outlineSelection else { return }
+            switch newValue {
+            case nil:
+                selection = nil
+            case .work(let id):
+                selection = id
+                chosenDelivery = nil
+            case .revision(let id, let delivery):
+                selection = id
+                chosenDelivery = delivery
+            }
+        }
+    }
+
+    /// What a work's own row names. Closed, it stands for its revisions: the one chosen in the
+    /// detail, else the one the search matched. Open, each revision's row stands for itself, and
+    /// the work's row for the work: the matched one, whichever revision is chosen.
+    func workDelivery(_ result: SearchResult) -> Delivery {
+        isOpen(result.work) ? result.matched : delivery(in: result)
+    }
+
+    /// The file and delivery a row names: a revision's own, or what its work's row names.
+    func target(_ row: OutlineRow) -> (artifact: Artifact, delivery: Delivery)? {
+        guard let work = organization.work(containing: row.work) else { return nil }
+        if case .revision(_, let id) = row, let delivery = work.deliveries.first(where: { $0.id == id }) {
+            return (work.file(of: delivery), delivery)
+        }
+        let delivery = workDelivery(result(for: work) ?? SearchResult(work: work, matched: work.deliveries[0]))
+        return (work.file(of: delivery), delivery)
     }
 
     func hasSaved(_ sha: String) -> Bool { saved.contains(sha) }
@@ -643,7 +769,11 @@ final class LibraryModel {
     /// the file, never by reading the disk, so a row can ask while it is drawn. The drop verifies
     /// what it hands over.
     func rowHandoff(_ result: SearchResult) -> RowHandoff? {
-        let artifact = file(in: result), delivery = delivery(in: result)
+        rowHandoff(file(in: result), delivery(in: result))
+    }
+
+    /// What dragging a row naming `delivery` of `artifact` hands over, as `rowHandoff(_:)` decides it.
+    func rowHandoff(_ artifact: Artifact, _ delivery: Delivery) -> RowHandoff? {
         if let observation = rowObservation(artifact.path) {
             switch artifact.handoff(delivery, now: observation, hasSaved: hasSaved) {
             case .ready(let sha, _, _): return .bytes(sha: sha)
@@ -665,14 +795,36 @@ final class LibraryModel {
     /// What `result`'s row says beside its date, from what the library holds and the newest check
     /// of the file: rows never read the disk while they are drawn, so "changed" waits for a check.
     func rowStatus(_ result: SearchResult) -> (mark: (Mark, String)?, number: String?) {
-        let artifact = file(in: result), observation = rowObservation(artifact.path)
+        let artifact = file(in: result), now = rowNow(artifact)
+        return Wording.row(delivery(in: result), latest: artifact.latest.number, now: now.kind, changed: now.changed,
+                           available: rowHandoff(result) != nil)
+    }
+
+    /// What an open work's row says: only what is true of its file now, whichever delivery.
+    func fileStatus(_ artifact: Artifact) -> (Mark, String)? {
+        let now = rowNow(artifact)
+        return Wording.fileState(now: now.kind, changed: now.changed)
+    }
+
+    /// What a revision's row says: only that it has nothing to hand over, in a few words and in a
+    /// sentence. Its endpoint already says whether it was first seen later.
+    func revisionStatus(_ artifact: Artifact, _ delivery: Delivery) -> (label: (Mark, String), reason: String)? {
+        guard rowHandoff(artifact, delivery) == nil else { return nil }
+        let now = rowNow(artifact)
+        guard let label = Wording.row(delivery, latest: artifact.latest.number, now: now.kind, changed: now.changed, available: false).mark
+        else { return nil }
+        return (label, Wording.unavailableReason(delivery, now: now.kind, large: isLarge(delivery)))
+    }
+
+    /// What is at `artifact`'s path as far as the library knows without reading the disk (a check
+    /// this session, or gone when the library loaded), and whether a check found bytes no delivery had.
+    private func rowNow(_ artifact: Artifact) -> (kind: LocatorState.Kind?, changed: Bool) {
+        let observation = rowObservation(artifact.path)
         let changed = observation.map { now in
             // No saved copy is asked about: only the missing case would, and it isn't "changed".
             if case .changed = artifact.onDisk(now, hasSaved: { _ in false }) { true } else { false }
         } ?? false
-        return Wording.row(delivery(in: result), latest: artifact.latest.number,
-                           now: observation?.state.kind ?? (missing.contains(artifact.path) ? .missing : nil),
-                           changed: changed, available: rowHandoff(result) != nil)
+        return (observation?.state.kind ?? (missing.contains(artifact.path) ? .missing : nil), changed)
     }
 
     /// A drag from a result row, handing over what `rowHandoff` says, or nil when there is
@@ -680,10 +832,15 @@ final class LibraryModel {
     /// bytes staged and verified only when the receiving app asks for them, or a delivered folder
     /// as it is then, so a drop never moves a project's file or folder (SPEC §4).
     func dragItem(for result: SearchResult) -> NSItemProvider? {
-        switch rowHandoff(result) {
+        dragItem(file(in: result), delivery(in: result))
+    }
+
+    /// A drag from a row naming `delivery` of `artifact`: a revision's row hands over its own bytes.
+    func dragItem(_ artifact: Artifact, _ delivery: Delivery) -> NSItemProvider? {
+        switch rowHandoff(artifact, delivery) {
         case nil: nil
-        case .folder: Self.folderItem(file(in: result).path)
-        case .bytes(let sha): handoffItem(sha: sha, artifact: file(in: result))
+        case .folder: Self.folderItem(artifact.path)
+        case .bytes(let sha): handoffItem(sha: sha, artifact: artifact)
         }
     }
 
@@ -844,7 +1001,7 @@ final class LibraryModel {
         observations[path] = FileObservation(state: state, checkedAt: Date())
         saved.subtract(versions)
         saved.formUnion(held)
-        if completed { artifacts = (try? indexer.registry.artifacts()) ?? artifacts }
+        if completed { library = (try? indexer.registry.artifacts()) ?? library }
         // Whether a file is gone decides which joins Gleaner suggests.
         let goneChanged = (state.kind == .missing) != missing.contains(path)
         if state.kind == .missing {
@@ -895,7 +1052,7 @@ final class LibraryModel {
         let indexer = indexer
         let result = await Task.detached { Result { try indexer.saveCopy(of: delivery, at: Date()) } }.value
         switch result {
-        case .success: artifacts = (try? indexer.registry.artifacts()) ?? artifacts
+        case .success: library = (try? indexer.registry.artifacts()) ?? library
         case .failure(let error): actionFailure = (artifact.id, delivery.id, Wording.saveFailed(error, delivery: delivery))
         }
         await observe(artifact)

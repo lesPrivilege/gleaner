@@ -1,4 +1,5 @@
 import GleanerCore
+import GleanerUI
 import SwiftUI
 
 /// Where a work belongs: its project and why, the files joined as its versions, and the pairs the
@@ -17,27 +18,31 @@ struct WorkSection: View {
         let project = organization.project(work.project)
         let links = organization.links(of: work), declines = organization.declines(of: work)
         DetailSection(title: "Project") {
-            Button("Move to Project…") { moving = true }.controlSize(.small)
+            Button("Move to Project…") { moving = true }.controlRole(.inline)
         } content: {
             HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                 Label {
-                    Text(model.projectName(work)).fontWeight(.semibold)
+                    // The mark says the project's origin; the name needs no words for it.
+                    Text(organization.projectName(work.project)).fontWeight(.semibold)
                 } icon: {
                     GlyphView(glyph: Wording.projectGlyph(project?.origin ?? .folder), size: 16).foregroundStyle(Palette.mark)
                 }
+                .help(Wording.projectOrigin(project?.origin ?? .folder))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(organization.projectName(work.project)), \(Wording.projectOrigin(project?.origin ?? .folder).lowercased())")
                 Text(why.title).foregroundStyle(.secondary)
                 InfoButton(text: why.detail)
                 Spacer(minLength: Space.s)
                 switch placement {
                 case .moved:
                     Button("Put Back") { Task { await model.undoMove(work) } }
-                        .controlSize(.small)
+                        .controlRole(.inline)
                         .help("Return it to the project Gleaner found it in")
                 case .combined(let folder, let correction):
                     Button { Task { await model.undo(correction) } } label: {
                         Label { Text("Show Apart") } icon: { GlyphView(glyph: .branch, size: 12) }
                     }
-                    .controlSize(.small)
+                    .controlRole(.inline)
                     .help("Show \(organization.projectName(folder)) as its own project again")
                 case .found:
                     EmptyView()
@@ -64,7 +69,7 @@ struct WorkSection: View {
                 Button { joining = true } label: {
                     Label { Text("Join With Another File…") } icon: { GlyphView(glyph: .merge, size: 12) }
                 }
-                .controlSize(.small)
+                .controlRole(.inline)
                 .help("Say that another file is a version of this work, such as a renamed draft")
             }
             if let failure = model.correctionFailure {
@@ -88,16 +93,7 @@ struct VersionsStrip: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(work.files.enumerated()), id: \.element.path) { index, file in
                 HStack(alignment: .center, spacing: Space.s) {
-                    ZStack {
-                        // The line into this node and out of it, solid: the join is in effect. It
-                        // stops at the dot's edge, so the dot reads as one solid end.
-                        VStack(spacing: 8) {
-                            Rectangle().fill(index == 0 ? Color.clear : Color.secondary).frame(width: 1.5)
-                            Rectangle().fill(index == work.files.count - 1 ? Color.clear : Color.secondary).frame(width: 1.5)
-                        }
-                        GlyphView(glyph: .endSolid, size: 12).foregroundStyle(.secondary)
-                    }
-                    .frame(width: 14)
+                    RelationNode(into: index > 0, out: index < work.files.count - 1, end: .solid)
                     FileIcon(path: file.path, folder: file.kind == .folder, size: 16)
                     Text(file.name).lineLimit(1).truncationMode(.middle)
                     Text([Wording.count(file.deliveries.count, "delivery", "deliveries"),
@@ -126,7 +122,7 @@ struct DecisionLine: View {
             Text(text).lineLimit(1).truncationMode(.middle)
             Text(Wording.shortDate(date)).foregroundStyle(.secondary).monospacedDigit()
                 .help(Wording.date(date))
-            Button("Undo", action: undo).controlSize(.small).accessibilityLabel("Undo: \(text)")
+            Button("Undo", action: undo).controlRole(.inline).accessibilityLabel("Undo: \(text)")
         }
         .font(.caption)
     }
@@ -139,18 +135,12 @@ struct DeclineLine: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: Space.s) {
-            ZStack(alignment: .leading) {
-                Path { $0.move(to: CGPoint(x: 0, y: 6)); $0.addLine(to: CGPoint(x: 8, y: 6)) }
-                    .stroke(style: StrokeStyle(lineWidth: 1.5, lineCap: .round, dash: [2, 3]))
-                GlyphView(glyph: .endCross, size: 8).offset(x: 7)
-            }
-            .frame(width: 14, height: 12, alignment: .leading)
-            .foregroundStyle(.secondary)
+            RelationLine(inEffect: false, end: .cross, length: 14)
             Text(model.describe(decline)).lineLimit(1).truncationMode(.middle)
             Text(Wording.shortDate(decline.madeAt)).foregroundStyle(.secondary).monospacedDigit()
                 .help(Wording.date(decline.madeAt))
             Button("Undo") { Task { await model.undo(decline) } }
-                .controlSize(.small)
+                .controlRole(.inline)
                 .accessibilityLabel("Undo: \(model.describe(decline))")
         }
         .font(.caption)
@@ -201,49 +191,14 @@ struct MoveSheet: View {
 /// Says that another file is a version of this work.
 struct JoinSheet: View {
     @Environment(LibraryModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
     var work: Work
-    @State private var other: Work.ID?
-    @State private var filter = ""
 
     var body: some View {
-        let candidates = model.organization.works.filter { candidate in
-            candidate.id != work.id && (filter.isEmpty || candidate.files.contains { $0.name.localizedCaseInsensitiveContains(filter) })
-        }
+        let others = model.organization.works.filter { $0.id != work.id }
         // This project's works first: versions of one work are usually kept together.
-        let ordered = candidates.filter { $0.project == work.project } + candidates.filter { $0.project != work.project }
-        VStack(alignment: .leading, spacing: Space.m) {
-            Text("Join “\(work.name)” With…").font(.headline)
-            Text("Both files show as versions of one work. Gleaner checks nothing: it’s your call.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            TextField("Filter", text: $filter, prompt: Text("Filter by name"))
-            List(selection: $other) {
-                ForEach(ordered) { candidate in
-                    HStack(spacing: Space.s) {
-                        FileIcon(path: candidate.latest.path, folder: candidate.latest.kind == .folder, size: 24)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(candidate.files.map(\.name).joined(separator: " → ")).lineLimit(1).truncationMode(.middle)
-                            Text([model.projectName(candidate), Wording.folder(candidate.latest.folder),
-                                  Wording.shortDate(candidate.deliveries[0].deliveredAt)].joined(separator: " · "))
-                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                    }
-                    .tag(Optional(candidate.id))
-                }
-            }
-            .frame(minHeight: 220)
-            HStack {
-                Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Join") {
-                    if let other { Task { await model.join(work.id, other) } }
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(other == nil)
-            }
+        WorkPicker(title: "Join “\(work.name)” With…", note: "Both files show as versions of one work. Gleaner checks nothing: it’s your call.",
+                   action: "Join", works: others.filter { $0.project == work.project } + others.filter { $0.project != work.project }) { other in
+            Task { await model.join(work.id, other.id) }
         }
-        .padding(Space.xl)
-        .frame(width: 460)
     }
 }

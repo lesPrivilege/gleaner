@@ -50,6 +50,7 @@ public struct CodexAdapter: Sendable {
         var unknown: [String: Int] = [:]
         var meta: [String: Any]?
         var cwd: String?
+        var model: String?
         var request: String?
         var turns: [Turn] = []
 
@@ -67,6 +68,8 @@ public struct CodexAdapter: Sendable {
                 cwd = payload["cwd"] as? String
             case "turn_context":
                 cwd = payload["cwd"] as? String ?? cwd
+                // The model the turn asked for; through a gateway, as the gateway's catalog names it.
+                model = payload["model"] as? String ?? model
             case "response_item" where payload["type"] as? String == "message":
                 if (record["metadata"] as? [String: Any])?["inherited_user_message"] as? Bool == true { continue }
                 let content = payload["content"] as? [[String: Any]] ?? []
@@ -77,7 +80,7 @@ public struct CodexAdapter: Sendable {
                     let text = content.compactMap { $0["text"] as? String }.joined(separator: "\n\n")
                     guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
                     turns.append(Turn(request: request, parts: [ReplyPart(
-                        text: text, line: line, at: Timestamp.parse(record["timestamp"]), cwd: cwd)]))
+                        text: text, line: line, at: Timestamp.parse(record["timestamp"]), cwd: cwd)], model: model))
                 default:
                     break
                 }
@@ -90,7 +93,7 @@ public struct CodexAdapter: Sendable {
         return SessionLog(
             session: SessionInfo(
                 provider: .codex, id: id, title: titles[id],
-                cwd: meta?["cwd"] as? String, logPath: url.path),
+                cwd: meta?["cwd"] as? String, logPath: url.path, modelProvider: meta?["model_provider"] as? String),
             turns: turns,
             unknownRecordTypes: unknown,
             malformedLines: file.malformed)

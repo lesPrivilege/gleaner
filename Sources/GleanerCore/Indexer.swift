@@ -125,10 +125,13 @@ public final class Indexer: @unchecked Sendable {
         self.sources = sources
     }
 
-    public func run(now: () -> Date = Date.init, progress: (Int, Int) -> Void = { _, _ in }) throws -> Report {
+    /// Reads the logs of `providers`; the others are neither listed nor read, so nothing they
+    /// delivered is touched.
+    public func run(providers: Set<Provider> = Set(Provider.allCases), now: () -> Date = Date.init,
+                    progress: (Int, Int) -> Void = { _, _ in }) throws -> Report {
         var report = Report()
         var files: [(Provider, URL)] = []
-        for provider in Provider.allCases {
+        for provider in Provider.allCases where providers.contains(provider) {
             let (source, logs) = sources.logs(provider)
             report.sources[provider] = source
             files += logs.map { (provider, $0) }
@@ -231,7 +234,8 @@ public final class Indexer: @unchecked Sendable {
                         Evidence(line: $0.part.line, syntax: $0.mention.syntax.rawValue,
                                  rawTarget: Redactor.redact($0.mention.rawTarget),
                                  anchor: $0.mention.anchor.map(Redactor.redact), excerpt: $0.mention.excerpt)
-                    })
+                    },
+                    model: turn.model)
                 if isNew {
                     let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
                     try registry.addCapture(captured, for: id, logPath: log.session.logPath, path: candidate.path,

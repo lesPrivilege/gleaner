@@ -83,6 +83,7 @@ import Testing
         let d1 = video.latest
         #expect(d1.capture?.provenance == .atDelivery)
         #expect(d1.request == "Make the chapter 3 explainer video about the agent harness loop")
+        #expect(d1.model == "m")
         #expect(saved(try #require(d1.sha256)))
 
         // An agent rewrites the file after delivery.
@@ -376,7 +377,8 @@ import Testing
     @Test func extractorUpgradeRereadsLogsButKeepsCaptures() throws {
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
         let before = try artifact("demo.mp4").latest.capture
-        try indexer.registry.db.execute("PRAGMA user_version = 1")
+        // A library read before Gleaner kept each reply's model gets it from the reread.
+        try indexer.registry.db.execute("UPDATE deliveries SET model = NULL; PRAGMA user_version = 1")
         let upgraded = Indexer(
             registry: try Registry(path: root.appendingPathComponent("support/registry.sqlite").path),
             store: indexer.store, sources: indexer.sources)
@@ -385,6 +387,7 @@ import Testing
         #expect(report.newDeliveries == 0)
         let after = try #require(try upgraded.registry.artifacts().first { $0.name == "demo.mp4" })
         #expect(after.latest.capture == before)
+        #expect(after.latest.model == "m")
     }
 
     @Test func aRereadThatFindsTheFirstMentionInAnotherRecordKeepsTheDeliveryAndItsCapture() throws {

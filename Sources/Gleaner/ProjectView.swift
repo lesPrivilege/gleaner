@@ -1,8 +1,11 @@
 import GleanerCore
+import GleanerUI
 import SwiftUI
 
-/// One project, to enter and resume: what it is and what arrived last, the joins Gleaner suggests,
-/// then every work by the folder it is in, as the project's own folders lay them out.
+/// One project as an outline, to enter and resume: the project at its head (what it is, and what
+/// arrived last), the joins Gleaner suggests, then its works by the folder each is in, as the
+/// project's own folders lay them out, and each work's revisions under it. Works and revisions are
+/// newest first, as everywhere in the window; folders keep the project's own layout.
 struct ProjectOutline: View {
     @Environment(LibraryModel.self) private var model
     var project: Organization.Project
@@ -17,8 +20,8 @@ struct ProjectOutline: View {
         let order = folders.keys.sorted { a, b in a.isEmpty != b.isEmpty ? a.isEmpty : a.localizedStandardCompare(b) == .orderedAscending }
         let suggestions = model.organization.suggestions(in: project)
         VStack(spacing: 0) {
-            FilterBar()
-            List(selection: $model.selection) {
+            FilterBar(named: false)
+            List(selection: $model.outlineSelection) {
                 Section { ProjectHeader(project: project).listRowSeparator(.hidden) }
                 if !suggestions.isEmpty {
                     Section {
@@ -28,41 +31,31 @@ struct ProjectOutline: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     } header: {
-                        HStack(spacing: Space.xs + 2) {
+                        SectionHeader(title: "Suggestions", count: suggestions.count, noun: "suggestion") {
                             GlyphView(glyph: .awaiting, size: 12).foregroundStyle(Palette.awaiting)
-                            Text("Suggestions")
-                            Text("\(suggestions.count)").monospacedDigit().foregroundStyle(.secondary)
                         }
                     } footer: {
                         Text("Joining never moves or changes a file.").font(.caption).foregroundStyle(.secondary)
                     }
                 }
                 ForEach(order, id: \.self) { folder in
-                    Section(Wording.folder(folder)) {
-                        ForEach(folders[folder]!.sorted { $0.work.name.localizedStandardCompare($1.work.name) == .orderedAscending }) { result in
-                            let row = ResultRow(result: result, file: model.file(in: result), delivery: model.delivery(in: result),
-                                                project: nil, showFolder: false, status: model.rowStatus(result),
-                                                placement: model.organization.placement(of: result.work))
-                                .tag(result.id)
-                            if model.rowHandoff(result) != nil {
-                                row.onDrag { model.dragItem(for: result) ?? NSItemProvider() }
-                            } else {
-                                row
-                            }
+                    let works = folders[folder]!
+                    Section {
+                        ForEach(works) { result in
+                            WorkEntry(result: result, placement: model.organization.placement(of: result.work))
                         }
+                    } header: {
+                        FolderHeader(name: Wording.folder(folder), count: works.count)
                     }
                 }
             }
             .modifier(ListHandoff())
+            .modifier(FollowsSelection())
             .overlay {
                 if project.works.isEmpty {
-                    EmptyState(title: "No Work Yet", glyph: .person, description: "Use Move to Project… in a file’s detail.")
+                    EmptyProject(project: project)
                 } else if results.isEmpty {
-                    ContentUnavailableView {
-                        Label("No \(model.kind.map(Wording.kindName) ?? "Works")", systemImage: "line.3.horizontal.decrease.circle")
-                    } actions: {
-                        Button("Show All Kinds") { model.kind = nil }
-                    }
+                    NoKind()
                 }
             }
             TroubleBar()
@@ -91,7 +84,10 @@ struct ProjectHeader: View {
                     .accessibilityLabel("Show in Finder")
                 }
             }
-            Text(Wording.projectCounts(project)).font(.callout).foregroundStyle(.secondary).monospacedDigit()
+            // An empty project says so once, where the next step is.
+            if !project.works.isEmpty {
+                Text(Wording.projectCounts(project)).font(.callout).foregroundStyle(.secondary).monospacedDigit()
+            }
             if let folder = project.folder {
                 Text(Wording.tilde(folder))
                     .font(.caption).foregroundStyle(.secondary)
@@ -104,7 +100,7 @@ struct ProjectHeader: View {
                     Button { Task { await model.undo(combined.correction, following: false) } } label: {
                         Label { Text("Show Apart") } icon: { GlyphView(glyph: .branch, size: 12) }
                     }
-                    .controlSize(.small)
+                    .controlRole(.inline)
                     .help("Show \(combined.name) as its own project again, as you set on \(Wording.date(combined.correction.madeAt))")
                 }
             }
@@ -189,11 +185,7 @@ struct SuggestionView: View {
                 }
                 .padding(.horizontal, Space.m)
                 .padding(.vertical, Space.s + 2)
-                .background(Palette.awaitingWash, in: RoundedRectangle(cornerRadius: Radius.card))
-                .overlay {
-                    RoundedRectangle(cornerRadius: Radius.card)
-                        .strokeBorder(Palette.awaiting.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
-                }
+                .surface(.awaiting)
             }
         }
         .accessibilityElement(children: .contain)
@@ -206,9 +198,11 @@ struct SuggestionView: View {
                 Label { Text("Join") } icon: { GlyphView(glyph: .merge, size: 12) }
             }
             .help("Show both as versions of one work")
-            Button("Keep Apart") { Task { await model.keepApart(suggestion.earlier, suggestion.later) } }
-                .help("Gleaner stops suggesting this")
+            Button { Task { await model.keepApart(suggestion.earlier, suggestion.later) } } label: {
+                Label { Text("Keep Apart") } icon: { GlyphView(glyph: .rejected, size: 12) }
+            }
+            .help("Gleaner stops suggesting this")
         }
-        .controlSize(.small)
+        .controlRole(.inline)
     }
 }

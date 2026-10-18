@@ -69,6 +69,10 @@ public struct Delivery: Sendable, Identifiable {
     public var evidence: [Evidence]
     public var logPath: String
     public var capture: Capture?
+    /// The model that wrote the reply, and the provider the agent sent it to, as the log names them
+    /// (`Turn.model`, `SessionInfo.modelProvider`); nil when it doesn't.
+    public var model: String? = nil
+    public var modelProvider: String? = nil
 
     public var sha256: String? { capture?.sha256 }
     /// Bytes Gleaner can vouch for as this delivery's.
@@ -118,6 +122,18 @@ public struct Artifact: Sendable, Identifiable {
         let place = folder.hasPrefix("~") || folder.hasPrefix("/")
             ? (folder as NSString).pathComponents.suffix(2).joined(separator: "/") : folder
         searchPlace = Search.form(name + " " + place)
+    }
+
+    /// The artifact with only the deliveries `kept`, keeping its project and checkout and each
+    /// delivery's number; nil when none is kept.
+    public func keeping(_ kept: (Delivery) -> Bool) -> Artifact? {
+        let deliveries = deliveries.filter(kept)
+        guard !deliveries.isEmpty else { return nil }
+        guard deliveries.count < self.deliveries.count else { return self }
+        var artifact = Artifact(path: path, deliveries: deliveries, repository: inRepository ? projectFolder : nil, checkout: checkout)
+        artifact.projectFolder = projectFolder
+        artifact.inRepository = inRepository
+        return artifact
     }
 
     /// The project's name, its folder's. Two projects can share one.

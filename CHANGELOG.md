@@ -20,6 +20,7 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - Move to Project… puts a work, and its files' later deliveries, in another project or a new one of your own; a derived project can be shown inside another. Each work says why it is in its project.
 - Every correction is kept apart from what Gleaner observed, survives reading the logs again and relaunching, and can be undone one by one or all at once in Sources → Corrections.
 - Delivered With reaches every file the reply named. Copy Resume Command gives `claude --resume` or `codex resume` for the conversation, run from the folder it started in, while its log and that folder are there, and says why not otherwise.
+- Each agent has a switch, in Sources and in the toolbar's Sources popover: off, its logs are neither read nor watched and its deliveries are hidden, never removed. Each agent's page draws its line to the provider and the models behind its replies, and each delivery names its model, with the vendors' marks from lobe-icons.
 - Sources (⌘,) shows each agent's log folder, how and when it was last read, its deliveries and conversations, the logs behind each read problem (unknown record types are counted per type), and what Gleaner reads and skips; Corrections; and Storage, laid out as System Settings lays out a pane.
 
 ### Identify the version
@@ -29,6 +30,8 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - Keeps "first seen later" on every label that names a delivery number.
 - Marks a list row only when it needs a look: unavailable and why, not on disk, changed (once checked this session), or first seen later. Each file shows its own icon, as Finder draws it, and each delivery its agent's mark (Claude Code, Codex; drawings from lobe-icons, MIT).
 - Says a state in as few words as it needs: a mark alone when all is as it should be, a word or two when something needs a look, and the full sentence behind ⓘ, in the help tag and to VoiceOver.
+- "Lost" has its own mark, a cross between brackets, so it never differs from "not on disk" by color alone.
+- Under Increase Contrast, status colors, the edges of tinted panels and suggestions, and link underlines draw stronger, in light and in dark; under Reduce Transparency, a label floating over a preview turns opaque.
 - Quotes claims in replies as the agent's words, never as a status.
 - Saves a copy of every file up to 64 MB when first read; Save a Copy keeps a larger one while it still matches.
 
