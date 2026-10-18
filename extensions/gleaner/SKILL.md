@@ -51,7 +51,8 @@ Each of `results` is one file, newest first, given by the delivery that matched:
 To choose:
 - Every file one reply delivered matches that reply's words. Prefer the result whose `name`, `kind` and `request` fit what the person described.
 - When one result fits, take it. When several fit equally well, list them briefly (name, project, date, request) and ask which one; don't choose for the person.
-- When `total` is 0 or nothing fits, try other or fewer words, without `--project` or `--kind`. Then report what the index shows: no match in Gleaner's library as of `scanned_at`, naming any source whose state isn't `read`. Never say the file was never delivered: Gleaner knows only the logs it has read, and it reads new ones while the app is open.
+- When nothing listed fits but `truncated` is true, the file may be among the matches left out. Narrow the search (more words, `--project`, `--kind`) or raise `--limit` until the answer isn't truncated.
+- When `total` is 0, or the answer lists every match and none fits, try other or fewer words, without `--project` or `--kind`, and read each answer as above. If nothing fits still, report what the index shows: no match in Gleaner's library as of `scanned_at`, naming any source whose state isn't `read`. Never say the file was never delivered: Gleaner knows only the logs it has read, and it reads new ones while the app is open.
 - A file delivered more than once: `show` lists every delivery in `deliveries`, newest first, each with its `number` (1 is the oldest) and `delivered_at`. Take the one the person means (the version from a given day, the one before a change); otherwise keep the one `find` matched.
 
 ## Open in Gleaner
