@@ -30,10 +30,8 @@ struct ProjectOutline: View {
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     } header: {
-                        HStack(spacing: Space.xs + 2) {
+                        SectionHeader(title: "Suggestions", count: suggestions.count, noun: "suggestion") {
                             GlyphView(glyph: .awaiting, size: 12).foregroundStyle(Palette.awaiting)
-                            Text("Suggestions")
-                            Text("\(suggestions.count)").monospacedDigit().foregroundStyle(.secondary)
                         }
                     } footer: {
                         Text("Joining never moves or changes a file.").font(.caption).foregroundStyle(.secondary)
@@ -56,11 +54,7 @@ struct ProjectOutline: View {
                 if project.works.isEmpty {
                     EmptyProject(project: project)
                 } else if results.isEmpty {
-                    ContentUnavailableView {
-                        Label("No \(model.kind.map(Wording.kindName) ?? "Works")", systemImage: "line.3.horizontal.decrease.circle")
-                    } actions: {
-                        Button("Show All Kinds") { model.kind = nil }
-                    }
+                    NoKind()
                 }
             }
             TroubleBar()
@@ -89,7 +83,10 @@ struct ProjectHeader: View {
                     .accessibilityLabel("Show in Finder")
                 }
             }
-            Text(Wording.projectCounts(project)).font(.callout).foregroundStyle(.secondary).monospacedDigit()
+            // An empty project says so once, where the next step is.
+            if !project.works.isEmpty {
+                Text(Wording.projectCounts(project)).font(.callout).foregroundStyle(.secondary).monospacedDigit()
+            }
             if let folder = project.folder {
                 Text(Wording.tilde(folder))
                     .font(.caption).foregroundStyle(.secondary)

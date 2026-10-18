@@ -22,16 +22,21 @@ The window reads left to right, as a Finder column view does:
 | 1 | Project | A sidebar row; the head of its outline | Sidebar text; the head in Title 3 semibold | Its origin: repository, folder outside git, or yours | The head stands alone above the outline |
 | 2 | Folder | A section of the outline | The system's section header | None: a group, not an object | A section's space above it |
 | 3 | Work | A row in every list | Name in semibold, request in secondary | The file's own icon, at 32 points | 4 points above and below |
-| 4 | Revision | A row under its work; a row of Versions | Callout, regular | The endpoint: filled when Gleaner saw the bytes at delivery, hollow when it first saw them later | 1 point above and below, with no rule between revisions |
+| 4 | Revision | A row under its work; a row of Versions | Callout, regular; its request under it in secondary | The endpoint: filled when Gleaner saw the bytes at delivery, hollow when it first saw them later | 2 points above and below, with no rule between revisions |
 | 5 | Evidence | The detail | The detail's own sections | The agent's mark, the model vendor's mark | 24 points between sections |
 
 Each level is set apart by more than one of type, mark and room, so the grade holds in grey.
 
 The sidebar keeps places, not items, as Mail's and Finder's do. A tree of works in the sidebar would repeat the list and crowd the places, so a project opens in the content column.
 
-A revision's text starts under its work's name, as a table of contents sets a subsection under its section's title. Its endpoint sits in the gutter to its left.
+A revision's row keeps the order of its work's row:
+- first its number, its file when the work has several, and the agent and date at the end;
+- then what you asked for, on a line or two of its own;
+- then, only when it has nothing to hand over, why.
 
-A work and its revisions read as one group: there is no rule under an open work's row, or between its revisions, and one rule after the last.
+Its text starts under its work's name, as a table of contents sets a subsection under its section's title, and its endpoint sits in the gutter to its left.
+
+A work and its revisions read as one group. There is no rule under an open work's row or between its revisions. One rule follows the last revision, starting where every work's rule starts.
 
 ## Conventions at every level
 
@@ -58,7 +63,7 @@ Because the rule is the same everywhere, no list states it, and no row repeats i
 **Said once.** These repeated words were removed:
 - the project's name in the bar above its own outline, where its head already names it;
 - "· outside git" beside a project's mark;
-- the request on an open work's row, since its revisions each carry their own;
+- the request, the agent's mark and the date on an open work's row, since its revisions each carry their own;
 - "showing report.md" and the delivery's number on an open work's row, since the selected revision's row says both.
 
 ## Opening a work on its revisions
@@ -77,12 +82,20 @@ What the person opens or closes stays that way for the session, wherever the wor
 ## Selection, keys, drag and menus
 
 - **Choosing a work's row** shows what the row shows: the revision the search matched, or the newest.
+- **A work's row stands for what it names.**
+  - Closed, it stands for its revisions: it shows the one chosen in the detail, and drags and opens its menu on it.
+  - Open, it stands for the work alone: it drags and opens its menu on the matched or newest revision, whichever revision the detail shows, and each revision's row stands for itself.
 - **Choosing a revision's row** shows that revision, as choosing it under Versions does.
 - **Choosing under Versions** selects that revision's row when its work is open. When the work is closed, the work's row stays selected, and the detail keeps the revision chosen. Choosing the row that is already selected changes nothing.
 - **Keys:** the list's own. ↑ and ↓ move through works and revisions, → opens a work and ← closes it. Space is Quick Look, ⌘O opens and ⌘C copies.
 - **Following a link:** when the selection is made outside the list (Recent, Delivered With, a suggestion's file), the list scrolls only as far as it needs to show the row.
-- **Dragging:** every row hands over what it names. A work's row hands over the revision it shows, decided when the drag starts. A revision's row hands over that revision's bytes. Each is a verified copy, as before, never the original. A row with nothing to hand over starts no drag.
-- **Right-clicking:** Show in Finder and Copy Path act on the row's own file: a revision's own, or the one its work's row shows.
+- **Dragging:** every row hands over what it names, decided when the drag starts. A revision's row hands over that revision's bytes. Each is a verified copy, as before, never the original. A row with nothing to hand over starts no drag.
+- **Right-clicking:** Show in Finder and Copy Path act on the file the row names.
+
+**What needs a look sits on the row it is about.**
+- **A revision's row:** says only that it has nothing to hand over. It shows the attention mark and "Unavailable" with why in a few words. The sentence is in its help tag and for VoiceOver. Its endpoint already says whether it was first seen later.
+- **An open work's row:** says only what is true of its file now, Not on disk or Changed.
+- **A closed work's row:** says what it always said, for the revision it shows.
 
 ## Search and the kind filter
 
@@ -91,10 +104,12 @@ What the person opens or closes stays that way for the session, wherever the wor
 
 ## An interface that teaches its own use
 
-Each empty place shows three things, and no how-to sentence:
+Each empty place shows three things, in every list alike, and no how-to sentence:
 - its mark;
 - a title that names what isn't there;
 - the next step, as a control.
+
+A line under the title appears only for a fact the person needs, such as the folders Gleaner watches.
 
 | State | Next step |
 |---|---|
@@ -102,7 +117,7 @@ Each empty place shows three things, and no how-to sentence:
 | Nothing delivered yet | The folders Gleaner watches, and **Sources** |
 | No agent logs found | The folders Gleaner looked in, and **Sources** |
 | A project of yours with no work | **Move Work Here…**, which lists works from other projects to bring in |
-| No works of the kind chosen | **Show All Kinds** |
+| Nothing of the kind chosen, in any list | **Show All Kinds** |
 | No search results | **Clear Search**, and **Search All Deliveries** inside a project |
 | Nothing selected | The newest work in this place, as a button |
 
@@ -121,8 +136,9 @@ The outline teaches itself the same way:
 
 ## Checked
 
-- **The suite.** `swift test`: 221 tests pass. `OutlineTests` covers four things:
+- **The suite.** `swift test`: 222 tests pass. `OutlineTests` covers five things:
   - which works open, in a folder outside git, in a git repository, in every list and in search;
+  - that an open work's row names the work's own revision while another is chosen, and that a revision with nothing to hand over says so on its row alone, with its reason;
   - what choosing a work's row, a revision's row or a delivery under Versions shows, and that the outline follows;
   - that a revision's row drops its own bytes;
   - the arrow keys, sent to the list's own `NSOutlineView` in a window: ↓ moves into a work's revisions, ← closes the work and → opens it again.

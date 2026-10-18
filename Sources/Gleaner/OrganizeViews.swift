@@ -26,6 +26,9 @@ struct WorkSection: View {
                 } icon: {
                     GlyphView(glyph: Wording.projectGlyph(project?.origin ?? .folder), size: 16).foregroundStyle(Palette.mark)
                 }
+                .help(Wording.projectOrigin(project?.origin ?? .folder))
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("\(organization.projectName(work.project)), \(Wording.projectOrigin(project?.origin ?? .folder).lowercased())")
                 Text(why.title).foregroundStyle(.secondary)
                 InfoButton(text: why.detail)
                 Spacer(minLength: Space.s)
@@ -202,49 +205,14 @@ struct MoveSheet: View {
 /// Says that another file is a version of this work.
 struct JoinSheet: View {
     @Environment(LibraryModel.self) private var model
-    @Environment(\.dismiss) private var dismiss
     var work: Work
-    @State private var other: Work.ID?
-    @State private var filter = ""
 
     var body: some View {
-        let candidates = model.organization.works.filter { candidate in
-            candidate.id != work.id && (filter.isEmpty || candidate.files.contains { $0.name.localizedCaseInsensitiveContains(filter) })
-        }
+        let others = model.organization.works.filter { $0.id != work.id }
         // This project's works first: versions of one work are usually kept together.
-        let ordered = candidates.filter { $0.project == work.project } + candidates.filter { $0.project != work.project }
-        VStack(alignment: .leading, spacing: Space.m) {
-            Text("Join “\(work.name)” With…").font(.headline)
-            Text("Both files show as versions of one work. Gleaner checks nothing: it’s your call.")
-                .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            TextField("Filter", text: $filter, prompt: Text("Filter by name"))
-            List(selection: $other) {
-                ForEach(ordered) { candidate in
-                    HStack(spacing: Space.s) {
-                        FileIcon(path: candidate.latest.path, folder: candidate.latest.kind == .folder, size: 24)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(candidate.files.map(\.name).joined(separator: " → ")).lineLimit(1).truncationMode(.middle)
-                            Text([model.projectName(candidate), Wording.folder(candidate.latest.folder),
-                                  Wording.shortDate(candidate.deliveries[0].deliveredAt)].joined(separator: " · "))
-                                .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                    }
-                    .tag(Optional(candidate.id))
-                }
-            }
-            .frame(minHeight: 220)
-            HStack {
-                Spacer()
-                Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
-                Button("Join") {
-                    if let other { Task { await model.join(work.id, other) } }
-                    dismiss()
-                }
-                .keyboardShortcut(.defaultAction)
-                .disabled(other == nil)
-            }
+        WorkPicker(title: "Join “\(work.name)” With…", note: "Both files show as versions of one work. Gleaner checks nothing: it’s your call.",
+                   action: "Join", works: others.filter { $0.project == work.project } + others.filter { $0.project != work.project }) { other in
+            Task { await model.join(work.id, other.id) }
         }
-        .padding(Space.xl)
-        .frame(width: 460)
     }
 }

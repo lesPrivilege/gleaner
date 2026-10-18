@@ -135,18 +135,19 @@ struct RowGlyph: View {
     }
 }
 
-/// An empty or waiting state: its mark drawn large, a short title, one line, and what to do.
+/// An empty or waiting state: its mark drawn large, a short title, and the next step as a
+/// control. A line under the title only for a fact the person needs, never how to use the window.
 struct EmptyState<Actions: View>: View {
     var title: String
     var glyph: Glyph
-    var description: String
+    var description: String? = nil
     @ViewBuilder var actions: Actions
 
     var body: some View {
         ContentUnavailableView {
             Label { Text(title) } icon: { GlyphView(glyph: glyph, size: 40).foregroundStyle(.secondary) }
         } description: {
-            Text(description)
+            if let description { Text(description) }
         } actions: {
             actions
         }
@@ -154,7 +155,7 @@ struct EmptyState<Actions: View>: View {
 }
 
 extension EmptyState where Actions == EmptyView {
-    init(title: String, glyph: Glyph, description: String) {
+    init(title: String, glyph: Glyph, description: String? = nil) {
         self.init(title: title, glyph: glyph, description: description) { EmptyView() }
     }
 }

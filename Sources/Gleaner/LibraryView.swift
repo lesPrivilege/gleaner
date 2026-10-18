@@ -236,8 +236,7 @@ struct ResultsList: View {
     func emptyState(_ results: [SearchResult]) -> some View {
         if model.artifacts.isEmpty {
             if !model.indexed {
-                EmptyState(title: "Reading Agent Logs…", glyph: .running,
-                           description: "Deliveries appear when the first read finishes.")
+                EmptyState(title: "Reading Agent Logs…", glyph: .running)
             } else if model.canReadAgain, let trouble = model.logTrouble {
                 ContentUnavailableView {
                     Label("Some Logs Couldn’t Be Read", systemImage: "exclamationmark.triangle")
@@ -262,11 +261,11 @@ struct ResultsList: View {
                     Button("Sources") { model.place = .sources }
                 }
             }
+        } else if results.isEmpty && model.query.isEmpty {
+            NoKind()
         } else if results.isEmpty {
             ContentUnavailableView {
                 Label("No Results", systemImage: "magnifyingglass")
-            } description: {
-                Text("Each word must appear in one delivery’s request, reply, file name or project.")
             } actions: {
                 Button("Clear Search") { model.clearFilters() }
                 if model.currentProject != nil { Button("Search All Deliveries") { model.place = .all } }
@@ -371,9 +370,12 @@ struct ResultRow: View {
                         Text("\(work.deliveries.count)").font(.caption).foregroundStyle(.secondary).monospacedDigit()
                             .help(Wording.count(work.deliveries.count, "delivery", "deliveries"))
                     }
-                    ProviderMark(provider: delivery.provider, size: 12).foregroundStyle(.secondary)
-                    Text(Wording.shortDate(delivery.deliveredAt)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
-                        .help(Wording.date(delivery.deliveredAt))
+                    // Open, its revisions each carry their agent and date.
+                    if !open {
+                        ProviderMark(provider: delivery.provider, size: 12).foregroundStyle(.secondary)
+                        Text(Wording.shortDate(delivery.deliveredAt)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                            .help(Wording.date(delivery.deliveredAt))
+                    }
                 }
                 if !open, let request = delivery.request {
                     Text(request).font(.callout).foregroundStyle(.secondary).lineLimit(2)

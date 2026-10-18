@@ -428,14 +428,21 @@ final class LibraryModel {
         }
     }
 
-    /// The file and delivery a row names: a revision's own, or what its work's row shows.
+    /// What a work's own row names. Closed, it stands for its revisions: the one chosen in the
+    /// detail, else the one the search matched. Open, each revision's row stands for itself, and
+    /// the work's row for the work: the matched one, whichever revision is chosen.
+    func workDelivery(_ result: SearchResult) -> Delivery {
+        isOpen(result.work) ? result.matched : delivery(in: result)
+    }
+
+    /// The file and delivery a row names: a revision's own, or what its work's row names.
     func target(_ row: OutlineRow) -> (artifact: Artifact, delivery: Delivery)? {
         guard let work = organization.work(containing: row.work) else { return nil }
         if case .revision(_, let id) = row, let delivery = work.deliveries.first(where: { $0.id == id }) {
             return (work.file(of: delivery), delivery)
         }
-        let result = result(for: work) ?? SearchResult(work: work, matched: work.deliveries[0])
-        return (file(in: result), delivery(in: result))
+        let delivery = workDelivery(result(for: work) ?? SearchResult(work: work, matched: work.deliveries[0]))
+        return (work.file(of: delivery), delivery)
     }
 
     func hasSaved(_ sha: String) -> Bool { saved.contains(sha) }
@@ -787,14 +794,36 @@ final class LibraryModel {
     /// What `result`'s row says beside its date, from what the library holds and the newest check
     /// of the file: rows never read the disk while they are drawn, so "changed" waits for a check.
     func rowStatus(_ result: SearchResult) -> (mark: (Mark, String)?, number: String?) {
-        let artifact = file(in: result), observation = rowObservation(artifact.path)
+        let artifact = file(in: result), now = rowNow(artifact)
+        return Wording.row(delivery(in: result), latest: artifact.latest.number, now: now.kind, changed: now.changed,
+                           available: rowHandoff(result) != nil)
+    }
+
+    /// What an open work's row says: only what is true of its file now, whichever delivery.
+    func fileStatus(_ artifact: Artifact) -> (Mark, String)? {
+        let now = rowNow(artifact)
+        return Wording.fileState(now: now.kind, changed: now.changed)
+    }
+
+    /// What a revision's row says: only that it has nothing to hand over, in a few words and in a
+    /// sentence. Its endpoint already says whether it was first seen later.
+    func revisionStatus(_ artifact: Artifact, _ delivery: Delivery) -> (label: (Mark, String), reason: String)? {
+        guard rowHandoff(artifact, delivery) == nil else { return nil }
+        let now = rowNow(artifact)
+        guard let label = Wording.row(delivery, latest: artifact.latest.number, now: now.kind, changed: now.changed, available: false).mark
+        else { return nil }
+        return (label, Wording.unavailableReason(delivery, now: now.kind, large: isLarge(delivery)))
+    }
+
+    /// What is at `artifact`'s path as far as the library knows without reading the disk (a check
+    /// this session, or gone when the library loaded), and whether a check found bytes no delivery had.
+    private func rowNow(_ artifact: Artifact) -> (kind: LocatorState.Kind?, changed: Bool) {
+        let observation = rowObservation(artifact.path)
         let changed = observation.map { now in
             // No saved copy is asked about: only the missing case would, and it isn't "changed".
             if case .changed = artifact.onDisk(now, hasSaved: { _ in false }) { true } else { false }
         } ?? false
-        return Wording.row(delivery(in: result), latest: artifact.latest.number,
-                           now: observation?.state.kind ?? (missing.contains(artifact.path) ? .missing : nil),
-                           changed: changed, available: rowHandoff(result) != nil)
+        return (observation?.state.kind ?? (missing.contains(artifact.path) ? .missing : nil), changed)
     }
 
     /// A drag from a result row, handing over what `rowHandoff` says, or nil when there is

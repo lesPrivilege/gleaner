@@ -139,6 +139,35 @@ import Testing
         #expect(model.target(.work(report.id))?.delivery.id == report.deliveries[0].id)
     }
 
+    @Test func anOpenWorksRowStandsForTheWorkAndEachRevisionForItself() async throws {
+        let model = LibraryModel(indexer: indexer)
+        model.place = .project(try project(model, .folder).key)
+        let report = try work(model, "report.md")
+        let newer = report.deliveries[0], older = report.deliveries[1], file = report.file(of: older)
+        model.outlineSelection = .revision(report.id, older.id)
+        let row = try #require(model.result(for: report))
+        // Open: the work's row shows, drags and opens its menu on the newest, whichever revision
+        // the detail shows; that revision's own row stands for it.
+        #expect(model.workDelivery(row).id == newer.id)
+        #expect(model.target(.work(report.id))?.delivery.id == newer.id)
+        #expect(try await dropped(model.dragItem(file, model.workDelivery(row))) == "final")
+        // Closed, the work's row stands for the revision chosen.
+        model.disclosed[report.id] = false
+        #expect(model.workDelivery(row).id == older.id)
+        model.disclosed[report.id] = nil
+
+        // A revision with nothing to hand over says so on its own row, in words and in a sentence;
+        // the work's row and the other revision say nothing.
+        try FileManager.default.removeItem(at: indexer.store.objectURL(try #require(older.sha256)))
+        await model.observe(file)
+        let status = try #require(model.revisionStatus(file, older))
+        #expect(status.label.0 == .attention)
+        #expect(status.label.1 == "Unavailable · changed")
+        #expect(status.reason == "The file on disk has changed since. Gleaner’s saved copy of delivery 1 is no longer in its store.")
+        #expect(model.revisionStatus(file, newer) == nil)
+        #expect(model.fileStatus(file) == nil)
+    }
+
     /// The keys go to the list as a person's would: ↓ moves into a work's revisions, ← closes the
     /// work and → opens it again.
     @Test func theOutlineIsWalkedWithTheArrowKeys() async throws {

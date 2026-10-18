@@ -342,18 +342,31 @@ enum Wording {
     static func row(_ delivery: Delivery, latest: Int, now: LocatorState.Kind?, changed: Bool, available: Bool)
         -> (mark: (Mark, String)?, number: String?) {
         let number = delivery.number != latest ? "Delivery \(delivery.number) of \(latest)" : nil
-        let attention: (Mark, String)? = if !available {
-            (.attention, "Unavailable · " + unavailable(delivery, now: now))
-        } else if now == .missing {
-            (.dashed, "Not on disk")
-        } else if changed {
-            (.attention, "Changed")
-        } else {
-            nil
-        }
+        let attention: (Mark, String)? = available ? fileState(now: now, changed: changed) : (.attention, "Unavailable · " + unavailable(delivery, now: now))
         guard delivery.capture?.provenance == .firstSeenAfterDelivery else { return (attention, number) }
         guard let attention else { return ((.hollow, "First seen later"), number) }
         return (attention, (number ?? "Delivery \(delivery.number)") + " · first seen later")
+    }
+
+    /// What a row says of the file itself, whichever delivery it names: gone, or holding bytes no
+    /// delivery had. An open work's row says only this; its revisions say the rest.
+    static func fileState(now: LocatorState.Kind?, changed: Bool) -> (Mark, String)? {
+        if now == .missing { return (.dashed, "Not on disk") }
+        return changed ? (.attention, "Changed") : nil
+    }
+
+    /// Why a row has nothing to hand over, in a sentence, for its help tag and VoiceOver: what is
+    /// at the path, as the library knows it without reading the disk, then why Gleaner keeps no copy.
+    static func unavailableReason(_ delivery: Delivery, now: LocatorState.Kind?, large: Bool) -> String {
+        if delivery.sha256 == nil, delivery.capture?.isDirectory != true { return noCopy(delivery, large: large) }
+        let at = switch now {
+        case .missing?: delivery.capture?.isDirectory == true ? "The folder is no longer on disk." : "The file is no longer on disk."
+        case .unreadable?: "Something is at this path, but Gleaner can’t read it."
+        case .special?: "What is at this path now isn’t a regular file."
+        case .directory?: "A folder is at this path now."
+        case .file?, nil: "The file on disk has changed since."
+        }
+        return at + " " + noCopy(delivery, large: large)
     }
 
     /// Why a row has nothing to hand over, in a few words.
