@@ -187,7 +187,8 @@ struct GlyphView: View {
                 if element.filled {
                     path.fill()
                 } else {
-                    path.stroke(style: StrokeStyle(lineWidth: 1.5 * scale, lineCap: .round, lineJoin: .round,
+                    // Never under a point: a caption-sized mark keeps the weight of the endpoints beside it.
+                    path.stroke(style: StrokeStyle(lineWidth: max(1.5 * scale, 1), lineCap: .round, lineJoin: .round,
                                                    dash: element.dash.map { $0 * scale }))
                 }
             }
@@ -263,6 +264,8 @@ enum SVGPath {
             case "Z":
                 path.closeSubpath()
                 current = start
+                // Numbers can't repeat a close: stop rather than close forever.
+                if tokens.hasNumber { return path }
             default:
                 return path
             }
@@ -325,7 +328,14 @@ enum SVGPath {
         init(_ data: String) { chars = Array(data) }
 
         private mutating func skip() {
-            while index < chars.count, chars[index] == " " || chars[index] == "," || chars[index].isNewline { index += 1 }
+            while index < chars.count, chars[index] == "," || chars[index].isWhitespace { index += 1 }
+        }
+
+        /// True once every character was read.
+        var isAtEnd: Bool {
+            var probe = self
+            probe.skip()
+            return probe.index >= probe.chars.count
         }
 
         var hasNumber: Bool {

@@ -16,18 +16,19 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 ### Organize work
 
 - A sidebar lists every project, with All Deliveries and Sources. A project opens on an outline: what it is and why, the works delivered last, the joins Gleaner suggests, then every work by the folder it is in; search inside a project searches that project.
-- A work is a file, or several files you said are versions of one work, with every delivery of each. Gleaner suggests a join only with its reason (the later file arrived with the bytes the earlier one last had, and that one is no longer at its path; or their names in one folder differ only by a version mark such as `v2` or `final`), and never joins files itself; Not the Same ends suggestions for that file.
+- A work is a file, or several files you said are versions of one work, with every delivery of each. Gleaner suggests a join only with its reason (the later file arrived with the bytes the earlier one last had, and that one is no longer at its path; or their names in one folder differ only by a version mark such as `v2` or `final`), and never joins files itself; Keep Apart ends suggestions for that file. Edit › Undo takes back a join, a keep-apart or a move.
 - Move to Project… puts a work, and its files' later deliveries, in another project or a new one of your own; a derived project can be shown inside another. Each work says why it is in its project.
-- Every correction is kept apart from what Gleaner observed, survives reading the logs again and relaunching, and can be undone one by one or all at once in Sources → Your Corrections.
-- Delivered with reaches every file the reply named. Copy Resume Command gives `claude --resume` or `codex resume` for the conversation, run from the folder it started in, while its log and that folder are there, and says why not otherwise.
-- Sources (⌘,) shows each agent's log folder, how and when it was last read, its deliveries and conversations, the logs behind each read problem (unknown record types are counted per type), and what Gleaner reads and leaves out; Your Corrections; and Storage.
+- Every correction is kept apart from what Gleaner observed, survives reading the logs again and relaunching, and can be undone one by one or all at once in Sources → Corrections.
+- Delivered With reaches every file the reply named. Copy Resume Command gives `claude --resume` or `codex resume` for the conversation, run from the folder it started in, while its log and that folder are there, and says why not otherwise.
+- Sources (⌘,) shows each agent's log folder, how and when it was last read, its deliveries and conversations, the logs behind each read problem (unknown record types are counted per type), and what Gleaner reads and skips; Corrections; and Storage, laid out as System Settings lays out a pane.
 
 ### Identify the version
 
 - Numbers each delivery of the same path and marks repeated bytes as "same as N".
 - States what Gleaner checked: seen at delivery, first seen later, never seen, or never read; same as, changed since, or rolled back to a delivery; not on disk, or lost; a folder, not a regular file, or can't be read. A file Gleaner can't read is never called missing, changed or seen. A delivery whose bytes Gleaner never read is completed, as first seen later, the first time it reads the file.
 - Keeps "first seen later" on every label that names a delivery number.
-- Marks a list row only when it needs a look: not available and why, not on disk, changed (once checked this session), or first seen later. The type badge keeps the exact extension.
+- Marks a list row only when it needs a look: unavailable and why, not on disk, changed (once checked this session), or first seen later. Each file shows its own icon, as Finder draws it, and each delivery its agent's mark (Claude Code, Codex; drawings from lobe-icons, MIT).
+- Says a state in as few words as it needs: a mark alone when all is as it should be, a word or two when something needs a look, and the full sentence behind ⓘ, in the help tag and to VoiceOver.
 - Quotes claims in replies as the agent's words, never as a status.
 - Saves a copy of every file up to 64 MB when first read; Save a Copy keeps a larger one while it still matches.
 
@@ -39,9 +40,9 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 
 ### Hand off
 
-- Drags the tile or a list row as a copy whose hash was checked after copying; ⌘C copies it as a file and ⌘O opens it. A row hands over the version the detail would, a delivered folder's row drags the folder as a copy, and a row with nothing to hand over starts no drag. Copies of one version prepared at the same time never remove each other. The tile, ⌘C, Open and Quick Look use a prepared copy only while it is the very file Gleaner hashed, and make it again when another app wrote to, replaced or removed it; the text preview shows the text that was verified.
+- Drags the file at the top of the detail, or a list row, as a copy whose hash was checked after copying; ⌘C copies it as a file and ⌘O opens it. A row hands over the version the detail would, a delivered folder's row drags the folder as a copy, and a row with nothing to hand over starts no drag. Copies of one version prepared at the same time never remove each other. The tile, ⌘C, Open and Quick Look use a prepared copy only while it is the very file Gleaner hashed, and make it again when another app wrote to, replaced or removed it; the text preview shows the text that was verified.
 - Hands over a delivered file by its bytes even when a folder now stands at its path, and a delivered folder only while it is still one.
-- Falls back to the saved copy when the file on disk has changed, and labels the current file "Not among the deliveries Gleaner found" when no delivered version is left.
+- Falls back to the saved copy when the file on disk has changed, and labels the current file "not a found delivery" when no delivered version is left.
 - Says why a version can't be handed over: never seen, never read, a folder, too large to have been saved, a save that failed, or a saved copy no longer in Gleaner's store. Offers only actions that exist, and Check Again wherever it advises checking again.
 - Offers a git restore command for a missing file, naming a commit checked to hold it, instead of restoring it. A file committed in a worktree that has since been removed is found in the repository's history, and the command adds the worktree back at that commit, also when its folder was deleted without git.
 - Open and Save a Copy say why when they fail, beside the button.

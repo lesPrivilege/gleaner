@@ -181,7 +181,7 @@ import UniformTypeIdentifiers
         let chart = try artifact(model, "chart.png")
         model.reveal(chart)
         #expect(model.selection == chart.path)
-        #expect(model.actionFailure(chart, chart.latest) == "Its folder isn’t on disk either: \(folder.path)")
+        #expect(model.actionFailure(chart, chart.latest) == "Its folder is gone too: \(folder.path)")
     }
 
     @Test func showFolderStopsSayingTheFolderIsGoneOnceACheckFindsTheFile() async throws {
@@ -335,7 +335,7 @@ import UniformTypeIdentifiers
         // Removed after that check; the library loads again, as after the agent's next reply, and finds it gone.
         try FileManager.default.removeItem(at: project.appendingPathComponent("out/clip.mov"))
         try await reindex(model) { model.missing.contains(clip.path) }
-        #expect(model.rowStatus(try row(model, "clip.mov")).mark?.1 == "Not available · not on disk")
+        #expect(model.rowStatus(try row(model, "clip.mov")).mark?.1 == "Unavailable · not on disk")
         #expect(model.dragItem(for: try row(model, "clip.mov")) == nil)
     }
 
@@ -370,7 +370,7 @@ import UniformTypeIdentifiers
         await model.observe(notes)
         guard case .unavailable? = model.selectedHandoff?.plan else { Issue.record("expected no copy"); return }
         #expect(model.dragItem(for: try row(model, "notes.md")) == nil)
-        #expect(model.rowStatus(try row(model, "notes.md")).mark?.1 == "Not available · changed")
+        #expect(model.rowStatus(try row(model, "notes.md")).mark?.1 == "Unavailable · changed")
     }
 
     @Test func aRowWithNothingToHandOverSaysWhy() async throws {
@@ -385,9 +385,9 @@ import UniformTypeIdentifiers
 
         let model = LibraryModel(indexer: indexer)
         await model.observe(try artifact(model, "app.dmg"))
-        #expect(model.rowStatus(try row(model, "never.mp4")).mark?.1 == "Not available · never seen")
-        #expect(model.rowStatus(try row(model, "app.dmg")).mark?.1 == "Not available · changed")
-        #expect(model.rowStatus(try row(model, "clip.mov")).mark?.1 == "Not available · not on disk")
+        #expect(model.rowStatus(try row(model, "never.mp4")).mark?.1 == "Unavailable · never seen")
+        #expect(model.rowStatus(try row(model, "app.dmg")).mark?.1 == "Unavailable · changed")
+        #expect(model.rowStatus(try row(model, "clip.mov")).mark?.1 == "Unavailable · not on disk")
     }
 
     // MARK: Quick Look (N1)

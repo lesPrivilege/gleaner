@@ -168,6 +168,24 @@ import Testing
                     }
                 }
             }
+            // The agents' marks, in color and in one ink, and files as Finder draws them.
+            HStack(spacing: 18) {
+                ForEach([Provider.claudeCode, .codex], id: \.self) { provider in
+                    VStack(spacing: 4) {
+                        ProviderMark(provider: provider, size: 32, color: true)
+                        HStack(spacing: 6) { ProviderMark(provider: provider, size: 16); ProviderMark(provider: provider, size: 11) }
+                        Text(Wording.provider(provider)).font(.system(size: 10))
+                    }
+                    .frame(width: 76)
+                }
+                ForEach(["report.md", "deck.pptx", "chart.png", "brief.pdf"], id: \.self) { name in
+                    VStack(spacing: 4) {
+                        FileIcon(path: name, size: 32)
+                        Text(name).font(.system(size: 10))
+                    }
+                    .frame(width: 76)
+                }
+            }
         }
         .padding(20).background(Color.white).foregroundStyle(Color.black)
         let renderer = ImageRenderer(content: sheet)
