@@ -123,6 +123,14 @@ Each command writes one JSON object to stdout, and so does each failure, as `{"e
 
 The command never indexes, and opens the library read-only: it answers from what the app last read. Every answer, and every failure once the library is open, carries that `index` (the library, how many runs it has had, when the last one finished, and how each agent's logs read), so an empty answer from a stale or partial index is not taken as proof that nothing was delivered. Open Gleaner to bring it up to date. The command never writes the library or a project folder; `handoff` writes only its copy, in Gleaner's caches.
 
+**For an agent's host.** `gleaner mcp` serves the same six calls over stdio as MCP tools: `gleaner_find`, `gleaner_show`, `gleaner_read`, `gleaner_resolve`, `gleaner_handoff` and `gleaner_verify`. They take the command's arguments by the same names (`lines` and `bytes` as `"A:B"`; where the command takes a reference file, `gleaner_verify` takes a delivery's id or a reference as an object), and answer with the same JSON, as structured content and as text. A failure is a tool error that carries the same `{"error", "index"}` object. The server keeps no state: it opens the library read-only for each call, and writes nothing to stdout but protocol messages. Gleaner never registers itself with a host. To add it to Claude Code, at the scope you choose (local by default; `--scope user` for all your projects, `--scope project` to share it in the project's `.mcp.json`):
+
+```bash
+claude mcp add gleaner -- <path to gleaner> mcp
+```
+
+`<path to gleaner>` is the command you built, such as the full path of `.build/release/gleaner`. `--home <folder>` after `mcp` serves the library kept for another home folder.
+
 From the app, **Copy Reference** (⇧⌘C, in the Edit menu and in a row's or a delivery's context menu) copies a delivery's reference as `gleaner resolve` gives it, to paste to an agent. **Show in Log** selects the session log in Finder, and the detail pane gives the line of the reply that named the file. A `gleaner://delivery/<id>` link opens Gleaner on that delivery, and says so when the link names no delivery in this library.
 
 ## What counts as a delivery
@@ -164,11 +172,11 @@ swift test                      # fixture tests
 
 - `Sources/GleanerCore`: provider adapters (Claude Code, Codex), mention extraction, locator, redaction, the registry (SQLite), the content store (saved copies, verified hand-off copies), the indexer, the log watcher, and the status logic (`Library.swift`).
 - `Sources/Gleaner`: the macOS app (SwiftUI and AppKit, Quick Look).
-- `Sources/gleaner-cli`: the `gleaner` command, the catalog's answers as JSON.
+- `Sources/gleaner-cli`: the `gleaner` command, the catalog's answers as JSON, and `gleaner mcp`, the same answers as MCP tools.
 - `Sources/gleaner-spike`: Spike A, read-only extraction over local logs that writes a labeling sheet.
 - `Tests/GleanerCoreTests`: fixture tests built from sanitized record shapes, the library flow (concurrent edits, deleted worktrees, rollback, backfill, verified staging), and the catalog's queries.
 - `Tests/GleanerTests`: the app's decisions on a synthetic library (which delivery a click lands on, which bytes Quick Look, Compare and a drag use) and its wording.
-- `Tests/GleanerCommandTests`: the built `gleaner` run as an agent's shell runs it: its JSON, its exit codes, and that it writes neither the library nor the project.
+- `Tests/GleanerCommandTests`: the built `gleaner` run as an agent's shell runs it: its JSON, its exit codes, and that it writes neither the library nor the project; and `gleaner mcp` run as a host runs it, each tool's answer and refusal compared with the command's own.
 
 The decisions behind v0.1 are in [docs/SPEC.md](docs/SPEC.md); the design exploration and its rulings are in [docs/design/](docs/design/README.md).
 
