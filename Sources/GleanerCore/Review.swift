@@ -75,11 +75,11 @@ public struct Review: Sendable, Equatable, Identifiable {
         case changedWhileRead
     }
 
-    /// What the person's verdicts, or published marks, on a work's files say of its file now: `records`
-    /// are one kind's (verdicts, or marks), newest first. A record made on the bytes there now
-    /// holds, the newest such, matched by hash once the file was read, else by its size, dates and
-    /// inode while they are still as when it was made. Otherwise the newest record may have been
-    /// made on other bytes until the file is read, and was once it is.
+    /// What the person's verdicts, or published marks, on a work's files say of its file now:
+    /// `records` are one kind's, newest first. A record made on the bytes there now holds, the
+    /// newest such, matched by hash once the file was read, else by its size, dates and inode while
+    /// they are still as when it was made. Otherwise the newest record may have been made on other
+    /// bytes until the file is read, and was once it is.
     public static func standing(_ records: [Review], now: Present) -> Standing {
         guard let latest = records.first else { return .none }
         switch now {
@@ -236,8 +236,8 @@ extension Organization {
     /// works anywhere whose newest verdict was made on other bytes or may have been, until the file
     /// is read. A work nobody put in a unit and nobody reviewed is never in it, nor a folder, which
     /// has no bytes to judge. `present` says what is at a work's file now; it is asked only of works
-    /// in units or with a verdict. Grouped by unit, as the sidebar lists them, then the works in
-    /// none, by project.
+    /// in units or with a verdict or mark. Grouped by unit, as the sidebar lists them, then the works
+    /// in none, by project.
     public func toReview(_ reviews: Reviews, present: (Work) -> Present) -> [ReviewGroup] {
         var waiting: [String: [Work]] = [:]
         for work in works where work.unit != nil || reviews.any(work) {
