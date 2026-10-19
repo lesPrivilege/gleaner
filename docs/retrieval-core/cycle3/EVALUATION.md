@@ -221,3 +221,13 @@ The metric suites' safety assertions do not assert every relevance expectation:
 a passing native suite without exported measurements is not proof of native
 retrieval success. First-layer choices, bounded adapter contracts, current-original
 alias support and any production migration still require their stated follow-up.
+
+## Subsequent native execution evidence
+
+Decoded native job logs at implementation `6a39a13` and identical-code checkpoint `3ea45fd`
+pass the full correctness suite: 535 passed and six skipped, zero failures. The
+held-out safety assertions run natively, but CI does not export native relevance
+metrics; the measured results above remain Linux measurements. See
+[NATIVE-CI-RECEIPT.md](NATIVE-CI-RECEIPT.md) for exact SHAs, jobs and the status
+metadata discrepancy. The independent review conclusions and frozen labels did
+not change.

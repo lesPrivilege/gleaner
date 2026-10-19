@@ -16,6 +16,9 @@
 > separates executed evidence, Opus product choices and native checks. Diversity
 > matched baseline on eight held-out tasks; mandatory scope adds questions without
 > a demonstrated retrieval gain. No shipped first-layer default was changed.
+> [Native execution receipt](docs/retrieval-core/cycle3/NATIVE-CI-RECEIPT.md) now
+> confirms the repaired tests pass; [engineering gates](docs/retrieval-core/cycle3/ENGINEERING-GATES.md)
+> still block adoption independently of Opus default choices.
 
 ## Baseline and boundary
 

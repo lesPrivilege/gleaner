@@ -94,3 +94,11 @@ Start with [CONVERGENCE-LEDGER.md](CONVERGENCE-LEDGER.md), then
 [validation-results.json](validation-results.json). The normal push started native
 [run 39280023363](https://github.com/lesPrivilege/gleaner/actions/runs/39280023363);
 its recorded status is not inferred from Linux tests.
+
+The repaired source and identical-code checkpoint `3ea45fd` have completed passing
+native test logs: 535 passed, six skipped, zero failures. See
+[NATIVE-CI-RECEIPT.md](NATIVE-CI-RECEIPT.md) for the exact test/cleanup evidence and
+the conflicting queued status metadata. Original-requirement gaps and the parent's
+five concrete gates are separated from product choices in
+[ENGINEERING-GATES.md](ENGINEERING-GATES.md). The
+[bounded proposal](BOUNDED-PROPOSAL.md) adds no formal default behavior.

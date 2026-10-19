@@ -114,13 +114,18 @@ can reintroduce native system symlink aliases that its own no-follow walk reject
 The isolated repair preserves physical spelling and keeps scope enforcement;
 source checkpoint `6a39a13e6929bc7ab1ac24700a0af0929ad2bf44` started normal
 [run 39280023363](https://github.com/lesPrivilege/gleaner/actions/runs/39280023363),
-currently queued. The exact receipt is in [validation results](validation-results.json).
-Do not call source diagnosis or Linux alias tests a native pass.
+whose decoded log confirms a passing native run: 541 tests in 55 suites,
+535 passed and six opt-in tests skipped. Identical-code descendant `3ea45fd` also
+passes. Run/job/check metadata still reports queued despite completed logs; the
+[exact receipt](NATIVE-CI-RECEIPT.md) preserves that discrepancy. This closes the
+observed experimental physical-path test failure, not native alias compatibility.
 
 [M1–M5 handoff](NATIVE-HANDOFF.md) specifies exact filters, runtime and disposable
 account/checkout/fixture boundaries. The full CI suite does execute the existing
 tests underlying those checks; it does not execute the additional native diagnostic
-probe, a case-sensitive volume experiment, FSEvents integration or a human task.
+probe, a case-sensitive volume experiment, end-to-end app ingestion or a human
+task. The existing native LogWatcher change-notification test and UI/model unit
+tests pass in the successor receipt; rendered/manual flows remain separate.
 Those remain distinct. A native resolver pass also cannot decide the first-layer
 interaction or validate a production migration.
 

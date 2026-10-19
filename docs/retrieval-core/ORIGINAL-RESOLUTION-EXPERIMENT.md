@@ -115,3 +115,15 @@ job `118152324799`, queued at the report checkpoint. The older documentation-onl
 run `39278093014` completed with the same 16 original-reader issues and does not
 contain the repair. Exact receipt
 state is recorded in [cycle3 validation](cycle3/validation-results.json).
+
+## Successor native execution
+
+The decoded job log for repair commit `6a39a13e6929bc7ab1ac24700a0af0929ad2bf44`
+confirms **541 tests / 55 suites, 535 passed, six skipped, zero failures**; the
+OriginalResolutionTests suite passes. Identical-code checkpoint `3ea45fd` also
+passes. This supersedes the earlier pending native-test status, within the physical
+fixture boundary. Run/job/check metadata still reports queued despite both complete
+logs; see [NATIVE-CI-RECEIPT.md](cycle3/NATIVE-CI-RECEIPT.md) for exact evidence.
+Shortened core aliases, safe in-root links and bounded content from the same
+verified read remain adoption gates. No additional resolver edit followed these
+results, and no workflow was manually rerun.

@@ -7,7 +7,7 @@ checked out `24811b063eba4885822001f68e5655dfd83d079e` and built successfully
 (172.15 seconds) on macOS 26.6.2, build 25G83, image `macos-26-arm64`.
 The Swift Testing run executed **528 tests in 51 suites**, finishing with
 **16 issues, all in the experimental `OriginalResolutionTests`**, after 37.954
-seconds. All other tests passed, including all 19 existing tests selected below
+seconds. All other executed tests passed, including all 19 existing tests selected below
 for M1–M5. The earlier XCTest banner reporting zero tests is not the full result.
 
 This receipt establishes native compilation and the reported test outcomes at
@@ -15,6 +15,14 @@ that SHA, not success of subsequent edits. The log does not report the exact
 Swift compiler version; `Testing Library Version: 1902` is not that version.
 The probe's native linking path, detailed filesystem/SQLite diagnostics and
 optional case-sensitive-volume comparison remain unexecuted.
+
+The repaired source `6a39a13e6929bc7ab1ac24700a0af0929ad2bf44` and identical-code
+checkpoint `3ea45fdaaf9c67d5669c7150da4882a71b63adb9` now have completed native
+test logs: **541 enumerated tests / 55 suites, 535 passed, six skipped, zero failures**.
+All 19 M1–M5 selected existing tests pass again. The
+[successor receipt](NATIVE-CI-RECEIPT.md) records exact jobs, log hashes and the
+run-status metadata discrepancy. These passes do not run the extra diagnostic
+probe or establish native root-alias compatibility for core-produced locators.
 
 The remaining handoff requires a separate runner/access decision and is not
 permission to use the user's Mac. At execution, the parent must supply the exact
@@ -176,3 +184,9 @@ logs automatically. The interpretation baseline is
 only these native checks, not app usability, retrieval generalization or release
 readiness. The native CI receipt above is actual execution; the separate diagnostic
 probe and any access to another Mac remain pending.
+
+The successor CI logs also pass the existing native
+`aLogFolderCreatedAfterLaunchIsNoticedAndThenWatched` integration test and UI/model
+unit suites. Remaining manual/rendered flows and end-to-end ingestion must not be
+confused with those executed checks. The six skipped opt-in drawing/walk/measurement
+tests are named in NATIVE-CI-RECEIPT.md.

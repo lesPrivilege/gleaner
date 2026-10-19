@@ -53,11 +53,14 @@ and never mounted into the container. Public-source notes and synthetic data onl
   retain human organization, reviews and retrieval effects. Deleting native
   observations in an unsafe synthetic control loses a kept missing Work. This
   proves a reset boundary; no public reset or new ontology was implemented.
-- Native CI at `24811b0` built on macOS 26.6.2 ARM64 and ran **528 tests / 51 suites**,
-  with **16 issues confined to OriginalResolutionTests**. All 19 selected M1–M5
-  existing tests passed. The isolated resolver repair preserves physical `/private`
-  spelling and no-follow scope checks. See the validation receipt for its successor
-  status; Linux results alone cannot establish that the native incident is resolved.
+- **Native repaired-code execution passed:** decoded logs at `6a39a13` and identical-code
+  `3ea45fd` each report **541 tests / 55 suites: 535 passed, six skipped, zero failures**
+  on macOS 26.6.2 ARM64, followed by completed cleanup. This resolves the earlier
+  16 original-reader test issues within the physical-path fixture boundary. All
+  19 selected M1–M5 existing checks and the native LogWatcher test pass. Workflow
+  metadata still reports queued despite complete logs; the [exact receipt](docs/retrieval-core/cycle3/NATIVE-CI-RECEIPT.md)
+  records that discrepancy and avoids an unsupported workflow-status claim. The
+  parent reviewer owns further terminal workflow-status confirmation.
 - Final portable regression: **381 tests, 361 passed, 18 failed / 25 issues, two
   opt-in measurements skipped**. Failed names exactly match baseline and cycle 2;
   all added correctness checks pass. Focused repaired resolver: **14/14 passed**.
@@ -100,7 +103,13 @@ physical-path tests.
 Stop ranking experimentation at this checkpoint. Use the ledger to choose one
 concrete discovery/representation interaction and its success criterion before a
 formal build. Keep shared matching, durable user state and raw discovery intact.
-Final product and visual decisions remain with Opus.
+Final product and visual decisions remain with Opus. The
+[bounded proposal](docs/retrieval-core/cycle3/BOUNDED-PROPOSAL.md) offers independent
+shared-Catalog current-original access and report-local exact-ID navigation slices.
+[Engineering gates](docs/retrieval-core/cycle3/ENGINEERING-GATES.md) define discovery
+denominators, approved-representation provenance, verified returned bytes, full
+payload/continuation bounds and migration safety. Those are technical obligations,
+not preferences or evidence of release readiness.
 
 Cloud checkout `/workspace/gleaner-cloud`; baseline `/workspace/gleaner-baseline`;
 official Swift 6.2.4 container `gleaner-swift`. [PORTABILITY](docs/retrieval-core/PORTABILITY.md)
@@ -112,5 +121,6 @@ filters, expected observations and isolated runtime/access requirements. Additio
 native probes require an approved disposable Mac VM/account, separate checkout and
 synthetic fixtures; never use the personal library or change HOME. Existing native
 CI test passes do not execute the extra filesystem/SQLite diagnostic probe or prove
-FSEvents, human task success, UI behavior or release readiness. No signing,
+end-to-end app ingestion, human task success, rendered/manual UI behavior or release
+readiness. The existing native change-notification and UI/model unit tests do pass. No signing,
 notarization, updater, main merge or release action is included.

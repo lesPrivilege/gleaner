@@ -112,3 +112,27 @@ checks, and conservatively rejects parent traversal. Independent review passed.
 Normal push run39280023363 will supply successor native evidence; no manual rerun.
 Resume from cycle3/CONVERGENCE-LEDGER.md and validation-results.json, not a new
 ranking-tuning cycle. Product choices remain with Opus.
+
+## Native follow-through and original-goal gates
+
+Parent requested terminal native evidence and explicit separation of original-goal
+gaps from Opus preferences. An independent reviewer mapped all eight original
+requirements and the five concrete engineering gates. Focused contract examples
+and a bounded two-slice proposal were checkpointed locally at e8513e6; no policy,
+production source or frozen labels changed.
+
+Repeated Actions run/job/check metadata reads reported queued with no runner. Direct
+decoded log retrieval nevertheless confirmed completed passing native tests and
+post-job cleanup for 6a39a13 (541 tests / 55 suites, 535 passed, 6 skipped, 0 failures; 21.647s)
+and code-identical 3ea45fd (same counts; 33.346s). Records preserve the endpoint
+discrepancy, exact log hashes and timestamps; no unsupported workflow-conclusion
+field is fabricated. No manual workflow rerun occurred. M1–M5 existing checks and
+LogWatcher native test pass; additional diagnostics, rendered/manual flows, alias
+compatibility, verified returned bytes and migration/pagination gates remain.
+
+At the parent's final follow-up, its reviewer assumes the narrow read-only workflow
+status watch. Worker polling stopped. Direct job-log tool calls, their parameters,
+sanitized summary/checkout/cleanup lines and independent log review are preserved
+so the queued-metadata/completed-log discrepancy can be reconciled explicitly.
+The final push delivers substantive ledger/gate/proposal/receipt changes; it is not
+a workflow rerun or an attempt to force native status refresh.

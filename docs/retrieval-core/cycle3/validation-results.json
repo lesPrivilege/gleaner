@@ -81,8 +81,16 @@
     "No human/Finder comparison; directory arms have different historical/current-byte capabilities.",
     "No cycle3 broad-scale RSS measurement; cycle2 scale does not measure cycle3.",
     "Additional native diagnostic probe not executed.",
-    "CI successor for isolated original-reader repair must be checked at its own exact SHA."
+    "Completed native test logs and queued workflow metadata disagree; exact observations are preserved rather than inventing a reconciled workflow state."
   ],
+  "native_confirmation": {
+    "independent_review": "Local decoded logs independently checked: 535 pass records in each, six skips, both final cleanup timestamps; no blocking factual misstatement.",
+    "receipt": "docs/retrieval-core/cycle3/NATIVE-CI-RECEIPT.md",
+    "test_execution": "passed at repaired source and identical-code descendant",
+    "verified_at_utc": "2026-10-19T15:59:05.651680+00:00",
+    "workflow_metadata": "queued/inconsistent with completed logs at latest read",
+    "workflow_status_watch_owner": "parent reviewer, per follow-up instruction; no redundant polling or manual reruns"
+  },
   "native_receipts": [
     {
       "M1_M5_original_selected_tests_passed": 19,
@@ -147,15 +155,101 @@
       "tests": 528
     },
     {
+      "M1_M5_original_selected_tests_passed": 19,
+      "architecture": "arm64",
+      "build_seconds": 99.39,
+      "checkout_sha_line": "2026-10-19T15:42:38.6152320Z 6a39a13e6929bc7ab1ac24700a0af0929ad2bf44",
       "conclusion": null,
+      "decoded_log_sha256": "47d0cbbfaa54906f0620fa10c8b188487c573e22fd286a00926a1526d6f3ba4b",
+      "duration_seconds": 21.647,
+      "failed": 0,
+      "final_cleanup_line": "2026-10-19T15:44:51.5450320Z Cleaning up orphan processes",
+      "issues": 0,
       "job_id": 118152324799,
+      "log_hash_normalization": "UTF-8 decoded text, LF line endings, exactly one trailing LF; leading BOM preserved",
       "manual_rerun": false,
-      "note": "Normal push workflow; contains the reviewed physical-path repair and frozen cycle3 policies.",
+      "native_logwatcher_test_passed": true,
+      "note": "Physical-path original-reader and cycle3 correctness suites pass; this does not establish core-alias compatibility or product adoption.",
+      "os": "macOS 26.6.2",
+      "passed": 535,
+      "retrieval_action": {
+        "arguments": {
+          "job_id": 118152324799,
+          "repo_full_name": "lesPrivilege/gleaner"
+        },
+        "tool": "mcp__codex_apps__github_fetch_workflow_job_logs"
+      },
       "revision": "6a39a13e6929bc7ab1ac24700a0af0929ad2bf44",
       "run_id": 39280023363,
+      "skipped": 6,
+      "skipped_test_names": [
+        "developmentTasksAndScale",
+        "drawEveryComponent",
+        "measureOriginalModes",
+        "walkTheBoardProject",
+        "walkTheFoldersHandedOver",
+        "walkTheReviewOfASeries"
+      ],
+      "source": "Decoded GitHub job logs confirm successful terminal swift test and post-job cleanup; run/job/check metadata still reports queued.",
       "status": "queued",
-      "status_checked_at_utc": "2026-10-19T15:44:17.629181+00:00",
-      "url": "https://github.com/lesPrivilege/gleaner/actions/runs/39280023363"
+      "status_checked_at_utc": "2026-10-19T15:59:05.651680+00:00",
+      "suites": 55,
+      "swift_version": "not printed in logs",
+      "test_execution_conclusion": "passed",
+      "test_log_last_timestamp": "2026-10-19T15:44:51.5450320Z",
+      "test_log_reached_post_job_cleanup": true,
+      "test_summary_line": "2026-10-19T15:44:50.5205680Z \u2714 Test run with 541 tests in 55 suites passed after 21.647 seconds.",
+      "tests": 541,
+      "url": "https://github.com/lesPrivilege/gleaner/actions/runs/39280023363/job/118152324799"
+    },
+    {
+      "M1_M5_original_selected_tests_passed": 19,
+      "architecture": "arm64",
+      "build_inputs_identical_to": "6a39a13e6929bc7ab1ac24700a0af0929ad2bf44",
+      "build_seconds": 153.75,
+      "checkout_sha_line": "2026-10-19T15:51:22.7322040Z 3ea45fdaaf9c67d5669c7150da4882a71b63adb9",
+      "conclusion": null,
+      "decoded_log_sha256": "edd712698fd12bc8bf5725bf61396248e8510c344614a31fdf97e1f55d123317",
+      "duration_seconds": 33.346,
+      "failed": 0,
+      "final_cleanup_line": "2026-10-19T15:54:47.8405250Z Cleaning up orphan processes",
+      "issues": 0,
+      "job_id": 118153447592,
+      "log_hash_normalization": "UTF-8 decoded text, LF line endings, exactly one trailing LF; leading BOM preserved",
+      "manual_rerun": false,
+      "native_logwatcher_test_passed": true,
+      "note": "Physical-path original-reader and cycle3 correctness suites pass; this does not establish core-alias compatibility or product adoption.",
+      "os": "macOS 26.6.2",
+      "passed": 535,
+      "retrieval_action": {
+        "arguments": {
+          "job_id": 118153447592,
+          "repo_full_name": "lesPrivilege/gleaner"
+        },
+        "tool": "mcp__codex_apps__github_fetch_workflow_job_logs"
+      },
+      "revision": "3ea45fdaaf9c67d5669c7150da4882a71b63adb9",
+      "run_id": 39280465408,
+      "skipped": 6,
+      "skipped_test_names": [
+        "developmentTasksAndScale",
+        "drawEveryComponent",
+        "measureOriginalModes",
+        "walkTheBoardProject",
+        "walkTheFoldersHandedOver",
+        "walkTheReviewOfASeries"
+      ],
+      "source": "Decoded GitHub job logs confirm successful terminal swift test and post-job cleanup; run/job/check metadata still reports queued.",
+      "status": "queued",
+      "status_checked_at_utc": "2026-10-19T15:59:05.651680+00:00",
+      "suites": 55,
+      "swift_version": "not printed in logs",
+      "test_execution_conclusion": "passed",
+      "test_log_last_timestamp": "2026-10-19T15:54:47.8405250Z",
+      "test_log_reached_post_job_cleanup": true,
+      "test_summary_line": "2026-10-19T15:54:46.4874320Z \u2714 Test run with 541 tests in 55 suites passed after 33.346 seconds.",
+      "tests": 541,
+      "url": "https://github.com/lesPrivilege/gleaner/actions/runs/39280465408/job/118153447592"
     }
   ],
   "protocol_checkpoint": "524fb80672cd2598bd5cad14ce5f483f8709d495",
