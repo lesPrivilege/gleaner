@@ -98,7 +98,9 @@ struct ReviewPage: View {
         let layout = ReviewLayout(organization.works(in: unit.key))
         let inner = organization.units(inside: unit.key)
         ScrollView {
-            VStack(alignment: .leading, spacing: Space.xl) {
+            // Drawn as it scrolls into view: a long collection plays and reads only what is
+            // shown, and Review All acts on that.
+            LazyVStack(alignment: .leading, spacing: Space.xl) {
                 header(layout)
                 if let failure = model.reviewFailure {
                     StatusPanel(statement: Statement(mark: .attention, title: "Nothing recorded", detail: failure)) {
@@ -328,6 +330,7 @@ struct ImageTile: View {
     /// Its width over its height, once read.
     @Binding var aspect: CGFloat?
     @State private var image: NSImage?
+    @Environment(\.displayScale) private var scale
 
     static let height: CGFloat = 220
     static let widest: CGFloat = 560
@@ -352,7 +355,8 @@ struct ImageTile: View {
         .clipShape(RoundedRectangle(cornerRadius: Radius.tag))
         .overlay(RoundedRectangle(cornerRadius: Radius.tag).strokeBorder(Color(nsColor: .separatorColor)))
         .task(id: "\(path)|\(generation)") {
-            image = await ImageFile.load(path, pixels: 1600)
+            // No more pixels than the widest tile shows.
+            image = await ImageFile.load(path, pixels: Int((Self.widest * scale).rounded(.up)))
             self.aspect = image.map { $0.size.height > 0 ? $0.size.width / $0.size.height : 1 }
         }
         .accessibilityElement()

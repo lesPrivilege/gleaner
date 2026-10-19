@@ -681,7 +681,7 @@ enum Wording {
         }
     }
 
-    /// A collection as a list names it: inside another, after it ("Season › Part 2").
+    /// A collection as a list names it: inside another, after it ("Launch › Assets").
     static func unitPath(_ unit: WorkUnit, in organization: Organization) -> String {
         unit.parent.map { organization.unitName($0) + " › " + unit.name } ?? unit.name
     }
