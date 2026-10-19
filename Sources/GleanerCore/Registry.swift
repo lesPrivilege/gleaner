@@ -90,13 +90,33 @@ public final class Registry: @unchecked Sendable {
     /// record types and fields a log holds that Gleaner doesn't know, what a read counts, each
     /// session's span and workspaces; a session whose span or workspaces moved is walked again).
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
-    /// at a moment in time, are never rewritten.
+    /// at a moment in time, are never rewritten. Bump it too when the tables change: it is the
+    /// library's version, and an older Gleaner opens no library of a later one (`Failure.newer`).
     public static let extractorVersion = 16
+
+    public enum Failure: Error, Equatable, CustomStringConvertible {
+        /// The library was last opened by a later Gleaner, whose tables and readings this one
+        /// doesn't know. Nothing is written to it.
+        case newer(version: Int)
+
+        public var description: String {
+            switch self {
+            case .newer(let version):
+                "A newer Gleaner last opened this library (library version \(version); this Gleaner opens up to \(Registry.extractorVersion)). "
+                    + "Nothing in it was changed. Open it with that newer Gleaner."
+            }
+        }
+    }
 
     public init(path: String) throws {
         self.path = path
         gate = Self.gates.gate(URL(fileURLWithPath: path).standardizedFileURL.path)
         db = try Database(path: path)
+        // Before anything is written: setting the version back would have this Gleaner reread a
+        // later one's library with its own, older reading, over tables it may not know.
+        if let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64, version > Self.extractorVersion {
+            throw Failure.newer(version: Int(version))
+        }
         try db.execute("""
             CREATE TABLE IF NOT EXISTS log_files (
                 path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL, unknown_types TEXT, shortened INTEGER,

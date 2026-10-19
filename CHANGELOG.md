@@ -48,6 +48,7 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - Falls back to the saved copy when the file on disk has changed, and labels the current file "not a found delivery" when no delivered version is left.
 - Says why a version can't be handed over: never seen, never read, a folder, too large to have been saved, a save that failed, or a saved copy no longer in Gleaner's store. Offers only actions that exist, and Check Again wherever it advises checking again.
 - Offers a git restore command for a missing file, naming a commit checked to hold it, instead of restoring it. A file committed in a worktree that has since been removed is found in the repository's history, and the command adds the worktree back at that commit, also when its folder was deleted without git.
+- A saved copy damaged on disk is never handed over: the file is handed over while it still holds the bytes, and saving the version again repairs the copy.
 - Open and Save a Copy say why when they fail, beside the button.
 - Show in Finder (⇧⌘R) and Copy Path (⌥⌘C) act on the original location; Show Folder says when the folder is gone too.
 
@@ -107,4 +108,5 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - The admission rule is provisional, pending feedback from more users' logs.
 - Files observed during a conversation are listed, under a project's Observed, only in a project where a reply handed something over. A stretch ends at its last reply, so work after a final reply, an interrupted turn, and a background job still running after the last reply to its request fall outside it. A file renamed, or given new permissions, after its stretch is left out with the copies.
 - What Gleaner saw of a reviewed file is kept only while it runs: a file seen changed and then deleted stays changed until you quit, and after a relaunch its verdict stands as made.
+- An older Gleaner won't open a library a newer one has used, and changes nothing in it; going back to an older version needs the library from before the update.
 - The app has no icon yet, and the release zip is ad-hoc signed, not notarized.
