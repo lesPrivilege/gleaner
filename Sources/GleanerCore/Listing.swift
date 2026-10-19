@@ -14,9 +14,10 @@ extension Artifact.Kind {
 }
 
 /// How a project's files are laid out in a list (docs/design/capture.md, "Order and grouping,
-/// without fitting"): what was handed over and what was observed, in one order, with a crowded
-/// folder of one kind folded and the files that share a stem shown together. Kind, stem and folder
-/// order and group a list; none of them decides what enters it or which files are one work.
+/// without fitting"): what was handed over and what was observed, in one order, with a folder
+/// crowded with files of one kind that no reply named itself folded, and the files that share a stem
+/// shown together. Kind, stem and folder order and group a list; none of them decides what enters it
+/// or which files are one work.
 public enum Listing {
     /// One file of a list: a work handed over, or a candidate observed.
     public enum Entry: Sendable, Identifiable {
@@ -45,8 +46,15 @@ public enum Listing {
             }
         }
 
+        /// Handed over: named by a reply, or in a folder a reply named.
         public var isHandedOver: Bool {
             if case .work = self { true } else { false }
+        }
+
+        /// A reply named the file itself: such a file is never folded away. One only handed over in
+        /// a folder, or only observed, may be.
+        public var isNamed: Bool {
+            if case .work(let work) = self { work.deliveries.contains { $0.member == nil } } else { false }
         }
 
         /// A work's newest delivery; a candidate's latest write.
@@ -67,12 +75,12 @@ public enum Listing {
         /// Files in one folder that share a stem, shown together, in list order. Showing them
         /// together claims nothing: not that one was made from another, nor that they are one work.
         case together(stem: String, entries: [Entry])
-        /// A folder's observed files of one kind, when there are many: one row with their count,
-        /// opened on demand, newest first.
-        case folded(folder: String, kind: Artifact.Kind, candidates: [Candidate])
+        /// A folder's files of one kind that no reply named itself, when there are many: one row with
+        /// their count, opened on demand, in list order.
+        case folded(folder: String, kind: Artifact.Kind, entries: [Entry])
     }
 
-    /// Observed files of one kind in one folder fold into one row from this many.
+    /// Files of one kind in one folder that no reply named itself fold into one row from this many.
     public static let crowded = 12
 
     /// Handed over before observed; within each, what a person opens before what a program reads;
@@ -86,20 +94,19 @@ public enum Listing {
         }
     }
 
-    /// `entries` as rows, in `ordered` order. A folder's observed files of one kind fold into one
-    /// row when there are `crowded` or more; what was handed over never folds. The other files that
-    /// share a stem with another file of their folder are shown together, at the place of the first.
+    /// `entries` as rows, in `ordered` order. A folder's files of one kind that no reply named
+    /// itself (handed over in a folder, or observed) fold into one row when there are `crowded` or
+    /// more; a file a reply named never folds. The other files that share a stem with another file of
+    /// their folder are shown together, at the place of the first.
     public static func rows(_ entries: [Entry], crowded: Int = crowded) -> [Row] {
         let entries = ordered(entries)
-        var crowds: [String: [Candidate]] = [:]
-        for case .candidate(let candidate) in entries {
-            crowds[(candidate.path as NSString).deletingLastPathComponent + "\n" + candidate.kind.rawValue, default: []].append(candidate)
-        }
+        func key(_ entry: Entry) -> String { entry.folder + "\n" + entry.isHandedOver.description + "\n" + entry.kind.rawValue }
+        var crowds: [String: [Entry]] = [:]
+        for entry in entries where !entry.isNamed { crowds[key(entry), default: []].append(entry) }
         crowds = crowds.filter { $0.value.count >= crowded }
         func crowd(_ entry: Entry) -> String? {
-            guard case .candidate = entry else { return nil }
-            let key = entry.folder + "\n" + entry.kind.rawValue
-            return crowds[key] == nil ? nil : key
+            guard !entry.isNamed else { return nil }
+            return crowds[key(entry)] == nil ? nil : key(entry)
         }
         func family(_ entry: Entry) -> String { entry.folder + "\n" + Search.form(stem(entry.name)) }
         let families = Dictionary(grouping: entries.filter { crowd($0) == nil }, by: family)
@@ -108,7 +115,7 @@ public enum Listing {
         for entry in entries {
             if let key = crowd(entry) {
                 if shown.insert("crowd\n" + key).inserted {
-                    rows.append(.folded(folder: entry.folder, kind: entry.kind, candidates: crowds[key] ?? []))
+                    rows.append(.folded(folder: entry.folder, kind: entry.kind, entries: crowds[key] ?? []))
                 }
             } else if let members = families[family(entry)], members.count > 1 {
                 if shown.insert("stem\n" + family(entry)).inserted { rows.append(.together(stem: stem(entry.name), entries: members)) }

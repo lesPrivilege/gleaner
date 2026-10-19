@@ -123,26 +123,31 @@ import Testing
         #expect(!observed.contains { $0.path.hasSuffix("README.md") })
 
         let organization = try organization()
-        // The reply handed over the folder; the files in it are candidates beside it, not deliveries.
-        #expect(organization.works.map(\.name) == ["out"])
-        #expect(organization.candidates.count == observed.count)
+        // The reply handed over the folder, and with it the files in it (SPEC §5.4): each a work,
+        // its observation beside it. What was made elsewhere stays a candidate.
+        let inFolder = organization.works.filter { $0.deliveries.allSatisfy { $0.member != nil } }
+        #expect(organization.works.count == 1 + 304 && inFolder.count == 304)
+        #expect(inFolder.allSatisfy { organization.observations(of: $0).map(\.kind) == [.appeared] })
+        #expect(names(organization.candidates.map(\.path)) == ["notes.md", "ov-4x3.png", "ov-4x3.svg", "render.py"])
         #expect(organization.candidates.allSatisfy { $0.project == series.path && !$0.inRepository })
-        #expect(organization.candidates(in: series.path).count == observed.count)
+        #expect(organization.candidates(in: series.path).count == 4)
 
-        let entries = organization.candidates.map(Listing.Entry.candidate)
+        let entries = organization.works.map(Listing.Entry.work) + organization.candidates.map(Listing.Entry.candidate)
         let rows = Listing.rows(entries)
         let folded = rows.compactMap { row -> (String, Int)? in
-            if case .folded(let folder, _, let candidates) = row { (folder, candidates.count) } else { nil }
+            if case .folded(let folder, _, let entries) = row { (folder, entries.count) } else { nil }
         }
         #expect(folded.count == 1 && folded[0].0 == series.path + "/out/segments" && folded[0].1 == 300)
         let together = rows.compactMap { row -> (String, [String])? in
             if case .together(let stem, let members) = row { (stem, members.map { ($0.path as NSString).lastPathComponent }) } else { nil }
         }
         #expect(together.map(\.0).sorted() == ["ep00", "ov-4x3"])
-        // What a person opens comes before what a program reads, each newest first.
-        #expect(together.first { $0.0 == "ep00" }?.1 == ["ep00.narration.wav", "ep00.mix.wav", "ep00.mp4", "ep00.inputs.json"])
+        // What a person opens comes before what a program reads; the folder's files share the
+        // reply's time, and are then in name order; observed ones newest first.
+        #expect(together.first { $0.0 == "ep00" }?.1 == ["ep00.mix.wav", "ep00.mp4", "ep00.narration.wav", "ep00.inputs.json"])
+        #expect(together.first { $0.0 == "ov-4x3" }?.1 == ["ov-4x3.png", "ov-4x3.svg"])
         // Showing them together joins nothing.
-        #expect(organization.suggestions.isEmpty && organization.works.count == 1)
+        #expect(organization.suggestions.isEmpty && organization.works.allSatisfy { $0.files.count == 1 })
     }
 
     @Test func aReportWithMarkdownPDFAndCharts() throws {
@@ -604,15 +609,19 @@ import Testing
 
         let series = home.path + "/work/series"
         let organization = Organization(artifacts: try indexer.registry.artifacts(), observed: Candidate.files(try indexer.registry.observations()))
-        // The reply named only the folder; what was made in it is observed beside it.
-        #expect(organization.works.map(\.latest.path) == [series + "/out"])
+        // The reply named only the folder, which hands over what is in it (SPEC §5.4); what was made
+        // elsewhere is observed.
+        let video = try #require(organization.work(containing: series + "/out/ep00.mp4"))
+        #expect(organization.works.count == 1 + 44 && organization.works.contains { $0.latest.path == series + "/out" })
+        #expect(video.deliveries.map(\.member?.folder) == [series + "/out"] && video.deliveries[0].capture?.size == 65 << 20)
         let byTitle = Dictionary(grouping: try indexer.registry.observations(), by: { $0.sessionTitle ?? "" })
         #expect(byTitle["Reading list series, episode 0"]?.count == 49)
         #expect(Set(byTitle["Series covers"]?.map(\.path) ?? []) == [series + "/covers/ov-4x3.svg", series + "/covers/ov-4x3.png"])
+        #expect(organization.observations(of: video).map(\.kind) == [.appeared])
         #expect(organization.candidate(series + "/notes/plan.md") == nil)
         #expect(organization.candidate(series + "/episodes/00-overview/notes/outline.md")?.latest.kind == .appeared)
-        #expect(organization.candidate(series + "/out/ep00.mp4")?.latest.size == 65 << 20)
-        let rows = Listing.rows(organization.candidates(in: series).map(Listing.Entry.candidate))
+        #expect(organization.candidate(series + "/out/ep00.mp4") == nil)
+        let rows = Listing.rows(organization.works.map(Listing.Entry.work) + organization.candidates(in: series).map(Listing.Entry.candidate))
         #expect(rows.contains { if case .folded(let folder, .media, let lines) = $0 { folder == series + "/out/voice" && lines.count == 40 } else { false } })
         #expect(rows.contains { if case .together("ep00", let members) = $0 { members.count == 4 } else { false } })
     }

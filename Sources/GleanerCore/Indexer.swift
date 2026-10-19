@@ -98,10 +98,19 @@ public final class Indexer: @unchecked Sendable {
             /// folder, a system or hidden folder, the agents' logs) or no longer there. Not a problem:
             /// it says why nothing was observed there.
             public var unwalkedWorkspaces: [String] = []
+            /// What the listings of folders its replies delivered couldn't see, each with why: a
+            /// listing stopped at its bound, a folder in it couldn't be read, or its files couldn't
+            /// be recorded. Files there may be missing from what was handed over (SPEC §5.4).
+            public var folderProblems: [String] = []
+            /// Folders its replies delivered whose files aren't listed, each with why: the home, a
+            /// folder directly in it, a project's own folder or one holding it. Not a problem: it
+            /// says why the folder stands alone.
+            public var foldersNotUnpacked: [String] = []
 
             /// Listed, but not everything in it could be read or understood.
             public var hasProblems: Bool {
-                !unknownRecordTypes.isEmpty || !shortenedLogs.isEmpty || !workspaceProblems.isEmpty || isIncomplete
+                !unknownRecordTypes.isEmpty || !shortenedLogs.isEmpty || !workspaceProblems.isEmpty || !folderProblems.isEmpty
+                    || isIncomplete
             }
 
             /// Something reading again may fix: the folder, a folder in it, or a log couldn't be read
@@ -225,13 +234,18 @@ public final class Indexer: @unchecked Sendable {
             }
         }
 
-        // Every log is in: each workspace waiting to be walked is walked once, for every session in it.
+        // Every log is in: each delivered folder not listed yet is listed, and each workspace waiting
+        // to be walked is walked once, for every session in it.
+        let unpacked = unpack(at: now(), providers: providers)
         let observed = observe(at: now(), providers: providers)
         report.newObservations = observed.recorded
         let problems = try registry.workspaceProblems(), unwalked = try registry.unwalkedWorkspaces()
+        let folders = try registry.unpackings()
         for provider in report.sources.keys {
             report.sources[provider]?.workspaceProblems = (problems[provider] ?? []) + (observed.failures[provider] ?? [])
             report.sources[provider]?.unwalkedWorkspaces = unwalked[provider] ?? []
+            report.sources[provider]?.folderProblems = (folders.problems[provider] ?? []) + (unpacked[provider] ?? [])
+            report.sources[provider]?.foldersNotUnpacked = folders.notUnpacked[provider] ?? []
         }
         progress(changed.count, changed.count)
         return report
@@ -272,11 +286,16 @@ public final class Indexer: @unchecked Sendable {
                     },
                     model: turn.model)
                 if isNew {
+                    let file = Workspace.file(at: candidate.path)
                     let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
                     try registry.addCapture(captured, for: id, logPath: log.session.logPath, path: candidate.path,
                                             replyTimes: Turn.times(turn))
-                    // Gleaner's first read of the file for an earlier delivery whose bytes it never had.
-                    if captured.sha256 != nil { try registry.complete(capturesOf: candidate.path, with: captured) }
+                    // Gleaner's first read of the file for an earlier delivery whose bytes it never had,
+                    // or one in a folder, listed as the file still is.
+                    if captured.sha256 != nil {
+                        try registry.complete(capturesOf: candidate.path, with: captured)
+                        try completeMembers(of: candidate.path, with: captured, file: file)
+                    }
                     added += 1
                 }
                 // Where the file is, only while its folder is there to show it: once a worktree is
@@ -346,7 +365,7 @@ public final class Indexer: @unchecked Sendable {
         guard let sha = delivery.sha256 else { throw ContentStore.Failure.unavailable }
         let saved = try store.save(delivery.path)
         guard saved.sha == sha else { throw ContentStore.Failure.changed(expected: sha, found: saved.sha) }
-        try registry.markSaved(deliveryID: delivery.id, at: date)
+        try registry.markSaved(delivery, at: date)
     }
 
     /// Reads the delivery's bytes once, saves small files, and records when that happened relative
@@ -379,15 +398,22 @@ public final class Indexer: @unchecked Sendable {
         }
     }
 
-    /// Reads the file at `path` for deliveries of it whose bytes Gleaner never had, because the
-    /// path was missing, unreadable or not a regular file when it first looked. This first read
-    /// completes their captures, once, as first seen after delivery (SPEC §5.1), and saves a small
-    /// file as a capture does. Returns whether it completed any.
+    /// Reads the file at `path` for deliveries of it whose bytes Gleaner never had: because the path
+    /// was missing, unreadable or not a regular file when it first looked, or because the file was
+    /// listed with a delivered folder and not read (SPEC §5.4). This first read completes their
+    /// captures, once: the first as first seen after delivery (SPEC §5.1), the listed ones only while
+    /// the file is still as listed (`completeMembers`). It saves a small file as a capture does.
+    /// Returns whether it completed any.
     public func completeCaptures(of path: String, now: Date) throws -> Bool {
-        guard try registry.hasIncompleteCapture(path: path) else { return false }
+        let file = Workspace.file(at: path)
+        let listed = try file.map { try !registry.listedMembers(of: path, as: $0).isEmpty } ?? false
+        guard try listed || registry.hasIncompleteCapture(path: path) else { return false }
         let read = capture(path, deliveredAt: nil, now: now)
         guard read.sha256 != nil else { return false }
-        try registry.complete(capturesOf: path, with: read)
+        try registry.transaction {
+            try registry.complete(capturesOf: path, with: read)
+            try completeMembers(of: path, with: read, file: file)
+        }
         return true
     }
 }

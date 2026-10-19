@@ -198,6 +198,9 @@ public enum Workspace {
     struct Walk: Sendable {
         var files: [File] = []
         var problems: [String] = []
+        /// Where a walk that stops at a checkout stopped: the first folder it found holding `.git`.
+        /// What it found before is only part of the folder.
+        var checkout: String?
     }
 
     /// The workspace of a folder a session worked in: the Git checkout holding it (a worktree's own
@@ -249,8 +252,8 @@ public enum Workspace {
     /// Lists every regular file under `root`, by name, size, dates and identity; never opens one.
     /// Doesn't enter hidden folders, caches, or folders on another volume, and doesn't follow
     /// links. Folders are read in name order, so a walk cut at `limit` entries stops at the same
-    /// place each time.
-    static func walk(_ root: String, limit: Int = limit) -> Walk {
+    /// place each time. With `stopsAtCheckout`, it stops at the first folder holding `.git`.
+    static func walk(_ root: String, limit: Int = limit, stopsAtCheckout: Bool = false) -> Walk {
         var walk = Walk(), seen = 0
         var info = Darwin.stat()
         // stat(2), following a linked root, by the name `Locator.stat` uses: the struct's name hides the function's.
@@ -267,6 +270,10 @@ public enum Workspace {
             } catch {
                 walk.problems.append("\(folder): \(error.localizedDescription)")
                 continue
+            }
+            if stopsAtCheckout, names.contains(".git") {
+                walk.checkout = folder
+                return walk
             }
             if names.contains("CACHEDIR.TAG") { continue }
             var inner: [String] = []
@@ -290,6 +297,14 @@ public enum Workspace {
             folders += inner.reversed()
         }
         return walk
+    }
+
+    /// The regular file at `path` itself (not what a link leads to), by its metadata; nil for
+    /// anything else, or nothing.
+    static func file(at path: String) -> File? {
+        var info = Darwin.stat()
+        guard lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+        return file(path, info)
     }
 
     private static func file(_ path: String, _ info: Darwin.stat) -> File {
@@ -468,13 +483,16 @@ extension Registry {
     }
 
     /// The paths the replies of these logs named, and those named under `workspace` in any case
-    /// (as APFS compares names), each once.
+    /// (as APFS compares names), each once: a delivered folder's files among them.
     func deliveredPaths(logs: [String], under workspace: String) throws -> [String] {
         let pattern = workspace.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "%", with: "\\%")
             .replacingOccurrences(of: "_", with: "\\_") + "/%"
         let marks = Array(repeating: "?", count: logs.count).joined(separator: ", ")
-        return try db.rows("SELECT DISTINCT path FROM deliveries WHERE path LIKE ? ESCAPE '\\' OR log_path IN (\(marks))",
-                           [pattern] + logs).compactMap { $0["path"] as? String }
+        return try db.rows("""
+            SELECT path FROM deliveries WHERE path LIKE ? ESCAPE '\\' OR log_path IN (\(marks))
+            UNION SELECT m.path FROM members m JOIN deliveries d ON d.id = m.delivery_id
+                WHERE m.path LIKE ? ESCAPE '\\' OR d.log_path IN (\(marks))
+            """, [pattern] + logs + [pattern] + logs).compactMap { $0["path"] as? String }
     }
 
     /// Records observations the first time Gleaner sees each file during each session: one already
