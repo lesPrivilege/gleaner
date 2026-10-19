@@ -41,7 +41,7 @@ A file whose dates fall inside a session's span shows only that it **appeared or
 A file's dates can also be set. A copy that keeps them (`cp -p`, `rsync -a`, Finder, an archive) carries older dates into the workspace, and they would fall inside an old session's span. The inode's change time can't be set back, so a file whose inode last changed after the stretch its date falls in isn't placed there. The cost is a miss, never a false claim: anything that rewrites the inode later also moves that time, including a new permission, a rename, or an extended attribute such as the last-used date some apps write when a file is opened. A session read soon after it works, as the log watcher reads it, is unaffected. One first read long afterwards misses the files changed that way since. In the owner's series none were: no file's change time moved after the session.
 
 So Gleaner keeps two kinds of evidence and never turns one into the other:
-- **Handed over.** A final reply named the file. This is a delivery, as today, with its capture.
+- **Handed over.** A final reply named the file, or a folder holding it (layer 2). This is a delivery, as today, with its capture.
 - **Observed.** The file appeared during the span (its creation date falls inside it) or changed during it (its modification date does). This is a candidate:
   - Gleaner records it the first time it sees it and never rewrites it;
   - a later session's observation is added beside it;
@@ -66,7 +66,7 @@ Type, stem and folder help order and group a list. They never decide whether a f
 
 - **Order.** Handed over before observed. Within each, files a person opens (documents, images, audio, video) before files a program reads (data, code). Newest first.
 - **Session and request.** What a session handed over and what was observed during it are one list. A request's own span narrows the list when requests are far apart.
-- **Folders.** The outline keeps the workspace's own layout. A folder with many observed files of one kind folds into one row with its count ("out/voice · 211 files"), which opens on demand.
+- **Folders.** The outline keeps the workspace's own layout. A folder with many files of one kind that no reply named itself, observed or handed over in a folder, folds into one row with its count ("out/voice · 211 files"), which opens on demand. A file a reply named never folds.
 - **Stems.** Files in one folder whose names share a stem before their extensions or role suffixes are shown together: `ep00.mp4` beside `ep00.mix.wav`, `ep00.narration.wav` and `ep00.inputs.json`; `ov-4x3.svg` beside `ov-4x3.png`. Showing them together claims nothing: not that one was made from the other, nor that they are one work.
 
 What evidence can't group, the person groups once, into **work units**: a series, an episode, a chapter, a demo. A work unit sits between a project and its works and may span folders, repositories and sessions. It nests once, so a series holds episodes. That `00-overview`, `ep00` and `ov` are one episode is the owner's knowledge, not the log's. It puts three different works into one work unit. It is not a same-work join: a video, its narration and its cover are not versions of one another, and none takes another's revisions or review. The grouping is kept and can be undone. A model may later propose groupings, citing evidence, for the person to accept. That waits for the evaluation the owner gates.
@@ -94,7 +94,7 @@ Each shape an adapter knows keeps a sanitized fixture line from a real log and t
    - For each session, its workspace and span, and the files that appeared or changed during it, kept as candidates beside deliveries.
    - Metadata only; bytes are read on the person's action.
    - Tests on synthetic sessions in several kinds of work: a video series, a report, a slide deck, a data analysis, and a code change.
-2. **Bundles.** A reply that hands over a folder hands over what is in it. Its files are listed with "Handed over in" evidence, stronger than "Appeared during", by metadata, and each is versioned when the person acts on it.
+2. **Bundles.** A reply that hands over a folder hands over what is in it. Its files are listed with "Handed over in" evidence, stronger than "Appeared during", by metadata: each is a delivery of its own file, versioned with that file's other deliveries, whose bytes are read when the person acts on it.
 3. **Work units and the window.**
    - **In a project:** work units first (a series, then its episodes), then what each session handed over and what was observed during it, by folder, with crowded folders folded and stems shown together. Candidates stay under their session until kept.
    - **In a work unit's detail:** its works played, heard and shown in place, each with "Handed over in", "Appeared during" or "Changed during", its versions, and the four states.
@@ -140,3 +140,33 @@ Checked: `swift test`.
   - `scripts/acceptance-home.py <home> capture`.
 - `ListingTests` checks the order, the fold and stems.
 - `ObservingTests` checks the model, and `WordingTests` the words.
+
+## Layer 2, as built
+
+Built on `feat/bundles`, 2026-10-19. [SPEC §5.4](../SPEC.md) is the contract, and Invariant 1 now says that naming a folder names what is in it. Where it differs from the chapter above, or settles what the chapter left open:
+
+- **A folder's files are deliveries, not observations.** Each is a revision of its own file's work, carrying the reply, session, request, time and evidence of the folder's delivery, and which folder delivery it came through. Works stay per path (SPEC §5.1a), so a file a reply also named itself numbers those deliveries together with its folder's, by time. Nothing joins files: the folder and its files are separate works.
+- **Listed by the workspace walk.** `Workspace.walk` lists the folder as it lists a workspace: metadata only, no links, no other volume, the same structural skips and the same bound, a listing cut short reported in Sources. It also stops at the first folder holding `.git`. Hidden files, which layer 1 observes, are never a folder's files.
+- **Not unpacked**, with why: what a workspace walk skips; a folder directly in the home, by depth; a cache folder; a Git checkout's folder, the folder a conversation worked in outside git, or a folder holding either, the last found by the walk stopping at `.git`. Handing over a project points at the project; layer 1 observes what changed there. The folder and why are named in its detail and, apart from problems, in Sources.
+- **Membership by the reply's time.** With 2 seconds of grace, the clock tolerance §5.1 already uses: created by the reply and unchanged since, handed over as it is; created by the reply and changed since, handed over and said to have possibly changed or been replaced; created after, not handed over. A listing near the reply, as the log watcher makes it, finds the first; a backfill finds the second for every file a later write, permission or copy touched, which is as much as the dates show.
+- **Listed, then read.** A file's capture holds its size and dates as `listed` until Gleaner first reads it: when the person selects it (which Quick Look, Open, Compare and the tile act on), drags its row, or a later reply names it. That read completes every listing the file still matches (identity, size and modification date), at delivery only under §5.1's rules and with the inode unchanged since the reply, else first seen after. One that no longer matches stays listed: the bytes read now aren't shown to be the ones handed over. The chapter's "versioned when the person acts on it" is that: versions follow deliveries; acting on one reads its bytes.
+- **Storage.** `members`, keyed by path then folder delivery, without row ids, one row per folder delivery and file, written as listed. `listings`, one row per folder delivery, records when it was listed, why it wasn't unpacked and what the listing couldn't see; a folder delivery without one is what the next run lists, so a library read before this layer has its folders listed then, with no log read again and no extractor version bump.
+- **Search** finds a folder's file by its name, its folder and its project. Its delivery carries the reply's words but isn't found by them: they find the folder, so a topic word doesn't return hundreds of files.
+- **The window.** A project's outline lays out each folder's works as `Listing.rows` orders them: what a person opens first, newest first, stems side by side, and files of one kind that no reply named itself folded from twelve, those handed over in a folder apart from those observed. Layer 1 folded only observed files; what a reply named still never folds. The detail names the folder a file came in, with a link to it, and says when its dates show it may have changed since; a folder's detail counts its files or says why they aren't listed; Versions says "same size and dates" before a hash; a row drag reads a listed file at the drop. The project's Recent names what replies named. All Deliveries and search results list a folder's files unfolded.
+- **Not in this layer.** Candidates still aren't listed in the window: where they show, and a project with candidates and no delivery, wait for layer 3.
+
+Checked: `swift test`.
+- `BundleTests` reads synthetic sessions whose replies name folders, in five kinds of work: a media pipeline with three hundred nested segments, a hidden `.env` and `.DS_Store`, a hidden folder and a cache; a report; a static site whose page the reply also named; a data analysis's output; a code change naming a folder inside its repository. It also checks:
+  - a repository's folder, a folder holding one, the home, a folder directly in it, the folder a conversation worked in and one holding it, none unpacked, each with its reason;
+  - membership by time on a live read (added after, copied in with older dates, changed after) and on a backfill;
+  - a folder delivered twice, and a file in a folder also named itself, whose listing a later capture completes;
+  - a candidate in a folder a later reply names;
+  - a library read before this layer, listed on the next run;
+  - a reread and a relaunch, and a file changed since it was listed;
+  - corrections on a folder's file, and undo;
+  - that listing reads no bytes (access times, a file Gleaner can't read, a FIFO, a large sparse file), and the first read's provenance;
+  - the listing's bound;
+  - `scripts/acceptance-home.py <home> bundle`.
+- `ObservationTests` now finds a folder's files handed over beside their observations.
+- `ListingTests` checks that a folder's files fold apart from observed ones, and named files never.
+- `BundlingTests` checks the outline's folding and order, search by name, reading on selection and at a row's drop, versions, corrections and undo, and the words. `TourTests` walks the bundle phase in pictures (`GLEANER_TOUR=<folder>`).
