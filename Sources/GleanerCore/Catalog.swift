@@ -46,34 +46,34 @@ public struct Catalog: Sendable {
 // MARK: Commands
 
 extension Catalog {
-    /// The artifacts whose words match every term (SPEC §10), newest first, each by the delivery
-    /// the search matched; at most `limit` of them. The library is the app's: without the agents
-    /// turned off, and each file in the project the app shows it in, after the person's
-    /// corrections. `project` names that project by its name as shown, or a derived one by its
+    /// The works whose words match every term (SPEC §10), as the app's search finds and lists them
+    /// (`Organization.search`), each by the delivery the search matched, in the file that holds it;
+    /// at most `limit` of them. The library is the app's: without the agents turned off, files the
+    /// person joined as one work, each work in the project the app shows it in and found by its
+    /// collections' names, after the person's corrections. `project` names that project by its name as shown, or a derived one by its
     /// folder, in any form an agent may have it (`/private/tmp/app/` is `/tmp/app`); the project
     /// Gleaner found a file in, by its folder or name, finds it too, wherever the person put it.
     public func find(_ terms: [String], project: String? = nil, kind: Artifact.Kind? = nil, limit: Int = 20) throws -> Found {
         guard limit > 0 else { throw Failure.usage("The limit must be at least 1.") }
-        let tokens = terms.joined(separator: " ").lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+        let tokens = Search.tokens(terms.joined(separator: " "))
         let folder = project.flatMap { $0.hasPrefix("/") ? Paths.standard($0) : nil }
         let index = try registry.index()
-        let artifacts = try shown().artifacts
-        let organization = try organize(artifacts)
-        let matches = artifacts.compactMap { artifact -> (Artifact, Project, Int)? in
-            let place = self.project(of: artifact, in: organization)
-            let inProject = project.map { wanted in
-                if let folder, folder == place.folder || folder == artifact.projectFolder { return true }
-                return [place.name, organization.projectName(artifact.projectFolder), artifact.project]
-                    .contains { $0.caseInsensitiveCompare(wanted) == .orderedSame }
-            } ?? true
-            guard inProject, kind == nil || artifact.kind == kind, let match = artifact.matches(tokens, project: place.name)
-            else { return nil }
-            return (artifact, place, match.index)
+        let organization = try organize(try shown().artifacts)
+        func place(_ work: Work) -> Project {
+            organization.project(work.project).map { Project(name: $0.name, folder: $0.folder) }
+                ?? Project(name: work.latest.project, folder: work.latest.projectFolder)
         }
-        let results = matches.prefix(limit).map { artifact, place, match in
-            let delivery = artifact.deliveries[match]
+        let matches = organization.search(tokens, kind: kind) { work in
+            guard let project else { return true }
+            let shown = place(work)
+            if let folder, folder == shown.folder || work.files.contains(where: { $0.projectFolder == folder }) { return true }
+            return ([shown.name] + work.files.flatMap { [organization.projectName($0.projectFolder), $0.project] })
+                .contains { $0.caseInsensitiveCompare(project) == .orderedSame }
+        }
+        let results = matches.prefix(limit).map { work, delivery in
+            let artifact = work.file(of: delivery)
             return Hit(reference: reference(delivery, of: artifact, now: check(artifact), library: index.library),
-                       project: place, kind: artifact.kind,
+                       project: place(work), kind: artifact.kind,
                        deliveredAt: delivery.deliveredAt, request: Self.excerpt(delivery.request))
         }
         return Found(index: index, total: matches.count, truncated: matches.count > limit, results: Array(results))
@@ -238,9 +238,10 @@ extension Catalog {
         return (Artifact.shown(library, without: try registry.sourcesOff()), library)
     }
 
-    /// Projects and works as the app shows them: what Gleaner found, with the person's corrections.
+    /// Projects, collections and works as the app shows them: what Gleaner found and observed, with
+    /// the person's corrections (`Organization(shown:registry:)`).
     private func organize(_ artifacts: [Artifact]) throws -> Organization {
-        Organization(artifacts: artifacts, corrections: try registry.corrections(), projects: try registry.userProjects())
+        try Organization(shown: artifacts, registry: registry)
     }
 
     /// The project the app shows `artifact` in. The organization holds every artifact it was made

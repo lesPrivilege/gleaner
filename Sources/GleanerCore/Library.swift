@@ -182,6 +182,12 @@ public struct Artifact: Sendable, Identifiable {
     /// The library as Gleaner shows it while the agents `off` are turned off in Sources
     /// (`Registry.sourcesOff`): without their deliveries, and without the files left with none.
     /// The app and the query core both show it so.
+    /// The paths among `artifacts` with nothing at them now: what a join suggestion asks of a file
+    /// no longer at its path. Stats each path.
+    public static func missing(_ artifacts: [Artifact]) -> Set<String> {
+        Set(artifacts.lazy.map(\.path).filter { Locator.stat($0).kind == .missing })
+    }
+
     public static func shown(_ library: [Artifact], without off: Set<Provider>) -> [Artifact] {
         guard !off.isEmpty else { return library }
         return library.compactMap { $0.keeping { !off.contains($0.provider) } }.sorted(by: newerFirst)
@@ -441,7 +447,7 @@ public enum Admission {
 /// How search compares words: lowercased and in one Unicode form (NFC), so an accent typed one
 /// way finds it stored the other, compared as plain text, which is fast enough to run on every
 /// keystroke over a large library.
-enum Search {
+public enum Search {
     static func form(_ text: String) -> String {
         text.lowercased().precomposedStringWithCanonicalMapping
     }

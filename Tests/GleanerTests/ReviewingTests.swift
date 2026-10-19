@@ -730,6 +730,37 @@ import UniformTypeIdentifiers
         #expect(model.results.map(\.id) == [video])
     }
 
+    /// `gleaner find`, and so `gleaner mcp`, finds what the window's search finds, by the same
+    /// deliveries in the same order: one work for files joined as one, a collection's name, a
+    /// kept file, the kind and the project (`Organization.search`).
+    @Test func theCatalogFindsWhatTheWindowFinds() async throws {
+        try session("three", title: "Mix", from: 30, to: 45, reply: "The [mix](out/ep01.mix.wav).")
+        _ = try indexer.run()
+        let model = relaunch()
+        let project = try #require(model.organization.work(containing: video)?.project)
+        await model.join(video, mix)
+        let launch = try #require(await model.newUnit(named: "Launch", in: project))
+        await model.add([try #require(model.organization.work(containing: video))], to: try #require(model.organization.unit(launch.key)))
+        await model.keep([try #require(model.organization.candidate(cover))])
+        let catalog = Catalog(registry: indexer.registry, store: indexer.store)
+        let name = try #require(model.organization.project(project)?.name)
+        for query in ["", "launch", "episode", "mix", "cover", "launch cover", "ep01", "make"] {
+            model.query = query
+            let window = model.results.map(\.matched.id)
+            let found = try catalog.find([query], limit: 100).results.map(\.reference.delivery)
+            #expect(found == window, "\(query)")
+            model.kind = .media
+            #expect(try catalog.find([query], kind: .media, limit: 100).results.map(\.reference.delivery) == model.results.map(\.matched.id), "\(query)")
+            model.kind = nil
+            model.place = .project(project)
+            #expect(try catalog.find([query], project: name, limit: 100).results.map(\.reference.delivery) == model.results.map(\.matched.id), "\(query)")
+            model.place = .all
+        }
+        // Joined, the two files are one result; in its collection, it is found by the collection's name.
+        model.query = "launch"
+        #expect(model.results.count == 1 && model.results[0].work.files.count == 2)
+    }
+
     @Test func aCollectionMadeFromAGroupHoldsExactlyItAndOneUndoTakesItBack() async throws {
         let model = relaunch()
         let undo = UndoManager()

@@ -85,6 +85,12 @@ public struct Candidate: Sendable, Identifiable {
 
     /// Each file observed, with every session's observation of it, newest first: what
     /// `Organization` takes, made once each time the observations load.
+    /// The candidates the app shows: an agent turned off has its observations hidden with its
+    /// deliveries.
+    public static func shown(_ observed: [Candidate], without off: Set<Provider>) -> [Candidate] {
+        off.isEmpty ? observed : observed.compactMap { $0.keeping { !off.contains($0.provider) } }
+    }
+
     public static func files(_ observations: [Observed]) -> [Candidate] {
         Dictionary(grouping: observations, by: \.path).map { path, list in
             Candidate(path: path, observations: list.sorted {

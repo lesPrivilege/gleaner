@@ -505,3 +505,39 @@ public struct Organization: Sendable {
         return (path as NSString).deletingLastPathComponent + "\n" + stem + "\n" + ext
     }
 }
+
+/// The library as the person sees it, and its search: one path for the window and for `gleaner`
+/// and `gleaner mcp` (`Catalog`), so an agent finds what the person would.
+extension Organization {
+    /// The library as the app shows it: `artifacts` as `Artifact.shown` leaves them, with the
+    /// observations (an agent turned off hides its own), corrections, projects and collections the
+    /// registry holds.
+    public init(shown artifacts: [Artifact], registry: Registry) throws {
+        let off = try registry.sourcesOff()
+        self.init(artifacts: artifacts, observed: Candidate.shown(Candidate.files(try registry.observations()), without: off),
+                  corrections: try registry.corrections(), projects: try registry.userProjects(), units: try registry.units(),
+                  missing: Artifact.missing(artifacts))
+    }
+
+    /// The delivery a search for `tokens` finds `work` by, or nil when it doesn't match (SPEC §10):
+    /// by its files' words, its project's name and its collections' names (`Work.match`).
+    public func match(_ work: Work, _ tokens: [String]) -> Delivery? {
+        work.match(tokens, project: projectName(work.project), collections: unitNames(of: work))
+    }
+
+    /// The works `tokens` find, in the order the library lists them, each with the delivery it was
+    /// found by: of `kind` when given, among those `holds` keeps.
+    public func search(_ tokens: [String], kind: Artifact.Kind? = nil, in holds: (Work) -> Bool = { _ in true }) -> [(work: Work, matched: Delivery)] {
+        works.compactMap { work in
+            guard holds(work), kind == nil || work.kind == kind, let matched = match(work, tokens) else { return nil }
+            return (work, matched)
+        }
+    }
+}
+
+extension Search {
+    /// A search's words, as typed: split at white space, in lower case.
+    public static func tokens(_ query: String) -> [String] {
+        query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
+    }
+}

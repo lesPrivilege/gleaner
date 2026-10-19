@@ -296,7 +296,7 @@ final class LibraryModel {
     private func showArtifacts() {
         artifacts = Artifact.shown(library, without: sourcesOff)
         siblings = Artifact.deliveredWith(artifacts)
-        missing = Self.missing(artifacts)
+        missing = Artifact.missing(artifacts)
         saved = Self.saved(artifacts, in: indexer.store).union(reviews.hashes.filter(indexer.store.has))
         reorganize()
     }
@@ -382,8 +382,7 @@ final class LibraryModel {
 
     private func reorganize() {
         // An agent turned off has its observations hidden with its deliveries.
-        let observed = sourcesOff.isEmpty ? observed : observed.compactMap { $0.keeping { !sourcesOff.contains($0.provider) } }
-        organization = Organization(artifacts: artifacts, observed: observed, corrections: corrections,
+        organization = Organization(artifacts: artifacts, observed: Candidate.shown(observed, without: sourcesOff), corrections: corrections,
                                     projects: userProjects, units: units, missing: missing)
         organizationVersion += 1
         statReviewed()
@@ -406,10 +405,6 @@ final class LibraryModel {
     @ObservationIgnored private(set) var organizationVersion = 0
 
     /// Only what is shown to be gone: a file Gleaner can't reach is unreadable, not missing.
-    private static func missing(_ artifacts: [Artifact]) -> Set<String> {
-        Set(artifacts.lazy.map(\.path).filter { Locator.stat($0).kind == .missing })
-    }
-
     /// The store is shared by content: a copy saved for one file serves every file with its bytes,
     /// and the bytes a verdict was made on.
     private static func saved(_ artifacts: [Artifact], in store: ContentStore) -> Set<String> {
@@ -614,7 +609,7 @@ final class LibraryModel {
         }
     }
 
-    var tokens: [String] { query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init) }
+    var tokens: [String] { Search.tokens(query) }
 
     /// The works the window lists, newest first: in the project shown, of the kind chosen, matching the search.
     var results: [SearchResult] {
@@ -624,7 +619,7 @@ final class LibraryModel {
         // To Review's works are what it holds: the queue is worked out once, not once for each.
         let results = place == .toReview
             ? toReview.flatMap(\.works).compactMap { result(for: $0, tokens: tokens, anywhere: true) }
-            : organization.works.compactMap { result(for: $0, tokens: tokens) }
+            : organization.search(tokens, kind: kind) { holds(place, $0) }.map { SearchResult(work: $0.work, matched: $0.matched) }
         resultsCache = (key, results)
         return results
     }
@@ -650,8 +645,7 @@ final class LibraryModel {
 
     private func result(for work: Work, tokens: [String], anywhere: Bool = false) -> SearchResult? {
         guard anywhere || holds(place, work), kind == nil || work.kind == kind,
-              let matched = work.match(tokens, project: organization.projectName(work.project),
-                                       collections: organization.unitNames(of: work)) else { return nil }
+              let matched = organization.match(work, tokens) else { return nil }
         return SearchResult(work: work, matched: matched)
     }
 
