@@ -201,19 +201,14 @@ public final class Registry: @unchecked Sendable {
         }
         // And the keys it held that Gleaner doesn't know, what its read counted, and whether that read
         // found fewer final replies than the one before: an adapter that stops understanding a format
-        // shows in its counts.
-        if try !has("log_files", "records") {
-            try db.transaction {
-                try db.execute("""
-                    ALTER TABLE log_files ADD COLUMN unknown_fields TEXT;
-                    ALTER TABLE log_files ADD COLUMN records INTEGER;
-                    ALTER TABLE log_files ADD COLUMN known_records INTEGER;
-                    ALTER TABLE log_files ADD COLUMN turns INTEGER;
-                    ALTER TABLE log_files ADD COLUMN final_replies INTEGER;
-                    ALTER TABLE log_files ADD COLUMN closed_replies INTEGER;
-                    ALTER TABLE log_files ADD COLUMN candidates INTEGER;
-                    ALTER TABLE log_files ADD COLUMN fewer_replies INTEGER;
-                    """)
+        // shows in its counts. Each column is added on its own: a library from a build between two of
+        // them has some and not the others.
+        try db.transaction {
+            for (column, type) in [("unknown_fields", "TEXT"), ("records", "INTEGER"), ("known_records", "INTEGER"),
+                                   ("turns", "INTEGER"), ("final_replies", "INTEGER"), ("closed_replies", "INTEGER"),
+                                   ("candidates", "INTEGER"), ("fewer_replies", "INTEGER")]
+            where try !has("log_files", column) {
+                try db.execute("ALTER TABLE log_files ADD COLUMN \(column) \(type);")
             }
         }
         // Each capture keeps what was at the path, so one without a hash says why. Before, it kept

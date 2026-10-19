@@ -983,6 +983,15 @@ import Testing
         #expect([row["final_replies"] as? Int64, row["closed_replies"] as? Int64] == [1, 0])
     }
 
+    @Test func aLibraryWithSomeOfTheCountsGetsTheRest() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        // A build between the counts kept all but the closed replies, and its version is this one's.
+        try indexer.registry.db.execute("ALTER TABLE log_files DROP COLUMN closed_replies")
+        let upgraded = try reopened()
+        #expect(try upgraded.run(now: { delivered.addingTimeInterval(40) }).logsRead == 0)
+        #expect(try upgraded.registry.db.rows("SELECT closed_replies FROM log_files").count == 1)
+    }
+
     @Test func aReadingThatCountsFewerRepliesIsNoAlarmOnItsFirstRead() throws {
         // Read by 16, an interrupted turn's text was counted as a closed reply; 17 counts none (R3).
         _ = try place("claude-interrupted-reply", at: "claude/-Praxis/session-2.jsonl")
