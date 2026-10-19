@@ -60,12 +60,19 @@ public struct ContentStore: Sendable {
         }
         let size = (try? fm.attributesOfItem(atPath: temporary.path)[.size] as? NSNumber)?.int64Value ?? 0
         let target = objectURL(sha)
-        if fm.fileExists(atPath: target.path) {
+        // A saved copy already there is kept only while it still holds these bytes. One that
+        // doesn't, damaged on disk, is replaced by this copy in one rename, so saving again repairs it.
+        if Self.isRegularFile(target), Locator.sha256(target.path) == sha {
             try fm.removeItem(at: temporary)
         } else {
-            try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
-            try fm.moveItem(at: temporary, to: target)
-            try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: target.path)
+            do {
+                try fm.createDirectory(at: target.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: temporary.path)
+                guard rename(temporary.path, target.path) == 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+            } catch {
+                try? fm.removeItem(at: temporary)
+                throw error
+            }
         }
         return (sha, size)
     }
@@ -125,8 +132,8 @@ public struct ContentStore: Sendable {
     }
 
     /// `stage`, with what tells later whether the copy is still the one hashed (`isIntact`).
-    /// It is copied from the saved copy when there is one, else from `source`, and handed out only
-    /// if the copy itself hashes to `sha`. The copy is made under a name of its own and published
+    /// It is copied from the saved copy when there is one and from `source` when that copy doesn't
+    /// hash to `sha`, and handed out only if the copy itself hashes to `sha`. The copy is made under a name of its own and published
     /// whole by one rename, so overlapping stages of a version never remove or truncate each
     /// other's file, and clearing hand-off copies meanwhile never removes it. A copy already there
     /// is hashed again and used only while it hashes to `sha` and stayed the same file throughout.
@@ -142,14 +149,10 @@ public struct ContentStore: Sendable {
             return Prepared(url: target, sha: sha, identity: before)
         }
 
-        let origin: String
-        if has(sha) {
-            origin = objectURL(sha).path
-        } else if let source {
-            origin = source
-        } else {
-            throw Failure.unavailable
-        }
+        // The saved copy first, then the file itself: a saved copy damaged on disk doesn't keep a
+        // file that still holds the bytes from being handed over.
+        let origins = (has(sha) ? [objectURL(sha).path] : []) + (source.map { [$0] } ?? [])
+        guard !origins.isEmpty else { throw Failure.unavailable }
         try fm.createDirectory(at: staging, withIntermediateDirectories: true)
         let incoming = ".incoming-\(UUID().uuidString)"
         let temporary = staging.appendingPathComponent(incoming)
@@ -158,11 +161,25 @@ public struct ContentStore: Sendable {
             try? fm.removeItem(at: temporary)
             preparations.lock.withLock { _ = preparations.names.remove(incoming) }
         }
-        try fm.copyItem(at: URL(fileURLWithPath: origin).resolvingSymlinksInPath(), to: temporary)
-        try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: temporary.path)
-        let hashed = Identity(temporary)
-        let found = hashed != nil ? Locator.sha256(temporary.path) ?? "" : ""
-        guard found == sha else { throw Failure.changed(expected: sha, found: found) }
+        var hashed: Identity?
+        var failure: Error?
+        for origin in origins {
+            try? fm.removeItem(at: temporary)
+            do {
+                try fm.copyItem(at: URL(fileURLWithPath: origin).resolvingSymlinksInPath(), to: temporary)
+                try fm.setAttributes([.posixPermissions: 0o444], ofItemAtPath: temporary.path)
+                hashed = Identity(temporary)
+                let found = hashed != nil ? Locator.sha256(temporary.path) ?? "" : ""
+                guard found == sha else { throw Failure.changed(expected: sha, found: found) }
+                failure = nil
+                break
+            } catch {
+                // The first origin's failure is the one said: the saved copy's, when there is one.
+                failure = failure ?? error
+                hashed = nil
+            }
+        }
+        if let failure { throw failure }
         // Published and read under the lock clearing and other stages take, so what is read is this
         // copy. The rename may stamp a new change time; the inode and the bytes' modification time
         // say it is still the file hashed.
