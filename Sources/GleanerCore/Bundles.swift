@@ -66,6 +66,7 @@ public struct Unpacking: Sendable, Equatable {
     static let workedIn = "the folder its conversation worked in"
     static let holdingWorkedIn = "a folder holding the one its conversation worked in"
     static let package = "a package, which Finder shows as one file"
+    static let insidePackage = "inside a package, which Finder shows as one file"
 }
 
 extension Indexer {
@@ -213,19 +214,28 @@ extension Indexer {
             return .never(whole == "a volume" ? "a folder directly on a volume" : "a folder directly in \(whole)")
         }
 
+        // Every folder up to the home, or the root, is checked: what lies inside a hidden folder, a
+        // cache or a package is out of sight. A hidden folder above the folder's checkout is passed
+        // only when a repository other than the home holds it, as one keeps its agents' worktrees
+        // (`.claude/worktrees`); a checkout kept in `~/.config` is still inside a hidden folder.
         let checkout = Projects.resolve(path)?.folder
-        let boundary = checkout.map { ($0 as NSString).deletingLastPathComponent } ?? homes.first { path.hasPrefix($0 + "/") } ?? "/"
+        let top = homes.first { path.hasPrefix($0 + "/") } ?? "/"
         var inner = path
-        while inner != boundary, inner != "/", !inner.isEmpty {
+        while inner != top, inner != "/", !inner.isEmpty {
             let name = (inner as NSString).lastPathComponent
+            let parent = (inner as NSString).deletingLastPathComponent
             if Workspace.caches.contains(name) || FileManager.default.fileExists(atPath: inner + "/CACHEDIR.TAG") {
                 return .never(inner == path ? "a cache a tool left" : "inside a cache a tool left")
             }
+            if Workspace.isPackage(name) { return .never(inner == path ? Unpacking.package : Unpacking.insidePackage) }
             // The folder's own name is checked by `Workspace.skipped`.
-            if name.hasPrefix(".") { return .never("inside a hidden folder") }
-            inner = (inner as NSString).deletingLastPathComponent
+            if name.hasPrefix(".") {
+                let aboveCheckout = checkout.map { $0.hasPrefix(inner + "/") } ?? false
+                let keptByRepository = Projects.resolve(parent).map { !homes.contains(Workspace.resolved($0.folder)) } ?? false
+                if !(aboveCheckout && keptByRepository) { return .never("inside a hidden folder") }
+            }
+            inner = parent
         }
-        if Workspace.isPackage((path as NSString).lastPathComponent) { return .never(Unpacking.package) }
 
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: path) else {
             return .later("couldn’t be read", isProblem: true)

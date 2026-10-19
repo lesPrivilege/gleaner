@@ -311,10 +311,11 @@ import Testing
     }
 
     /// A folder inside a hidden folder holds what Finder hides, settings and their tokens among
-    /// them; one inside a cache, what a tool rebuilds. Neither is unpacked, however deep, nor when
-    /// the hidden folder is itself a repository, as `~/.config` kept in git is. Counted from the
-    /// folder holding the checkout, an agent's worktree kept in a hidden folder is unpacked as any of
-    /// its repository's folders, as a workspace walk walks it.
+    /// them; one inside a cache, what a tool rebuilds; one inside a package, part of what Finder
+    /// shows as one file. None is unpacked, however deep: not when the hidden folder is itself a
+    /// repository, as `~/.config` kept in git is, nor when a repository is kept inside one, as a
+    /// clone in `~/.local/share` is. An agent's worktree kept in its repository's hidden folder is
+    /// unpacked as any of that repository's folders, as a workspace walk walks it.
     @Test func aFolderInsideAHiddenFolderOrACacheIsNotUnpacked() throws {
         let gh = try folder(".config/gh")
         try FileManager.default.createDirectory(at: home.appendingPathComponent(".config/.git"), withIntermediateDirectories: true)
@@ -332,13 +333,22 @@ import Testing
         try file(".git", in: worktree, created: minutes(10), text: "gitdir: \(repo.path)/.git/worktrees/x")
         let dist = worktree.appendingPathComponent("dist")
         try file("app.js", in: dist, created: minutes(10))
+        let clone = try folder(".local/share/proj")
+        try FileManager.default.createDirectory(at: clone.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        let notes = clone.appendingPathComponent("notes")
+        try file("secrets.md", in: notes, created: minutes(10))
+        let resources = repo.appendingPathComponent("out/Foo.app/Contents/Resources")
+        try file("icon.png", in: resources, created: minutes(10))
 
         #expect(Projects.resolve(gh.path)?.folder == home.path + "/.config")
-        let reasons = try notUnpacked([gh.path, release.path, cargo.path, widget.path], cwd: repo)
+        let reasons = try notUnpacked([gh.path, release.path, cargo.path, widget.path, notes.path, resources.path], cwd: repo)
         #expect(reasons == [".config/gh": "inside a hidden folder", ".build/release": "inside a hidden folder",
-                            "target/release": "inside a cache a tool left", "widget/dist": "inside a cache a tool left"])
+                            "target/release": "inside a cache a tool left", "widget/dist": "inside a cache a tool left",
+                            "proj/notes": "inside a hidden folder",
+                            "Contents/Resources": "inside a package, which Finder shows as one file"])
         let organization = try organization()
         #expect(search("hosts", in: organization).isEmpty && search("oauth", in: organization).isEmpty)
+        #expect(search("secrets", in: organization).isEmpty && search("icon", in: organization).isEmpty)
         #expect(((try? FileManager.default.contentsOfDirectory(atPath: indexer.store.objects.path)) ?? []).isEmpty)
 
         // As layer 1 decides for the same folders: the worktree is walked, the hidden repository isn't.
