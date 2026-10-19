@@ -27,8 +27,8 @@ enum ReviewForm: Int, Comparable {
 
 /// A collection's works as its review page lays them out: what a person opens, by form, in list
 /// order, each with the files beside it whose names in its folder differ from its own only by their
-/// extension (`ov-4x3.png`, `ov-4x3.svg`); then what a program reads. Files that share no more
-/// than a stem (`ep01.mp4`, `ep01.cover-4x3.png`, `ep01.script.md`) are each drawn in their own
+/// extension (`chart-4x3.png`, `chart-4x3.svg`); then what a program reads. Files that share no more
+/// than a stem (`intro.mp4`, `intro.poster-4x3.png`, `intro.notes.md`) are each drawn in their own
 /// form. Files shown together claim nothing about which was made from which (SPEC §5.3).
 struct ReviewLayout {
     struct Item: Identifiable {
@@ -78,6 +78,42 @@ struct Asking: Identifiable {
     /// Where it was asked for, where a refusal is said: a collection's key, or a work's id.
     var place: String? = nil
     var id: String { kind.rawValue + "\n" + works.map(\.id).joined(separator: "\n") }
+}
+
+/// What Review All acts on (docs/design/review.md, The review page): each image and document the
+/// page drew whole, with a file there, that hasn't that verdict on these bytes already. Videos and
+/// audio each need a verdict of their own, since a file played isn't a file watched or heard (A07):
+/// they never pass with others, and the menu says how many wait one by one.
+struct ReviewAll {
+    var approve: [Work] = [], changes: [Work] = [], reject: [Work] = []
+    /// The videos and the audio files on the page with a file there and no verdict on its bytes.
+    var videos = 0, audio = 0
+
+    /// `works` as the page shows them; `drawn` the files drawn whole, `shown` each file as drawn.
+    init(_ works: [Work], drawn: Set<String>, shown: [String: FileStat], verdict: (Work) -> Standing) {
+        for work in works where work.kind != .folder && shown[work.latest.path] != nil {
+            let standing = verdict(work)
+            switch ReviewForm(work) {
+            case let form? where form == .video || form == .audio:
+                if case .current = standing { continue }
+                if form == .video { videos += 1 } else { audio += 1 }
+            case .image?, .document?:
+                guard drawn.contains(work.latest.path) else { continue }
+                func has(_ kind: Review.Kind) -> Bool { if case .current(let review) = standing { review.kind == kind } else { false } }
+                if !has(.approved) { approve.append(work) }
+                if !has(.changesRequested) { changes.append(work) }
+                if !has(.rejected) { reject.append(work) }
+            default:
+                // A model, a build, or what a program reads: drawn as its icon, judged on its own.
+                continue
+            }
+        }
+    }
+
+    /// Nothing for any of its verdicts to act on.
+    var isEmpty: Bool { approve.isEmpty && changes.isEmpty && reject.isEmpty }
+    /// What it leaves to each one's own verdict, in a line of its menu.
+    var oneByOne: String? { Wording.oneByOne(videos: videos, audio: audio) }
 }
 
 /// A collection's review page (docs/design/review.md, A collection's detail): its name, what waits,
@@ -186,30 +222,23 @@ struct ReviewPage: View {
                 .font(.callout)
             }
             Spacer(minLength: Space.s)
-            let all = layout.works
-            let approve = targets(.approved, all), changes = targets(.changesRequested, all), reject = targets(.rejected, all)
-            // Each verdict only while some work drawn hasn't been given it on these bytes.
+            let all = ReviewAll(layout.works, drawn: drawn, shown: shown, verdict: model.verdict)
+            // Each verdict only while some image or document drawn hasn't been given it on these bytes.
             Menu("Review All") {
-                Button("Approve All") { make(.approved, approve, note: nil) }
-                    .disabled(approve.isEmpty)
-                Button("Request Changes to All…") { ask(Asking(works: changes, kind: .changesRequested, shown: shown, place: unit.key)) }
-                    .disabled(changes.isEmpty)
-                Button("Reject All…") { ask(Asking(works: reject, kind: .rejected, shown: shown, place: unit.key)) }
-                    .disabled(reject.isEmpty)
+                Button("Approve All") { make(.approved, all.approve, note: nil) }
+                    .disabled(all.approve.isEmpty)
+                Button("Request Changes to All…") { ask(Asking(works: all.changes, kind: .changesRequested, shown: shown, place: unit.key)) }
+                    .disabled(all.changes.isEmpty)
+                Button("Reject All…") { ask(Asking(works: all.reject, kind: .rejected, shown: shown, place: unit.key)) }
+                    .disabled(all.reject.isEmpty)
+                if let oneByOne = all.oneByOne {
+                    Divider()
+                    Text(oneByOne)
+                }
             }
             .fixedSize()
-            .disabled(approve.isEmpty && changes.isEmpty && reject.isEmpty)
-            .help("A verdict on each work played, shown or rendered here, bound to the bytes hashed as it is made. Files only named, or that couldn’t be drawn whole, are judged on their own.")
-        }
-    }
-
-    /// The works that a verdict of `kind` would add to: those drawn whole in their form, with a
-    /// file there, not already given that verdict on these bytes. A folder has no bytes to judge.
-    func targets(_ kind: Review.Kind, _ works: [Work]) -> [Work] {
-        works.filter { work in
-            guard work.kind != .folder, drawn.contains(work.latest.path), shown[work.latest.path] != nil else { return false }
-            if case .current(let review) = model.verdict(of: work), review.kind == kind { return false }
-            return true
+            .disabled(all.isEmpty && all.oneByOne == nil)
+            .help("A verdict on each image and document shown whole here, bound to the bytes hashed as it is made. Videos and audio each need their own; files only named, or that couldn’t be drawn whole, are judged on their own.")
         }
     }
 
@@ -264,6 +293,13 @@ struct ReviewPage: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .contextMenu {
+            // Files shown together, as the person chooses: a collection of exactly them, inside this
+            // one, or beside it when it is itself inside another.
+            if !item.beside.isEmpty {
+                NewCollectionFromThese(works: [lead] + item.beside, inside: unit.parent ?? unit.key)
+            }
+        }
     }
 }
 
@@ -394,7 +430,8 @@ struct ImageTile: View {
     var generation: Int
     /// Called once the image is drawn large enough to see.
     var rendered: () -> Void = {}
-    @State private var image: NSImage?
+    /// Nil until the file is read; then the image, or nil when neither ImageIO nor AppKit can draw it.
+    @State private var image: NSImage??
     @Environment(\.displayScale) private var scale
 
     static let height: CGFloat = 220
@@ -406,9 +443,17 @@ struct ImageTile: View {
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: Radius.tag).fill(.quaternary.opacity(0.5))
-            if let image {
+            switch image {
+            case .some(.some(let image)):
                 Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
-            } else {
+            case .some(.none):
+                // Said as itself, never left looking like one still being read (A20).
+                VStack(spacing: Space.s) {
+                    FileIcon(path: path, folder: false, size: 48).opacity(0.6)
+                    StatusLabel(mark: Wording.undrawable.mark, text: Wording.undrawable.title, size: 11).font(.caption)
+                }
+                .help(Wording.undrawable.detail)
+            case .none:
                 FileIcon(path: path, folder: false, size: 48).opacity(0.5)
             }
         }
@@ -418,11 +463,13 @@ struct ImageTile: View {
         .overlay(RoundedRectangle(cornerRadius: Radius.tag).strokeBorder(Color(nsColor: .separatorColor)))
         .task(id: "\(path)|\(generation)") {
             // No more pixels than the widest tile shows.
-            image = await ImageFile.load(path, pixels: Int((Self.widest * scale).rounded(.up)))
-            if let image, Self.legible(image.size) { rendered() }
+            let loaded = await ImageFile.load(path, pixels: Int((Self.widest * scale).rounded(.up)))
+            image = .some(loaded)
+            if let loaded, Self.legible(loaded.size) { rendered() }
         }
         .accessibilityElement()
         .accessibilityLabel((path as NSString).lastPathComponent)
+        .accessibilityValue(image == .some(nil) ? Wording.undrawable.title : "")
         .accessibilityAddTraits(.isImage)
     }
 
@@ -541,6 +588,8 @@ struct ReviewBar: View {
                 .font(.caption)
             }
         }
+        // What Git keeps of a file whose judged bytes Gleaner doesn't, for its label.
+        .task(id: states.notKept == nil) { if states.notKept != nil { await model.lookUpGit([work.latest.path]) } }
     }
 
     var name: some View {
@@ -586,6 +635,9 @@ struct ReviewStates {
     var onThisMac: Statement
     var reviewed: Statement
     var published: Statement
+    /// That Gleaner keeps no copy of the bytes the current verdict, or else the current published
+    /// mark, was made on; nil while it does, or with neither.
+    var notKept: Statement?
 
     @MainActor init(work: Work, model: LibraryModel) {
         let current = work.latest.latest
@@ -596,11 +648,17 @@ struct ReviewStates {
         reviewed = work.kind == .folder ? Statement(mark: .na, title: "Not reviewed", detail: "A folder has no bytes of its own to judge.")
             : Wording.verdict(model.verdict(of: work), inUnit: work.unit != nil, noFile: model.hasNoFile(work))
         published = Wording.publishedState(model.published(of: work))
+        notKept = [model.verdict(of: work), model.published(of: work)].lazy.compactMap { standing -> Review? in
+            switch standing {
+            case .current(let review), .unavailable(let review): review
+            default: nil
+            }
+        }.first.flatMap(model.notKept)
     }
 
-    /// The four, in one sentence for VoiceOver.
+    /// The four, in one sentence for VoiceOver, and whether the bytes judged are kept.
     var spoken: String {
-        [generated.title, onThisMac.title, reviewed.title, published.title].joined(separator: ", ")
+        ([generated.title, onThisMac.title, reviewed.title, published.title] + [notKept?.title].compactMap { $0 }).joined(separator: ", ")
     }
 }
 
@@ -631,6 +689,7 @@ struct ReviewMarks: View {
             } else if states.published.mark == .published {
                 StatusMark(mark: .published, word: states.published.title + ". " + states.published.detail)
             }
+            if let notKept = states.notKept { label(notKept) }
         }
         .font(.caption)
         .accessibilityHidden(true)
@@ -651,8 +710,22 @@ struct NoteSheet: View {
     @Environment(\.dismiss) private var dismiss
     var asking: Asking
     @State private var note = ""
+    /// Save a Copy: on at first for Request Changes, since the changes will be made over the file.
+    @State private var save: Bool
+
+    init(asking: Asking) {
+        self.asking = asking
+        _save = State(initialValue: Self.savesByDefault(asking.kind))
+    }
+
+    /// Whether Save a Copy starts on: for Request Changes, since the changes will be made over the
+    /// file, and the bytes judged with them.
+    static func savesByDefault(_ kind: Review.Kind) -> Bool { kind == .changesRequested }
 
     var body: some View {
+        // The bytes this verdict wouldn't keep unless the person asks (docs/design/review.md, Keeping
+        // what was judged).
+        let unkept = model.wouldNotKeep(asking.works, shown: asking.shown)
         VStack(alignment: .leading, spacing: Space.m) {
             Text(Wording.reviewTitle(asking.kind, names: asking.works.map(\.name)))
                 .font(.headline)
@@ -662,12 +735,26 @@ struct NoteSheet: View {
             TextField(asking.kind == .published ? "Where" : "Note", text: $note,
                       prompt: Text(asking.kind == .published ? "Where it was published" : "What to change"), axis: .vertical)
                 .lineLimit(3...6)
+            if !unkept.isEmpty {
+                let one = unkept.count == 1 ? unkept[0].work.latest : nil
+                let statement = Wording.wontKeep(count: unkept.count, size: unkept.map(\.size).reduce(0, +),
+                                                 git: one.flatMap { model.gitStates[$0.path] }, worktree: one?.inWorktree ?? false)
+                // What would be lost, then what keeps it.
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                    StatusLabel(mark: statement.mark, text: statement.title, size: 11).font(.caption)
+                    InfoButton(text: statement.detail)
+                    Spacer(minLength: Space.s)
+                    Toggle(unkept.count == 1 ? "Save a Copy" : "Save Copies", isOn: $save)
+                        .help("Keep the bytes you judge, as Save a Copy keeps a delivery’s")
+                }
+                .task { await model.lookUpGit(unkept.map(\.work.latest.path)) }
+            }
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(Wording.reviewAction(asking.kind)) {
-                    let asking = asking, note = note
-                    Task { await model.review(asking.works, as: asking.kind, note: note, shown: asking.shown, from: asking.place) }
+                    let asking = asking, note = note, save = save && !unkept.isEmpty
+                    Task { await model.review(asking.works, as: asking.kind, note: note, shown: asking.shown, save: save, from: asking.place) }
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -773,8 +860,34 @@ struct HistoryLine: View {
     var review: Review
     /// The file it was made on, when the work has several.
     var file: String?
+    /// Why Save a Copy couldn't keep its bytes.
+    @State private var failure: String?
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            line
+                // The bytes it was made on, kept: handed over as any version is, staged and hashed.
+                .onDrag { model.reviewItem(review) ?? NSItemProvider() }
+            // Bytes Gleaner holds no copy of: said, with the way to keep them while the file has them.
+            if let notKept = model.notKept(review) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                    StatusLabel(mark: notKept.mark, text: notKept.title, size: 11)
+                    InfoButton(text: notKept.detail)
+                    if model.mayStillHold(review) {
+                        Button("Save a Copy") { Task { failure = await model.saveCopy(of: review) } }
+                            .controlRole(.inline)
+                            .help("Keep the bytes this was made on, while the file still holds them")
+                    }
+                    if let failure { Text(failure).foregroundStyle(.secondary) }
+                }
+                .font(.caption)
+                .padding(.leading, 14 + Space.s)
+                .task(id: review.id) { await model.lookUpGit([review.path]) }
+            }
+        }
+    }
+
+    var line: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
             GlyphView(glyph: Wording.reviewMark(review.kind).glyph, size: 12).foregroundStyle(.secondary).frame(width: 14)
             Text(Wording.reviewName(review.kind))
@@ -787,6 +900,13 @@ struct HistoryLine: View {
                 Text(review.kind == .published ? note : "“\(note)”").foregroundStyle(.secondary).lineLimit(2)
             }
             Spacer(minLength: Space.s)
+            // Kept bytes no revision recorded, beside other bytes on disk now: what was judged
+            // beside what is there. Bytes a revision recorded are compared under Versions.
+            if let ends = model.reviewComparison(review) {
+                Button("Compare") { model.comparison = ends }
+                    .controlRole(.inline)
+                    .help("Compare the bytes this was made on, from Gleaner’s saved copy, with the file on disk now")
+            }
             Button("Undo") { Task { await model.undo([review]) } }
                 .controlRole(.inline)
                 .accessibilityLabel("Undo: \(Wording.historyLine(review, file: file))")

@@ -363,9 +363,9 @@ import Testing
     }
 
     @Test func aNoteSheetNamesTheVerdictAndWhatItIsOn() {
-        #expect(Wording.reviewTitle(.changesRequested, names: ["script.md"]) == "Request Changes to “script.md”")
-        #expect(Wording.reviewTitle(.rejected, names: ["script.md"]) == "Reject “script.md”")
-        #expect(Wording.reviewTitle(.published, names: ["ep01.mp4"]) == "Mark “ep01.mp4” Published")
+        #expect(Wording.reviewTitle(.changesRequested, names: ["notes.md"]) == "Request Changes to “notes.md”")
+        #expect(Wording.reviewTitle(.rejected, names: ["notes.md"]) == "Reject “notes.md”")
+        #expect(Wording.reviewTitle(.published, names: ["intro.mp4"]) == "Mark “intro.mp4” Published")
         #expect(Wording.reviewTitle(.changesRequested, names: ["a.png", "b.png", "c.png"]) == "Request Changes to 3 Works")
         #expect(Wording.reviewTitle(.approved, names: ["a.png", "b.png"]) == "Approve 2 Works")
     }
@@ -384,5 +384,29 @@ import Testing
         for claim in ["gone", "isn’t on this mac", "changed"] { #expect(!unreadable.contains(claim), "\(claim)") }
         #expect(Wording.reviewFailed(Review.Failure.notAFile(.missing), name: "demo.mp4") == "demo.mp4 isn’t on this Mac, so there are no bytes to judge.")
         #expect(Wording.reviewFailed(Review.Failure.changedWhileRead, name: "demo.mp4").hasSuffix("Look at it again, then decide."))
+    }
+
+    @Test func bytesJudgedAndNotKeptSaySoShortlyWithWhyBehindTheInfoButton() {
+        let mb708: Int64 = 708_000_000
+        let ignored = Wording.notKept(.approved, size: mb708, overLimit: true, git: .ignored, worktree: false)
+        #expect(ignored.title == "Not kept · 708 MB · ignored by Git" && ignored.mark == .attention)
+        #expect(ignored.detail.contains("over the 64 MB") && ignored.detail.contains("Git ignores the file") && ignored.detail.contains("Save a Copy"))
+        let worktree = Wording.notKept(.changesRequested, size: mb708, overLimit: true, git: .untracked, worktree: true)
+        #expect(worktree.title == "Not kept · 708 MB · uncommitted" && worktree.detail.contains("once the worktree’s folder is removed"))
+        // Outside Git, or committed, Git's part says nothing; a small file whose save failed says that.
+        #expect(Wording.notKept(.approved, size: mb708, overLimit: true, git: .notInRepo, worktree: false).title == "Not kept · 708 MB")
+        let failed = Wording.notKept(.published, size: 2_000, overLimit: false, git: nil, worktree: false)
+        #expect(failed.title == "Not kept · 2 KB" && failed.detail.hasPrefix("Gleaner couldn’t save a copy of the bytes marked published"))
+        // Before a verdict, in its note sheet: one by its size and Git, several by their count.
+        #expect(Wording.wontKeep(count: 1, size: mb708, git: .ignored, worktree: false).title == "Not kept · 708 MB · ignored by Git")
+        #expect(Wording.wontKeep(count: 2, size: 2 * mb708, git: .ignored, worktree: false).title == "2 not kept · 1.42 GB")
+    }
+
+    @Test func reviewAllSaysWhatItLeavesToEachOnesOwnVerdict() {
+        #expect(Wording.oneByOne(videos: 2, audio: 0) == "2 videos to review one by one")
+        #expect(Wording.oneByOne(videos: 1, audio: 1) == "1 video and 1 audio file to review one by one")
+        #expect(Wording.oneByOne(videos: 0, audio: 0) == nil)
+        // An image that can't be drawn says so, never as one still being read (A20).
+        #expect(Wording.undrawable.title == "Can’t show this image" && !Wording.undrawable.detail.lowercased().contains("loading"))
     }
 }

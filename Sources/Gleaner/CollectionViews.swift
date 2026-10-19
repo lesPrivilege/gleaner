@@ -98,6 +98,27 @@ struct UnitCommands: View {
     }
 }
 
+/// New Collection from These, for a group the window shows: a folder in a project's outline, a
+/// session's observed files, a folded row, files shown together on a review page, what a reply
+/// delivered together, what a search found (docs/design/review.md). It names a new collection in
+/// place holding exactly them, the observed files kept, as one decision with one Undo; nothing is
+/// inferred. Offered while they are in one project, since a collection holds one project's works.
+struct NewCollectionFromThese: View {
+    @Environment(LibraryModel.self) private var model
+    var works: [Work] = []
+    var candidates: [Candidate] = []
+    /// The collection to make it inside, for files shown together on a collection's page.
+    var inside: String? = nil
+
+    var body: some View {
+        let one = model.project(of: works, candidates) != nil
+        Button("New Collection from These") { model.newCollection(from: works, candidates, inside: inside) }
+            .disabled(!one)
+            .help(one ? "A collection of exactly these \(Wording.count(works.count + candidates.count, "file")). No file changes."
+                  : "These are in several projects; a collection holds one project’s works.")
+    }
+}
+
 /// Add to Collection ▸ and Remove from Collection, for the works chosen.
 struct CollectionCommands: View {
     @Environment(LibraryModel.self) private var model
@@ -256,14 +277,17 @@ struct UnitHeader: View {
     }
 }
 
-/// A collection inside another, as a row: the first image among its works as a poster, its name,
-/// how many works, and only what waits on the person.
+/// A collection as a row, in a project's outline or inside another: the first image among its
+/// works as a poster, its name, how many works, and only what waits on the person.
 struct UnitRow: View {
     @Environment(LibraryModel.self) private var model
     var unit: WorkUnit
+    /// Listed under the collection it is inside, in a project's outline.
+    var inside = false
 
     var body: some View {
-        let works = model.organization.works(in: unit.key).count
+        // Its works and those of the collections inside it, as the sidebar counts them.
+        let works = model.organization.works(in: unit.key, inner: true).count
         let waiting = model.waiting(in: unit.key)
         HStack(alignment: .center, spacing: Space.s + 2) {
             Poster(path: model.organization.poster(of: unit.key)?.latest.path, size: 32)
@@ -280,9 +304,11 @@ struct UnitRow: View {
             }
         }
         .padding(.vertical, Space.xs)
+        .padding(.leading, inside ? Space.xl : 0)
         .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
         .contextMenu { UnitCommands(unit: unit) }
         .onDrop(of: [.gleanerWork], isTargeted: nil) { UnitDrop.accept($0, into: unit, model: model) }
+        .help(Wording.unitPath(unit, in: model.organization))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(unit.name), collection, \(Wording.count(works, "work"))" + (waiting > 0 ? ", \(Wording.toReview(waiting))" : ""))
         .accessibilityHint("Return opens it.")

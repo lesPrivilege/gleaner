@@ -559,10 +559,70 @@ enum Wording {
     }
 
     /// In place of a video or audio AVFoundation finds nothing to play in.
-    static let unplayable = "Gleaner can’t play this file here, so it is judged on its own Review menu, not with Review All."
+    static let unplayable = "Gleaner can’t play this file here. Judge it on its own Review menu."
+
+    /// In place of an image neither ImageIO nor AppKit can draw: said as itself, never as one still
+    /// being read (A20).
+    static let undrawable = Statement(mark: .attention, title: "Can’t show this image",
+                                      detail: "Neither ImageIO nor AppKit can draw this file here, so Review All leaves it out. Judge it on its own Review menu.")
+
+    /// What Review All leaves to a verdict of each one's own: the videos and audio on the page that
+    /// wait on one ("2 videos to review one by one"). Nil when none waits.
+    static func oneByOne(videos: Int, audio: Int) -> String? {
+        let parts = [videos > 0 ? count(videos, "video") : nil, audio > 0 ? count(audio, "audio file") : nil].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " and ") + " to review one by one"
+    }
+
+    /// That Gleaner keeps no copy of the bytes a verdict or mark was made on (docs/design/review.md,
+    /// Keeping what was judged), in a few words ("Not kept · 708 MB · ignored by Git") and in a
+    /// sentence: why it has none, what Git keeps of the file, and what a rewrite of it takes.
+    static func notKept(_ kind: Review.Kind, size: Int64, overLimit: Bool, git: GitState?, worktree: Bool) -> Statement {
+        let what = kind.isVerdict ? "the bytes judged" : "the bytes marked published"
+        let why = overLimit ? "Gleaner keeps no copy of \(what): at \(bytes(size)), they are over the 64 MB it saves without asking."
+            : "Gleaner couldn’t save a copy of \(what) when it read them."
+        let (tag, held) = Self.git(git, worktree: worktree)
+        return Statement(mark: .attention, title: ["Not kept", bytes(size), tag].compactMap { $0 }.joined(separator: " · "),
+                         detail: why + held + " Once the file is rewritten, nothing can show them or hand them on. Save a Copy keeps them while the file still holds them.")
+    }
+
+    /// The same, said in a note sheet before the verdict is made, for the works whose bytes it
+    /// wouldn't keep unless the person asks: one by its size and what Git keeps of it, several by
+    /// their count and size.
+    static func wontKeep(count n: Int, size: Int64, git: GitState?, worktree: Bool) -> Statement {
+        let (tag, held) = n == 1 ? Self.git(git, worktree: worktree) : (nil, "")
+        let title = (n == 1 ? ["Not kept", bytes(size), tag] : ["\(n) not kept", bytes(size)]).compactMap { $0 }.joined(separator: " · ")
+        let these = n == 1 ? "At \(bytes(size)), these bytes are" : "These \(n) files, \(bytes(size)) in all, are"
+        return Statement(mark: .attention, title: title,
+                         detail: "\(these) over the 64 MB Gleaner saves without asking." + held
+                             + " If the file is rewritten, as it is when changes are made, the bytes judged are gone. Save a Copy keeps them.")
+    }
+
+    /// What Git keeps of a file whose bytes Gleaner doesn't: a few words for its label, nil when Git
+    /// says nothing that matters, and a sentence.
+    private static func git(_ state: GitState?, worktree: Bool) -> (tag: String?, sentence: String) {
+        switch state {
+        case .ignored?: ("ignored by Git", " Git ignores the file, so it keeps none either.")
+        case .untracked?, .modified?:
+            ("uncommitted", worktree ? " The file is uncommitted in a worktree: once the worktree’s folder is removed, it may not reopen."
+                : " The file is uncommitted, so Git doesn’t hold these bytes.")
+        default: (nil, "")
+        }
+    }
+
+    private static func bytes(_ size: Int64) -> String {
+        ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
+    }
+
+    /// Why Save a Copy couldn't keep the bytes a verdict or mark was made on.
+    static func saveFailed(_ error: Error, review: Review) -> String {
+        switch error {
+        case ContentStore.Failure.changed: "The file has changed since, so those bytes are no longer there to save."
+        default: "Couldn’t save a copy: \(error.localizedDescription)"
+        }
+    }
 
     /// A note sheet's title: the verdict or mark about to be made, and on what, one work by its name
-    /// or several by their count ("Request Changes to “script.md”", "Mark 3 Works Published").
+    /// or several by their count ("Request Changes to “notes.md”", "Mark 3 Works Published").
     static func reviewTitle(_ kind: Review.Kind, names: [String]) -> String {
         let what = names.count == 1 ? "“\(names[0])”" : count(names.count, "Work")
         return switch kind {
@@ -581,12 +641,13 @@ enum Wording {
         return Statement(mark: .attention, title: title, detail: refusal.refused.map(\.reason).joined(separator: " "))
     }
 
-    /// What deleting a project of the person's own does, said before it is done: its work goes
-    /// back, and the collections made in it go with it, for good.
+    /// What deleting a project of the person's own does, said before it is done: each of its works
+    /// goes back to the project it was in before it was moved there, and the collections made in it
+    /// go with it, for good.
     static func deletingProject(units: Int) -> String {
-        guard units > 0 else { return "Its work goes back where Gleaner found it. No file changes." }
-        return "Its work goes back where Gleaner found it, and its \(count(units, "collection")) \(units == 1 ? "is" : "are") deleted. "
-            + "You can’t undo this. No file changes."
+        let back = "Each work goes back to the project it was in before."
+        guard units > 0 else { return back + " No file changes." }
+        return "\(back) Its \(count(units, "collection")) \(units == 1 ? "is" : "are") deleted, and you can’t undo this. No file changes."
     }
 
     /// Why a verdict or a mark wasn't made on the file `name`. Unreadable is never said as gone.

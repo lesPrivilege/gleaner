@@ -16,6 +16,8 @@ struct WorkEntry: View {
     var project: Organization.Project?
     var showFolder = false
     var placement: Organization.Placement?
+    /// Names the work's collection on its row, as search results do; elsewhere its help tag does.
+    var namesCollection = false
 
     var body: some View {
         let work = result.work
@@ -51,7 +53,8 @@ struct WorkEntry: View {
         }) {
             ResultRow(result: result, file: file, delivery: delivery, project: project, showFolder: showFolder,
                       status: open ? (model.fileStatus(file), nil) : model.rowStatus(result), placement: placement, open: open,
-                      waiting: model.waits(result.work))
+                      waiting: model.waits(result.work), collection: model.collectionPath(result.work),
+                      namesCollection: namesCollection)
         }
         .tag(OutlineRow.work(result.work.id))
         .id(OutlineRow.work(result.work.id))

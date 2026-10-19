@@ -46,13 +46,14 @@ import UniformTypeIdentifiers
         try FileManager.default.setAttributes([.modificationDate: minutes(m)], ofItemAtPath: url.path)
     }
 
-    func session(_ id: String, title: String, from start: Double, to end: Double, reply: String) throws {
+    func session(_ id: String, title: String, from start: Double, to end: Double, reply: String, in folder: URL? = nil) throws {
         func record(_ object: [String: Any]) throws -> String { String(decoding: try JSONSerialization.data(withJSONObject: object), as: UTF8.self) }
         let stamp = { (m: Double) in self.minutes(m).formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)) }
+        let cwd = (folder ?? series).path
         let lines = [
-            try record(["type": "user", "sessionId": id, "cwd": series.path, "timestamp": stamp(start), "origin": ["kind": "human"],
+            try record(["type": "user", "sessionId": id, "cwd": cwd, "timestamp": stamp(start), "origin": ["kind": "human"],
                         "message": ["role": "user", "content": "Make the episode"]]),
-            try record(["type": "assistant", "sessionId": id, "cwd": series.path, "timestamp": stamp(end),
+            try record(["type": "assistant", "sessionId": id, "cwd": cwd, "timestamp": stamp(end),
                         "message": ["role": "assistant", "model": "m", "content": [["type": "text", "text": reply]]]]),
             try record(["type": "custom-title", "sessionId": id, "customTitle": title]),
         ]
@@ -263,8 +264,22 @@ import UniformTypeIdentifiers
         let series = try #require(await model.newUnit(named: "Series", in: channel.key))
         _ = try #require(await model.newUnit(named: "Episode 1", in: channel.key, inside: series.key))
         #expect(model.unitsDeleted(with: channel.key) == 2)
-        #expect(Wording.deletingProject(units: 2).contains("its 2 collections are deleted. You can’t undo this."))
-        #expect(Wording.deletingProject(units: 0) == "Its work goes back where Gleaner found it. No file changes.")
+        #expect(Wording.deletingProject(units: 2).contains("Its 2 collections are deleted, and you can’t undo this."))
+        #expect(Wording.deletingProject(units: 0) == "Each work goes back to the project it was in before. No file changes.")
+    }
+
+    @Test func aProjectDeletedSendsEachWorkBackToTheProjectItWasInBefore() async throws {
+        let model = relaunch()
+        let found = try #require(model.organization.work(containing: video)?.project)
+        await model.move(try #require(model.organization.work(containing: video)), toNewProject: "One")
+        let one = try #require(model.userProjects.first { $0.name == "One" })
+        await model.move(try #require(model.organization.work(containing: video)), toNewProject: "Two")
+        let made = try #require(model.userProjects.first { $0.name == "Two" })
+        let two = try #require(model.organization.project(made.key))
+        #expect(model.organization.work(containing: video)?.project == two.key)
+        // Not where Gleaner found it: the project it was in before, as the words say.
+        await model.remove(two)
+        #expect(model.organization.work(containing: video)?.project == one.key && one.key != found)
     }
 
     @Test func selectingAFileNoReviewStateIsShownForLeavesTheQueueAsItWas() async throws {
@@ -488,5 +503,251 @@ import UniformTypeIdentifiers
         #expect(again.onThisMac(gone).title == "Not on disk")
         #expect({ if case .unavailable = again.verdict(of: gone) { true } else { false } }())
         #expect(again.waits(gone) == nil && again.toReview.isEmpty)
+    }
+
+    // MARK: Before layer 3 lands
+
+    /// A 65 MiB file a Git repository ignores, delivered by a reply: over the save limit, so its
+    /// bytes are hashed and not kept.
+    func ignoredMaster() throws -> String {
+        let repo = root.appendingPathComponent("home/renders")
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        #expect(Locator.run(["-C", repo.path, "init", "-q"]).status == 0)
+        try "*.mov\n".write(to: repo.appendingPathComponent(".gitignore"), atomically: true, encoding: .utf8)
+        let master = repo.appendingPathComponent("master.mov").path
+        try master65(master, first: 1)
+        try session("renders", title: "Renders", from: 0, to: 40, reply: "The [master](master.mov) is rendered.", in: repo)
+        _ = try indexer.run()
+        return master
+    }
+
+    /// 65 MiB, all zeros but the first byte.
+    func master65(_ path: String, first: UInt8) throws {
+        var data = Data(count: 65 << 20)
+        data[0] = first
+        try data.write(to: URL(fileURLWithPath: path))
+    }
+
+    @Test func bytesJudgedButNotKeptSaySoAndSaveACopyKeepsThemThroughARewrite() async throws {
+        let master = try ignoredMaster()
+        let model = relaunch()
+        let work = try #require(model.organization.work(containing: master))
+        let delivered = try #require(work.latest.latest.sha256)
+        #expect(work.latest.latest.capture?.savedAt == nil && !indexer.store.has(delivered))
+        // Before the verdict, its note sheet says these bytes won't be kept.
+        #expect(model.wouldNotKeep([work], shown: [master: try #require(FileStat(master))]).map(\.size) == [65 << 20])
+
+        // Approved as it is: the verdict's row, and its item on a page, say the bytes aren't kept.
+        let approved = try #require(await model.review([work], as: .approved).first)
+        #expect(approved.sha256 == delivered)
+        await model.lookUpGit([master])
+        let size = ByteCountFormatter.string(fromByteCount: 65 << 20, countStyle: .file)
+        #expect(model.notKept(approved)?.title == "Not kept · \(size) · ignored by Git")
+        #expect(ReviewStates(work: try #require(model.organization.work(containing: master)), model: model).notKept?.title
+                == "Not kept · \(size) · ignored by Git")
+        // Save a Copy, from the verdict's row, while the file still holds them: kept.
+        #expect(model.mayStillHold(approved))
+        #expect(await model.saveCopy(of: approved) == nil)
+        #expect(indexer.store.has(delivered) && model.notKept(approved) == nil)
+
+        // Rewritten; the sheet's Save a Copy, on for Request Changes, keeps what was judged.
+        try master65(master, first: 2)
+        await model.observe(try #require(model.organization.work(containing: master)).latest)
+        let recut = try #require(model.organization.work(containing: master))
+        let recutFile = try #require(FileStat(master))
+        let changes = try #require(await model.review([recut], as: .changesRequested, note: "Shorter", shown: [master: recutFile], save: true).first)
+        #expect(changes.sha256 != delivered && indexer.store.has(changes.sha256) && model.notKept(changes) == nil)
+        #expect(NoteSheet.savesByDefault(.changesRequested) && !NoteSheet.savesByDefault(.rejected) && !NoteSheet.savesByDefault(.published))
+
+        // The agent renders over it again: both verdicts' bytes can still be compared and handed over.
+        try master65(master, first: 3)
+        let again = try #require(model.organization.work(containing: master))
+        await model.observe(again.latest)
+        let file = again.latest, delivery = file.deliveries.first { $0.sha256 == delivered }!
+        #expect(model.compareEnd(delivery, artifact: file)?.source == "saved copy")
+        let observation = try #require(model.observations[master])
+        #expect(file.handoff(delivery, now: observation, hasSaved: model.hasSaved).sha == delivered)
+        for review in [approved, changes] {
+            let end = try #require(model.reviewEnd(review))
+            #expect(end.source == "saved copy" && Locator.sha256(end.url.path) == review.sha256)
+            let staged = try indexer.store.stage(sha: review.sha256, name: "master.mov", source: nil)
+            #expect(Locator.sha256(staged.path) == review.sha256)
+        }
+        // The window offers them: bytes no revision recorded are compared from the verdict's row,
+        // the others under Versions; each verdict's row drags its own bytes out.
+        #expect(model.reviewComparison(changes)?.from.sha == changes.sha256 && model.reviewComparison(approved) == nil)
+        #expect(model.reviewItem(changes) != nil && model.reviewItem(approved) != nil)
+    }
+
+    @Test func collectionsLeadTheOutlineAndEachWorkNamesItsCollection() async throws {
+        let model = relaunch()
+        let project = try #require(model.organization.work(containing: video)?.project)
+        let launch = try #require(await model.newUnit(named: "Launch", in: project))
+        let teaser = try #require(await model.newUnit(named: "Teaser", in: project, inside: launch.key))
+        await model.add([try #require(model.organization.work(containing: video))], to: try #require(model.organization.unit(teaser.key)))
+        let work = try #require(model.organization.work(containing: video))
+        // Each work's row names its collection, with the one it is inside.
+        #expect(model.collectionPath(work) == "Launch › Teaser")
+        // The outline lists the project's collections; choosing one shows its page and keeps the outline.
+        model.place = .project(project)
+        #expect(model.organization.units(in: project).map(\.name) == ["Launch"])
+        #expect(model.organization.works(in: launch.key, inner: true).map(\.id) == [video])
+        model.outlineSelection = .unit(launch.key)
+        #expect(model.currentUnit?.key == launch.key && model.place == .project(project) && model.selection == nil)
+    }
+
+    @Test func aSearchFindsWorksByTheirCollectionsNames() async throws {
+        let model = relaunch()
+        let project = try #require(model.organization.work(containing: video)?.project)
+        let launch = try #require(await model.newUnit(named: "Launch", in: project))
+        let teaser = try #require(await model.newUnit(named: "Teaser", in: project, inside: launch.key))
+        await model.add([try #require(model.organization.work(containing: video))], to: try #require(model.organization.unit(teaser.key)))
+        await model.keep([try #require(model.organization.candidate(cover))])
+        // Its collection's name, and the name of the one that is inside, beside the project's.
+        model.query = "teaser"
+        #expect(model.results.map(\.id) == [video])
+        model.query = "launch"
+        #expect(model.results.map(\.id) == [video])
+        // A result names its collection.
+        #expect(model.results.first.flatMap { model.collectionPath($0.work) } == "Launch › Teaser")
+        // Words still combine within one work only, and a renamed collection is found by its new name.
+        model.query = "launch cover"
+        #expect(model.results.isEmpty)
+        await model.rename(try #require(model.organization.unit(teaser.key)), to: "Trailer")
+        model.query = "trailer"
+        #expect(model.results.map(\.id) == [video])
+    }
+
+    @Test func aCollectionMadeFromAGroupHoldsExactlyItAndOneUndoTakesItBack() async throws {
+        let model = relaunch()
+        let undo = UndoManager()
+        model.undoManager = undo
+        let projectKey = try #require(model.organization.work(containing: video)?.project)
+        model.place = .project(projectKey)
+        let project = try #require(model.organization.project(projectKey))
+        // A folder of the outline, and a session's observed files: what the window shows together.
+        let folder = try #require(model.outline(of: project).first { $0.folder == "out" })
+        let works = folder.items.flatMap(\.works)
+        let observed = try #require(model.observedSessions(in: project).first).candidates
+        #expect(works.map(\.id) == [video] && Set(observed.map(\.path)) == [cover, mix])
+        model.newCollection(from: works, observed)
+        #expect(model.naming == .new(project: projectKey, parent: nil, adding: [video] + observed.map(\.path)))
+        await model.commitNaming("Pilot")
+        let pilot = try #require(model.organization.units.first)
+        // Exactly those works, the observed files kept among them; nothing else, nothing inferred.
+        #expect(Set(model.organization.works(in: pilot.key).map(\.id)) == [video, cover, mix])
+        #expect(model.organization.candidates(in: projectKey).isEmpty && model.correctionGroups.count == 1)
+        #expect(undo.canUndo && undo.undoActionName == "New Collection")
+        // One Undo takes back the making and the adding: the files observed are candidates again.
+        undo.undo()
+        try await TourTests.until { model.organization.units.isEmpty }
+        try await TourTests.settle(0.1)
+        #expect(model.organization.units.isEmpty && model.corrections.isEmpty)
+        #expect(model.organization.candidate(cover) != nil && model.organization.candidate(mix) != nil)
+        #expect(model.organization.work(containing: video)?.unit == nil && !undo.canUndo)
+
+        // Files shown together on a collection's page make one inside it; works in two projects make none.
+        let series = try #require(await model.newUnit(named: "Series", in: projectKey))
+        await model.add([try #require(model.organization.work(containing: video))], to: try #require(model.organization.unit(series.key)))
+        model.newCollection(from: [try #require(model.organization.work(containing: video))], inside: series.key)
+        #expect(model.naming == .new(project: projectKey, parent: series.key, adding: [video]))
+        model.naming = nil
+        await model.keep([try #require(model.organization.candidate(cover))])
+        await model.move(try #require(model.organization.work(containing: cover)), toNewProject: "Elsewhere")
+        let two = [video, cover].compactMap { model.organization.work(containing: $0) }
+        #expect(model.project(of: two) == nil)
+        model.newCollection(from: two)
+        #expect(model.naming == nil)
+    }
+
+    @Test func reviewAllLeavesVideoAndAudioToTheirOwnVerdicts() throws {
+        func work(_ name: String) -> Work {
+            let path = "/w/project/" + name
+            let delivery = Delivery(id: path + "#1", number: 1, path: path, deliveredAt: t0, replyLine: 1, provider: .claudeCode,
+                                    sessionTitle: nil, request: nil, cwd: "/w/project", evidence: [], logPath: "/logs/s.jsonl", capture: nil)
+            let file = Artifact(path: path, deliveries: [delivery])
+            return Work(files: [file], deliveries: file.deliveries, project: "/w/project")
+        }
+        let works = ["intro.mp4", "intro.wav", "chart.png", "notes.md", "brief.pdf", "inputs.json", "scene.usdz"].map(work)
+        let stat = FileStat(size: 1, createdAt: t0, modifiedAt: t0, inode: 1)
+        let shown = Dictionary(uniqueKeysWithValues: works.map { ($0.latest.path, stat) })
+        // Every form played or drawn, but the PDF, which Quick Look draws; what a program reads and a
+        // model, drawn as their icons, are never passed with others either.
+        let drawn = Set(works.map(\.latest.path)).subtracting(["/w/project/brief.pdf"])
+        let all = ReviewAll(works, drawn: drawn, shown: shown) { _ in .none }
+        #expect(all.approve.map(\.name) == ["chart.png", "notes.md"] && all.changes.map(\.name) == ["chart.png", "notes.md"])
+        #expect(all.videos == 1 && all.audio == 1 && all.oneByOne == "1 video and 1 audio file to review one by one")
+        // A video with a verdict on its bytes no longer waits one by one.
+        let approved = Review(id: 1, kind: .approved, path: works[0].latest.path, note: nil, sha256: "a", file: stat, madeAt: t0)
+        let after = ReviewAll(works, drawn: drawn, shown: shown) { $0.name == "intro.mp4" ? .current(approved) : .none }
+        #expect(after.videos == 0 && after.oneByOne == "1 audio file to review one by one")
+    }
+
+    @Test func aHiddenFileIsNeverObservedSoNeverOfferedKeep() async throws {
+        try file(".env", "API_KEY=synthetic", at: 24)
+        try file(".DS_Store", "finder", at: 24)
+        try session("three", title: "Settings", from: 23, to: 45, reply: "Settings are written.")
+        _ = try indexer.run()
+        let model = relaunch()
+        let project = try #require(model.projects.first)
+        let observed = model.observedSessions(in: project).flatMap(\.candidates).map(\.name)
+        #expect(!observed.isEmpty && !observed.contains { $0.hasPrefix(".") })
+        #expect(model.organization.candidate(series.path + "/.env") == nil && model.organization.candidate(series.path + "/.DS_Store") == nil)
+    }
+
+    @Test func aReviewedFileSeenChangedThenDeletedStaysChangedForTheSession() async throws {
+        let model = relaunch()
+        let work = try #require(model.organization.work(containing: video))
+        let made = try #require(await model.newUnit(named: "Pilot", in: work.project))
+        await model.add([work], to: try #require(model.organization.unit(made.key)))
+        let inUnit = try #require(model.organization.work(containing: video))
+        let approved = try #require(await model.review([inUnit], as: .approved).first)
+        // Selected after a rewrite: other bytes read. Deleted afterwards: still changed, still waiting (A16).
+        try file("out/ep01.mp4", "episode one, rewritten", at: 45)
+        await model.observe(try #require(model.organization.work(containing: video)).latest)
+        #expect(model.verdict(of: try #require(model.organization.work(containing: video))) == .changed(approved))
+        try FileManager.default.removeItem(atPath: video)
+        await model.observe(try #require(model.organization.work(containing: video)).latest)
+        let gone = try #require(model.organization.work(containing: video))
+        #expect(model.verdict(of: gone) == .changed(approved) && model.toReview.flatMap(\.works).map(\.id) == [video])
+        // After a relaunch Gleaner no longer knows what it saw: the verdict stands as made.
+        let again = relaunch()
+        #expect(again.verdict(of: try #require(again.organization.work(containing: video))) == .unavailable(approved))
+    }
+
+    @Test func aReviewedFileAPageDrewChangedThenDeletedMayStillHaveChanged() async throws {
+        let model = relaunch()
+        let work = try #require(model.organization.work(containing: video))
+        let made = try #require(await model.newUnit(named: "Pilot", in: work.project))
+        await model.add([work], to: try #require(model.organization.unit(made.key)))
+        let inUnit = try #require(model.organization.work(containing: video))
+        let approved = try #require(await model.review([inUnit], as: .approved).first)
+        try file("out/ep01.mp4", "episode one, rewritten by hand", at: 46)
+        model.noteShown(video, FileStat(video))
+        try FileManager.default.removeItem(atPath: video)
+        model.noteShown(video, FileStat(video))
+        let gone = try #require(model.organization.work(containing: video))
+        #expect(model.verdict(of: gone) == .mayHaveChanged(approved) && model.toReview.flatMap(\.works).map(\.id) == [video])
+    }
+
+    @Test func aReviewedFileDrawnAsJudgedThenDeletedKeepsItsVerdict() async throws {
+        let model = relaunch()
+        let work = try #require(model.organization.work(containing: video))
+        let made = try #require(await model.newUnit(named: "Pilot", in: work.project))
+        await model.add([work], to: try #require(model.organization.unit(made.key)))
+        let inUnit = try #require(model.organization.work(containing: video))
+        let approved = try #require(await model.review([inUnit], as: .approved).first)
+        model.noteShown(video, FileStat(video))
+        try FileManager.default.removeItem(atPath: video)
+        model.noteShown(video, FileStat(video))
+        // Seen as judged, then gone: the verdict stands as made, and nothing waits (A22).
+        #expect(model.verdict(of: try #require(model.organization.work(containing: video))) == .unavailable(approved))
+        #expect(model.toReview.isEmpty)
+    }
+
+    @Test func anImageNothingCanDrawIsSaidAsSuchNotAsLoading() async throws {
+        let path = series.path + "/broken.png"
+        try Data("not an image".utf8).write(to: URL(fileURLWithPath: path))
+        #expect(await ImageFile.load(path, pixels: 200) == nil)
     }
 }

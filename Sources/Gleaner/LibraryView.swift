@@ -280,6 +280,10 @@ struct ListHandoff: ViewModifier {
                 if rows.count == 1, case .unit(let key)? = rows.first, let unit = model.organization.unit(key) {
                     UnitCommands(unit: unit)
                 }
+                // The list itself, while it holds what a search found.
+                if rows.isEmpty, !model.query.isEmpty, !model.results.isEmpty {
+                    NewCollectionFromThese(works: model.results.map(\.work))
+                }
             }
             .onKeyPress(.space) {
                 guard model.canHandOver || model.isQuickLookOpen else { return .ignored }
@@ -300,11 +304,24 @@ struct ResultsList: View {
         // Filters sit above the list, not over it: rows never scroll under the glass controls.
         VStack(spacing: 0) {
             FilterBar()
+            // What a search found, which the person may keep together.
+            if !model.query.isEmpty, !results.isEmpty {
+                HStack(spacing: Space.s) {
+                    Text(Wording.count(results.count, "work") + " found").foregroundStyle(.secondary).monospacedDigit()
+                    Spacer(minLength: Space.s)
+                    NewCollectionFromThese(works: results.map(\.work))
+                        .controlRole(.inline)
+                        .fixedSize()
+                }
+                .font(.callout)
+                .padding(.horizontal, Space.m)
+                .padding(.bottom, Space.s)
+            }
             List(selection: $model.selectedRows) {
                 ForEach(results) { result in
                     WorkEntry(result: result,
                               project: model.currentProject == nil ? model.organization.project(result.work.project) : nil,
-                              showFolder: repeated.contains(result.work.name))
+                              showFolder: repeated.contains(result.work.name), namesCollection: true)
                 }
             }
             .modifier(ListHandoff())
@@ -432,6 +449,10 @@ struct ResultRow: View {
     var open = false
     /// What waits on the person's review (`LibraryModel.waits`).
     var waiting: (Mark, String)? = nil
+    /// The collection holding the work, as a list names it: in its help tag, and on the row with
+    /// `namesCollection`.
+    var collection: String? = nil
+    var namesCollection = false
 
     var body: some View {
         let work = result.work
@@ -467,10 +488,18 @@ struct ResultRow: View {
                     // No reply handed it over: the person kept it, as a session left it.
                     Text(Wording.generated(delivery).title).font(.callout).foregroundStyle(.secondary).lineLimit(2)
                 }
-                if project != nil || !context.isEmpty || status.mark != nil || number != nil || waiting != nil {
+                let named = namesCollection ? collection : nil
+                if project != nil || !context.isEmpty || status.mark != nil || number != nil || waiting != nil || named != nil {
                     HStack(spacing: Space.s) {
                         if let waiting { StatusLabel(mark: waiting.0, text: waiting.1, size: 11) }
                         if let mark = status.mark { StatusLabel(mark: mark.0, text: mark.1, size: 11) }
+                        if let named {
+                            HStack(spacing: 3) {
+                                GlyphView(glyph: .collection, size: 11)
+                                Text(named).lineLimit(1)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
                         // A project is named by its mark and name, wherever it is named.
                         if let project {
                             HStack(spacing: 3) {
@@ -491,6 +520,7 @@ struct ResultRow: View {
         }
         .padding(.vertical, Space.xs)
         .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+        .help(collection.map { "In \($0)" } ?? "")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken(context: context))
     }
@@ -509,6 +539,7 @@ struct ResultRow: View {
         var parts = [work.name, Wording.kindLabel(work.latest.kind, path: work.latest.path) + " file"]
         if work.deliveries.count > 1 { parts.append(Wording.count(work.deliveries.count, "delivery", "deliveries")) }
         if let project { parts.append("\(project.name), \(Wording.projectOrigin(project.origin).lowercased())") }
+        if let collection { parts.append("in \(collection)") }
         parts += context
         if let waiting { parts.append(waiting.1.lowercased()) }
         if let mark = status.mark { parts.append(mark.1.lowercased()) }

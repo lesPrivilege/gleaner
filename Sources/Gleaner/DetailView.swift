@@ -442,6 +442,8 @@ struct InformationSection: View {
                 }
                 if !others.isEmpty {
                     InfoRow(label: "Delivered With") {
+                        // What the reply handed over together, this file among them.
+                        let together = works(([artifact.path] + others.map(\.path)))
                         FlowLayout(spacing: Space.m) {
                             ForEach(showsAll ? others : Array(others.prefix(Self.shown))) { other in
                                 LinkButton(title: (other.path as NSString).lastPathComponent) { model.select(other) }
@@ -452,6 +454,7 @@ struct InformationSection: View {
                                 MoreButton(hidden: others.count - Self.shown, expanded: $showsAll)
                             }
                         }
+                        .contextMenu { NewCollectionFromThese(works: together) }
                     }
                 }
             }
@@ -472,6 +475,12 @@ struct InformationSection: View {
         case let other:
             Text(Wording.resume(other)).foregroundStyle(.secondary)
         }
+    }
+
+    /// The works holding the files at `paths`, each once, in their order.
+    func works(_ paths: [String]) -> [Work] {
+        var seen = Set<Work.ID>()
+        return paths.compactMap { model.organization.work(containing: $0) }.filter { seen.insert($0.id).inserted }
     }
 
     /// Offered when the file on disk is no longer this delivery and both versions can be read.

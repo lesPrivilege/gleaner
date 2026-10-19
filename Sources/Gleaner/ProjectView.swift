@@ -3,7 +3,8 @@ import GleanerUI
 import SwiftUI
 
 /// One project as an outline, to enter and resume: the project at its head (what it is, and what
-/// arrived last), the joins Gleaner suggests, then its works by the folder each is in, as the
+/// arrived last), the collections the person made in it, each opening its review page, the joins
+/// Gleaner suggests, then its works by the folder each is in, as the
 /// project's own folders lay them out, and each work's revisions under it. In each folder, what a
 /// person opens comes before what a program reads, then newest first (SPEC §5.3, "Order and
 /// grouping"), with a crowded folder's files that no reply named itself folded; revisions are
@@ -24,6 +25,24 @@ struct ProjectOutline: View {
             FilterBar(named: false)
             List(selection: $model.selectedRows) {
                 Section { ProjectHeader(project: project).listRowSeparator(.hidden) }
+                // The person's own grouping first, as it guides the rest: each collection, with
+                // those inside it under it, opens its review page when chosen.
+                let units = model.organization.units(in: project.key)
+                if !units.isEmpty {
+                    Section {
+                        ForEach(units) { unit in
+                            UnitRow(unit: unit).tag(OutlineRow.unit(unit.key))
+                            ForEach(model.organization.units(inside: unit.key)) { inner in
+                                UnitRow(unit: inner, inside: true).tag(OutlineRow.unit(inner.key))
+                            }
+                        }
+                    } header: {
+                        SectionHeader(title: "Collections", count: model.organization.units.filter { $0.project == project.key }.count,
+                                      noun: "collection") {
+                            GlyphView(glyph: .collection, size: 12).foregroundStyle(.secondary)
+                        }
+                    }
+                }
                 if !suggestions.isEmpty {
                     Section {
                         ForEach(suggestions.prefix(Self.suggestionsShown)) { SuggestionView(suggestion: $0, compact: true) }
@@ -51,6 +70,7 @@ struct ProjectOutline: View {
                         }
                     } header: {
                         FolderHeader(name: Wording.folder(folder.folder), count: folder.count)
+                            .contextMenu { NewCollectionFromThese(works: folder.items.flatMap(\.works)) }
                     }
                 }
                 // What sessions were observed doing here and handed over in no reply, after
@@ -71,6 +91,11 @@ struct ProjectOutline: View {
             }
             .modifier(ListHandoff())
             .modifier(FollowsSelection())
+            .onKeyPress(.return) {
+                guard case .unit(let key)? = model.outlineSelection else { return .ignored }
+                model.place = .unit(key)
+                return .handled
+            }
             .overlay {
                 if project.works.isEmpty {
                     EmptyProject(project: project)
@@ -103,6 +128,7 @@ struct FoldedWorks: View {
                 FileIcon(path: results.first?.work.latest.path ?? "", folder: false, size: 16)
             }
             .help(Wording.folded(kind, count: results.count))
+            .contextMenu { NewCollectionFromThese(works: results.map(\.work)) }
         }
     }
 }
@@ -307,6 +333,7 @@ struct ObservedSessionGroup: View {
             }
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("Observed during \(Wording.session(session.title)), \(Wording.count(session.candidates.count, "file"))")
+            .contextMenu { NewCollectionFromThese(candidates: session.candidates) }
         }
     }
 }
@@ -345,6 +372,7 @@ struct FoldedCandidates: View {
             .contextMenu {
                 Button("Keep All") { Task { await model.keep(candidates) } }
                 addAll
+                NewCollectionFromThese(candidates: candidates)
             }
         }
     }
