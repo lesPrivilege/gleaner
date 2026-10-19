@@ -229,13 +229,24 @@ swift test                      # fixture 测试
 - `Sources/Gleaner`：macOS 应用（SwiftUI、AppKit、Quick Look、AVKit）。
 - `Sources/gleaner-cli`：`gleaner` 命令，以 JSON 给出 catalog 的回答；以及 `gleaner mcp`，把同样的回答作为 MCP 工具提供。
 - `Sources/gleaner-spike`：Spike A，只读地抽取本地日志，输出一份标注表。
+- `Sources/gleaner-index`：开发工具，不开窗口就为一个合成的 home 建一次索引，供 `gleaner` 读取。不随发布包提供。
 - `extensions/gleaner`：Claude Code、Codex 和 DeepSeek Harness 读取的 skill。
 - `Tests/GleanerCoreTests`：用脱敏后的日志记录结构写成的 fixture 测试，整个流程的测试（并发编辑、删除 worktree、回滚、补读旧日志、核验后转交），几类工作中的观察和所交付的文件夹，合集、保留的文件和绑定在字节上的审阅结论，以及 catalog 的查询。
 - `Tests/GleanerUITests`：标记、设计令牌，以及画出每个组件的图库（`GLEANER_GALLERY=<文件夹> swift test --filter GalleryTests`）。
 - `Tests/GleanerTests`：在合成的资料库上检验应用的判断（点一下落在哪次交付上，Quick Look、Compare 和拖拽用的是哪份字节）及其措辞。
-- `Tests/GleanerCommandTests`：像 agent 的 shell 那样运行构建好的 `gleaner`：检验它的 JSON、退出码，以及它既不写资料库也不写项目；再像宿主那样运行 `gleaner mcp`，把每个工具的回答和拒绝与命令自己的对照；最后拿构建好的命令核对 skill 里给出的每条命令。
+- `Tests/GleanerCommandTests`：像 agent 的 shell 那样运行构建好的 `gleaner`：检验它的 JSON、退出码，以及它既不写资料库也不写项目；再像宿主那样运行 `gleaner mcp`，把每个工具的回答和拒绝与命令自己的对照；拿构建好的命令核对 skill 里给出的每条命令；以及 `gleaner-index`，检验它建出的资料库与应用的索引器建出的一致。
 
 v0.1 的设计决定见 [docs/SPEC.md](docs/SPEC.md)，设计探索与裁决见 [docs/design/](docs/design/README.md)。
+
+### 不开窗口为合成的 home 建索引
+
+```bash
+scripts/acceptance-home.py /tmp/gleaner-home initial
+swift run gleaner-index --home /tmp/gleaner-home
+.build/debug/gleaner find guide --home /tmp/gleaner-home
+```
+
+`gleaner-index` 像应用带 `-GleanerHome` 启动时那样为这个 home 建一次索引，并以 JSON 输出资料库的 index，以及这次读了什么、新增了什么；`--now <ISO 8601>` 固定这次运行的时钟。它必须给出 `--home`，拒绝你自己的 home 文件夹和更新版 Gleaner 打开过的资料库，也从不打包进应用（[docs/design/headless-indexing.md](docs/design/headless-indexing.md)）。
 
 ### Spike A
 

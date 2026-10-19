@@ -229,13 +229,24 @@ swift test                      # fixture tests
 - `Sources/Gleaner`: the macOS app (SwiftUI and AppKit, Quick Look, AVKit).
 - `Sources/gleaner-cli`: the `gleaner` command, the catalog's answers as JSON, and `gleaner mcp`, the same answers as MCP tools.
 - `Sources/gleaner-spike`: Spike A, read-only extraction over local logs that writes a labeling sheet.
+- `Sources/gleaner-index`: a development tool that indexes a synthetic home once, without the window, for `gleaner` to read. Not in the release.
 - `extensions/gleaner`: the skill that Claude Code, Codex and the DeepSeek Harness read.
 - `Tests/GleanerCoreTests`: fixture tests built from sanitized record shapes, the library flow (concurrent edits, deleted worktrees, rollback, backfill, verified staging), observations and delivered folders in several kinds of work, work units, kept files and verdicts bound to bytes, and the catalog's queries.
 - `Tests/GleanerUITests`: the marks, the tokens, and the gallery of every component (`GLEANER_GALLERY=<folder> swift test --filter GalleryTests`).
 - `Tests/GleanerTests`: the app's decisions on a synthetic library (which delivery a click lands on, which bytes Quick Look, Compare and a drag use) and its wording.
-- `Tests/GleanerCommandTests`: the built `gleaner` run as an agent's shell runs it: its JSON, its exit codes, and that it writes neither the library nor the project; `gleaner mcp` run as a host runs it, each tool's answer and refusal compared with the command's own; and every command the skill shows, checked against the built command.
+- `Tests/GleanerCommandTests`: the built `gleaner` run as an agent's shell runs it: its JSON, its exit codes, and that it writes neither the library nor the project; `gleaner mcp` run as a host runs it, each tool's answer and refusal compared with the command's own; every command the skill shows, checked against the built command; and `gleaner-index`, whose library matches the app's indexer's.
 
 The decisions behind v0.1 are in [docs/SPEC.md](docs/SPEC.md); the design exploration and its rulings are in [docs/design/](docs/design/README.md).
+
+### Indexing a synthetic home without the window
+
+```bash
+scripts/acceptance-home.py /tmp/gleaner-home initial
+swift run gleaner-index --home /tmp/gleaner-home
+.build/debug/gleaner find guide --home /tmp/gleaner-home
+```
+
+`gleaner-index` runs one index of the home as the app does with `-GleanerHome`, and prints the library's index and what the run read and added as JSON; `--now <ISO 8601>` pins the run's clock. It needs `--home`, refuses your own home folder and a library a later Gleaner opened, and is never bundled ([docs/design/headless-indexing.md](docs/design/headless-indexing.md)).
 
 ### Spike A
 

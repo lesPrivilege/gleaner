@@ -11,7 +11,7 @@ Three layers:
 - The `gleaner` executable: JSON over the catalog.
 - MCP and extensions, over the same catalog: `gleaner mcp` serves the command's calls as MCP tools ([mcp-adapter](mcp-adapter.md)), and one skill runs the command for Claude Code, Codex and the DeepSeek Harness ([extensions](extensions.md)). None of them reads SQLite directly.
 
-The app keeps sole ownership of indexing. The command never indexes, never writes the registry, and never writes a project folder.
+The app keeps ownership of indexing; the one other indexer is `gleaner-index`, a development tool that indexes a synthetic home as the app does, never the person's ([headless-indexing](headless-indexing.md)). The command never indexes, never writes the registry, and never writes a project folder.
 
 ## Opening the library
 

@@ -55,8 +55,11 @@ public struct LibraryFolders: Sendable {
     /// Caches/Gleaner: hand-off copies.
     public var caches: URL
     public var sources: LogSources
+    /// The folder taken for the home folder; nil for the person's own.
+    public var home: URL?
 
     public init(home: URL?) {
+        self.home = home
         let fm = FileManager.default
         let library = home.map { $0.appendingPathComponent("Library") }
         support = (library?.appendingPathComponent("Application Support")
@@ -216,6 +219,18 @@ public final class Indexer: @unchecked Sendable {
         self.registry = registry
         self.store = store
         self.sources = sources
+    }
+
+    /// The indexer of the library in `folders`, as the app runs it: its folder made, the library
+    /// opened to write (`Registry(path:)`, which refuses a later Gleaner's and backs up an earlier
+    /// one's), and the home `folders` names taken for the person's, so a session working there has
+    /// no workspace walked.
+    public convenience init(folders: LibraryFolders) throws {
+        try FileManager.default.createDirectory(at: folders.support, withIntermediateDirectories: true)
+        self.init(registry: try Registry(path: folders.registry),
+                  store: ContentStore(objects: folders.objects, staging: folders.staging),
+                  sources: folders.sources)
+        if let home = folders.home { self.home = home.path }
     }
 
     /// Reads the logs of `providers`; the others are neither listed nor read, so nothing they

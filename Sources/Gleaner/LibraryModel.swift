@@ -266,14 +266,8 @@ final class LibraryModel {
     /// acceptance run on synthetic logs never touches the person's own library or agent history.
     convenience init() throws {
         let home = UserDefaults.standard.string(forKey: "GleanerHome").map { URL(fileURLWithPath: $0, isDirectory: true) }
-        let folders = LibraryFolders(home: home)
-        try FileManager.default.createDirectory(at: folders.support, withIntermediateDirectories: true)
-        let indexer = Indexer(
-            registry: try Registry(path: folders.registry),
-            store: ContentStore(objects: folders.objects, staging: folders.staging),
-            sources: folders.sources)
         // A session working in the home folder has no workspace walked, the synthetic one included.
-        if let home { indexer.home = home.path }
+        let indexer = try Indexer(folders: LibraryFolders(home: home))
         self.init(indexer: indexer, loads: false)
     }
 

@@ -8,6 +8,8 @@ let package = Package(
         .library(name: "GleanerCore", targets: ["GleanerCore"]),
         .executable(name: "gleaner", targets: ["gleaner-cli"]),
         .executable(name: "gleaner-spike", targets: ["gleaner-spike"]),
+        // A development tool: indexes a synthetic home without the window. Never bundled.
+        .executable(name: "gleaner-index", targets: ["gleaner-index"]),
         // Not "Gleaner": on a case-insensitive disk it would be the same file as the `gleaner` command.
         .executable(name: "GleanerApp", targets: ["Gleaner"]),
     ],
@@ -32,6 +34,10 @@ let package = Package(
         // the app binds them to its library (docs/design/components.md).
         .target(name: "GleanerUI"),
         .executableTarget(name: "gleaner-spike", dependencies: ["GleanerCore"]),
+        .executableTarget(
+            name: "gleaner-index",
+            dependencies: ["GleanerCore", .product(name: "ArgumentParser", package: "swift-argument-parser")]
+        ),
         .executableTarget(name: "Gleaner", dependencies: ["GleanerCore", "GleanerUI"]),
         .testTarget(
             name: "GleanerCoreTests",

@@ -14,6 +14,10 @@ Not part of 0.1.0: these changes come after it is tagged.
 - Answers from the library as the app shows it. An agent turned off in Sources is `off` in the index, and its deliveries are left out; one asked for by id is refused as `source_off` (exit 1). Each file's `project` is the one the app shows it in, after your corrections, with `folder` null for a project you made.
 - `find --project` takes that project's name or its folder, `/private` or not, or the name or folder of the project Gleaner found the file in.
 
+### gleaner-index
+
+- Adds `gleaner-index --home <folder>`, a development tool, never bundled: it indexes a synthetic home once, as the app does with `-GleanerHome`, without the window, so an agent can measure what Gleaner finds through `gleaner` and `gleaner mcp`. It prints the library's index and what the run read and added as JSON, and `--now` pins its clock. It refuses no `--home`, your own home folder, and a library a later Gleaner opened. The app and the tool set up the indexer in one place (`Indexer(folders:)`).
+
 ### gleaner mcp
 
 - Adds `gleaner mcp`, a stdio MCP server in the same executable, built on the official Swift SDK (0.12.1). It serves the six commands as the tools `gleaner_find`, `gleaner_show`, `gleaner_read`, `gleaner_resolve`, `gleaner_handoff` and `gleaner_verify`, with the command's arguments by the same names; `gleaner_verify` takes a delivery's id, or a reference as an object.
