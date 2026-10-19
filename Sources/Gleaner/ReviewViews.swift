@@ -840,8 +840,10 @@ struct ReviewSection: View {
             .font(.callout)
             if !history.isEmpty {
                 VStack(alignment: .leading, spacing: Space.xs) {
-                    ForEach(history) { review in
-                        HistoryLine(review: review, file: work.files.count > 1 ? (review.path as NSString).lastPathComponent : nil)
+                    // The newest note is read whole: it is what was last asked of the work.
+                    ForEach(Array(history.enumerated()), id: \.element.id) { index, review in
+                        HistoryLine(review: review, file: work.files.count > 1 ? (review.path as NSString).lastPathComponent : nil,
+                                    noteLines: index == 0 ? nil : 2)
                     }
                 }
                 .padding(.top, Space.xs)
@@ -869,6 +871,8 @@ struct HistoryLine: View {
     var review: Review
     /// The file it was made on, when the work has several.
     var file: String?
+    /// How many lines of its note show; nil for all of them.
+    var noteLines: Int? = 2
     /// Why Save a Copy couldn't keep its bytes.
     @State private var failure: String?
 
@@ -898,8 +902,7 @@ struct HistoryLine: View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
             judged
             Spacer(minLength: Space.s)
-            // Kept bytes no revision recorded, beside other bytes on disk now: what was judged
-            // beside what is there. Bytes a revision recorded are compared under Versions.
+            // The bytes judged, beside other bytes on disk now.
             if let ends = model.reviewComparison(review) {
                 Button("Compare") { model.comparison = ends }
                     .controlRole(.inline)
@@ -926,7 +929,7 @@ struct HistoryLine: View {
             Text(review.sha256.prefix(8)).font(.system(.caption, design: .monospaced)).foregroundStyle(.tertiary)
                 .help("SHA-256 \(review.sha256)")
             if let note = review.note {
-                Text(review.kind == .published ? note : "“\(note)”").foregroundStyle(.secondary).lineLimit(2)
+                Text(review.kind == .published ? note : "“\(note)”").foregroundStyle(.secondary).lineLimit(noteLines)
             }
         }
         if model.hasSaved(review.sha256) {

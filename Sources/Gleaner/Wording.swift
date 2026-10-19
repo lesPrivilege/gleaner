@@ -172,10 +172,10 @@ enum Wording {
             let again = firstSeen ? "matches what Gleaner first saw for \(other?.kept != nil ? "the kept file" : "delivery \(k)")"
                 : "is \(revision(k, in: artifact)) again"
             return Statement(mark: .attention, title: unavailable,
-                             detail: "The file on disk \(again). \(noCopy(delivery, large: large))")
+                             detail: "The file on disk \(again), and it is shown below. \(noCopy(delivery, large: large))")
         case .unavailable(nil, let current):
             let found = artifact.deliveries.allSatisfy { $0.kept != nil } ? "the file you kept" : "a delivery Gleaner found"
-            let offer = current == nil ? "" : " You can hand off the current file instead; it isn’t \(found)."
+            let offer = current == nil ? "" : " Shown below is the file on disk now, which isn’t \(found)."
             return Statement(mark: .attention, title: unavailable,
                              detail: "\(atPath(now, delivery: delivery)) \(noCopy(delivery, large: large))" + offer)
         case .restoreFromGit:
@@ -344,15 +344,17 @@ enum Wording {
 
     /// Names the bytes on screen and in the drag tile, so the preview never speaks for another
     /// version: the header's caption, under the file's name.
-    static func bytesCaption(_ plan: Handoff?, staged sha: String?, delivery: Delivery) -> String {
+    static func bytesCaption(_ plan: Handoff?, staged sha: String?, delivery: Delivery, in artifact: Artifact) -> String {
         switch plan {
         case .folder?:
             return "Folder as it is now"
         case .ready(_, let from, let seen)?:
             let source = from == .original ? "file on disk" : "saved copy"
             return (delivery.kept != nil ? "Kept file" : "Delivery \(delivery.number)") + " · \(source)" + (seen == nil ? "" : " · first seen later")
-        case .unavailable(_, let current?)? where sha == current:
+        case .unavailable(nil, let current?)? where sha == current:
             return "Current file · not a found delivery"
+        case .unavailable(let k?, let current?)? where sha == current:
+            return "Current file · same as \(revision(k, in: artifact))"
         default:
             return revision(delivery)
         }
