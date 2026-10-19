@@ -79,8 +79,18 @@ Use the existing unprivileged official Swift 6.2.4 Linux container. Implementati
 remain in `GleanerRetrievalExperiments`; no app/CLI/MCP target links them. Record
 frozen source/label hashes, exact commands, actual timings and regression failures.
 Existing native release gates remain open. The separate native handoff specifies
-M1–M5 checks and runtime/isolation requirements; no Mac run is implied.
+M1–M5 checks and runtime/isolation requirements. Subsequent native CI receipts are
+recorded in NATIVE-HANDOFF.md and validation-results.json; the additional diagnostic
+probe remains unexecuted.
 
 Only the authorized `cloud/gleaner-retrieval-core-20261019` branch is checkpointed.
 No main merge, release, workflow or credential change. The unrelated mounted
 repository remains untouched.
+
+Executed source checkpoint: `6a39a13e6929bc7ab1ac24700a0af0929ad2bf44`.
+Start with [CONVERGENCE-LEDGER.md](CONVERGENCE-LEDGER.md), then
+[EVALUATION.md](EVALUATION.md), [CORRECTIONS.md](CORRECTIONS.md),
+[DIRECTORY-COMPARISON.md](DIRECTORY-COMPARISON.md) and
+[validation-results.json](validation-results.json). The normal push started native
+[run 39280023363](https://github.com/lesPrivilege/gleaner/actions/runs/39280023363);
+its recorded status is not inferred from Linux tests.

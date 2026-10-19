@@ -1,0 +1,351 @@
+{
+  "index_report": {
+    "index": {
+      "generation": 1,
+      "library": "43b34d46-007e-4be1-a34b-580802a5b98e",
+      "scanned_at": "2026-10-19T15:38:06Z",
+      "sources": {
+        "claude-code": {
+          "failures": 0,
+          "logs_with_fewer_replies": 0,
+          "logs_without_final_reply": 0,
+          "partial_logs": 0,
+          "shortened_logs": 0,
+          "state": "read",
+          "unknown_fields": {},
+          "unknown_record_types": {},
+          "unlisted_folders": 0
+        },
+        "codex": {
+          "failures": 0,
+          "logs_with_fewer_replies": 0,
+          "logs_without_final_reply": 0,
+          "partial_logs": 0,
+          "shortened_logs": 0,
+          "state": "read",
+          "unknown_fields": {},
+          "unknown_record_types": {},
+          "unlisted_folders": 0
+        }
+      }
+    },
+    "logs_read": 4,
+    "new_deliveries": 8,
+    "new_observations": 8
+  },
+  "index_seconds_including_process_boundary": 0.10360082100032741,
+  "input_contract": "Same known authorized project root and task terms; no target basename or relevance label used to select/open candidates. Both arms open every first-five result; empty literal search gets one broad overview fallback.",
+  "kind": "equal_input_development_comparator",
+  "limits": "Small synthetic text corpus; no human/Finder UI trial, semantic file understanding, history equivalence, cold-cache or end-to-end latency comparison. Directory reads current bytes; CLI reads exact captured bytes. CLI subprocesses cross Docker boundary while rg runs on host; stdout sizes are actual different response schemas, not relevance metrics.",
+  "schema": 1,
+  "tasks": [
+    {
+      "directory": {
+        "body_scan_bytes_upper_bound": 276,
+        "discovered_file_count": 3,
+        "enumerations": 1,
+        "filtered_matches": [
+          "Projects/BaySurvey/deliveries/Q-17.md"
+        ],
+        "first_layer": [
+          "Projects/BaySurvey/deliveries/Q-17.md"
+        ],
+        "folder_fallback": false,
+        "literal_body_searches": 2,
+        "mode": "path_and_body_then_folder_fallback",
+        "open_operations": 1,
+        "opened": [
+          {
+            "bytes": 57,
+            "path": "Projects/BaySurvey/deliveries/Q-17.md",
+            "sha256": "10c770d305b36f90d9873819125a2d66c88a11841a88037a37b90701fedda202"
+          }
+        ],
+        "precision_at_first_layer": 1.0,
+        "relevant_first_layer": [
+          "Projects/BaySurvey/deliveries/Q-17.md"
+        ],
+        "tool_stdout_bytes": 523,
+        "view_changes": 0,
+        "wanted_recall_at_first_layer": 1.0
+      },
+      "id": "body_names_the_wanted_proposal",
+      "project": "BaySurvey",
+      "shared_core": {
+        "filtered_matches": [
+          "Projects/BaySurvey/analysis/inputs.csv",
+          "Projects/BaySurvey/deliveries/Q-17.md",
+          "Projects/BaySurvey/tools/reduce.py"
+        ],
+        "first_layer": [
+          "Projects/BaySurvey/analysis/inputs.csv",
+          "Projects/BaySurvey/deliveries/Q-17.md",
+          "Projects/BaySurvey/tools/reduce.py"
+        ],
+        "mode": "shared_query_then_project_fallback",
+        "open_operations": 3,
+        "opened": [
+          {
+            "exact_version_readable": true,
+            "path": "Projects/BaySurvey/analysis/inputs.csv",
+            "returned_text_bytes": 19
+          },
+          {
+            "exact_version_readable": true,
+            "path": "Projects/BaySurvey/deliveries/Q-17.md",
+            "returned_text_bytes": 57
+          },
+          {
+            "exact_version_readable": true,
+            "path": "Projects/BaySurvey/tools/reduce.py",
+            "returned_text_bytes": 62
+          }
+        ],
+        "precision_at_first_layer": 0.3333333333333333,
+        "project_fallback": false,
+        "query_operations": 1,
+        "relevant_first_layer": [
+          "Projects/BaySurvey/deliveries/Q-17.md"
+        ],
+        "tool_stdout_bytes": 6554,
+        "wanted_recall_at_first_layer": 1.0
+      },
+      "task": "Read the proposal; supporting computations are secondary evidence.",
+      "terms": [
+        "riparian",
+        "proposal"
+      ],
+      "wanted": [
+        "Projects/BaySurvey/deliveries/Q-17.md"
+      ]
+    },
+    {
+      "directory": {
+        "body_scan_bytes_upper_bound": 318,
+        "discovered_file_count": 3,
+        "enumerations": 1,
+        "filtered_matches": [
+          "Projects/Spectra/notes.md",
+          "Projects/Spectra/raw.csv",
+          "Projects/Spectra/reproduce.py"
+        ],
+        "first_layer": [
+          "Projects/Spectra/notes.md",
+          "Projects/Spectra/raw.csv",
+          "Projects/Spectra/reproduce.py"
+        ],
+        "folder_fallback": false,
+        "literal_body_searches": 2,
+        "mode": "path_and_body_then_folder_fallback",
+        "open_operations": 3,
+        "opened": [
+          {
+            "bytes": 64,
+            "path": "Projects/Spectra/notes.md",
+            "sha256": "a77393f45d97fe40b8261bad8f99e8231ef9b8f00cfa1e908dcaf99d29bc55e8"
+          },
+          {
+            "bytes": 34,
+            "path": "Projects/Spectra/raw.csv",
+            "sha256": "7ef0960ea27c9e68f49a8aab2485a2201743e7eac62790eeb98dbfc64ff54f81"
+          },
+          {
+            "bytes": 61,
+            "path": "Projects/Spectra/reproduce.py",
+            "sha256": "b916846de1641d77cba2143a2c52a181ab31efda8435980ab3eebd5ca205f637"
+          }
+        ],
+        "precision_at_first_layer": 0.6666666666666666,
+        "relevant_first_layer": [
+          "Projects/Spectra/notes.md",
+          "Projects/Spectra/reproduce.py"
+        ],
+        "tool_stdout_bytes": 846,
+        "view_changes": 0,
+        "wanted_recall_at_first_layer": 1.0
+      },
+      "id": "two_complementary_objects",
+      "project": "Spectra",
+      "shared_core": {
+        "filtered_matches": [
+          "Projects/Spectra/notes.md",
+          "Projects/Spectra/raw.csv",
+          "Projects/Spectra/reproduce.py"
+        ],
+        "first_layer": [
+          "Projects/Spectra/notes.md",
+          "Projects/Spectra/raw.csv",
+          "Projects/Spectra/reproduce.py"
+        ],
+        "mode": "shared_query_then_project_fallback",
+        "open_operations": 3,
+        "opened": [
+          {
+            "exact_version_readable": true,
+            "path": "Projects/Spectra/notes.md",
+            "returned_text_bytes": 64
+          },
+          {
+            "exact_version_readable": true,
+            "path": "Projects/Spectra/raw.csv",
+            "returned_text_bytes": 34
+          },
+          {
+            "exact_version_readable": true,
+            "path": "Projects/Spectra/reproduce.py",
+            "returned_text_bytes": 61
+          }
+        ],
+        "precision_at_first_layer": 0.6666666666666666,
+        "project_fallback": false,
+        "query_operations": 1,
+        "relevant_first_layer": [
+          "Projects/Spectra/notes.md",
+          "Projects/Spectra/reproduce.py"
+        ],
+        "tool_stdout_bytes": 6566,
+        "wanted_recall_at_first_layer": 1.0
+      },
+      "task": "Inspect the review and its runnable reproduction; raw measurements are optional.",
+      "terms": [
+        "boron",
+        "review"
+      ],
+      "wanted": [
+        "Projects/Spectra/notes.md",
+        "Projects/Spectra/reproduce.py"
+      ]
+    },
+    {
+      "directory": {
+        "body_scan_bytes_upper_bound": 130,
+        "discovered_file_count": 1,
+        "enumerations": 1,
+        "filtered_matches": [],
+        "first_layer": [
+          "Projects/CedarGraphics/panel.svg"
+        ],
+        "folder_fallback": true,
+        "literal_body_searches": 2,
+        "mode": "path_and_body_then_folder_fallback",
+        "open_operations": 1,
+        "opened": [
+          {
+            "bytes": 65,
+            "path": "Projects/CedarGraphics/panel.svg",
+            "sha256": "21018d0e283e5201e92c7f0b4ed100dab8df4ebc5b16801e7b0913907e174605"
+          }
+        ],
+        "precision_at_first_layer": 1.0,
+        "relevant_first_layer": [
+          "Projects/CedarGraphics/panel.svg"
+        ],
+        "tool_stdout_bytes": 100,
+        "view_changes": 1,
+        "wanted_recall_at_first_layer": 1.0
+      },
+      "id": "context_terms_need_folder_fallback",
+      "project": "CedarGraphics",
+      "shared_core": {
+        "filtered_matches": [
+          "Projects/CedarGraphics/panel.svg"
+        ],
+        "first_layer": [
+          "Projects/CedarGraphics/panel.svg"
+        ],
+        "mode": "shared_query_then_project_fallback",
+        "open_operations": 1,
+        "opened": [
+          {
+            "exact_version_readable": true,
+            "path": "Projects/CedarGraphics/panel.svg",
+            "returned_text_bytes": 65
+          }
+        ],
+        "precision_at_first_layer": 1.0,
+        "project_fallback": false,
+        "query_operations": 1,
+        "relevant_first_layer": [
+          "Projects/CedarGraphics/panel.svg"
+        ],
+        "tool_stdout_bytes": 2562,
+        "wanted_recall_at_first_layer": 1.0
+      },
+      "task": "Open the diagram; task words exist in the native request, not the original text.",
+      "terms": [
+        "copper",
+        "transit"
+      ],
+      "wanted": [
+        "Projects/CedarGraphics/panel.svg"
+      ]
+    },
+    {
+      "directory": {
+        "body_scan_bytes_upper_bound": 196,
+        "discovered_file_count": 2,
+        "enumerations": 1,
+        "filtered_matches": [
+          "Projects/MarshAccess/estuary-access.md"
+        ],
+        "first_layer": [
+          "Projects/MarshAccess/estuary-access.md"
+        ],
+        "folder_fallback": false,
+        "literal_body_searches": 2,
+        "mode": "path_and_body_then_folder_fallback",
+        "open_operations": 1,
+        "opened": [
+          {
+            "bytes": 63,
+            "path": "Projects/MarshAccess/estuary-access.md",
+            "sha256": "4e7aaabfde2c9f879e4cf99a42a8741604f4d3adfbd73b3c62abdde74ded36fe"
+          }
+        ],
+        "precision_at_first_layer": 1.0,
+        "relevant_first_layer": [
+          "Projects/MarshAccess/estuary-access.md"
+        ],
+        "tool_stdout_bytes": 420,
+        "view_changes": 0,
+        "wanted_recall_at_first_layer": 1.0
+      },
+      "id": "current_file_outside_index_admission",
+      "project": "MarshAccess",
+      "shared_core": {
+        "filtered_matches": [],
+        "first_layer": [
+          "Projects/MarshAccess/background.md"
+        ],
+        "mode": "shared_query_then_project_fallback",
+        "open_operations": 1,
+        "opened": [
+          {
+            "exact_version_readable": true,
+            "path": "Projects/MarshAccess/background.md",
+            "returned_text_bytes": 35
+          }
+        ],
+        "precision_at_first_layer": 0.0,
+        "project_fallback": true,
+        "query_operations": 2,
+        "relevant_first_layer": [],
+        "tool_stdout_bytes": 3099,
+        "wanted_recall_at_first_layer": 0.0
+      },
+      "task": "Open the new current survey. Created after indexing, with no delivery log; this is a discovery/admission difference.",
+      "terms": [
+        "estuary",
+        "access"
+      ],
+      "wanted": [
+        "Projects/MarshAccess/estuary-access.md"
+      ]
+    }
+  ],
+  "tools": {
+    "gleaner_index_sha256": "072948dc9be121edfd92ce61365fd5915ff7064ed787ccca8a044c879e322b35",
+    "gleaner_sha256": "0406b3fa4aab70955b1b24e2fd94fecf7193efd4b96582f0de5c54113de89e79",
+    "rg": "ripgrep 15.2.0 (rev e89fff89ac)"
+  }
+}

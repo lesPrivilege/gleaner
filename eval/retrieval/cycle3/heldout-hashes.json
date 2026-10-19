@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "checkpoint": "524fb80672cd2598bd5cad14ce5f483f8709d495",
+  "labels_sealed_no_later_than_utc": "2026-10-19T15:26:00Z",
+  "implementation_frozen_before_run": true,
+  "recorded_before_run_utc": "2026-10-19T15:31:41.356169+00:00",
+  "sha256": {
+    "Experiments/GleanerRetrieval/Cycle3Selection.swift": "39219f9736509b9b70fe40cefa97e7a7661cf4c4c49eac8a10de342054879bb7",
+    "eval/retrieval/cycle3/Tests/HeldOut.swift": "70b7a74430d0c2bd5eba884579b4884987a69f022c2a2ae8be4506bf29c1bf89",
+    "eval/retrieval/cycle3/heldout-labels.json": "c8848fcd422cf114e20211daa5cf95797075714b79636ad2c60fcec5377b9d38"
+  },
+  "pre_execution_harness_correction": "Corrected work-ID set comparison before any held-out execution; labels and implementation unchanged. Added serialized response/content byte measurements before first execution; first attempted run was blocked by another test target compilation failure.",
+  "initial_compilation_attempt_harness_sha256": "5fccee39351dc860c2718859d5c77db713abd0977e1ae3548e747394470df57f",
+  "first_execution": {
+    "utc": "2026-10-19T15:34:13Z",
+    "platform": "x86_64-unknown-linux-gnu",
+    "swift": "6.2.4",
+    "suite_seconds": 0.312,
+    "safety_suite_passed": true,
+    "policy_observations": 24,
+    "comparator_observations": 24,
+    "reread_invariants": 1,
+    "results_sha256": "551555d9e0e4865dfd164233745119c97d277210439d00a97e04c54b60faf504"
+  },
+  "post_execution_harness_only_change": {
+    "reason": "Redact synthetic runtime-root dictionary keys as well as values; unmatchedReasons uses Work paths as keys. No label, policy or scoring change.",
+    "executed_harness_sha256": "70b7a74430d0c2bd5eba884579b4884987a69f022c2a2ae8be4506bf29c1bf89",
+    "revised_harness_sha256": "722e0d2e25e74e668cd9b25be2983fdcf6a974ce6a5634920b4e4dc4e608392e",
+    "original_result_sha256": "551555d9e0e4865dfd164233745119c97d277210439d00a97e04c54b60faf504",
+    "sanitized_first_result_sha256": "a9ccde0790e78e5054dc58a0366167441a62479d41de41af9b3a6d6c6d921b8e"
+  },
+  "final_harness_sha256": "722e0d2e25e74e668cd9b25be2983fdcf6a974ce6a5634920b4e4dc4e608392e",
+  "export_hygiene_rerun": {
+    "derived_metrics_equivalent_to_first": {
+      "policy_cases": true,
+      "comparators": true,
+      "corrections": true
+    },
+    "results_sha256": "a4097b217a1beffecf0f250b5818fc74a646b733a64d39800083b98a30c11cca",
+    "utc": "2026-10-19T15:39:08Z",
+    "suite_seconds": 0.37,
+    "platform": "x86_64-unknown-linux-gnu",
+    "swift": "6.2.4",
+    "safety_suite_passed": true
+  }
+}

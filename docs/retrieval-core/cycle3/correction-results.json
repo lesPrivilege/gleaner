@@ -1,0 +1,840 @@
+{
+  "basis" : "Actual Indexer.run, durable Registry corrections and shared Organization.search through frozen Cycle3Selection; no production reset API.",
+  "checks" : {
+    "authored_rows_and_historical_evidence_unchanged" : true,
+    "capture_hashes_and_review_rows_unchanged" : true,
+    "equal_bytes_separate_contexts_not_joined" : true,
+    "human_join_retains_two_representations" : true,
+    "library_namespace_preserved" : true,
+    "post_correction_selection_and_ids_stable" : true,
+    "reopen_preserves_corrections" : true
+  },
+  "limitations" : [
+    "Work.id is the earliest delivered member path; an explicit join can change a former member's Work ID.",
+    "Projection reconstruction is a test-only SQL operation, not a supported full library reset or migration.",
+    "Observations, spans, captures, folder membership and kept completion are retained evidence, not recovered from current files.",
+    "Five explicit correction kinds plus project renaming are tested; no inference of current-working authority."
+  ],
+  "retainedTableCounts" : {
+    "captures" : 4,
+    "corrections" : 5,
+    "kept" : 0,
+    "listings" : 0,
+    "members" : 0,
+    "observations" : 10,
+    "projects" : 1,
+    "reviews" : 1,
+    "sources_off" : 0,
+    "spans" : 4,
+    "units" : 1
+  },
+  "schema" : 1,
+  "stages" : [
+    {
+      "broadQueryMatches" : 4,
+      "collectionNameMatches" : 0,
+      "logsRead" : 4,
+      "name" : "before_corrections",
+      "projectNameMatches" : 0,
+      "selections" : [
+        {
+          "eligible" : 0,
+          "policy" : "baseline",
+          "raw" : 4,
+          "representationCounts" : [
+
+          ],
+          "selected" : 0,
+          "selectedDeliveryIDs" : [
+
+          ],
+          "selectedWorkIDs" : [
+
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 0,
+          "policy" : "baseline",
+          "raw" : 4,
+          "representationCounts" : [
+
+          ],
+          "selected" : 0,
+          "selectedDeliveryIDs" : [
+
+          ],
+          "selectedWorkIDs" : [
+
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 0,
+          "policy" : "baseline",
+          "raw" : 4,
+          "representationCounts" : [
+
+          ],
+          "selected" : 0,
+          "selectedDeliveryIDs" : [
+
+          ],
+          "selectedWorkIDs" : [
+
+          ],
+          "task" : "approved_collection"
+        },
+        {
+          "eligible" : 0,
+          "policy" : "diversified",
+          "raw" : 4,
+          "representationCounts" : [
+
+          ],
+          "selected" : 0,
+          "selectedDeliveryIDs" : [
+
+          ],
+          "selectedWorkIDs" : [
+
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 0,
+          "policy" : "diversified",
+          "raw" : 4,
+          "representationCounts" : [
+
+          ],
+          "selected" : 0,
+          "selectedDeliveryIDs" : [
+
+          ],
+          "selectedWorkIDs" : [
+
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 0,
+          "policy" : "diversified",
+          "raw" : 4,
+          "representationCounts" : [
+
+          ],
+          "selected" : 0,
+          "selectedDeliveryIDs" : [
+
+          ],
+          "selectedWorkIDs" : [
+
+          ],
+          "task" : "approved_collection"
+        },
+        {
+          "eligible" : 0,
+          "policy" : "task_conditioned",
+          "raw" : 4,
+          "representationCounts" : [
+
+          ],
+          "selected" : 0,
+          "selectedDeliveryIDs" : [
+
+          ],
+          "selectedWorkIDs" : [
+
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 0,
+          "policy" : "task_conditioned",
+          "raw" : 4,
+          "representationCounts" : [
+
+          ],
+          "selected" : 0,
+          "selectedDeliveryIDs" : [
+
+          ],
+          "selectedWorkIDs" : [
+
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 0,
+          "policy" : "task_conditioned",
+          "raw" : 4,
+          "representationCounts" : [
+
+          ],
+          "selected" : 0,
+          "selectedDeliveryIDs" : [
+
+          ],
+          "selectedWorkIDs" : [
+
+          ],
+          "task" : "approved_collection"
+        }
+      ],
+      "works" : 4
+    },
+    {
+      "broadQueryMatches" : 3,
+      "collectionNameMatches" : 1,
+      "logsRead" : 0,
+      "name" : "after_corrections",
+      "projectNameMatches" : 2,
+      "selections" : [
+        {
+          "eligible" : 2,
+          "policy" : "baseline",
+          "raw" : 3,
+          "representationCounts" : [
+            1,
+            2
+          ],
+          "selected" : 2,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md#1",
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md",
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "baseline",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "baseline",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "approved_collection"
+        },
+        {
+          "eligible" : 2,
+          "policy" : "diversified",
+          "raw" : 3,
+          "representationCounts" : [
+            1,
+            2
+          ],
+          "selected" : 2,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md#1",
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md",
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "diversified",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "diversified",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "approved_collection"
+        },
+        {
+          "eligible" : 2,
+          "policy" : "task_conditioned",
+          "raw" : 3,
+          "representationCounts" : [
+            1,
+            2
+          ],
+          "selected" : 2,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md#1",
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md",
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "task_conditioned",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "task_conditioned",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "approved_collection"
+        }
+      ],
+      "works" : 3
+    },
+    {
+      "broadQueryMatches" : 3,
+      "collectionNameMatches" : 1,
+      "logsRead" : 4,
+      "name" : "all_changed_logs_reread",
+      "projectNameMatches" : 2,
+      "selections" : [
+        {
+          "eligible" : 2,
+          "policy" : "baseline",
+          "raw" : 3,
+          "representationCounts" : [
+            1,
+            2
+          ],
+          "selected" : 2,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md#1",
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md",
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "baseline",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "baseline",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "approved_collection"
+        },
+        {
+          "eligible" : 2,
+          "policy" : "diversified",
+          "raw" : 3,
+          "representationCounts" : [
+            1,
+            2
+          ],
+          "selected" : 2,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md#1",
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md",
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "diversified",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "diversified",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "approved_collection"
+        },
+        {
+          "eligible" : 2,
+          "policy" : "task_conditioned",
+          "raw" : 3,
+          "representationCounts" : [
+            1,
+            2
+          ],
+          "selected" : 2,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md#1",
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md",
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "task_conditioned",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "task_conditioned",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "approved_collection"
+        }
+      ],
+      "works" : 3
+    },
+    {
+      "broadQueryMatches" : 3,
+      "collectionNameMatches" : 1,
+      "logsRead" : 4,
+      "name" : "forced_cursor_reread",
+      "projectNameMatches" : 2,
+      "selections" : [
+        {
+          "eligible" : 2,
+          "policy" : "baseline",
+          "raw" : 3,
+          "representationCounts" : [
+            1,
+            2
+          ],
+          "selected" : 2,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md#1",
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md",
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "baseline",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "baseline",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "approved_collection"
+        },
+        {
+          "eligible" : 2,
+          "policy" : "diversified",
+          "raw" : 3,
+          "representationCounts" : [
+            1,
+            2
+          ],
+          "selected" : 2,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md#1",
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md",
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "diversified",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "diversified",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "approved_collection"
+        },
+        {
+          "eligible" : 2,
+          "policy" : "task_conditioned",
+          "raw" : 3,
+          "representationCounts" : [
+            1,
+            2
+          ],
+          "selected" : 2,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md#1",
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md",
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "task_conditioned",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "task_conditioned",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "approved_collection"
+        }
+      ],
+      "works" : 3
+    },
+    {
+      "broadQueryMatches" : 3,
+      "collectionNameMatches" : 1,
+      "logsRead" : 4,
+      "name" : "test_only_log_projection_reconstructed",
+      "projectNameMatches" : 2,
+      "selections" : [
+        {
+          "eligible" : 2,
+          "policy" : "baseline",
+          "raw" : 3,
+          "representationCounts" : [
+            1,
+            2
+          ],
+          "selected" : 2,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md#1",
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md",
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "baseline",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "baseline",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "approved_collection"
+        },
+        {
+          "eligible" : 2,
+          "policy" : "diversified",
+          "raw" : 3,
+          "representationCounts" : [
+            1,
+            2
+          ],
+          "selected" : 2,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md#1",
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md",
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "diversified",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "diversified",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "approved_collection"
+        },
+        {
+          "eligible" : 2,
+          "policy" : "task_conditioned",
+          "raw" : 3,
+          "representationCounts" : [
+            1,
+            2
+          ],
+          "selected" : 2,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md#1",
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Marsh/out/estuary-notes.md",
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_project"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "task_conditioned",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "corrected_collection"
+        },
+        {
+          "eligible" : 1,
+          "policy" : "task_conditioned",
+          "raw" : 3,
+          "representationCounts" : [
+            2
+          ],
+          "selected" : 1,
+          "selectedDeliveryIDs" : [
+            "Workspaces/Cedar/out/estuary-report.html#1"
+          ],
+          "selectedWorkIDs" : [
+            "Workspaces/Cedar/out/estuary-notes.md"
+          ],
+          "task" : "approved_collection"
+        }
+      ],
+      "works" : 3
+    }
+  ]
+}

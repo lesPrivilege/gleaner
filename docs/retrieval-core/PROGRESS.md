@@ -79,8 +79,36 @@ do not adopt named focus as a default or count collapsed groups as relevance gai
 HEAD remains the verified second-cycle checkpoint 24811b0, main unchanged. Parent
 reported environment disconnect notices, but no duplicate experiment was launched.
 Third-cycle protocol and primary-source methods are written; independent labels
-for nine tasks across four corpora are sealed (see cycle3 heldout-labels.json).
+for eight tasks across four corpora are sealed (see cycle3 heldout-labels.json).
 Workers are implementing isolated selection/correction tests; no cycle3 execution
 result is claimed at this checkpoint. Package target wiring is a pending local edit
 until the independent harness exists. Rebuild scope must preserve native observations,
 not confuse their deletion with rebuilding a disposable search projection.
+
+The recovery-note task count was corrected from nine to eight after reading the
+sealed JSON; labels and their SHA256 were unchanged.
+
+## Third-cycle executed checkpoint
+
+Source commit 6a39a13e6929bc7ab1ac24700a0af0929ad2bf44 is pushed to the authorized
+branch. Eight independently sealed tasks generated 24 policy and 24 comparator
+observations; diversification equals baseline, explicit-scope gating asks in four
+tasks, and approved-representation selection remains a counterexample. Frozen
+policy/labels were unchanged. Export-only redaction of synthetic dictionary keys
+was independently checked against every first-run derived metric.
+
+Four separate equal-input directory/current-file comparisons ran without using
+labels to select/open candidates; useful differences and capability limits are
+reported, with no Finder claim. Actual corrections, all-log rereads and safe
+projection reconstruction preserve native evidence and human decisions. An unsafe
+observation-deletion counterexample is deliberately retained.
+
+Full Linux regression: 381 tests / 40 suites, 361 passed, 18 baseline failures /
+25 issues, two opt-in measurement tests skipped. All added correctness tests pass.
+Actual macOS receipt at 24811b0 has 16 isolated OriginalResolutionTests issues;
+19 M1–M5 existing checks pass. Source investigation identified Foundation native
+prefix shortening; the isolated repair preserves physical spelling and no-follow
+checks, and conservatively rejects parent traversal. Independent review passed.
+Normal push run39280023363 will supply successor native evidence; no manual rerun.
+Resume from cycle3/CONVERGENCE-LEDGER.md and validation-results.json, not a new
+ranking-tuning cycle. Product choices remain with Opus.

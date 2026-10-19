@@ -11,6 +11,11 @@
 > compares isolated state, first-layer, original-resolution and report-ID policies
 > with sealed independent labels. No production policy or ontology was adopted.
 > The named-focus recall regression prevents a universal-default recommendation.
+>
+> **Third cycle:** [convergence ledger](docs/retrieval-core/cycle3/CONVERGENCE-LEDGER.md)
+> separates executed evidence, Opus product choices and native checks. Diversity
+> matched baseline on eight held-out tasks; mandatory scope adds questions without
+> a demonstrated retrieval gain. No shipped first-layer default was changed.
 
 ## Baseline and boundary
 

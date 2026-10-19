@@ -54,4 +54,63 @@ Independent held-out evaluation and native macOS checks are reported separately.
 
 The first independent held-out run used original-resolution source SHA256 `dc8b7f9a6c1315d52db1df22f4c2aa39f284642ae094e34867a24f54e8c50320`. Independent code inspection then identified that Darwin's signed `dev_t` must be converted by its bit pattern rather than a potentially trapping signed-to-unsigned numeric conversion. That approved correction changes only the Darwin conditional branch; it is not a response to held-out relevance labels.
 
-The revised source SHA256 is `6bcbc9ff449b2b61dc840aaf2d60439d32f3eaa302d43743de0daacd9c772bfc`. The Linux focused tests and cost run above executed against this revision. The Darwin branch remains source-reviewed only; no native execution is claimed. The independent reviewer retains the first-run outputs and reruns the unchanged held-out cases against the revised source.
+The revised source SHA256 is `6bcbc9ff449b2b61dc840aaf2d60439d32f3eaa302d43743de0daacd9c772bfc`. The Linux focused tests and cost run above executed against this revision. At that checkpoint the Darwin branch had only source review. The independent reviewer retained the first-run outputs and reran the unchanged held-out cases against the revised source. The later native execution below supersedes that earlier validation status.
+
+## Native execution failure and isolated repair
+
+The actual [macOS CI run for `24811b0`](https://github.com/lesPrivilege/gleaner/actions/runs/39277126786/job/118144332343)
+executed 528 tests in 51 suites on macOS 26.6.2 ARM64 and reported 16 issues, all
+in `OriginalResolutionTests`. Checked operations returned `deniedScope` before
+reading content where tests expected a current hash, metadata, missing or unreadable
+state. Mutation callbacks therefore never ran. The retrieved CI log does not print
+the concrete fixture paths, so it does not by itself prove which component was
+rejected.
+
+Source inspection identifies an incompatible normalization step: the fixture used
+Foundation `resolvingSymlinksInPath`, then the resolver used `standardizedFileURL`.
+Foundation can shorten a physical `/private/var` or `/private/tmp` spelling back to
+a system alias, which the strict descriptor walk then rejects. Apple's
+[path-standardization documentation](https://developer.apple.com/documentation/foundation/nsurl/standardizingpath)
+documents removal of an initial `/private`; the primary
+[Swift Foundation NSURL implementation](https://github.com/swiftlang/swift-corelibs-foundation/blob/main/Sources/Foundation/NSURL.swift)
+also shows system-directory shortening in both resolving and standardizing paths.
+This is a source-backed diagnosis consistent with the CI symptoms, pending
+successor native execution. A Linux Swift probe retains `/private/tmp` and has a
+non-symlink `/tmp`, so it does **not** reproduce that Darwin-specific shortening.
+
+The isolated repair uses lexical component processing in the resolver and POSIX
+`realpath` only during fixture setup. It preserves the physical `/private` spelling
+without resolving incoming locators or granting permission through a symlink. The
+descriptor walk, scope-prefix boundary, permission failures, bounded read and
+mutation checks are unchanged. A new regression checks physical spelling, absent
+`/private` locators, dot components and a portable synthetic alias: path-only mode
+retains the unverified alias, while checked modes reject it with zero bytes read.
+The cost fixture now uses the same POSIX physical-root setup.
+
+Separately, review identified that collapsing `link/..` can change a locator's
+meaning across a symlink. The prototype now refuses any `..` component in a
+locator or candidate authorized root, in all modes, instead of normalizing it away.
+An ordinary existing `out/../out/report.md` is refused too; this is a conservative
+scope limitation, not a claim that the file is missing. A second regression covers
+ordinary and symlink-parent traversal plus an authorized root containing `..`.
+Single-dot components and repeated separators still normalize lexically. This
+scope tightening is independent of the native alias diagnosis.
+
+The repaired source SHA256 is
+`6c6d5770dd00de69b60c81184335c7282537621c5e4114d805528bae9d414b97`.
+The focused Linux suite passed **14 tests in 0.023 seconds**, with a 6.48-second
+build. Existing cycle-2 cost numbers above are historical and were not remeasured
+for this correction. Native success is still pending; no manual workflow rerun was
+requested by this worker.
+
+Core `Paths.standard` intentionally normalizes `/private` aliases for durable
+library identity. Such a shortened locator can still be refused by this
+experimental reader's conservative no-symlink policy, even when its original is
+usable through another spelling. This repair does not make that unresolved policy
+compatible with every core locator or silently relabel a denied path as missing.
+
+The reviewed repair is committed as `6a39a13e6929bc7ab1ac24700a0af0929ad2bf44`.
+Its ordinary push created [run 39280023363](https://github.com/lesPrivilege/gleaner/actions/runs/39280023363),
+job `118152324799`, queued at the report checkpoint. The older documentation-only
+run `39278093014` remains in progress and does not contain the repair. Exact receipt
+state is recorded in [cycle3 validation](cycle3/validation-results.json).

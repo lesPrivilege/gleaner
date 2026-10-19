@@ -1,0 +1,150 @@
+{
+  "additional_checks": {
+    "corrections": {
+      "passed": 2,
+      "report": "docs/retrieval-core/cycle3/correction-results.json",
+      "seconds": 0.105
+    },
+    "equal_input_directory_comparator": {
+      "actual_cli_reads": 8,
+      "directory_opens": 6,
+      "report": "docs/retrieval-core/cycle3/directory-comparator-results.json",
+      "tasks": 4
+    },
+    "heldout": {
+      "comparator_observations": 24,
+      "export_hygiene_verification_seconds": 0.37,
+      "first_seconds": 0.312,
+      "hash_record": "eval/retrieval/cycle3/heldout-hashes.json",
+      "policy_observations": 24,
+      "reread_invariants": 1,
+      "tasks": 8
+    },
+    "original_resolver_repair": {
+      "passed": 14,
+      "seconds": 0.023
+    },
+    "selection_and_metamorphic": {
+      "passed": 8,
+      "seconds": 0.018
+    }
+  },
+  "baseline_revision": "2648094610facfd1ae1805f52a9de282043c808f",
+  "cycle_start_revision": "24811b063eba4885822001f68e5655dfd83d079e",
+  "execution_source_sha256": {
+    "Experiments/GleanerRetrieval/Cycle3Selection.swift": "39219f9736509b9b70fe40cefa97e7a7661cf4c4c49eac8a10de342054879bb7",
+    "Experiments/GleanerRetrieval/OriginalResolution.swift": "6c6d5770dd00de69b60c81184335c7282537621c5e4114d805528bae9d414b97",
+    "eval/retrieval/cycle3/Tests/HeldOut.swift": "722e0d2e25e74e668cd9b25be2983fdcf6a974ce6a5634920b4e4dc4e608392e",
+    "eval/retrieval/cycle3/compare_directories.py": "82cd3463965fc1bff0cc360a2aa5458f5f27ceb4f72628b9b60fd20a5e895aaf",
+    "eval/retrieval/cycle3/heldout-labels.json": "c8848fcd422cf114e20211daa5cf95797075714b79636ad2c60fcec5377b9d38"
+  },
+  "full_suite": {
+    "command": "docker exec -w /workspace/gleaner-cloud gleaner-swift runuser -u gleaner -- swift test -j 4",
+    "duration_seconds": 6.357,
+    "exit_code": 1,
+    "failed": 18,
+    "failed_names_equal_cycle2_and_baseline": true,
+    "failed_test_names": [
+      "aBuiltAppIsObservedAsOneEntry",
+      "aDataAnalysisWithCSVFiguresAndANotebook",
+      "aFileNamedInAnotherSpellingIsObservedUnderItsDeliveredName",
+      "aFolderDeliveredTwiceListsItsFilesAtEachDelivery",
+      "aFolderIsSkippedHoweverItIsSpelled",
+      "aFolderUnderPrivateIsOneProjectWithWhatItsAgentDelivered",
+      "aFolderUnderPrivateVarIsOneProjectWithItsFilesThereOrGone",
+      "aHandedOverFileKeepsItsDeliveryWithItsObservationBeside",
+      "aLaterSessionEditingAFileAddsItsOwnObservation",
+      "aLibraryThatCantBeOpenedToReadSaysToOpenGleaner",
+      "aMediaPipelineHandsOverItsSegmentsButNeverItsHiddenFiles",
+      "aReportWithMarkdownPDFAndCharts",
+      "aRewriteInPlaceThatPutsTheDatesBackIsNotAsShown",
+      "aVideoSeriesWhoseReplyNamesOnlyAFolder",
+      "keepingMakesAWorkWhoseOneRevisionIsTheFileAsObserved",
+      "membershipByTimeOnALiveRead",
+      "theHomeFolderAndSystemFoldersAreNotWalked",
+      "theSyntheticHomesCapturePhase"
+    ],
+    "issues": 25,
+    "log_sha256": "01c69d20ceeca96467b97efb5921b3fcb2430bfadd06fce3b4a89f91cfe60634",
+    "passed": 361,
+    "skipped": 2,
+    "skipped_tests": [
+      "developmentTasksAndScale",
+      "measureOriginalModes"
+    ],
+    "suites": 40,
+    "tests": 381
+  },
+  "implementation_revision": "6a39a13e6929bc7ab1ac24700a0af0929ad2bf44",
+  "limitations": [
+    "No shipped first-layer policy changed.",
+    "No human/Finder comparison; directory arms have different historical/current-byte capabilities.",
+    "No cycle3 broad-scale RSS measurement; cycle2 scale does not measure cycle3.",
+    "Additional native diagnostic probe not executed.",
+    "CI successor for isolated original-reader repair must be checked at its own exact SHA."
+  ],
+  "native_receipts": [
+    {
+      "M1_M5_original_selected_tests_passed": 19,
+      "architecture": "arm64",
+      "build_seconds": 172.15,
+      "conclusion": "failure",
+      "decoded_log_sha256": "74cf9daa75d47c4e79fd1d1833a2523e0f686fa94056c54b131c53df88bbb241",
+      "diagnostic_probe_executed": false,
+      "duration_seconds": 37.954,
+      "failed_suite": "OriginalResolutionTests",
+      "failed_test_names": [
+        "aCurrentHashDoesNotReplaceCapturedBytesOrChangeEvidenceKind",
+        "concurrentAppendCannotExceedTheByteLimitAndOneSentinel",
+        "exactScopeChecksRejectSiblingPrefixesAndNeverTreatDirectoriesAsFiles",
+        "inPlaceMutationWithRestoredMtimeDiscardsTheHash",
+        "matchingHashStillPreservesBackfillProvenance",
+        "modesKeepListingAndCurrentObservationSeparate",
+        "movedOriginalsAreNotRediscoveredOrCalledUsableByPathOnlyMode",
+        "parentDirectoryReplacementCannotRedirectTheReadOutsideScope",
+        "replacementOfThePathDiscardsThePinnedFilesHash",
+        "unreadableOriginalIsNotMissing"
+      ],
+      "image": "macos-26-arm64 20261013.0424.1",
+      "issues": 16,
+      "job_id": 118144332343,
+      "os": "macOS26.6.2",
+      "revision": "24811b063eba4885822001f68e5655dfd83d079e",
+      "run_id": 39277126786,
+      "source": "GitHub connector decoded workflow job logs; no local Mac execution",
+      "status": "completed",
+      "suites": 51,
+      "swift_version": "not printed in logs",
+      "tests": 528,
+      "url": "https://github.com/lesPrivilege/gleaner/actions/runs/39277126786/job/118144332343"
+    },
+    {
+      "conclusion": null,
+      "job_id": 118147164818,
+      "note": "Earlier documentation-only checkpoint, contains no resolver repair; do not confuse with successor validation.",
+      "revision": "524fb80672cd2598bd5cad14ce5f483f8709d495",
+      "run_id": 39278093014,
+      "status": "in_progress",
+      "status_checked_at_utc": "2026-10-19T15:39:00Z"
+    },
+    {
+      "conclusion": null,
+      "job_id": 118152324799,
+      "manual_rerun": false,
+      "note": "Normal push workflow; contains the reviewed physical-path repair and frozen cycle3 policies.",
+      "revision": "6a39a13e6929bc7ab1ac24700a0af0929ad2bf44",
+      "run_id": 39280023363,
+      "status": "queued",
+      "status_checked_at_utc": "2026-10-19T15:44:17.629181+00:00",
+      "url": "https://github.com/lesPrivilege/gleaner/actions/runs/39280023363"
+    }
+  ],
+  "protocol_checkpoint": "524fb80672cd2598bd5cad14ce5f483f8709d495",
+  "recorded_at_utc": "2026-10-19T15:42:19.362632+00:00",
+  "runtime": {
+    "container": "official swift:6.2-jammy, ordinary gleaner user",
+    "platform": "x86_64-unknown-linux-gnu",
+    "swift": "6.2.4"
+  },
+  "schema": 1
+}

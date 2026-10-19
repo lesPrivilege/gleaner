@@ -36,3 +36,9 @@ Elastic collapse, SQLite read-only/isolation and W3C source/range selectors.
 source, Apple's case-sensitive APFS documentation and SQLite's read-only WAL
 contract. These references support the diagnosis and alternatives; local execution
 results remain separately identified. No outside benchmark is counted as a local pass.
+
+Third-cycle [METHODS.md](cycle3/METHODS.md) records primary MMR, TREC diversity and
+field-collapse sources plus comparator transfer limits. The native original-reader
+incident uses Apple URL standardization documentation and pinned Swift Foundation
+source in [ORIGINAL-RESOLUTION-EXPERIMENT.md](ORIGINAL-RESOLUTION-EXPERIMENT.md);
+CI execution receipts are separate from source-based diagnosis.

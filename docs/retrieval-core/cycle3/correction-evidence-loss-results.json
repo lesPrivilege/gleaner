@@ -1,0 +1,32 @@
+{
+  "basis" : "Synthetic negative control: delete native observations after moving a kept original outside its recorded workspace; this is not a supported reset.",
+  "checks" : {
+    "original_missing_at_recorded_path" : true,
+    "safe_projection_reconstruction_preserves_kept_id_and_hash" : true,
+    "safe_projection_reconstruction_preserves_kept_work" : true,
+    "unsafe_evidence_deletion_loses_kept_work_visibility" : true,
+    "unsafe_evidence_deletion_retains_correction_review_and_kept_completion_rows" : true
+  },
+  "limitations" : [
+    "Safe reconstruction reread 4 logs; unsafe evidence deletion reread 4 logs but could not recover the missing observation.",
+    "A retained correction and saved hash alone do not replace the native observation used by Registry.kept.",
+    "No public evidence-deletion/reset behavior, recovery API or source mutation is proposed."
+  ],
+  "retainedTableCounts" : {
+    "captures" : 4,
+    "corrections" : 1,
+    "kept" : 1,
+    "listings" : 0,
+    "members" : 0,
+    "observations" : 13,
+    "projects" : 0,
+    "reviews" : 1,
+    "sources_off" : 0,
+    "spans" : 4,
+    "units" : 0
+  },
+  "schema" : 1,
+  "stages" : [
+
+  ]
+}

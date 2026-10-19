@@ -1,156 +1,116 @@
-# Convergence checkpoint handoff
+# Retrieval convergence handoff
 
-Latest: [second-cycle decision note](docs/retrieval-core/cycle2/DECISION-NOTE.md),
-[independent evaluation](docs/retrieval-core/cycle2/EVALUATION.md), and
-[failure diagnosis / exact Mac checks](docs/retrieval-core/cycle2/NATIVE-FAILURES.md).
-This cycle adds isolated executable policy experiments, not shipped behavior.
-It supports a bounded current-original / report-ID implementation proposal and
-rejects universal named-tier focus after a held-out recall regression.
+Start with the [third-cycle convergence ledger](docs/retrieval-core/cycle3/CONVERGENCE-LEDGER.md).
+**No new universal first-layer default is supported by the evidence.** Diversity
+matched baseline on all eight held-out tasks; mandatory explicit scope asked for
+clarification on four, including an already unique Work. No shipped default was
+changed. Opus owns the remaining discovery, representation and interaction choices.
+This is a reviewable experimental branch, not the completed useful-object product
+or a release candidate.
 
-Start with [CONVERGENCE.md](docs/retrieval-core/CONVERGENCE.md): intent → public
-declaration → implementation matrix, superseded decisions, experiments versus
-owner rulings and recommended next questions. This checkpoint follows the later
-user instruction to digest and reconcile before formal build. It is **not** the
-completed useful-object goal, an accepted architecture or a release candidate.
+## Revisions and boundaries
 
-## Revisions and preserved work
-
-Delivery branch: `cloud/gleaner-retrieval-core-20261019` in
-`https://github.com/lesPrivilege/gleaner`. Base fetched and rechecked:
-`2648094610facfd1ae1805f52a9de282043c808f`. Old query branch:
-`cdfe6f4e0ba473ba12309b310018734244efc37c`, already merged into main.
+Repository: `lesPrivilege/gleaner`; branch `cloud/gleaner-retrieval-core-20261019`.
+Actual main: `2648094610facfd1ae1805f52a9de282043c808f`. Actual old query branch:
+`cdfe6f4e0ba473ba12309b310018734244efc37c`, already an ancestor of main. Main already
+has shared contextual search, headless indexing, CLI and MCP. The previously
+reported frozen-index coverage is not fresh algorithm recall.
 
 | Checkpoint | Purpose |
 |---|---|
-| `b4fdad1` | Early goal spec and resume notes |
-| `2d6319b` | Linux execution experiment; exact baseline portability patch |
-| `7cb1983` | Locator syntax prototype, extraction-only evidence |
-| `44624ba8ed9c189fe903710d16f0b4f534ef8c0e` | Project/outline/section/pagination prototype; exact implementation benchmark revision |
-| `7e004a72920d0648c8d7ce38bdb4da86eab4926c` | First convergence report, independent review and evaluation preservation |
-| `3987797` | Second-cycle isolated policies, independent harness and synthetic measurements |
-| Branch tip | Second-cycle isolated experiments, held-out counterexamples, scale measurements and failure diagnosis |
+| `b4fdad1` | Early GOAL-SPEC and recovery notes |
+| `2d6319b` | Portable execution infrastructure |
+| `7cb1983` | Bounded locator syntax prototype |
+| `44624ba8ed9c189fe903710d16f0b4f534ef8c0e` | Progressive Catalog/CLI/MCP prototype and first benchmark source |
+| `7e004a72920d0648c8d7ce38bdb4da86eab4926c` | First contract/branch convergence report |
+| `39877974fb57fa4f45f08836cfc06eb873fb4666` | Second-cycle isolated experiment source |
+| `24811b063eba4885822001f68e5655dfd83d079e` | Second-cycle measurements and diagnosis |
+| `524fb80672cd2598bd5cad14ce5f483f8709d495` | Third-cycle protocol and sealed independent labels |
+| `6a39a13e6929bc7ab1ac24700a0af0929ad2bf44` | Third-cycle isolated implementation and original-path repair |
+| Branch tip | Third-cycle measurements, independent review and native incident follow-up |
 
-No main merge, tags/releases, workflow enablement, credentials or personal author
-identity changes. Author and committer are repository-local
-`GPT Task <gpt-task@example.invalid>`. The unrelated mounted repository was left
-untouched and was not mounted into the execution container. Only public-source
-notes, synthetic tests/results and implementation are included.
+Exact source hashes, executed revisions and CI receipts are in
+[cycle 3 validation](docs/retrieval-core/cycle3/validation-results.json).
+No main merge, release, workflow enablement or credential change. Repository-local
+author and committer: `GPT Task <gpt-task@example.invalid>`. Praxis was left untouched
+and never mounted into the container. Public-source notes and synthetic data only.
 
-## What the checkpoint establishes
+## Latest executed evidence
 
-- Main already has shared app/CLI/MCP search and headless indexing. Eleven of
-  thirteen non-main remote branches are integrated. The unmerged structure and
-  research branches contain reuse material, not missing architecture to merge.
-  [BRANCH-MAP.md](docs/retrieval-core/BRANCH-MAP.md)
-- Current contracts deliberately keep observed candidates unsearched until kept,
-  and remain file/work-centric. Broader useful discovery and logical findings
-  require an explicit scope decision. Native event preservation is partial;
-  tool-call evidence is not a complete graph. [Independent review](docs/retrieval-core/CONVERGENCE-REVIEW.md)
-- Current search finds project-parent context; the known historical failure is
-  not a fresh baseline miss. Same-request noise, body-only finding queries and
-  vocabulary mismatch remain. More captured names alone is not better selection.
-- Byte-pinned report sections work as a bounded experiment. They do not make
-  message findings globally searchable, infer rulings, or solve cross-report
-  lineage. Generation guards are not consistent snapshot pagination.
+- **Eight independent tasks, 24 policy observations:** diversified selection equals
+  baseline throughout. Three additional-term queries improve all arms equally.
+  The approved-rendition task fails selection because the matched rendition is
+  unreviewed even though another representation has approved bytes.
+- **24/24 raw partitions and wanted-Work reachability preserved.** Recovery through
+  remainder/representation navigation is measured separately from first-layer
+  success. Known-name and known-directory access succeeds 8/8 with stronger prior
+  location knowledge; those traces are ideal lower bounds, not a human trial.
+- **Four equal-input development comparators:** bounded path/body search is cleaner
+  for one proposal, matches complementary outputs, needs a folder fallback for
+  context-only terms, and finds an unindexed current file absent from core results.
+  No Finder superiority or comparative latency claim follows.
+- **Corrections:** actual all-log rereads and evidence-preserving reconstruction
+  retain human organization, reviews and retrieval effects. Deleting native
+  observations in an unsafe synthetic control loses a kept missing Work. This
+  proves a reset boundary; no public reset or new ontology was implemented.
+- Native CI at `24811b0` built on macOS 26.6.2 ARM64 and ran **528 tests / 51 suites**,
+  with **16 issues confined to OriginalResolutionTests**. All 19 selected M1–M5
+  existing tests passed. The isolated resolver repair preserves physical `/private`
+  spelling and no-follow scope checks. See the validation receipt for its successor
+  status; Linux results alone cannot establish that the native incident is resolved.
+- Final portable regression: **381 tests, 361 passed, 18 failed / 25 issues, two
+  opt-in measurements skipped**. Failed names exactly match baseline and cycle 2;
+  all added correctness checks pass. Focused repaired resolver: **14/14 passed**.
 
-## First-checkpoint executed evidence
+[Independent evaluation](docs/retrieval-core/cycle3/EVALUATION.md),
+[directory comparison](docs/retrieval-core/cycle3/DIRECTORY-COMPARISON.md),
+[correction evidence](docs/retrieval-core/cycle3/CORRECTIONS.md), and
+[methods](docs/retrieval-core/cycle3/METHODS.md) state labels, commands and limits.
+No policy tuning followed held-out results. The small third-cycle suite does not
+establish broad generalization or a speed ranking.
 
-[Evaluation README](eval/retrieval/README.md) gives commands, task labels, limitations
-and links to all machine-readable results.
+## Preserved earlier work and adoption gates
 
-- Actual main plus identical portability patch versus actual prototype, no second
-  retrieval algorithm. Development intended index membership **13/40 → 40/40**;
-  usable-exact-version tasks **3/8 → 4/8**. The gain is dominated by proposed explicit
-  range syntax; not a general recall estimate.
-- Independent 12 CLI scenarios per revision, no runner errors, with first-layer
-  precision, scope, versions, originals and effort separate. No production tuning
-  from held-out outcomes. Same-request first-five precision remains **1/5**.
-- Independent folder discovery **6/6**, but first-page exact original availability
-  **0/5** in both: `listed` captures are not completed by read-only Catalog.
-- Four independent Swift invariants pass on each revision. Extractor-only smoke
-  **4/10 → 10/10** is syntax feasibility, not retrieval usefulness.
-- Full portable baseline **306/324 passed**; final prototype plus held-out tests
-  **328/346 passed**, the same **18 failures / 25 issues**. All added tests and
-  CLI/MCP checks pass in this boundary. See [PORTABILITY](docs/retrieval-core/PORTABILITY.md)
-  and [results](docs/retrieval-core/portable-test-results.json).
-- Current official MCP research is recorded, but the prototype retains SDK
-  0.12.1's legacy negotiated protocol; no claim of latest-protocol support.
-  [Sources](docs/retrieval-core/SOURCES.md), [RAG mechanisms](docs/retrieval-core/EXPLORATION.md)
+The [contract convergence matrix](docs/retrieval-core/CONVERGENCE.md),
+[branch map](docs/retrieval-core/BRANCH-MAP.md), and
+[second-cycle decision note](docs/retrieval-core/cycle2/DECISION-NOTE.md) preserve
+intent and alternatives. Current-original reads and report-local exact IDs remain
+separate proposals, without integration. Named-tier focus is not recommended after
+its independent wanted-deck recall regression. A 1,000-document / 100-log / 100,000-
+observation workload was executed in cycle 2; it does not measure cycle 3 at scale.
+First-cycle shared-core CLI/MCP parity and exact baseline comparisons are in
+[eval/retrieval/README.md](eval/retrieval/README.md).
 
-No Finder comparison, human-effort trial, broad-scale run, semantic-model arm,
-native UI/FSEvents/APFS validation, or release check was executed. Those are
-unperformed work, not passes or hidden blockers. The second cycle adds a documented
-1,000-document concurrent-work workload; it is not broad-scale validation.
+Do not open a real library with this branch: extraction prototypes did not bump
+`Registry.extractorVersion` (20). Adoption requires migration/rederivation and
+preservation review. Progressive commands and generation/offset pagination remain
+provisional. Linux portability is validation infrastructure, not a new product
+platform. `GleanerRetrievalExperiments` is not linked into app/CLI/MCP. Its arrays
+and representation overview are unbounded despite a selected-row limit.
 
-## Second-cycle evidence
+Scope is still unresolved for unkept observations, current files without delivery,
+message-only findings and global finding identity. Equal bytes do not merge meaning;
+observed writes do not establish authorship, delivery, approval or current authority.
+The strict original prototype still denies system/safe symlink aliases, including
+shortened locators from core; do not infer general original resolvability from its
+physical-path tests.
 
-- Independent sealed set: 19 scenarios and 101 policy observations. Explicit state
-  selection is correct for 20/20 requests; the naive newest-delivery control is
-  not main's baseline. No working-state authority is inferred.
-- Named focus improves some first pages but hides a wanted editable deck in another
-  task (first-layer recall 1 → 0). Reply grouping retains noise inside the group
-  and can add selection effort. Neither is accepted as a universal default.
-- Current-original modes preserve history and perform no registry writes in 21/21
-  checks. Hash-current meets 6/7 scenario expectations; safe in-root symlinks are
-  conservatively denied. Exact historical read behavior remains unchanged.
-- Exact report-local IDs distinguish R1 from R10. Table-only findings and global
-  body-ID search remain unresolved. Repeated sections stay scoped and ambiguous.
-- The original 18 shared Linux failures are individually classified: nine unavailable
-  birth-time mismatches, eight fixture/layout dependencies, and one false SQLite WAL
-  contract/test premise. Separate probes expose package nested-edit, `/private`
-  normalization and home-root assumptions. No failures were suppressed.
-- [Cycle reproduction and measurements](docs/retrieval-core/cycle2/README.md) define
-  workload boundaries, expanded-member versus directly actionable metrics, actual
-  original-read volume, and native limitations.
-- Final portable regression: **368 tests, 348 passed, 18 failed / 25 issues, two
-  opt-in measurement tests skipped**. Failed names exactly match baseline; both
-  measurement workloads pass separately. All CLI/MCP and added correctness tests
-  pass within the portable boundary. [Exact source/runtime record](docs/retrieval-core/cycle2/validation-results.json).
+## Resume and native handoff
 
-## Prototype boundaries before any adoption
+Stop ranking experimentation at this checkpoint. Use the ledger to choose one
+concrete discovery/representation interaction and its success criterion before a
+formal build. Keep shared matching, durable user state and raw discovery intact.
+Final product and visual decisions remain with Opus.
 
-1. Extraction semantics changed without bumping `Registry.extractorVersion` (20).
-   Use fresh synthetic registries only. A production change requires explicit
-   migration/rederivation review and preservation checks, not opening a real
-   library with this experimental branch.
-2. Capture's public design replaced case-fitting range proposals. Keep relative
-   folder/glob/NUL corrections separable from range expansion when deciding scope.
-3. `projects`, `outline`, `section`, offset/generation options and the new 1,000
-   `find` limit extend previously deferred contracts. They are provisional APIs.
-4. Linux shims preserve unknown creation dates and exclude native presentation /
-   watcher code. They are validation infrastructure, not Linux product support.
-5. Shared search ranking, automatic identity joining, model assistance and review
-   semantics were not changed. Ambiguous relative paths and natural-language
-   shorthand remain unresolved, with no broad scan or shell expansion fallback.
+Cloud checkout `/workspace/gleaner-cloud`; baseline `/workspace/gleaner-baseline`;
+official Swift 6.2.4 container `gleaner-swift`. [PORTABILITY](docs/retrieval-core/PORTABILITY.md)
+recreates it. Existing push/PR CI runs `swift test` on `macos-26`; it was not changed,
+re-enabled or manually rerun. Check exact branch SHA and actual receipts when resuming.
 
-## Resume and next handoff
-
-Read the second-cycle decision note alongside the convergence report, branch map
-and independent review before adding code. Next, review the bounded shared-core
-current-read and exact report-ID proposal, then test ranking against the observed
-deck/context counterexamples. Do not adopt named focus, confuse group compression
-with relevance, or turn this experimental target into a second search engine.
-Searchable observation tiers, persistent finding identity and authority relations
-still require explicit scope decisions.
-The matrix also incorporates the parent's refined requirements: five distinct
-current-state meanings, durable scoped names, explicit reset semantics, and shared
-human/agent semantics. Historical command/storage/model proposals remain options.
-Final product and visual rulings remain with Opus; private conversation recall is
-the parent's separate responsibility.
-
-Cloud checkout: `/workspace/gleaner-cloud`. Baseline worktree:
-`/workspace/gleaner-baseline`. Persistent container: `gleaner-swift`, Swift 6.2.4.
-Only these checkouts and synthetic evaluation directory are mounted. Recreate from
-PORTABILITY.md if the environment is lost; committed sources/results are sufficient.
-
-Before formal acceptance, request an authorized Mac validation handoff through
-the parent, on a separate checkout and synthetic home: run native `swift test`,
-then the same labeled CLI/MCP cases; check creation dates, case aliases, packages,
-permissions, FSEvents and Markdown behavior. Later native user-flow testing covers
-selection, current-vs-delivered captions, Quick Look, drag and accessibility. No
-signing, notarization or release action is requested here.
-
-Existing `.github/workflows/test.yml` runs `swift test` on `macos-26` for each push
-and PR. The checkpoint push triggers that normal test job; no other automation is
-enabled. Remote delivery and any observed CI outcome are reported in the final
-checkpoint response rather than inferred from a local commit.
+The [M1–M5 native handoff](docs/retrieval-core/cycle3/NATIVE-HANDOFF.md) gives exact
+filters, expected observations and isolated runtime/access requirements. Additional
+native probes require an approved disposable Mac VM/account, separate checkout and
+synthetic fixtures; never use the personal library or change HOME. Existing native
+CI test passes do not execute the extra filesystem/SQLite diagnostic probe or prove
+FSEvents, human task success, UI behavior or release readiness. No signing,
+notarization, updater, main merge or release action is included.
