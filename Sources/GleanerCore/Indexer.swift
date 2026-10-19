@@ -416,13 +416,15 @@ public final class Indexer: @unchecked Sendable {
 
     /// Reads the file at `path` for deliveries of it whose bytes Gleaner never had: because the path
     /// was missing, unreadable or not a regular file when it first looked, or because the file was
-    /// listed with a delivered folder and not read (SPEC §5.4). This first read completes their
-    /// captures, once: the first as first seen after delivery (SPEC §5.1), the listed ones only while
-    /// the file is still as listed (`completeMembers`). It saves a small file as a capture does.
-    /// Returns whether it completed any.
+    /// listed with a delivered folder, or kept from an observation, and not read (SPEC §5.4). This
+    /// first read completes their captures, once: the first as first seen after delivery (SPEC
+    /// §5.1), the listed ones only while the file is still as listed (`completeMembers`). It saves a
+    /// small file as a capture does. Returns whether it completed any.
     public func completeCaptures(of path: String, now: Date) throws -> Bool {
         let file = Workspace.file(at: path)
-        let listed = try file.map { try !registry.listedMembers(of: path, as: $0).isEmpty } ?? false
+        let listed = try file.map {
+            try !registry.listedMembers(of: path, as: $0).isEmpty || !registry.listedKept(of: path, as: $0).isEmpty
+        } ?? false
         guard try listed || registry.hasIncompleteCapture(path: path) else { return false }
         let read = capture(path, deliveredAt: nil, now: now)
         guard read.sha256 != nil else { return false }

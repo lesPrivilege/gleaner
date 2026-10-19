@@ -55,7 +55,8 @@ public struct Evidence: Sendable, Codable, Equatable {
     public var excerpt: String
 }
 
-/// One reply that handed the artifact to the user.
+/// One revision of an artifact: a reply that handed it to the user, or a file observed during a
+/// session that the person kept (`kept`).
 public struct Delivery: Sendable, Identifiable {
     public var id: String
     /// 1 is the oldest delivery of this artifact.
@@ -86,6 +87,9 @@ public struct Delivery: Sendable, Identifiable {
     /// delivery, whose reply, request, time and evidence this one carries. Nil for a file the reply
     /// named itself.
     public var member: Membership? = nil
+    /// For a file observed during a session that the person kept (docs/design/review.md): no reply
+    /// handed it over, so it carries the session's, and none of a reply's words. Nil for a delivery.
+    public var kept: Keeping? = nil
     /// For a delivered folder: what listing its files found. Nil for a file, and for a folder not
     /// listed yet.
     public var unpacking: Unpacking? = nil
@@ -146,9 +150,10 @@ public struct Artifact: Sendable, Identifiable {
         inRepository = location.inRepository
         checkout = location.checkout
         // One line each: a search word holds no whitespace, so it never reads across two of them. A
-        // file handed over in a folder has none of its own: the reply's words find the folder.
+        // file handed over in a folder has none of its own: the reply's words find the folder. A
+        // file the person kept has no reply's words.
         ownWords = deliveries.map { d in
-            d.member != nil ? ""
+            d.member != nil || d.kept != nil ? ""
                 : Search.form([d.request ?? "", d.sessionTitle ?? "", d.evidence.map(\.excerpt).joined(separator: " ")].joined(separator: "\n"))
         }
         // The file name and its folder, not the whole path: words like "users" or "projects" in

@@ -78,6 +78,15 @@ public final class Registry: @unchecked Sendable {
                 modified_at REAL NOT NULL, changed_at REAL NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL,
                 listed_at REAL NOT NULL, sha256 TEXT, observed_at REAL, saved_at REAL, provenance TEXT NOT NULL,
                 PRIMARY KEY (path, delivery_id)) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS units (
+                key TEXT PRIMARY KEY, project TEXT NOT NULL, parent TEXT, name TEXT NOT NULL, created_at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS kept (
+                path TEXT NOT NULL, log_path TEXT NOT NULL, sha256 TEXT NOT NULL, observed_at REAL NOT NULL, saved_at REAL,
+                provenance TEXT NOT NULL, PRIMARY KEY (path, log_path)) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS reviews (
+                id INTEGER PRIMARY KEY, path TEXT NOT NULL, kind TEXT NOT NULL, note TEXT, sha256 TEXT NOT NULL,
+                size INTEGER NOT NULL, created_at REAL, modified_at REAL NOT NULL, inode INTEGER NOT NULL, made_at REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS reviews_path ON reviews(path);
             """)
         // Each change of several statements is made whole or not at all: a launch that stops partway,
         // say while another copy of Gleaner holds the library, leaves all of it to the next launch.
@@ -337,18 +346,21 @@ public final class Registry: @unchecked Sendable {
     }
 
     /// Records that `delivery`'s bytes were saved at `date`: in its capture, or, for one of a
-    /// delivered folder's files, in its row.
+    /// delivered folder's files or a kept file, in its row.
     public func markSaved(_ delivery: Delivery, at date: Date) throws {
         if let member = delivery.member {
             try db.run("UPDATE members SET saved_at = ? WHERE delivery_id = ? AND path = ?", [date, member.folderDelivery, delivery.path])
+        } else if delivery.kept != nil {
+            try db.run("UPDATE kept SET saved_at = ? WHERE path = ? AND log_path = ?", [date, delivery.path, delivery.logPath])
         } else {
             try db.run("UPDATE captures SET saved_at = ? WHERE delivery_id = ?", [date, delivery.id])
         }
     }
 
     /// Every artifact with its deliveries, newest delivery first, artifacts by latest delivery: the
-    /// files replies named, and the files handed over in the folders they named (SPEC §5.4), whose
-    /// deliveries of one file number together by time.
+    /// files replies named, the files handed over in the folders they named (SPEC §5.4), whose
+    /// deliveries of one file number together by time, and the files the person kept, each a
+    /// revision of its own (`Keeping`).
     public func artifacts() throws -> [Artifact] {
         try artifacts(at: nil)
     }
@@ -381,6 +393,7 @@ public final class Registry: @unchecked Sendable {
             folders[id]?.location = artifact.location
         }
         found += try members(at: path, folders: folders, after: found.count)
+        found += try kept(at: path, after: found.count)
 
         let artifacts = Dictionary(grouping: found, by: \.delivery.path).map { path, found in
             // Oldest first, deliveries of one time in the order they were read. The earliest recorded

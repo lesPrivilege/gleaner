@@ -297,6 +297,11 @@ struct CorrectionsPage: View {
         case .notSameWork: .rejected
         case .notFromSession: .outside
         case .related: .work
+        case .kept: .person
+        case .unit: .folder
+        case .outOfUnit: .outside
+        case .unitName: .work
+        case .unitDeleted: .na
         }
     }
 }

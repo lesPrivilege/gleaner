@@ -252,9 +252,11 @@ extension Indexer {
     /// with `read`, the bytes Gleaner read of it as `file` (SPEC §5.4): at delivery only when the
     /// read came within the live window of the reply, and the file, unchanged since it was listed,
     /// was last written and its inode last changed by the reply's time (§5.1); else first seen
-    /// after it. Nothing is completed when the file changed while it was read.
+    /// after it. The revisions the person kept of it are completed the same way (`completeKept`).
+    /// Nothing is completed when the file changed while it was read.
     func completeMembers(of path: String, with read: Capture, file: Workspace.File?) throws {
         guard let file, read.sha256 != nil, read.size == file.size, Workspace.file(at: path) == file else { return }
+        try completeKept(of: path, with: read, file: file)
         for member in try registry.listedMembers(of: path, as: file) {
             let live = member.deliveredAt.map { reply in
                 let by = reply.addingTimeInterval(clockTolerance)
@@ -365,7 +367,7 @@ extension Registry {
             d.logPath + "\n" + (d.replyLine.map { "\($0)" } ?? d.deliveredAt.map { "\($0.timeIntervalSince1970)" } ?? d.id)
         }
         let named = found.filter { $0.delivery.member == nil }
-        let replies = Set(named.map { reply($0.delivery) })
+        let replies = Set(named.filter { $0.delivery.kept == nil }.map { reply($0.delivery) })
         var inFolders: [String: Found] = [:]
         for item in found {
             guard let member = item.delivery.member, !replies.contains(reply(item.delivery)) else { continue }

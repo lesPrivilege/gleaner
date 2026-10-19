@@ -84,6 +84,8 @@ final class LibraryModel {
     /// The person's corrections and projects, read from the library; kept apart from what Gleaner found.
     private(set) var corrections: [Correction] = []
     private(set) var userProjects: [UserProject] = []
+    /// The work units the person made, as made; `organization` shows them as named last.
+    private(set) var units: [WorkUnit] = []
     /// Why the last correction couldn't be recorded.
     private(set) var correctionFailure: String?
     /// Paths not on disk, checked once per load and refreshed when a file is observed, so list
@@ -178,6 +180,7 @@ final class LibraryModel {
         self.indexer = indexer
         corrections = (try? indexer.registry.corrections()) ?? []
         userProjects = (try? indexer.registry.userProjects()) ?? []
+        units = (try? indexer.registry.units()) ?? []
         sourcesOff = (try? indexer.registry.sourcesOff()) ?? []
         if loads {
             observed = Candidate.files((try? indexer.registry.observations()) ?? [])
@@ -283,7 +286,7 @@ final class LibraryModel {
         // An agent turned off has its observations hidden with its deliveries.
         let observed = sourcesOff.isEmpty ? observed : observed.compactMap { $0.keeping { !sourcesOff.contains($0.provider) } }
         organization = Organization(artifacts: artifacts, observed: observed, corrections: corrections,
-                                    projects: userProjects, missing: missing)
+                                    projects: userProjects, units: units, missing: missing)
         organizationVersion += 1
         if indexed { updateStatus() }
     }
@@ -710,26 +713,46 @@ final class LibraryModel {
     /// it was.
     @discardableResult
     private func correcting<T: Sendable>(_ change: @escaping @Sendable (Registry) throws -> T) async -> T? {
-        let outcome: Result<(T, [Correction], [UserProject]), Error>
+        let outcome: Result<(T, [Correction], [UserProject], [WorkUnit], [String: Artifact?]), Error>
         do {
-            let registry = try correctionsStore(), queue = correctionQueue
+            let registry = try correctionsStore(), queue = correctionQueue, keptBefore = Self.kept(corrections)
             outcome = await withCheckedContinuation { done in
-                queue.async { done.resume(returning: Result { (try change(registry), try registry.corrections(), try registry.userProjects()) }) }
+                queue.async { done.resume(returning: Result {
+                    let value = try change(registry), corrections = try registry.corrections()
+                    // A file kept, or no longer kept, is read again: its revision comes or goes.
+                    var kept: [String: Artifact?] = [:]
+                    for path in Self.kept(corrections).symmetricDifference(keptBefore) { kept[path] = .some(try registry.artifact(at: path)) }
+                    return (value, corrections, try registry.userProjects(), try registry.units(), kept)
+                }) }
             }
         } catch {
             outcome = .failure(error)
         }
         switch outcome {
-        case .success(let (value, corrections, projects)):
+        case .success(let (value, corrections, projects, units, kept)):
             self.corrections = corrections
             userProjects = projects
+            self.units = units
             correctionFailure = nil
-            reorganize()
+            if kept.isEmpty {
+                reorganize()
+            } else {
+                for (path, artifact) in kept {
+                    library.removeAll { $0.path == path }
+                    if let artifact { library.append(artifact) }
+                }
+                showArtifacts()
+            }
             return value
         case .failure(let error):
             correctionFailure = "Couldn’t record that: \(error.localizedDescription)"
             return nil
         }
+    }
+
+    /// The files the person kept.
+    nonisolated private static func kept(_ corrections: [Correction]) -> Set<String> {
+        Set(corrections.filter { $0.kind == .kept }.map(\.subject))
     }
 
     /// Says a decision's result to VoiceOver once it is recorded; a failure is said where it shows.
@@ -858,12 +881,12 @@ final class LibraryModel {
         if place == .project(key) { place = .all }
     }
 
-    /// The corrections, newest first, a move of several files at once as one decision.
+    /// The corrections, newest first, decisions made together as one: a move of several files, a
+    /// work of several files added to a unit, an observed file kept and added to one.
     var correctionGroups: [[Correction]] {
         var groups: [[Correction]] = []
         for correction in corrections.reversed() {
-            if correction.kind == .project, let last = groups.last?.last, last.kind == .project,
-               last.target == correction.target, last.madeAt == correction.madeAt {
+            if let last = groups.last?.last, last.madeAt == correction.madeAt {
                 groups[groups.count - 1].append(correction)
             } else {
                 groups.append([correction])
@@ -872,11 +895,23 @@ final class LibraryModel {
         return groups
     }
 
-    /// What decisions made together did, in a sentence.
+    /// What decisions made together did, in a sentence: those of one kind and target with every
+    /// file named, then the others.
     func describe(_ group: [Correction]) -> String {
-        guard group.count > 1, let first = group.first, first.kind == .project else { return group.first.map(describe) ?? "" }
-        return "Moved " + group.sorted { $0.id < $1.id }.map { ($0.subject as NSString).lastPathComponent }.joined(separator: ", ")
-            + " to " + organization.projectName(first.target)
+        guard group.count > 1 else { return group.first.map(describe) ?? "" }
+        let ordered = group.sorted { $0.id < $1.id }
+        var parts: [String] = [], said = Set<String>()
+        for c in ordered where said.insert(c.kind.rawValue + "\n" + c.target).inserted {
+            let same = ordered.filter { $0.kind == c.kind && $0.target == c.target }
+            let names = same.map { ($0.subject as NSString).lastPathComponent }.joined(separator: ", ")
+            switch c.kind {
+            case .project: parts.append("Moved \(names) to \(organization.projectName(c.target))")
+            case .unit: parts.append("Added \(names) to \(organization.unitName(c.target))")
+            case .outOfUnit: parts.append("Removed \(names) from \(organization.unitName(c.target))")
+            default: parts += same.map(describe)
+            }
+        }
+        return parts.joined(separator: "; ")
     }
 
     /// What a correction did, in a sentence, for the list of corrections.
@@ -889,7 +924,18 @@ final class LibraryModel {
         case .notSameWork: "Kept \(name(correction.subject)) and \(name(correction.target)) apart"
         case .notFromSession: "Detached \(name(correction.subject)) from \(sessionName(correction.target))"
         case .related: "Related \(name(correction.subject)) to \(organization.work(containing: correction.target)?.name ?? name(correction.target))"
+        case .kept: "Kept \(name(correction.subject)), observed during \(sessionName(correction.target))"
+        case .unit: "Added \(name(correction.subject)) to \(organization.unitName(correction.target))"
+        case .outOfUnit: "Removed \(name(correction.subject)) from \(organization.unitName(correction.target))"
+        case .unitName: "Renamed \(unitName(correction.subject, before: correction)) to \(correction.target)"
+        case .unitDeleted: "Deleted \(organization.unitName(correction.subject))"
         }
+    }
+
+    /// The name the unit `key` had before `correction` renamed it.
+    private func unitName(_ key: String, before correction: Correction) -> String {
+        corrections.last { $0.kind == .unitName && $0.subject == key && ($0.madeAt, $0.id) < (correction.madeAt, correction.id) }?.target
+            ?? units.first { $0.key == key }?.name ?? ""
     }
 
     /// How to go back to the conversation that made `delivery`, checked now.
@@ -1057,14 +1103,15 @@ final class LibraryModel {
         case nil: nil
         case .folder: Self.folderItem(artifact.path)
         case .bytes(let sha): handoffItem(sha: sha, artifact: artifact)
-        case .unread: delivery.member.map { unreadItem($0, artifact: artifact) }
+        case .unread: unreadItem(delivery, artifact: artifact)
         }
     }
 
-    /// A file listed with its folder and not read yet, for another app: read when the receiver asks
-    /// for it, which completes its listing while the file is still as listed, then staged and hashed
-    /// as any version is. A file changed since it was listed isn't this delivery, and the drop fails.
-    func unreadItem(_ member: Membership, artifact: Artifact) -> NSItemProvider {
+    /// A file listed with its folder, or kept from an observation, and not read yet, for another app:
+    /// read when the receiver asks for it, which completes its listing while the file is still as
+    /// listed, then staged and hashed as any version is. A file changed since it was listed isn't
+    /// this revision, and the drop fails.
+    func unreadItem(_ delivery: Delivery, artifact: Artifact) -> NSItemProvider {
         let indexer = indexer, store = indexer.store, name = artifact.name, source = artifact.path
         let provider = NSItemProvider()
         provider.suggestedName = name
@@ -1073,7 +1120,7 @@ final class LibraryModel {
             DispatchQueue.global(qos: .userInitiated).async {
                 do {
                     _ = try indexer.completeCaptures(of: source, now: Date())
-                    guard let sha = try indexer.registry.sha256(of: member, path: source) else { throw ContentStore.Failure.unavailable }
+                    guard let sha = try indexer.registry.sha256(ofListed: delivery) else { throw ContentStore.Failure.unavailable }
                     done(try store.stage(sha: sha, name: name, source: source), false, nil)
                 } catch {
                     done(nil, false, error)
