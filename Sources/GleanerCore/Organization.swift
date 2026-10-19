@@ -525,13 +525,22 @@ extension Organization {
         work.match(tokens, project: projectName(work.project), collections: unitNames(of: work))
     }
 
-    /// The works `tokens` find, in the order the library lists them, each with the delivery it was
-    /// found by: of `kind` when given, among those `holds` keeps.
+    /// The works `tokens` find, each with the delivery it was found by: of `kind` when given, among
+    /// those `holds` keeps. Works whose file names, folders, project or collections hold every term
+    /// come first, then those a request, title or reply only mentions it in; each in the order the
+    /// library lists them, newest first.
     public func search(_ tokens: [String], kind: Artifact.Kind? = nil, in holds: (Work) -> Bool = { _ in true }) -> [(work: Work, matched: Delivery)] {
-        works.compactMap { work in
-            guard holds(work), kind == nil || work.kind == kind, let matched = match(work, tokens) else { return nil }
-            return (work, matched)
+        var named: [(work: Work, matched: Delivery)] = [], mentioned: [(work: Work, matched: Delivery)] = []
+        for work in works where holds(work) && (kind == nil || work.kind == kind) {
+            guard let matched = match(work, tokens) else { continue }
+            let shared = ([projectName(work.project)] + unitNames(of: work)).joined(separator: " ")
+            if work.files.contains(where: { $0.isNamed(by: tokens, project: shared) }) {
+                named.append((work, matched))
+            } else {
+                mentioned.append((work, matched))
+            }
         }
+        return named + mentioned
     }
 }
 

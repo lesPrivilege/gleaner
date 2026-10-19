@@ -249,9 +249,9 @@ Derived fields (request, evidence) are versioned: when extraction changes, logs 
 
 ## 10. Search
 
-A result matches when every search term is found in one delivery's own words (request, session, reply), together with the file name, project and collections (§5.5); terms from different deliveries do not combine. The result opens on the newest delivery whose own words matched, falling back to the newest delivery when only the file name, project or collections matched, and shows that delivery's date. Changing the query resets a manually chosen delivery to the matched one.
+A result matches when every search term is found in one delivery's own words (request, session, reply), together with the file name, project and collections (§5.5); terms from different deliveries do not combine. The result opens on the newest delivery whose own words matched, falling back to the newest delivery when only the file name, project or collections matched, and shows that delivery's date. Results whose file name, folders, project or collections hold every term come first, then those whose request, session or reply only mentions one; each newest first. Changing the query resets a manually chosen delivery to the matched one.
 
-The index covers, per delivery: the reply excerpt, the user request that started the turn, the session title, the project, the work's collection and the one holding it (§5.5), and the file name with its folder (not the whole path, whose home and `Projects` components would match everything). The delivery sentence alone usually lacks the topic words the user remembers.
+The index covers, per delivery: the reply excerpt, the user request that started the turn, the session title, the project, the work's collection and the one holding it (§5.5), and the file name with its folder and its folders inside its checkout or project (`series/assembly/covers`), not the whole path, whose home and `Projects` components would match everything. The delivery sentence alone usually lacks the topic words the user remembers.
 
 A file handed over in a folder (§5.4) is found by its name, its folder and its project. The reply's own words find the folder they named, not each file in it, so a topic word doesn't list a folder's hundreds of files.
 

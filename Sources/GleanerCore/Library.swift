@@ -156,12 +156,16 @@ public struct Artifact: Sendable, Identifiable {
             d.member != nil || d.kept != nil ? ""
                 : Search.form([d.request ?? "", d.sessionTitle ?? "", d.evidence.map(\.excerpt).joined(separator: " ")].joined(separator: "\n"))
         }
-        // The file name and its folder, not the whole path: words like "users" or "projects" in
-        // every path would otherwise match everything.
+        // The file name, its folder, and its folders inside its checkout or project ("series/assembly/
+        // covers"), not the whole path: words like "users" or "projects" in every path would
+        // otherwise match everything.
         let folder = folder
         let place = folder.hasPrefix("~") || folder.hasPrefix("/")
             ? (folder as NSString).pathComponents.suffix(2).joined(separator: "/") : folder
-        searchPlace = Search.form(name + " " + place)
+        let directory = (path as NSString).deletingLastPathComponent
+        let inside = [location.checkout?.folder, location.projectFolder].compactMap { $0 }
+            .first { directory.hasPrefix($0 + "/") }.map { String(directory.dropFirst($0.count + 1)) }
+        searchPlace = Search.form([name, place, inside ?? ""].joined(separator: " "))
     }
 
     /// The artifact with only the deliveries `kept`, keeping its project and checkout and each
@@ -404,6 +408,14 @@ extension Artifact {
     /// 0 when the name or project alone matched.
     public func match(_ tokens: [String]) -> Int? {
         matches(tokens, project: project)?.index
+    }
+
+    /// Whether every term is in the file's name or folders, or `project` (the names a work is shown
+    /// under): a result that names what was asked for, not one whose request or reply only
+    /// mentions it.
+    public func isNamed(by tokens: [String], project: String) -> Bool {
+        let place = searchPlace + " " + Search.form(project)
+        return tokens.allSatisfy { Search.has(place, Search.form($0)) }
     }
 
     /// `match`, with the project as the library shows it, and whether the delivery's own words
