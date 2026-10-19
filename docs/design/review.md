@@ -166,7 +166,7 @@ Built on `feat/review`, 2026-10-19, over the core. [SPEC §5.5](../SPEC.md) gain
 - **Empty**, it offers Add Works…, the project's works in no collection.
 
 **The review page**
-- **What it shows.** The collection's own works. The collections inside it are rows at the top, each showing its own page, so Review All acts only on what the page drew.
+- **What it shows.** The collection's own works, drawn as they scroll into view, so a collection of hundreds plays and reads only what is shown, and images are read no larger than their tiles. The collections inside it are rows at the top, each showing its own page, so Review All acts only on what the page drew.
 - **Review All** gives each work drawn a verdict on the bytes there now: those already given that verdict on these bytes are skipped, as are folders and files gone. Other Files count once opened.
 - **The forms**, all the platform's:
   - video: AVKit's player, its floating controls, at its own aspect up to 420 points tall;
