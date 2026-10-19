@@ -43,25 +43,29 @@ public struct Unpacking: Sendable, Equatable {
     public var notUnpacked: String?
     /// What the listing couldn't see: it stopped at its bound, or a folder in it couldn't be read.
     public var problems: [String]
+    /// The Git repositories inside it, each another project, whose files the listing left out:
+    /// where each is in the folder.
+    public var repositories: [String]
 
-    public init(listedAt: Date, members: Int, notUnpacked: String?, problems: [String]) {
+    public init(listedAt: Date, members: Int, notUnpacked: String?, problems: [String], repositories: [String] = []) {
         self.listedAt = listedAt
         self.members = members
         self.notUnpacked = notUnpacked
         self.problems = problems
+        self.repositories = repositories
     }
 
     /// Whether the folder isn't unpacked because handing it over points at a project: it is a
-    /// repository's own folder or the one its conversation worked in, or holds one of them.
+    /// repository's own folder or the one its conversation worked in, or holds that one.
     public var pointsAtProject: Bool {
-        notUnpacked.map([Self.checkout, Self.repository, Self.holdingRepository, Self.workedIn, Self.holdingWorkedIn].contains) ?? false
+        notUnpacked.map([Self.checkout, Self.repository, Self.workedIn, Self.holdingWorkedIn].contains) ?? false
     }
 
     static let checkout = "a Git checkout’s folder"
     static let repository = "a Git repository"
-    static let holdingRepository = "a folder holding a Git repository"
     static let workedIn = "the folder its conversation worked in"
     static let holdingWorkedIn = "a folder holding the one its conversation worked in"
+    static let package = "a package, which Finder shows as one file"
 }
 
 extension Indexer {
@@ -86,56 +90,60 @@ extension Indexer {
     /// Lists the files of each delivered folder not listed yet (SPEC §5.4): a folder delivered since
     /// the last run, or one a library held before Gleaner listed folders, or one that couldn't be
     /// listed before. A folder is walked as a workspace is (`Workspace.walk`), by metadata only,
-    /// once per run whatever the number of its deliveries; each delivery takes the files its
-    /// reply's time shows were there, and never the hidden ones. A folder that is never unpacked
-    /// (`listability`) keeps why. A delivery's listing and its files are recorded together, so a
-    /// listing that couldn't be recorded is made next run, as is one of a folder that is gone or
-    /// can't be read now. Only the folders of `providers` are listed. Returns, per agent, what
-    /// couldn't be listed or recorded, and the folders whose listing waits, with why.
-    func unpack(at now: Date, providers: Set<Provider>) -> (problems: [Provider: [String]], waiting: [Provider: [String]]) {
+    /// once per run whatever the number of its deliveries, without entering a repository inside it,
+    /// which is another project; each delivery takes the files and packages its reply's time shows
+    /// were there, and never the hidden ones. A package is one of them, a folder, captured as a
+    /// delivered folder is. A folder that is never unpacked (`listability`) keeps why. A delivery's
+    /// listing and its files are recorded together, so a listing that couldn't be recorded is made
+    /// next run, as is one of a folder that is gone or can't be read now. Only the folders of
+    /// `providers` are listed. Returns, per agent, what couldn't be listed or recorded, and the
+    /// folders whose listing waits because they are gone, with why.
+    func unpack(at now: Date, providers: Set<Provider>) -> (problems: [Provider: [String]], gone: [Provider: [String]]) {
         let pending: [Registry.PendingFolder]
         do {
             pending = try registry.pendingFolders().filter { providers.contains($0.provider) }
         } catch {
             return (Dictionary(uniqueKeysWithValues: providers.map { ($0, ["delivered folders not listed: \(error)"]) }), [:])
         }
-        var problems: [Provider: [String]] = [:], waiting: [Provider: [String]] = [:], walks: [String: Workspace.Walk] = [:]
+        var problems: [Provider: [String]] = [:], gone: [Provider: [String]] = [:], walks: [String: Workspace.Walk] = [:]
         for folder in pending {
             var unpacking = Unpacking(listedAt: now, members: 0, notUnpacked: nil, problems: [])
-            var members: [Workspace.File] = []
+            var members: [(file: Workspace.File, provenance: Provenance)] = []
             switch listability(folder) {
             case .later(let reason, let isProblem):
                 if isProblem {
                     problems[folder.provider, default: []].append("\(folder.path): not listed yet, \(reason)")
                 } else {
-                    waiting[folder.provider, default: []].append("\(folder.path): not listed yet, \(reason)")
+                    gone[folder.provider, default: []].append("\(folder.path): not listed yet, \(reason)")
                 }
                 continue
             case .never(let reason):
                 unpacking.notUnpacked = reason
             case .list:
-                let walk = walks[folder.path] ?? Workspace.walk(folder.path, limit: walkLimit, stopsAtRepository: true)
+                let walk = walks[folder.path] ?? Workspace.walk(folder.path, limit: walkLimit, entersRepositories: false)
                 walks[folder.path] = walk
                 guard walk.listedRoot, let deliveredAt = folder.deliveredAt else {
                     problems[folder.provider, default: []].append("\(folder.path): not listed yet, couldn’t be read")
                     continue
                 }
-                if walk.repository != nil {
-                    unpacking.notUnpacked = Unpacking.holdingRepository
-                } else {
-                    let named = namedIdentities(in: folder)
-                    unpacking.problems = walk.problems
-                    members = walk.files.compactMap { file in
-                        guard !(file.path as NSString).lastPathComponent.hasPrefix("."),
-                              Membership.handedOver(file, deliveredAt: deliveredAt, grace: clockTolerance) else { return nil }
-                        var file = file
-                        if let names = named[FileIdentity(device: file.device, inode: file.inode)], !names.contains(file.path) {
-                            file.path = names.min()!
-                        }
-                        return file
+                let named = namedIdentities(in: folder)
+                unpacking.problems = walk.problems
+                unpacking.repositories = walk.repositories.map { String($0.dropFirst(folder.path.count + 1)) }
+                // A package is captured as a delivered folder is: seen at delivery when listed within
+                // the live window of a reply that came after its last write (SPEC §5.1).
+                let live = now.timeIntervalSince(deliveredAt) <= liveWindow
+                members = walk.files.compactMap { file in
+                    guard !(file.path as NSString).lastPathComponent.hasPrefix("."),
+                          Membership.handedOver(file, deliveredAt: deliveredAt, grace: clockTolerance) else { return nil }
+                    var file = file
+                    if let names = named[FileIdentity(device: file.device, inode: file.inode)], !names.contains(file.path) {
+                        file.path = names.min()!
                     }
-                    unpacking.members = members.count
+                    guard file.isPackage else { return (file, .listed) }
+                    let seen = live && file.modifiedAt <= deliveredAt.addingTimeInterval(clockTolerance)
+                    return (file, seen ? .atDelivery : .firstSeenAfterDelivery)
                 }
+                unpacking.members = members.count
             }
             do {
                 try registry.transaction { try registry.record(unpacking, members: members, of: folder.id) }
@@ -143,7 +151,7 @@ extension Indexer {
                 problems[folder.provider, default: []].append("\(folder.path): its files not recorded: \(error)")
             }
         }
-        return (problems, waiting)
+        return (problems, gone)
     }
 
     /// The files in `folder` that its reply's log, or any reply naming a path in it, named in
@@ -165,11 +173,15 @@ extension Indexer {
     /// folder a workspace walk skips; one that holds a person's things rather than one deliverable,
     /// as the home, a volume and a cloud drive do, or a folder directly in one of them, decided by
     /// depth, not names; a cache, or a folder inside a cache or a hidden folder, counted from the
-    /// repository holding it, so an agent's worktree kept in a hidden folder is unpacked as its
-    /// repository's folders are; a Git repository's own folder; or the folder its conversation
-    /// worked in, or one holding it, since handing over the project points at the project, and
-    /// what changed there is observed instead (SPEC §5.3). Not now: a folder gone, no longer one,
-    /// or that can't be read. Compared as the disk has them, as `Workspace.skipped` compares.
+    /// folder holding the Git checkout it is in, so the checkout's own name counts (`~/.config`
+    /// kept as a repository is hidden) and an agent's worktree kept in a hidden folder
+    /// (`.claude/worktrees/<name>`) is unpacked as its repository's folders are, as a workspace
+    /// walk walks it; a package, which Finder shows as one file and no walk enters; a Git
+    /// repository's own folder; or the folder its conversation worked in or its checkout, or one
+    /// holding either, since handing over the project points at the project, and what changed
+    /// there is observed instead (SPEC §5.3). A repository inside it is another project, which its
+    /// listing leaves out. Not now: a folder gone, no longer one, or that can't be read. Compared
+    /// as the disk has them, as `Workspace.skipped` compares.
     func listability(_ folder: Registry.PendingFolder) -> Listability {
         guard folder.deliveredAt != nil else { return .never("named by a reply without a time") }
         var info = Darwin.stat()
@@ -201,7 +213,8 @@ extension Indexer {
             return .never(whole == "a volume" ? "a folder directly on a volume" : "a folder directly in \(whole)")
         }
 
-        let boundary = Projects.resolve(path)?.folder ?? homes.first { path.hasPrefix($0 + "/") } ?? "/"
+        let checkout = Projects.resolve(path)?.folder
+        let boundary = checkout.map { ($0 as NSString).deletingLastPathComponent } ?? homes.first { path.hasPrefix($0 + "/") } ?? "/"
         var inner = path
         while inner != boundary, inner != "/", !inner.isEmpty {
             let name = (inner as NSString).lastPathComponent
@@ -212,6 +225,7 @@ extension Indexer {
             if name.hasPrefix(".") { return .never("inside a hidden folder") }
             inner = (inner as NSString).deletingLastPathComponent
         }
+        if Workspace.isPackage((path as NSString).lastPathComponent) { return .never(Unpacking.package) }
 
         guard let names = try? FileManager.default.contentsOfDirectory(atPath: path) else {
             return .later("couldn’t be read", isProblem: true)
@@ -278,44 +292,55 @@ extension Registry {
     }
 
     /// Records what listing a folder delivery's files found, and each file handed over in it, the
-    /// first time: one already recorded is never rewritten.
-    func record(_ unpacking: Unpacking, members: [Workspace.File], of id: String) throws {
-        try db.run("INSERT OR IGNORE INTO listings (delivery_id, listed_at, members, not_unpacked, problems) VALUES (?, ?, ?, ?, ?)",
-                   [id, unpacking.listedAt, unpacking.members, unpacking.notUnpacked,
-                    unpacking.problems.isEmpty ? nil : String(decoding: try JSONEncoder().encode(unpacking.problems), as: UTF8.self)])
-        for file in members {
+    /// first time: one already recorded is never rewritten. A file waits, listed, for its first
+    /// read; a package, a folder, is recorded as seen at the listing, with its `provenance`.
+    func record(_ unpacking: Unpacking, members: [(file: Workspace.File, provenance: Provenance)], of id: String) throws {
+        let json = { (list: [String]) in list.isEmpty ? nil : String(decoding: try JSONEncoder().encode(list), as: UTF8.self) }
+        try db.run("""
+            INSERT OR IGNORE INTO listings (delivery_id, listed_at, members, not_unpacked, problems, repositories)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """, [id, unpacking.listedAt, unpacking.members, unpacking.notUnpacked, try json(unpacking.problems),
+                  try json(unpacking.repositories)])
+        for (file, provenance) in members {
             try db.run("""
-                INSERT OR IGNORE INTO members (delivery_id, path, size, created_at, modified_at, changed_at, device, inode,
-                    listed_at, provenance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """, [id, file.path, file.size, file.createdAt, file.modifiedAt, file.changedAt, file.device, file.inode,
-                      unpacking.listedAt, Provenance.listed.rawValue])
+                INSERT OR IGNORE INTO members (delivery_id, path, kind, size, created_at, modified_at, changed_at, device, inode,
+                    listed_at, observed_at, provenance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """, [id, file.path, (file.isPackage ? LocatorState.Kind.directory : .file).rawValue, file.size, file.createdAt,
+                      file.modifiedAt, file.changedAt, file.device, file.inode, unpacking.listedAt,
+                      file.isPackage ? unpacking.listedAt : nil, provenance.rawValue])
         }
     }
 
     /// Each file handed over in a delivered folder, as a delivery of its own (SPEC §5.4): a copy of
     /// its folder's delivery (`folders`, by id), whose reply, session, request, time and evidence
     /// it carries without reading them again for each file, with its own id, path and capture,
-    /// listed or read. Only the files at `path`, when given. `after` places them after the rows
-    /// `artifacts` read before, so deliveries of one time keep the order they were read in. A file
-    /// whose folder delivery a reread dropped goes with it.
+    /// listed or read; a package's, a folder's, with no size and none of its files listed. Only the
+    /// files at `path`, when given. `after` places them after the rows `artifacts` read before, so
+    /// deliveries of one time keep the order they were read in. A file whose folder delivery a
+    /// reread dropped goes with it.
     func members(at path: String?, folders: [String: Found], after order: Int) throws -> [Found] {
         try db.rows("""
-            SELECT delivery_id, path, size, modified_at, listed_at, sha256, observed_at, saved_at, provenance FROM members
+            SELECT delivery_id, path, kind, size, created_at, modified_at, listed_at, sha256, observed_at, saved_at, provenance
+            FROM members
             """ + (path == nil ? "" : " WHERE path = ?") + " ORDER BY path, delivery_id", path.map { [$0] } ?? [])
         .enumerated().compactMap { index, row in
             guard let id = row["delivery_id"] as? String, let folder = folders[id], let path = row["path"] as? String,
                   let listed = row["listed_at"] as? Double else { return nil }
+            let kind = LocatorState.Kind(rawValue: row["kind"] as? String ?? "") ?? .file
+            let date = { (key: String) in (row[key] as? Double).map(Date.init(timeIntervalSince1970:)) }
             var found = folder
             found.delivery.id = Membership.id(folder: id, path: path)
             found.delivery.path = path
-            found.delivery.capture = Capture(
-                sha256: row["sha256"] as? String, size: row["size"] as? Int64,
-                modifiedAt: (row["modified_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
-                observedAt: Date(timeIntervalSince1970: row["observed_at"] as? Double ?? listed),
-                savedAt: (row["saved_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
-                provenance: Provenance(rawValue: row["provenance"] as? String ?? "") ?? .listed, kind: .file)
+            var capture = Capture(
+                sha256: row["sha256"] as? String, size: kind == .directory ? nil : row["size"] as? Int64,
+                modifiedAt: date("modified_at"), observedAt: date("observed_at") ?? Date(timeIntervalSince1970: listed),
+                savedAt: date("saved_at"), provenance: Provenance(rawValue: row["provenance"] as? String ?? "") ?? .listed, kind: kind)
+            capture.createdAt = date("created_at")
+            found.delivery.capture = capture
             found.delivery.member = Membership(folderDelivery: id, folder: folder.delivery.path)
-            found.delivery.unpacking = nil
+            found.delivery.unpacking = kind == .directory
+                ? Unpacking(listedAt: Date(timeIntervalSince1970: listed), members: 0, notUnpacked: Unpacking.package, problems: [])
+                : nil
             found.order = order + index
             return found
         }
@@ -340,10 +365,10 @@ extension Registry {
         return named + inFolders.values
     }
 
-    /// A delivered folder's row for `path` not read yet whose listing the file still matches: the
-    /// same inode, creation and modification dates, and size, on the volume the path names. The
-    /// device number isn't compared: a volume mounted again may be given another. With the time of
-    /// the folder's reply.
+    /// A delivered folder's row for `path` listed and not read yet whose listing the file still
+    /// matches: the same inode, creation and modification dates, and size, on the volume the path
+    /// names. The device number isn't compared: a volume mounted again may be given another. With
+    /// the time of the folder's reply.
     struct ListedMember {
         var folder: String
         var deliveredAt: Date?
@@ -352,7 +377,7 @@ extension Registry {
     func listedMembers(of path: String, as file: Workspace.File) throws -> [ListedMember] {
         try db.rows("""
             SELECT m.delivery_id, d.delivered_at FROM members m LEFT JOIN deliveries d ON d.id = m.delivery_id
-            WHERE m.path = ? AND m.sha256 IS NULL AND m.size = ? AND m.modified_at = ? AND m.created_at IS ? AND m.inode = ?
+            WHERE m.path = ? AND m.provenance = 'listed' AND m.size = ? AND m.modified_at = ? AND m.created_at IS ? AND m.inode = ?
             """, [path, file.size, file.modifiedAt, file.createdAt, file.inode]).compactMap { row in
             (row["delivery_id"] as? String).map {
                 ListedMember(folder: $0, deliveredAt: (row["delivered_at"] as? Double).map(Date.init(timeIntervalSince1970:)))

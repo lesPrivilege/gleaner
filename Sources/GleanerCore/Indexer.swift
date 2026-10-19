@@ -106,6 +106,10 @@ public final class Indexer: @unchecked Sendable {
             /// folder directly in it, a project's own folder or one holding it. Not a problem: it
             /// says why the folder stands alone.
             public var foldersNotUnpacked: [String] = []
+            /// Folders its replies delivered that are gone, or no longer folders, each with why: their
+            /// files wait to be listed, and every run tries again, since a volume may come back. Not
+            /// a problem, and shown folded into one row with their count.
+            public var foldersGone: [String] = []
 
             /// Listed, but not everything in it could be read or understood.
             public var hasProblems: Bool {
@@ -256,7 +260,8 @@ public final class Indexer: @unchecked Sendable {
             report.sources[provider]?.workspaceProblems = (problems[provider] ?? []) + (observed.failures[provider] ?? [])
             report.sources[provider]?.unwalkedWorkspaces = unwalked[provider] ?? []
             report.sources[provider]?.folderProblems = (folders.problems[provider] ?? []) + (unpacked.problems[provider] ?? [])
-            report.sources[provider]?.foldersNotUnpacked = (folders.notUnpacked[provider] ?? []) + (unpacked.waiting[provider] ?? [])
+            report.sources[provider]?.foldersNotUnpacked = folders.notUnpacked[provider] ?? []
+            report.sources[provider]?.foldersGone = unpacked.gone[provider] ?? []
         }
         progress(changed.count, changed.count)
         return report

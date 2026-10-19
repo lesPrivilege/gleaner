@@ -528,7 +528,7 @@ struct VersionsSection: View {
                      : "Same as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))")
                     .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).layoutPriority(1)
             } else if let alike = sameSizeAndDates(delivery) {
-                Text(Wording.sameSizeAndDates(alike, named: alike.path != delivery.path))
+                Text(Wording.sameSizeAndDates(alike, as: delivery, named: alike.path != delivery.path))
                     .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).layoutPriority(1)
             }
             Spacer(minLength: Space.s)
@@ -572,14 +572,17 @@ struct VersionsSection: View {
     }
 
     /// For a delivery Gleaner hasn't read: an earlier one of the same file, else of another, with the
-    /// same size and modification date, recorded as the file was at that delivery: listed with its
-    /// folder, which counts only a file unchanged since the reply (SPEC §5.4), or read at delivery.
-    /// One read later records the file as it was then. Only that is said, never "same as".
+    /// same size, modification date and creation date where both recorded one, recorded as the file
+    /// was at that delivery: listed with its folder, which counts only a file unchanged since the
+    /// reply (SPEC §5.4), or read at delivery. One read later records the file as it was then. Only
+    /// that is said, never "same as".
     func sameSizeAndDates(_ delivery: Delivery) -> Delivery? {
         guard delivery.sha256 == nil, let size = delivery.capture?.size, let modified = delivery.capture?.modifiedAt else { return nil }
+        let created = delivery.capture?.createdAt
         let earlier = work.deliveries.drop { $0.id != delivery.id }.dropFirst()
         let alike = { (d: Delivery) in
             (d.member != nil || d.capture?.provenance == .atDelivery) && d.capture?.size == size && d.capture?.modifiedAt == modified
+                && (created == nil || d.capture?.createdAt == nil || d.capture?.createdAt == created)
         }
         return earlier.first { $0.path == delivery.path && alike($0) } ?? earlier.first(where: alike)
     }
@@ -590,7 +593,7 @@ struct VersionsSection: View {
         if let earlier, earlier.path != delivery.path {
             line += ", same bytes as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))"
         } else if earlier == nil, let alike = sameSizeAndDates(delivery) {
-            line += ", " + Wording.sameSizeAndDates(alike, named: alike.path != delivery.path).lowercased()
+            line += ", " + Wording.sameSizeAndDates(alike, as: delivery, named: alike.path != delivery.path).lowercased()
         }
         if delivery.id == selected.id { line += ", shown" }
         return work.files.count > 1 ? (delivery.path as NSString).lastPathComponent + ", " + line : line

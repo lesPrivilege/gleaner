@@ -237,6 +237,29 @@ import Testing
         #expect(candidate.latest.kind == .changed && candidate.inRepository && candidate.project == repo.path)
     }
 
+    /// A build that makes an app: Finder shows the app as one file, so it is observed as one, by its
+    /// own dates under the same rule, and nothing inside it is.
+    @Test func aBuiltAppIsObservedAsOneEntry() throws {
+        let project = try folder("Projects/mac")
+        try file("Sources/main.swift", in: project, created: minutes(-500))
+        let app = project.appendingPathComponent("build/Foo.app")
+        try file("Contents/Info.plist", in: app, created: minutes(17))
+        try file("Contents/MacOS/Foo", in: app, created: minutes(17))
+        try Self.date(app, created: minutes(17), modified: minutes(17))
+        try file("build/build.log", in: project, created: minutes(17))
+        // An app built long before isn't placed in the session, as an old file isn't.
+        let old = project.appendingPathComponent("build/Old.app")
+        try file("Contents/Info.plist", in: old, created: minutes(-500))
+        try Self.date(old, created: minutes(-500), modified: minutes(-500))
+        try session("mac", in: project, from: t0, to: minutes(30), reply: "Built the app.")
+        _ = try indexer.run()
+
+        let observed = try observed()
+        #expect(names(observed.map(\.path)) == ["Foo.app", "build.log"])
+        let package = try #require(observed.first { $0.path == app.path })
+        #expect(package.kind == .appeared && package.createdAt == minutes(17))
+    }
+
     // MARK: rules
 
     @Test func readingTheLogAgainFindsTheSameObservations() throws {

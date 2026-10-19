@@ -72,11 +72,11 @@ public final class Registry: @unchecked Sendable {
                 repository TEXT, checkout TEXT, observed_at REAL NOT NULL, PRIMARY KEY (path, log_path)) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS listings (
                 delivery_id TEXT PRIMARY KEY, listed_at REAL NOT NULL, members INTEGER NOT NULL, not_unpacked TEXT,
-                problems TEXT) WITHOUT ROWID;
+                problems TEXT, repositories TEXT) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS members (
-                delivery_id TEXT NOT NULL, path TEXT NOT NULL, size INTEGER NOT NULL, created_at REAL, modified_at REAL NOT NULL,
-                changed_at REAL NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL, listed_at REAL NOT NULL,
-                sha256 TEXT, observed_at REAL, saved_at REAL, provenance TEXT NOT NULL,
+                delivery_id TEXT NOT NULL, path TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL, created_at REAL,
+                modified_at REAL NOT NULL, changed_at REAL NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL,
+                listed_at REAL NOT NULL, sha256 TEXT, observed_at REAL, saved_at REAL, provenance TEXT NOT NULL,
                 PRIMARY KEY (path, delivery_id)) WITHOUT ROWID;
             """)
         // Each change of several statements is made whole or not at all: a launch that stops partway,
@@ -416,7 +416,7 @@ public final class Registry: @unchecked Sendable {
             SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.request, d.evidence, d.model,
                    s.provider, s.title, d.log_path, d.session_id, s.cwd AS session_cwd, s.model_provider,
                    c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind, c.repository, c.checkout,
-                   l.listed_at, l.members, l.not_unpacked, l.problems
+                   l.listed_at, l.members, l.not_unpacked, l.problems, l.repositories
             FROM deliveries d JOIN sessions s ON s.id = d.session_id
             LEFT JOIN captures c ON c.delivery_id = d.id
             LEFT JOIN listings l ON l.delivery_id = d.id
@@ -435,7 +435,8 @@ public final class Registry: @unchecked Sendable {
             var delivery = Self.delivery(row, id: id, path: path, capture: capture, evidence: Self.evidence(row["evidence"] as? String))
             delivery.unpacking = (row["listed_at"] as? Double).map { listed in
                 Unpacking(listedAt: Date(timeIntervalSince1970: listed), members: Int(row["members"] as? Int64 ?? 0),
-                          notUnpacked: row["not_unpacked"] as? String, problems: Self.list(row["problems"] as? String))
+                          notUnpacked: row["not_unpacked"] as? String, problems: Self.list(row["problems"] as? String),
+                          repositories: Self.list(row["repositories"] as? String))
             }
             return Found(delivery: delivery, repository: row["repository"] as? String, checkout: row["checkout"] as? String,
                          order: index)
@@ -451,7 +452,6 @@ public final class Registry: @unchecked Sendable {
         var order: Int
         var location: Artifact.Location?
     }
-
 
     /// A delivery from a row of `deliveries` joined with its session: the reply's own fields, and
     /// those given.

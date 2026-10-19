@@ -119,8 +119,8 @@ struct AgentSourcePage: View {
                                paths: source.unwalkedWorkspaces, isProblem: false)
                 ProblemSection(title: "Delivered Folders Listed in Part", footer: "Files in them may be missing from what was handed over with them. A folder Gleaner couldn’t read is listed once it can. The folders stay delivered.",
                                paths: source.folderProblems)
-                ProblemSection(title: "Delivered Folders Not Unpacked", footer: "Their files aren’t listed one by one. Gleaner doesn’t unpack the home folder, a volume or a cloud drive, or a folder directly in one; a link; a cache, or a folder inside a cache or a hidden folder; a project’s own folder or one holding it, whose changes are observed instead; or what it doesn’t walk. A folder that’s gone is listed if it comes back.",
-                               paths: source.foldersNotUnpacked, isProblem: false)
+                ProblemSection(title: "Delivered Folders Not Unpacked", footer: "Their files aren’t listed one by one. Gleaner doesn’t unpack the home folder, a volume or a cloud drive, or a folder directly in one; a link; a cache, or a folder inside a cache or a hidden folder; a package, which Finder shows as one file; a project’s own folder or one holding it, whose changes are observed instead; or what it doesn’t walk. A folder that’s gone is listed if it comes back.",
+                               paths: source.foldersNotUnpacked, isProblem: false, gone: source.foldersGone)
                 if !source.unknownRecordTypes.isEmpty {
                     Section {
                         ForEach(source.unknownRecordTypes.sorted { $0.key < $1.key }, id: \.key) { type, count in
@@ -179,30 +179,40 @@ struct ProblemSection: View {
     var paths: [String]
     /// False for a list that explains rather than warns.
     var isProblem = true
+    /// Folders that are gone, folded into one row with their count and opened on demand: each says
+    /// the same, and a line each would bury the rest.
+    var gone: [String] = []
 
     var body: some View {
-        if !paths.isEmpty {
+        if !paths.isEmpty || !gone.isEmpty {
             Section {
-                ForEach(paths, id: \.self) { entry in
-                    // A failure reads "path: reason"; the path is what Finder can show.
-                    let path = String(entry.split(separator: ":", maxSplits: 1).first ?? Substring(entry))
-                    HStack(spacing: Space.s) {
-                        Text(Wording.tilde(entry)).font(.system(.callout, design: .monospaced))
-                            .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
-                        Spacer(minLength: Space.s)
-                        Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
-                            .controlRole(.inline)
-                            .disabled(Locator.stat(path).kind == .missing)
+                ForEach(paths, id: \.self, content: row)
+                if !gone.isEmpty {
+                    DisclosureGroup(Wording.foldersGone(gone.count)) {
+                        ForEach(gone, id: \.self, content: row)
                     }
                 }
             } header: {
                 HStack(spacing: Space.xs + 2) {
                     if isProblem { GlyphView(glyph: .warning, size: 12).foregroundStyle(Palette.attention) }
-                    Text("\(title) (\(paths.count))")
+                    Text("\(title) (\(paths.count + gone.count))")
                 }
             } footer: {
                 Text(footer)
             }
+        }
+    }
+
+    func row(_ entry: String) -> some View {
+        // A failure reads "path: reason"; the path is what Finder can show.
+        let path = String(entry.split(separator: ":", maxSplits: 1).first ?? Substring(entry))
+        return HStack(spacing: Space.s) {
+            Text(Wording.tilde(entry)).font(.system(.callout, design: .monospaced))
+                .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+            Spacer(minLength: Space.s)
+            Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                .controlRole(.inline)
+                .disabled(Locator.stat(path).kind == .missing)
         }
     }
 }

@@ -1,4 +1,6 @@
 import Foundation
+import Synchronization
+import UniformTypeIdentifiers
 
 /// A file found on the disk whose dates fall in a session's span, in the session's workspace
 /// (docs/design/capture.md). It shows that the file appeared or changed while the session was
@@ -179,7 +181,8 @@ public enum Workspace {
     /// and no output folder is: `dist` or `build` may hold what was asked for.
     static let caches: Set<String> = ["node_modules", "__pycache__", "DerivedData"]
 
-    /// A regular file as a walk found it, without opening it.
+    /// A regular file as a walk found it, without opening it; or a package, which Finder shows as
+    /// one file (`isPackage`), by its own metadata.
     struct File: Sendable, Equatable {
         var path: String
         var size: Int64
@@ -191,6 +194,8 @@ public enum Workspace {
         var changedAt: Date
         var device: Int64
         var inode: Int64
+        /// A folder the system declares a package (`isPackage`): one entry, never entered.
+        var isPackage = false
     }
 
     /// What one walk found, and why it may not be everything: it stopped at its bound, or a folder
@@ -198,9 +203,9 @@ public enum Workspace {
     struct Walk: Sendable {
         var files: [File] = []
         var problems: [String] = []
-        /// Where a walk that stops at a repository stopped: the first folder it found that is one
-        /// (`isRepository`). What it found before is only part of the folder.
-        var repository: String?
+        /// The folders below the root a walk that doesn't enter repositories left out, each one
+        /// (`isRepository`), in walk order.
+        var repositories: [String] = []
         /// Whether the root itself could be listed: when it couldn't, the walk saw nothing of it.
         var listedRoot = false
     }
@@ -257,12 +262,28 @@ public enum Workspace {
         names.contains(".git") || ["HEAD", "objects", "refs"].allSatisfy(names.contains)
     }
 
+    /// Whether a folder named `name` is a package, which Finder shows as one file (an app, an Xcode
+    /// project, an RTFD document, a bundle): its extension's type, as the system declares it for a
+    /// folder, conforms to `UTType.package`. That is structure the system gives, not a type Gleaner
+    /// picks. Each extension is looked up once.
+    static func isPackage(_ name: String) -> Bool {
+        let ext = (name as NSString).pathExtension.lowercased()
+        guard !ext.isEmpty else { return false }
+        if let known = packages.withLock({ $0[ext] }) { return known }
+        let package = UTType(filenameExtension: ext, conformingTo: .directory)?.conforms(to: .package) == true
+        packages.withLock { $0[ext] = package }
+        return package
+    }
+
+    private static let packages = Mutex<[String: Bool]>([:])
+
     /// Lists every regular file under `root`, by name, size, dates and identity; never opens one.
-    /// Doesn't enter hidden folders, caches, or folders on another volume, and doesn't follow
-    /// links. Folders are read in name order, so a walk cut at `limit` entries stops at the same
-    /// place each time. With `stopsAtRepository`, it stops at the first folder that is a Git
-    /// repository's own (`isRepository`).
-    static func walk(_ root: String, limit: Int = limit, stopsAtRepository: Bool = false) -> Walk {
+    /// A package (`isPackage`) is listed as one entry by its own metadata, never entered. Doesn't
+    /// enter hidden folders, caches, or folders on another volume, and doesn't follow links.
+    /// Folders are read in name order, so a walk cut at `limit` entries stops at the same place
+    /// each time. Without `entersRepositories`, a folder below the root that is a Git repository's
+    /// own (`isRepository`), another project, is left out whole and named in `repositories`.
+    static func walk(_ root: String, limit: Int = limit, entersRepositories: Bool = true) -> Walk {
         var walk = Walk(), seen = 0
         var info = Darwin.stat()
         // stat(2), following a linked root, by the name `Locator.stat` uses: the struct's name hides the function's.
@@ -281,9 +302,9 @@ public enum Workspace {
                 continue
             }
             if folder == root { walk.listedRoot = true }
-            if stopsAtRepository, isRepository(Set(names)) {
-                walk.repository = folder
-                return walk
+            if !entersRepositories, folder != root, isRepository(Set(names)) {
+                walk.repositories.append(folder)
+                continue
             }
             if names.contains("CACHEDIR.TAG") { continue }
             var inner: [String] = []
@@ -296,6 +317,10 @@ public enum Workspace {
                 let path = folder + "/" + name
                 guard lstat(path, &info) == 0 else { continue }
                 switch info.st_mode & S_IFMT {
+                case S_IFDIR where !name.hasPrefix(".") && info.st_dev == volume && isPackage(name):
+                    var package = file(path, info)
+                    package.isPackage = true
+                    walk.files.append(package)
                 case S_IFDIR where !name.hasPrefix(".") && !caches.contains(name) && info.st_dev == volume:
                     inner.append(path)
                 case S_IFREG:

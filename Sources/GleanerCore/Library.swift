@@ -28,6 +28,9 @@ public struct Capture: Sendable, Equatable {
     /// never observed, nothing, a file Gleaner couldn't read, or one that isn't a regular file; or,
     /// with no hash and listed, a file listed with its folder and not read yet.
     public var kind: LocatorState.Kind
+    /// The file's creation date, recorded only for one of a delivered folder's files, as listed
+    /// (SPEC §5.4); nil for a file whose reply named it.
+    public var createdAt: Date? = nil
 
     public var isDirectory: Bool { kind == .directory }
 

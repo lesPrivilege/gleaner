@@ -224,16 +224,51 @@ import Testing
         #expect(search.project == repo.path && search.latest.inRepository && search.latest.checkout?.folder == repo.path)
     }
 
+    // MARK: packages
+
+    /// Finder shows a package (an app, an RTFD document) as one file, so a delivered folder holding
+    /// one hands it over as one: a folder, listed and not versioned, none of its own files listed.
+    /// A package a reply names itself isn't unpacked.
+    @Test func aPackageInADeliveredFolderIsOneOfItsFiles() throws {
+        let project = try folder("Projects/tool")
+        let build = project.appendingPathComponent("build")
+        let app = build.appendingPathComponent("Foo.app")
+        try file("Contents/Info.plist", in: app, created: minutes(10))
+        try file("Contents/MacOS/Foo", in: app, created: minutes(10))
+        try file("Contents/Resources/icon.icns", in: app, created: minutes(10))
+        let notes = build.appendingPathComponent("notes.rtfd")
+        try file("TXT.rtf", in: notes, created: minutes(10))
+        try file("README.md", in: build, created: minutes(10))
+        // An extension the system doesn't declare a package is a folder like any other.
+        try file("Foo.framework/Headers/Foo.h", in: build, created: minutes(10))
+        try session("tool", in: project, asked: t0, replied: minutes(60), reply: "Built into [build](build/).",
+                    more: [(minutes(61), minutes(62), "Open [the app](build/Foo.app).")])
+        let report = try indexer.run(now: { self.minutes(63) })
+        #expect(report.sources[.claudeCode]?.folderProblems == [])
+
+        let organization = try organization()
+        let listed = try indexer.registry.db.rows("SELECT path FROM members").compactMap { $0["path"] as? String }
+        #expect(names(listed) == ["Foo.app", "Foo.h", "README.md", "notes.rtfd"])
+        #expect(inFolders(organization) == ["Foo.h", "README.md", "notes.rtfd"])
+        let member = try #require(try artifact(app.path).deliveries.first { $0.member != nil })
+        #expect(member.capture?.kind == .directory && member.capture?.size == nil && member.sha256 == nil)
+        #expect(member.capture?.provenance == .atDelivery && member.unpacking?.notUnpacked == "a package, which Finder shows as one file")
+        #expect(try artifact(notes.path).kind == .folder && artifact(app.path).kind == .folder)
+        #expect(!organization.works.contains { ["Info.plist", "Foo", "icon.icns", "TXT.rtf"].contains($0.name) })
+        // Nothing in it is read.
+        #expect(try !indexer.completeCaptures(of: notes.path, now: minutes(64)))
+        // Named itself, it stands alone.
+        let named = try #require(try artifact(app.path).deliveries.first { $0.member == nil })
+        #expect(named.unpacking?.notUnpacked == "a package, which Finder shows as one file")
+        #expect(report.sources[.claudeCode]?.foldersNotUnpacked == ["\(app.path): not unpacked, a package, which Finder shows as one file"])
+    }
+
     // MARK: folders not unpacked
 
     @Test func aProjectsOwnFolderTheHomeOrAFolderDirectlyInItIsNotUnpacked() throws {
         let repo = try folder("work/app")
         try FileManager.default.createDirectory(at: repo.appendingPathComponent(".git"), withIntermediateDirectories: true)
         try file("README.md", in: repo, created: minutes(10))
-        let clients = try folder("work/clients")
-        try FileManager.default.createDirectory(at: clients.appendingPathComponent("beta/app/.git"), withIntermediateDirectories: true)
-        try file("beta/app/main.swift", in: clients, created: minutes(10))
-        try file("brief.md", in: clients, created: minutes(10))
         let desktop = try folder("Desktop")
         try file("today.png", in: desktop, created: minutes(10))
         // Outside git, the folder a conversation worked in is its project, and so is one holding it.
@@ -242,24 +277,23 @@ import Testing
         let essays = try folder("work/essays")
         let draft = try folder("work/essays/draft")
         try file("essay.md", in: draft, created: minutes(10))
-        let links = [repo, clients, desktop, home].map { "[\($0.lastPathComponent)](\($0.path))" }.joined(separator: ", ")
+        let links = [repo, desktop, home].map { "[\($0.lastPathComponent)](\($0.path))" }.joined(separator: ", ")
         try session("repo", in: repo, asked: t0, replied: minutes(60), reply: "Handed over: \(links).")
         try session("site", in: site, asked: t0, replied: minutes(60), reply: "The [site](\(site.path)) is done.")
         try session("essay", in: draft, asked: t0, replied: minutes(60), reply: "All the [essays](\(essays.path)).")
         let report = try indexer.run()
 
-        let reasons = Dictionary(uniqueKeysWithValues: try [repo, clients, desktop, home, site, essays].map { url in
+        let reasons = Dictionary(uniqueKeysWithValues: try [repo, desktop, home, site, essays].map { url in
             (url.lastPathComponent, try artifact(url.path).latest.unpacking?.notUnpacked)
         })
         #expect(reasons["app"] == "a Git checkout’s folder")
-        #expect(reasons["clients"] == "a folder holding a Git repository")
         #expect(reasons["Desktop"] == "a folder directly in the home")
         #expect(reasons["home"] == "the home folder or a folder holding it")
         #expect(reasons["site"] == "the folder its conversation worked in")
         #expect(reasons["essays"] == "a folder holding the one its conversation worked in")
         #expect(try indexer.registry.db.rows("SELECT 1 FROM members").isEmpty)
         // Said in Sources, under the agent, and not as a problem.
-        #expect(report.sources[.claudeCode]?.foldersNotUnpacked.count == 6)
+        #expect(report.sources[.claudeCode]?.foldersNotUnpacked.count == 5)
         #expect(report.sources[.claudeCode]?.foldersNotUnpacked.contains("\(desktop.path): not unpacked, a folder directly in the home") == true)
         #expect(report.sources[.claudeCode]?.hasProblems == false)
     }
@@ -277,11 +311,13 @@ import Testing
     }
 
     /// A folder inside a hidden folder holds what Finder hides, settings and their tokens among
-    /// them; one inside a cache, what a tool rebuilds. Neither is unpacked, however deep. Counted
-    /// from the repository holding the folder, an agent's worktree kept in a hidden folder is
-    /// unpacked as any of its repository's folders.
+    /// them; one inside a cache, what a tool rebuilds. Neither is unpacked, however deep, nor when
+    /// the hidden folder is itself a repository, as `~/.config` kept in git is. Counted from the
+    /// folder holding the checkout, an agent's worktree kept in a hidden folder is unpacked as any of
+    /// its repository's folders, as a workspace walk walks it.
     @Test func aFolderInsideAHiddenFolderOrACacheIsNotUnpacked() throws {
         let gh = try folder(".config/gh")
+        try FileManager.default.createDirectory(at: home.appendingPathComponent(".config/.git"), withIntermediateDirectories: true)
         try file("hosts.yml", in: gh, created: minutes(10), text: "oauth_token: synthetic")
         let repo = try folder("Projects/tool")
         try FileManager.default.createDirectory(at: repo.appendingPathComponent(".git"), withIntermediateDirectories: true)
@@ -297,6 +333,7 @@ import Testing
         let dist = worktree.appendingPathComponent("dist")
         try file("app.js", in: dist, created: minutes(10))
 
+        #expect(Projects.resolve(gh.path)?.folder == home.path + "/.config")
         let reasons = try notUnpacked([gh.path, release.path, cargo.path, widget.path], cwd: repo)
         #expect(reasons == [".config/gh": "inside a hidden folder", ".build/release": "inside a hidden folder",
                             "target/release": "inside a cache a tool left", "widget/dist": "inside a cache a tool left"])
@@ -304,6 +341,9 @@ import Testing
         #expect(search("hosts", in: organization).isEmpty && search("oauth", in: organization).isEmpty)
         #expect(((try? FileManager.default.contentsOfDirectory(atPath: indexer.store.objects.path)) ?? []).isEmpty)
 
+        // As layer 1 decides for the same folders: the worktree is walked, the hidden repository isn't.
+        #expect(Workspace.skipped(worktree.path, home: home.path, own: indexer.ownFolders) == nil)
+        #expect(Workspace.skipped(home.path + "/.config", home: home.path, own: indexer.ownFolders) == "a hidden folder")
         try session("worktree", in: worktree, asked: t0, replied: minutes(60), reply: "Built into [dist](dist/).")
         _ = try indexer.run()
         #expect(try members(of: dist.path) == 1)
@@ -349,12 +389,46 @@ import Testing
         try file("config", in: site, created: minutes(10), text: "url = https://user:synthetic@example.com/site")
         try file("objects/ab/cdef", in: site, created: minutes(10))
         try file("refs/heads/main", in: site, created: minutes(10))
-        let git = site.deletingLastPathComponent()
 
-        let reasons = try notUnpacked([web.path, web.deletingLastPathComponent().path, site.path, git.path], cwd: web)
+        let reasons = try notUnpacked([web.path, web.deletingLastPathComponent().path, site.path], cwd: web)
         #expect(reasons == ["packages/web": "the folder its conversation worked in",
                             "mono/packages": "a folder holding the one its conversation worked in",
-                            "git/site.git": "a Git repository", "work/git": "a folder holding a Git repository"])
+                            "git/site.git": "a Git repository"])
+    }
+
+    /// A repository inside a delivered folder (a theme kept as a submodule, a vendored bare
+    /// repository) is another project: the folder's other files are listed, none of the
+    /// repository's, and the folder says which it was listed without. A folder holding the one a
+    /// conversation worked in, or its checkout, is that project, and isn't unpacked.
+    @Test func aFolderHoldingARepositoryIsListedWithoutIt() throws {
+        let project = try folder("Projects/blog")
+        let site = project.appendingPathComponent("site")
+        try file("index.html", in: site, created: minutes(10))
+        try file("css/style.css", in: site, created: minutes(10))
+        try file("themes/README.md", in: site, created: minutes(10))
+        let theme = site.appendingPathComponent("themes/t")
+        try file(".git", in: theme, created: minutes(10), text: "gitdir: ../../.git/modules/t")
+        try file("layouts/base.html", in: theme, created: minutes(10))
+        let vendored = site.appendingPathComponent("vendor/lib.git")
+        try file("HEAD", in: vendored, created: minutes(10), text: "ref: refs/heads/main")
+        try file("config", in: vendored, created: minutes(10), text: "url = https://user:synthetic@example.com/lib")
+        try file("objects/ab/cdef", in: vendored, created: minutes(10))
+        try file("refs/heads/main", in: vendored, created: minutes(10))
+        try session("blog", in: project, asked: t0, replied: minutes(60), reply: "The [site](site/) is built.")
+        // Another conversation worked inside the theme: handing over the site points at its project.
+        try session("theme", in: theme.appendingPathComponent("layouts"), asked: t0, replied: minutes(60),
+                    reply: "The [site](\(site.path)/) uses the theme now.")
+        let report = try indexer.run()
+
+        let deliveries = try artifact(site.path).deliveries
+        let listed = try #require(deliveries.compactMap(\.unpacking).first { $0.notUnpacked == nil })
+        #expect(listed.members == 3 && listed.repositories == ["themes/t", "vendor/lib.git"] && listed.problems.isEmpty)
+        #expect(deliveries.compactMap(\.unpacking?.notUnpacked) == ["a folder holding the one its conversation worked in"])
+        let paths = try indexer.registry.db.rows("SELECT DISTINCT path FROM members").compactMap { $0["path"] as? String }
+        #expect(names(paths) == ["README.md", "index.html", "style.css"])
+        let organization = try organization()
+        #expect(search("base", in: organization).isEmpty && search("config", in: organization).isEmpty)
+        #expect(report.sources[.claudeCode]?.foldersNotUnpacked == ["\(site.path): not unpacked, a folder holding the one its conversation worked in"])
     }
 
     /// A folder gone, or one Gleaner can't read, isn't listed now and waits: the next run that can
@@ -376,17 +450,20 @@ import Testing
         #expect(try indexer.registry.pendingFolders().map(\.path).sorted() == [gone.path, locked.path, out.path])
         #expect(report.sources[.claudeCode]?.folderProblems.sorted() == ["\(locked.path): not listed yet, couldn’t be read",
                                                                           "\(out.path): not listed yet, couldn’t be read"])
-        #expect(report.sources[.claudeCode]?.foldersNotUnpacked == ["\(gone.path): not listed yet, no longer there"])
+        // Gone is said apart, to be shown folded: a removed worktree may leave many, and a volume may come back.
+        #expect(report.sources[.claudeCode]?.foldersGone == ["\(gone.path): not listed yet, no longer there"])
+        #expect(report.sources[.claudeCode]?.foldersNotUnpacked == [])
         #expect(try artifact(out.path).latest.unpacking == nil)
         // Each run says so again until it can list them.
-        #expect(try indexer.run().sources[.claudeCode]?.folderProblems.count == 2)
+        let again = try indexer.run().sources[.claudeCode]
+        #expect(again?.folderProblems.count == 2 && again?.foldersGone.count == 1)
 
         #expect(chmod(shut.path, 0o755) == 0 && chmod(locked.path, 0o755) == 0)
         try file("c.png", in: gone, created: minutes(10))
         report = try indexer.run()
         #expect(try indexer.registry.pendingFolders().isEmpty)
         #expect(try members(of: out.path) == 1 && members(of: locked.path) == 1 && members(of: gone.path) == 1)
-        #expect(report.sources[.claudeCode]?.folderProblems == [] && report.sources[.claudeCode]?.foldersNotUnpacked == [])
+        #expect(report.sources[.claudeCode]?.folderProblems == [] && report.sources[.claudeCode]?.foldersGone == [])
     }
 
     /// A reply that names a folder and the file in it in another spelling delivers the file once,

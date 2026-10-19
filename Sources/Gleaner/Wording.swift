@@ -549,7 +549,8 @@ enum Wording {
             let project = unpacking.pointsAtProject ? " Handing over a project’s own folder points at the project; what changed there is observed instead." : ""
             return Statement(mark: .na, title: "Not unpacked", detail: "Gleaner doesn’t list its files as handed over: it is \(reason).\(project)")
         }
-        let listed = "Listed \(date(unpacking.listedAt)) by name, size and dates, without reading them: the files their dates show were in it, unchanged, when the reply named it, hidden ones left out. Each is read when you select, open, compare or hand it on."
+        let listed = "Listed \(date(unpacking.listedAt)) by name, size and dates, without reading them: the files their dates show were in it, unchanged, when the reply named it, hidden ones left out and a package as one. Each file is read when you select, open, compare or hand it on."
+            + without(unpacking.repositories)
         guard unpacking.problems.isEmpty else {
             return Statement(mark: .attention, title: "\(count(unpacking.members, "file")), listed in part",
                              detail: listed + " The listing couldn’t see everything: " + unpacking.problems.map(tilde).joined(separator: "; ") + ".")
@@ -557,9 +558,26 @@ enum Wording {
         return Statement(mark: .done, title: count(unpacking.members, "file"), detail: listed)
     }
 
-    /// Before Gleaner reads two deliveries' bytes, all it can say is that their size and dates match.
-    static func sameSizeAndDates(_ earlier: Delivery, named: Bool) -> String {
-        "Same size and dates as " + (named ? (earlier.path as NSString).lastPathComponent + " " : "") + number(earlier)
+    /// The repositories a folder's listing left out, each another project, named by where they are in it.
+    private static func without(_ repositories: [String]) -> String {
+        switch repositories.count {
+        case 0: ""
+        case 1: " It was listed without the Git repository inside it, \(repositories[0]), which is another project."
+        default: " It was listed without the Git repositories inside it, which are other projects: \(repositories.joined(separator: ", "))."
+        }
+    }
+
+    /// Before Gleaner reads two deliveries' bytes, all it can say is that their size and dates match:
+    /// "dates" when both recorded the file's creation date with its modification date, else the
+    /// modification date alone.
+    static func sameSizeAndDates(_ earlier: Delivery, as delivery: Delivery, named: Bool) -> String {
+        let dates = earlier.capture?.createdAt != nil && delivery.capture?.createdAt != nil ? "dates" : "modification date"
+        return "Same size and \(dates) as " + (named ? (earlier.path as NSString).lastPathComponent + " " : "") + number(earlier)
+    }
+
+    /// Delivered folders that are gone, folded into one row in Sources.
+    static func foldersGone(_ n: Int) -> String {
+        count(n, "folder") + " gone"
     }
 
     /// What the adapter leaves out: these aren't replies to the person (SPEC §8).

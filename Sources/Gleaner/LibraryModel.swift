@@ -203,18 +203,71 @@ final class LibraryModel {
     /// Puts `artifact` in place of the file at its path, after Gleaner first read the file or saved
     /// a copy of it: only that file's deliveries changed, so nothing else is read or worked out
     /// again, however large the library (SPEC §5.4). Its work takes it in place, wherever it is
-    /// listed; joins suggested from its new hash wait for the next read of the library.
+    /// listed; joins suggested from its new hash wait for the next read of the library. When only
+    /// its captures changed, as a first read or a saved copy changes them, nothing that lists or
+    /// groups works moved: the lists already made keep their rows, with the work as it is now, and
+    /// the files its replies named with it list its deliveries as they are now.
     private func replace(_ artifact: Artifact) {
         guard let index = library.firstIndex(where: { $0.path == artifact.path }) else { return }
         library[index] = artifact
         guard let shown = Self.shown([artifact], without: sourcesOff).first,
               let place = artifacts.firstIndex(where: { $0.path == artifact.path }) else { return }
+        let before = artifacts[place]
         artifacts[place] = shown
-        // A delivered folder's files aren't among the files a reply named with others.
-        if shown.deliveries.contains(where: { $0.member == nil }) { siblings = Artifact.deliveredWith(artifacts) }
         saved.formUnion(shown.deliveries.compactMap(\.sha256).filter(indexer.store.has))
         organization = organization.replacing(shown)
-        organizationVersion += 1
+        guard Self.capturesOnly(before, shown), let work = organization.work(containing: shown.path) else {
+            // A delivered folder's files aren't among the files a reply named with others.
+            if shown.deliveries.contains(where: { $0.member == nil }) { siblings = Artifact.deliveredWith(artifacts) }
+            organizationVersion += 1
+            return
+        }
+        for delivery in shown.deliveries where delivery.member == nil {
+            for other in siblings[delivery.id] ?? [] {
+                siblings[other.id] = siblings[other.id]?.map { $0.id == delivery.id ? delivery : $0 }
+            }
+        }
+        refreshLists(work)
+    }
+
+    /// Whether `new` differs from `old` only in what was recorded of its bytes: the same deliveries,
+    /// at the same times, named or handed over in folders as before, folders as before, in the same
+    /// place. What lists, orders, folds and finds a work is then the same.
+    private static func capturesOnly(_ old: Artifact, _ new: Artifact) -> Bool {
+        old.projectFolder == new.projectFolder && old.inRepository == new.inRepository && old.checkout == new.checkout
+            && old.deliveries.count == new.deliveries.count
+            && zip(old.deliveries, new.deliveries).allSatisfy { a, b in
+                a.id == b.id && a.deliveredAt == b.deliveredAt && a.member == b.member && a.capture?.isDirectory == b.capture?.isDirectory
+            }
+    }
+
+    /// Puts `work`, as it is now, in place of itself in the results and the outline already made,
+    /// which keep their rows and order, each result keeping the delivery it matched.
+    private func refreshLists(_ work: Work) {
+        let id = work.id
+        func refreshed(_ result: SearchResult) -> SearchResult {
+            guard result.work.id == id else { return result }
+            return SearchResult(work: work, matched: work.deliveries.first { $0.id == result.matched.id } ?? work.deliveries[0])
+        }
+        // Changed in place: a copy of either list held meanwhile would copy every row.
+        if let at = resultsCache?.results.firstIndex(where: { $0.id == id }), let result = resultsCache?.results[at] {
+            resultsCache?.results[at] = refreshed(result)
+        }
+        guard var cached = outlineCache, let project = organization.project(cached.project) else { return }
+        let name = outlineFolder(work, in: project)
+        guard let folder = cached.outline.firstIndex(where: { $0.folder == name }),
+              let at = cached.outline[folder].items.firstIndex(where: {
+                  switch $0 {
+                  case .work(let result): result.id == id
+                  case .folded(_, _, let results): results.contains { $0.id == id }
+                  }
+              }) else { return }
+        outlineCache = nil
+        cached.outline[folder].items[at] = switch cached.outline[folder].items[at] {
+        case .work(let result): .work(refreshed(result))
+        case .folded(let key, let kind, let results): .folded(key: key, kind: kind, results: results.map(refreshed))
+        }
+        outlineCache = cached
     }
 
     /// Reads the deliveries of the file at `path` again, off the main thread, after Gleaner first
@@ -240,8 +293,9 @@ final class LibraryModel {
         status = Wording.library(works: organization.works.count, deliveries: artifacts.map(\.deliveries.count).reduce(0, +))
     }
 
-    /// Bumped with each rebuilt organization, so a listing made before is never reused after.
-    @ObservationIgnored private var organizationVersion = 0
+    /// Bumped with each organization rebuilt or changed in a way that moves what lists or groups a
+    /// work, so a listing made before is never reused after.
+    @ObservationIgnored private(set) var organizationVersion = 0
 
     /// Only what is shown to be gone: a file Gleaner can't reach is unreadable, not missing.
     private static func missing(_ artifacts: [Artifact]) -> Set<String> {

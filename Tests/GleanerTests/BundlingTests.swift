@@ -156,6 +156,68 @@ import Testing
         await #expect(throws: (any Error).self) { try await dropped(model.dragItem(other.latest, other.latest.latest)) }
     }
 
+    /// A first read changes what Gleaner recorded of one file's bytes and nothing that lists, orders,
+    /// folds or finds works: the list and the outline already made keep their rows, with the work
+    /// as read now, and are not made again.
+    @Test func aFirstReadPutsTheWorkInPlaceInTheListsAlreadyMade() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let frame = try work(model, "frame-03.png")
+        let project = try #require(model.organization.project(frame.project))
+        model.place = .project(project.key)
+        let outline = model.outline(of: project)
+        let version = model.organizationVersion
+        model.selection = frame.id
+        await model.observe(frame.latest)
+
+        #expect(model.organizationVersion == version)
+        let read = try #require(model.results.first { $0.id == frame.id }).work.latest.latest
+        #expect(read.capture?.provenance == .atDelivery && read.sha256 != nil)
+        #expect(model.selected?.work.latest.latest.sha256 == read.sha256)
+        let after = model.outline(of: project)
+        #expect(after.map(\.folder) == outline.map(\.folder) && after.map(\.count) == outline.map(\.count))
+        #expect(after.map { $0.items.map(\.id) } == outline.map { $0.items.map(\.id) })
+        guard case .folded(_, _, let frames)? = after.last?.items.first else { Issue.record("expected the frames folded"); return }
+        #expect(frames.first { $0.id == frame.id }?.work.latest.latest.sha256 == read.sha256)
+        #expect(frames.filter { $0.work.latest.latest.sha256 != nil }.count == 1)
+        // Its row reads from what is recorded now: the file read, nothing to say.
+        #expect(model.rowStatus(try #require(model.result(for: try work(model, "frame-03.png")))).mark == nil)
+        #expect(model.rowHandoff(try work(model, "frame-03.png").latest, read) == .bytes(sha: read.sha256!))
+    }
+
+    /// A file handed over in a folder delivered twice, read once: both listings are completed, and
+    /// the newer is the same as the older, in the lists already made.
+    @Test func aFileHandedOverTwiceAndReadOnceIsTheSameAsBefore() async throws {
+        try session(reply: "The [film](out/).", more: [(70, 80, "The [film](out/) again.")])
+        _ = try indexer.run()
+        let model = LibraryModel(indexer: indexer)
+        let cut = try work(model, "cut.mp4")
+        _ = model.results
+        let version = model.organizationVersion
+        await model.observe(cut.latest)
+
+        #expect(model.organizationVersion == version)
+        let read = try #require(model.results.first { $0.id == cut.id }).work
+        #expect(read.deliveries.count == 2 && read.deliveries.allSatisfy { $0.sha256 != nil })
+        #expect(VersionsSection(work: read, selected: read.deliveries[0]).sameAs(read.deliveries[0])?.id == read.deliveries[1].id)
+    }
+
+    /// A file a reply named that Gleaner first reads later is shown, with its bytes, beside the other
+    /// files that reply named.
+    @Test func aFirstReadOfANamedFileShowsBesideTheFilesItsReplyNamed() async throws {
+        try session(reply: "The [brief](brief.md) and the [film](out/).", more: [(70, 80, "The [brief](brief.md) and the [cast](cast.md).")])
+        _ = try indexer.run()
+        try file("cast.md", text: "cast")
+        let model = LibraryModel(indexer: indexer)
+        let brief = try work(model, "brief.md"), cast = try work(model, "cast.md")
+        #expect(model.siblings[brief.deliveries[0].id]?.map(\.path) == [cast.latest.path])
+        #expect(model.siblings[brief.deliveries[0].id]?.first?.sha256 == nil)
+
+        await model.observe(cast.latest)
+        let read = try #require(model.siblings[brief.deliveries[0].id]?.first)
+        #expect(read.sha256 != nil && read.capture?.provenance == .firstSeenAfterDelivery)
+        #expect(read.sha256 == (try work(model, "cast.md")).latest.latest.sha256)
+    }
+
     // MARK: Versions and corrections
 
     @Test func aFolderDeliveredAgainGivesEachFileAVersionWithSizeAndDatesCompared() throws {
@@ -168,7 +230,33 @@ import Testing
         let versions = VersionsSection(work: cut, selected: cut.deliveries[0])
         #expect(versions.sameAs(cut.deliveries[0]) == nil)
         #expect(versions.sameSizeAndDates(cut.deliveries[0])?.id == cut.deliveries[1].id)
-        #expect(Wording.sameSizeAndDates(cut.deliveries[1], named: false) == "Same size and dates as 1")
+        #expect(Wording.sameSizeAndDates(cut.deliveries[1], as: cut.deliveries[0], named: false) == "Same size and dates as 1")
+    }
+
+    /// Size, modification and creation dates are compared as far as both deliveries recorded them,
+    /// and "dates" is said only when all of them were.
+    @Test func sizeAndDatesAreSaidToMatchOnlyAsFarAsBothRecordedThem() {
+        func delivery(_ number: Int, created: Date?, member: Bool, provenance: Provenance) -> Delivery {
+            var capture = Capture(sha256: nil, size: 3, modifiedAt: t0, observedAt: t0, savedAt: nil, provenance: provenance, kind: .file)
+            capture.createdAt = created
+            var delivery = Delivery(id: "\(number)", number: number, path: "/p/out/cut.mp4", deliveredAt: t0.addingTimeInterval(Double(number)),
+                                    provider: .claudeCode, sessionTitle: nil, request: nil, cwd: "/p", evidence: [], logPath: "/l",
+                                    capture: capture)
+            if member { delivery.member = Membership(folderDelivery: "f\(number)", folder: "/p/out") }
+            return delivery
+        }
+        let listed = delivery(2, created: t0, member: true, provenance: .listed)
+        func said(_ earlier: Delivery) -> String? {
+            let work = Work(files: [Artifact(path: listed.path, deliveries: [listed, earlier])], deliveries: [listed, earlier], project: "/p")
+            return VersionsSection(work: work, selected: listed).sameSizeAndDates(listed).map {
+                Wording.sameSizeAndDates($0, as: listed, named: false)
+            }
+        }
+        #expect(said(delivery(1, created: t0, member: true, provenance: .listed)) == "Same size and dates as 1")
+        // A file a reply named records no creation date: its modification date alone is compared.
+        #expect(said(delivery(1, created: nil, member: false, provenance: .atDelivery)) == "Same size and modification date as 1")
+        // Created at another time, it is another file with the same size and modification date.
+        #expect(said(delivery(1, created: t0.addingTimeInterval(-60), member: true, provenance: .listed)) == nil)
     }
 
     /// A delivery read long after its reply recorded the file's size and dates as they were then,
@@ -254,6 +342,14 @@ import Testing
             let detail = Wording.unpacking(Unpacking(listedAt: t0, members: 0, notUnpacked: reason, problems: [])).detail
             #expect(detail == "Gleaner doesn’t list its files as handed over: it is \(reason).")
         }
+        // A repository inside the folder, another project, is named where it is.
+        let without = Wording.unpacking(Unpacking(listedAt: t0, members: 3, notUnpacked: nil, problems: [], repositories: ["themes/t"]))
+        #expect(without.title == "3 files" && without.mark == .done)
+        #expect(without.detail.hasSuffix("It was listed without the Git repository inside it, themes/t, which is another project."))
+        let package = Unpacking(listedAt: t0, members: 0, notUnpacked: "a package, which Finder shows as one file", problems: [])
+        #expect(!package.pointsAtProject && Wording.unpacking(package).detail.hasSuffix("it is a package, which Finder shows as one file."))
+        // Folders gone are counted in one row.
+        #expect(Wording.foldersGone(1) == "1 folder gone" && Wording.foldersGone(12) == "12 folders gone")
         let partial = Unpacking(listedAt: t0, members: 40, notUnpacked: nil, problems: ["/p/out: stopped after 40 entries"])
         #expect(Wording.unpacking(partial).mark == .attention && Wording.unpacking(partial).title == "40 files, listed in part")
         var source = Indexer.Report.Source(folder: .listed)
