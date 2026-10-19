@@ -134,4 +134,19 @@ import Testing
         #expect(row["repository"] as? String == "/var/x/app")
         #expect(try reopened.captures(logPath: "/l.jsonl", path: "/tmp/p/report.md").map(\.id) == ["d"])
     }
+
+    /// A library a later Gleaner opened is left as it is: its version isn't set back, so that Gleaner
+    /// finds it as it left it, and no table is made or changed.
+    @Test func aLibraryOfALaterGleanerIsRefusedUnchanged() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString).sqlite").path
+        let later = Registry.extractorVersion + 1
+        do {
+            let db = try Database(path: path)
+            try db.execute("CREATE TABLE later (x INTEGER); PRAGMA user_version = \(later);")
+        }
+        #expect(throws: Registry.Failure.newer(version: later)) { try Registry(path: path) }
+        let db = try Database(path: path)
+        #expect(try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 == Int64(later))
+        #expect(try db.rows("SELECT name FROM sqlite_master").compactMap { $0["name"] as? String } == ["later"])
+    }
 }
