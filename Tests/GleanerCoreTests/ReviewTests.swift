@@ -153,6 +153,24 @@ import Testing
         #expect(FileStat(locked) == nil && Locator.stat(locked).kind == .file)
     }
 
+    @Test func aRewriteInPlaceThatPutsTheDatesBackIsNotAsShown() throws {
+        let video = try write("out/ep02.mp4", "take one", modified: at(1))
+        let shown = try #require(FileStat(video))
+        // Rewritten in place, same size, its dates put back as `cp -p` does: the inode's change time tells (R1).
+        let handle = try #require(FileHandle(forWritingAtPath: video))
+        try handle.write(contentsOf: Data("take two".utf8))
+        try handle.close()
+        try FileManager.default.setAttributes([.modificationDate: shown.modifiedAt, .creationDate: try #require(shown.createdAt)],
+                                              ofItemAtPath: video)
+        let now = try #require(FileStat(video))
+        // As the library compares a file, it is as it was: the review states don't move on a touch alone.
+        #expect(now == shown)
+        #expect(!now.isUnchanged(since: shown))
+        #expect(throws: Review.Failure.changedSinceShown) { try indexer.review(video, as: .approved, shown: shown, at: at(3)) }
+        #expect(try indexer.registry.reviews().isEmpty)
+        #expect(try indexer.review(video, as: .approved, shown: now, at: at(3)).sha256 == sha256("take two"))
+    }
+
     @Test func aFileGoneAfterALaterDeliveryKeepsNoVerdictOnBytesNoOneJudged() throws {
         let video = try write("out/ep01.mp4", "take one", modified: at(1))
         let approved = try indexer.review(video, as: .approved, at: at(2))

@@ -2,18 +2,25 @@ import Foundation
 
 /// A file's size, dates and inode, as `stat` gives them without reading its bytes: what tells
 /// whether a file is still as it was when its bytes were read, as a listed file is matched (SPEC
-/// §5.4).
+/// §5.4). Read from the disk, it also holds the inode's change time and the device, which only a
+/// verdict's check compares (`isUnchanged(since:)`); the library keeps neither.
 public struct FileStat: Sendable, Equatable {
     public var size: Int64
     public var createdAt: Date?
     public var modifiedAt: Date
     public var inode: Int64
+    /// When the inode last changed, its bytes or its metadata: nil unless read from the disk.
+    public var changedAt: Date?
+    /// The device the file is on: nil unless read from the disk.
+    public var device: Int64?
 
-    public init(size: Int64, createdAt: Date?, modifiedAt: Date, inode: Int64) {
+    public init(size: Int64, createdAt: Date?, modifiedAt: Date, inode: Int64, changedAt: Date? = nil, device: Int64? = nil) {
         self.size = size
         self.createdAt = createdAt
         self.modifiedAt = modifiedAt
         self.inode = inode
+        self.changedAt = changedAt
+        self.device = device
     }
 
     /// The regular file at `path` that Gleaner may read, a link followed as a delivered link is
@@ -26,7 +33,16 @@ public struct FileStat: Sendable, Equatable {
         func date(_ time: timespec) -> Date { Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_nsec) / 1e9) }
         let born = info.st_birthtimespec
         self.init(size: Int64(info.st_size), createdAt: born.tv_sec > 0 ? date(born) : nil, modifiedAt: date(info.st_mtimespec),
-                  inode: Int64(bitPattern: UInt64(info.st_ino)))
+                  inode: Int64(bitPattern: UInt64(info.st_ino)), changedAt: date(info.st_ctimespec), device: Int64(info.st_dev))
+    }
+
+    /// Whether the file is still as `shown`, both read from the disk: also by its change time and
+    /// device, which a rewrite that keeps the size and puts back the modification date (`cp -p`)
+    /// moves. Something that only touches the metadata moves them too, and the person is then only
+    /// asked to look again. A verdict needs this much; the review states compare as the library
+    /// stores a file (`==`), so such a touch doesn't make them say the file may have changed.
+    public func isUnchanged(since shown: FileStat) -> Bool {
+        self == shown && changedAt == shown.changedAt && device == shown.device
     }
 
     /// Dates are compared as the library stores them, in seconds since 1970: a date made again
@@ -211,7 +227,7 @@ extension Indexer {
     /// Makes a verdict or a published mark on the file at `path`, on the bytes there now: reads
     /// them, the person's action, saves a small file's bytes as a first read does, and records their
     /// hash with the file's size, dates and inode. `shown` is the file as the person was shown it;
-    /// when it isn't so now, nothing is made, since they may not have judged these bytes. Nothing is
+    /// when it isn't so now, by its change time and device too (`isUnchanged(since:)`), nothing is made, since they may not have judged these bytes. Nothing is
     /// made either when the file changes while it is read. The read completes what a first read of
     /// the file completes (`completeCaptures`). A larger file's bytes are kept only when the person
     /// asks, by `saveCopy(of:)` once the verdict is made.
@@ -220,11 +236,11 @@ extension Indexer {
             let kind = Locator.stat(path).kind
             throw Review.Failure.notAFile(kind == .file ? .unreadable : kind)
         }
-        if let shown, shown != before { throw Review.Failure.changedSinceShown }
+        if let shown, !before.isUnchanged(since: shown) { throw Review.Failure.changedSinceShown }
         let file = Workspace.file(at: path)
         let read = capture(path, deliveredAt: nil, now: now)
         guard let sha = read.sha256 else { throw Review.Failure.notAFile(.unreadable) }
-        guard read.size == before.size, FileStat(path) == before else { throw Review.Failure.changedWhileRead }
+        guard read.size == before.size, FileStat(path)?.isUnchanged(since: before) == true else { throw Review.Failure.changedWhileRead }
         let note = note?.trimmingCharacters(in: .whitespacesAndNewlines)
         return try registry.transaction {
             try registry.complete(capturesOf: path, with: read)
