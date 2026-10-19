@@ -7,14 +7,10 @@ public struct Membership: Sendable, Equatable {
     /// The folder's delivery, and the folder as its reply named it.
     public var folderDelivery: String
     public var folder: String
-    /// The file's inode changed after the reply, so it may have been changed or replaced since it
-    /// was handed over. Decided when the folder was listed, and never rewritten.
-    public var changedSince: Bool
 
-    public init(folderDelivery: String, folder: String, changedSince: Bool) {
+    public init(folderDelivery: String, folder: String) {
         self.folderDelivery = folderDelivery
         self.folder = folder
-        self.changedSince = changedSince
     }
 
     /// The id of the delivery of `path` handed over in the folder delivery `folder`, the same on
@@ -24,16 +20,15 @@ public struct Membership: Sendable, Equatable {
     }
 
     /// Whether `file`, found in a folder a reply named at `deliveredAt`, was handed over with it,
-    /// from its dates alone: created by then, it was; created later, it was added after and isn't
-    /// (nil). One handed over whose inode changed after the reply may have been changed or replaced
-    /// since (true). A volume without creation dates shows only that: a file whose inode changed
-    /// after the reply isn't shown to have been there, and isn't counted. `grace` absorbs the
-    /// granularity of the log's clock and the disk's.
-    static func changedSince(_ file: Workspace.File, deliveredAt: Date, grace: TimeInterval) -> Bool? {
+    /// from its dates alone: only when it was created by then and its inode last changed by then,
+    /// so what was listed is what the folder held at the reply. A file whose inode changed after the
+    /// reply isn't shown to have been there: one moved or linked in, or copied in keeping its dates,
+    /// carries a creation date from before the reply, and only its change date tells. It is missed
+    /// rather than claimed, as `Workspace.place` misses one. On a volume without creation dates the
+    /// change date alone decides. `grace` absorbs the granularity of the log's clock and the disk's.
+    static func handedOver(_ file: Workspace.File, deliveredAt: Date, grace: TimeInterval) -> Bool {
         let by = deliveredAt.addingTimeInterval(grace)
-        let changed = file.changedAt > by
-        guard let created = file.createdAt else { return changed ? nil : false }
-        return created <= by ? changed : nil
+        return file.changedAt <= by && (file.createdAt ?? file.changedAt) <= by
     }
 }
 
@@ -44,7 +39,7 @@ public struct Unpacking: Sendable, Equatable {
     /// How many files were handed over in it.
     public var members: Int
     /// Why its files aren't listed (the home folder, a folder directly in it, a project's own
-    /// folder…); nil when they are.
+    /// folder…), in words that complete "it is"; nil when they are.
     public var notUnpacked: String?
     /// What the listing couldn't see: it stopped at its bound, or a folder in it couldn't be read.
     public var problems: [String]
@@ -55,72 +50,178 @@ public struct Unpacking: Sendable, Equatable {
         self.notUnpacked = notUnpacked
         self.problems = problems
     }
+
+    /// Whether the folder isn't unpacked because handing it over points at a project: it is a
+    /// repository's own folder or the one its conversation worked in, or holds one of them.
+    public var pointsAtProject: Bool {
+        notUnpacked.map([Self.checkout, Self.repository, Self.holdingRepository, Self.workedIn, Self.holdingWorkedIn].contains) ?? false
+    }
+
+    static let checkout = "a Git checkout’s folder"
+    static let repository = "a Git repository"
+    static let holdingRepository = "a folder holding a Git repository"
+    static let workedIn = "the folder its conversation worked in"
+    static let holdingWorkedIn = "a folder holding the one its conversation worked in"
 }
 
 extension Indexer {
+    /// What listing a delivered folder's files does now (SPEC §5.4).
+    enum Listability: Equatable {
+        case list
+        /// Its files are never listed, for this reason, kept with the folder.
+        case never(String)
+        /// Not now: the folder is gone, isn't one, or can't be read. Its listing waits for a run
+        /// that can make it, since whenever that is, it claims only what the dates show.
+        case later(String, isProblem: Bool)
+    }
+
+    /// A file Gleaner read while reading the logs, as it was then: what completes the listings of
+    /// the folders that hold it, once the run has listed them.
+    struct Read {
+        var path: String
+        var capture: Capture
+        var file: Workspace.File?
+    }
+
     /// Lists the files of each delivered folder not listed yet (SPEC §5.4): a folder delivered since
-    /// the last run, or one a library held before Gleaner listed folders. A folder is walked as a
-    /// workspace is (`Workspace.walk`), by metadata only, once per run whatever the number of its
-    /// deliveries; each delivery takes the files its reply's time shows were there, and never the
-    /// hidden ones. A folder that is a project's own, or holds one, the home or a folder directly in
-    /// it, or what a workspace walk skips, isn't unpacked, and why is kept. A delivery's listing and
-    /// its files are recorded together, so a listing that couldn't be recorded is made next run.
-    /// Only the folders of `providers` are listed. Returns, per agent, what couldn't be recorded.
-    func unpack(at now: Date, providers: Set<Provider>) -> [Provider: [String]] {
+    /// the last run, or one a library held before Gleaner listed folders, or one that couldn't be
+    /// listed before. A folder is walked as a workspace is (`Workspace.walk`), by metadata only,
+    /// once per run whatever the number of its deliveries; each delivery takes the files its
+    /// reply's time shows were there, and never the hidden ones. A folder that is never unpacked
+    /// (`listability`) keeps why. A delivery's listing and its files are recorded together, so a
+    /// listing that couldn't be recorded is made next run, as is one of a folder that is gone or
+    /// can't be read now. Only the folders of `providers` are listed. Returns, per agent, what
+    /// couldn't be listed or recorded, and the folders whose listing waits, with why.
+    func unpack(at now: Date, providers: Set<Provider>) -> (problems: [Provider: [String]], waiting: [Provider: [String]]) {
         let pending: [Registry.PendingFolder]
         do {
             pending = try registry.pendingFolders().filter { providers.contains($0.provider) }
         } catch {
-            return Dictionary(uniqueKeysWithValues: providers.map { ($0, ["delivered folders not listed: \(error)"]) })
+            return (Dictionary(uniqueKeysWithValues: providers.map { ($0, ["delivered folders not listed: \(error)"]) }), [:])
         }
-        var failures: [Provider: [String]] = [:], walks: [String: Workspace.Walk] = [:]
+        var problems: [Provider: [String]] = [:], waiting: [Provider: [String]] = [:], walks: [String: Workspace.Walk] = [:]
         for folder in pending {
-            var unpacking = Unpacking(listedAt: now, members: 0, notUnpacked: notUnpacked(folder), problems: [])
-            var members: [(file: Workspace.File, changedSince: Bool)] = []
-            if unpacking.notUnpacked == nil, let deliveredAt = folder.deliveredAt {
-                let walk = walks[folder.path] ?? Workspace.walk(folder.path, limit: walkLimit, stopsAtCheckout: true)
-                walks[folder.path] = walk
-                if walk.checkout != nil {
-                    unpacking.notUnpacked = "a folder holding a Git checkout"
+            var unpacking = Unpacking(listedAt: now, members: 0, notUnpacked: nil, problems: [])
+            var members: [Workspace.File] = []
+            switch listability(folder) {
+            case .later(let reason, let isProblem):
+                if isProblem {
+                    problems[folder.provider, default: []].append("\(folder.path): not listed yet, \(reason)")
                 } else {
+                    waiting[folder.provider, default: []].append("\(folder.path): not listed yet, \(reason)")
+                }
+                continue
+            case .never(let reason):
+                unpacking.notUnpacked = reason
+            case .list:
+                let walk = walks[folder.path] ?? Workspace.walk(folder.path, limit: walkLimit, stopsAtRepository: true)
+                walks[folder.path] = walk
+                guard walk.listedRoot, let deliveredAt = folder.deliveredAt else {
+                    problems[folder.provider, default: []].append("\(folder.path): not listed yet, couldn’t be read")
+                    continue
+                }
+                if walk.repository != nil {
+                    unpacking.notUnpacked = Unpacking.holdingRepository
+                } else {
+                    let named = namedIdentities(in: folder)
                     unpacking.problems = walk.problems
                     members = walk.files.compactMap { file in
-                        guard !(file.path as NSString).lastPathComponent.hasPrefix(".") else { return nil }
-                        return Membership.changedSince(file, deliveredAt: deliveredAt, grace: clockTolerance).map { (file: file, changedSince: $0) }
+                        guard !(file.path as NSString).lastPathComponent.hasPrefix("."),
+                              Membership.handedOver(file, deliveredAt: deliveredAt, grace: clockTolerance) else { return nil }
+                        var file = file
+                        if let names = named[FileIdentity(device: file.device, inode: file.inode)], !names.contains(file.path) {
+                            file.path = names.min()!
+                        }
+                        return file
                     }
+                    unpacking.members = members.count
                 }
             }
             do {
                 try registry.transaction { try registry.record(unpacking, members: members, of: folder.id) }
             } catch {
-                failures[folder.provider, default: []].append("\(folder.path): its files not recorded: \(error)")
+                problems[folder.provider, default: []].append("\(folder.path): its files not recorded: \(error)")
             }
         }
-        return failures
+        return (problems, waiting)
     }
 
-    /// Why a delivered folder's files aren't listed, or nil when they are. Handing over a project's
-    /// own folder (a Git checkout's, or the one its conversation worked in), or a folder holding
-    /// one, points at the project, and what changed there is observed instead (SPEC §5.3). Nor are
-    /// the home folder, a folder directly in it, which holds the person's things rather than one
-    /// deliverable, or a folder a workspace walk skips or doesn't enter. Compared as the disk has
-    /// them, as `Workspace.skipped` compares.
-    func notUnpacked(_ folder: Registry.PendingFolder) -> String? {
-        guard folder.deliveredAt != nil else { return "its reply carries no time" }
-        guard Locator.stat(folder.path).kind == .directory else { return "no longer a folder" }
-        if let reason = Workspace.skipped(folder.path, home: home, own: ownFolders) { return reason }
+    /// The files in `folder` that its reply's log, or any reply naming a path in it, named in
+    /// another spelling (another case, a linked folder), by identity: a walked file is listed
+    /// under the name a reply gave it, so a reply that named the folder and the file delivers it
+    /// once, as named, and its deliveries number together.
+    private func namedIdentities(in folder: Registry.PendingFolder) -> [FileIdentity: [String]] {
+        let root = Workspace.resolved(folder.path) + "/"
+        var named: [FileIdentity: [String]] = [:]
+        for path in (try? registry.namedPaths(logs: [folder.logPath], under: folder.path)) ?? []
+        where Workspace.resolved(path).hasPrefix(root) {
+            if let id = FileIdentity(path) { named[id, default: []].append(path) }
+        }
+        return named
+    }
+
+    /// Whether a delivered folder's files are listed (SPEC §5.4). Never: a folder named by a reply
+    /// without a time, which dates can't be compared with; a link, since no link is followed; a
+    /// folder a workspace walk skips; one that holds a person's things rather than one deliverable,
+    /// as the home, a volume and a cloud drive do, or a folder directly in one of them, decided by
+    /// depth, not names; a cache, or a folder inside a cache or a hidden folder, counted from the
+    /// repository holding it, so an agent's worktree kept in a hidden folder is unpacked as its
+    /// repository's folders are; a Git repository's own folder; or the folder its conversation
+    /// worked in, or one holding it, since handing over the project points at the project, and
+    /// what changed there is observed instead (SPEC §5.3). Not now: a folder gone, no longer one,
+    /// or that can't be read. Compared as the disk has them, as `Workspace.skipped` compares.
+    func listability(_ folder: Registry.PendingFolder) -> Listability {
+        guard folder.deliveredAt != nil else { return .never("named by a reply without a time") }
+        var info = Darwin.stat()
+        if lstat(folder.path, &info) == 0, info.st_mode & S_IFMT == S_IFLNK { return .never("a link") }
+        switch Locator.stat(folder.path).kind {
+        case .directory: break
+        case .missing: return .later("no longer there", isProblem: false)
+        case .file, .special: return .later("no longer a folder", isProblem: false)
+        case .unreadable: return .later("couldn’t be read", isProblem: true)
+        }
+        if let reason = Workspace.skipped(folder.path, home: home, own: ownFolders) { return .never(reason) }
         let path = Workspace.resolved(folder.path)
-        if Set([home, NSHomeDirectory()].map(Workspace.resolved)).contains((path as NSString).deletingLastPathComponent) {
-            return "a folder directly in the home"
+        let homes = Set([home, NSHomeDirectory()].map(Workspace.resolved))
+
+        func device(_ path: String) -> dev_t? {
+            var info = Darwin.stat()
+            return fstatat(AT_FDCWD, path, &info, 0) == 0 ? info.st_dev : nil
         }
-        if Workspace.caches.contains((path as NSString).lastPathComponent) || FileManager.default.fileExists(atPath: path + "/CACHEDIR.TAG") {
-            return "a cache a tool left"
+        /// What a folder is when it holds a person's things, as the home does.
+        func whole(_ folder: String) -> String? {
+            if homes.contains(folder) { return "the home" }
+            let parent = (folder as NSString).deletingLastPathComponent
+            if homes.contains(where: { [$0 + "/Library/CloudStorage", $0 + "/Library/Mobile Documents"].contains(parent) }) { return "a cloud drive" }
+            return folder == "/" || device(folder) != device(parent) ? "a volume" : nil
         }
-        if FileManager.default.fileExists(atPath: path + "/.git") { return "a Git checkout’s folder" }
-        let roots = folder.workingFolders.map { Workspace.resolved(Workspace.root(of: $0) ?? $0) }
-        if roots.contains(path) { return "the folder its conversation worked in" }
-        if roots.contains(where: { $0.hasPrefix(path == "/" ? "/" : path + "/") }) { return "a folder holding the one its conversation worked in" }
-        return nil
+        // The home itself is skipped above.
+        if let whole = whole(path) { return .never(whole) }
+        if let whole = whole((path as NSString).deletingLastPathComponent) {
+            return .never(whole == "a volume" ? "a folder directly on a volume" : "a folder directly in \(whole)")
+        }
+
+        let boundary = Projects.resolve(path)?.folder ?? homes.first { path.hasPrefix($0 + "/") } ?? "/"
+        var inner = path
+        while inner != boundary, inner != "/", !inner.isEmpty {
+            let name = (inner as NSString).lastPathComponent
+            if Workspace.caches.contains(name) || FileManager.default.fileExists(atPath: inner + "/CACHEDIR.TAG") {
+                return .never(inner == path ? "a cache a tool left" : "inside a cache a tool left")
+            }
+            // The folder's own name is checked by `Workspace.skipped`.
+            if name.hasPrefix(".") { return .never("inside a hidden folder") }
+            inner = (inner as NSString).deletingLastPathComponent
+        }
+
+        guard let names = try? FileManager.default.contentsOfDirectory(atPath: path) else {
+            return .later("couldn’t be read", isProblem: true)
+        }
+        if names.contains(".git") { return .never(Unpacking.checkout) }
+        if Workspace.isRepository(Set(names)) { return .never(Unpacking.repository) }
+        let roots = folder.workingFolders.flatMap { [Workspace.resolved($0), Workspace.resolved(Workspace.root(of: $0) ?? $0)] }
+        if roots.contains(path) { return .never(Unpacking.workedIn) }
+        if roots.contains(where: { $0.hasPrefix(path + "/") }) { return .never(Unpacking.holdingWorkedIn) }
+        return .list
     }
 
     /// Completes the rows of `path`'s deliveries in folders whose listing the file still matches,
@@ -141,13 +242,14 @@ extension Indexer {
 }
 
 extension Registry {
-    /// A delivered folder whose files wait to be listed, with the folders its conversation worked
-    /// in, as its records and its walk name them.
+    /// A delivered folder whose files wait to be listed, with its reply's log and the folders its
+    /// conversation worked in, as its records and its walk name them.
     struct PendingFolder {
         var id: String
         var path: String
         var deliveredAt: Date?
         var provider: Provider
+        var logPath: String
         var workingFolders: [String]
     }
 
@@ -170,55 +272,52 @@ extension Registry {
                 worked[log] = cwds + walked
             }
             return PendingFolder(id: id, path: path, deliveredAt: (row["delivered_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
-                                 provider: provider,
+                                 provider: provider, logPath: log,
                                  workingFolders: ([row["session_cwd"] as? String].compactMap { $0 } + worked[log]!).map(standardPath))
         }
     }
 
     /// Records what listing a folder delivery's files found, and each file handed over in it, the
     /// first time: one already recorded is never rewritten.
-    func record(_ unpacking: Unpacking, members: [(file: Workspace.File, changedSince: Bool)], of id: String) throws {
-        try db.run("INSERT OR IGNORE INTO listings (delivery_id, listed_at, not_unpacked, problems) VALUES (?, ?, ?, ?)",
-                   [id, unpacking.listedAt, unpacking.notUnpacked,
+    func record(_ unpacking: Unpacking, members: [Workspace.File], of id: String) throws {
+        try db.run("INSERT OR IGNORE INTO listings (delivery_id, listed_at, members, not_unpacked, problems) VALUES (?, ?, ?, ?, ?)",
+                   [id, unpacking.listedAt, unpacking.members, unpacking.notUnpacked,
                     unpacking.problems.isEmpty ? nil : String(decoding: try JSONEncoder().encode(unpacking.problems), as: UTF8.self)])
-        for (file, changed) in members {
+        for file in members {
             try db.run("""
                 INSERT OR IGNORE INTO members (delivery_id, path, size, created_at, modified_at, changed_at, device, inode,
-                    changed_since, listed_at, provenance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    listed_at, provenance) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, [id, file.path, file.size, file.createdAt, file.modifiedAt, file.changedAt, file.device, file.inode,
-                      changed ? 1 : 0, unpacking.listedAt, Provenance.listed.rawValue])
+                      unpacking.listedAt, Provenance.listed.rawValue])
         }
     }
 
-    /// Each file handed over in a delivered folder, as a delivery of its own (SPEC §5.4): its
-    /// folder's reply, session, request, time and evidence, and its own capture, listed or read.
-    /// `after` places them after the rows `artifacts` read before, so deliveries of one time keep
-    /// the order they were read in. A folder delivery that a reread dropped takes its files with it.
-    func members(after order: Int) throws -> [Found] {
-        var evidence: [String: [Evidence]] = [:]
-        return try db.rows("""
-            SELECT m.path, m.size, m.modified_at, m.changed_since, m.listed_at, m.sha256, m.observed_at, m.saved_at, m.provenance,
-                   d.id, d.path AS folder, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.request, d.evidence, d.model,
-                   s.provider, s.title, d.log_path, d.session_id, s.cwd AS session_cwd, s.model_provider, c.repository, c.checkout
-            FROM members m JOIN deliveries d ON d.id = m.delivery_id JOIN sessions s ON s.id = d.session_id
-            LEFT JOIN captures c ON c.delivery_id = d.id
-            ORDER BY m.path, d.delivered_at
-            """).enumerated().compactMap { index, row in
-            guard let path = row["path"] as? String, let folder = row["id"] as? String, let listed = row["listed_at"] as? Double
-            else { return nil }
-            if evidence[folder] == nil { evidence[folder] = Self.evidence(row["evidence"] as? String) }
-            let capture = Capture(
+    /// Each file handed over in a delivered folder, as a delivery of its own (SPEC §5.4): a copy of
+    /// its folder's delivery (`folders`, by id), whose reply, session, request, time and evidence
+    /// it carries without reading them again for each file, with its own id, path and capture,
+    /// listed or read. Only the files at `path`, when given. `after` places them after the rows
+    /// `artifacts` read before, so deliveries of one time keep the order they were read in. A file
+    /// whose folder delivery a reread dropped goes with it.
+    func members(at path: String?, folders: [String: Found], after order: Int) throws -> [Found] {
+        try db.rows("""
+            SELECT delivery_id, path, size, modified_at, listed_at, sha256, observed_at, saved_at, provenance FROM members
+            """ + (path == nil ? "" : " WHERE path = ?") + " ORDER BY path, delivery_id", path.map { [$0] } ?? [])
+        .enumerated().compactMap { index, row in
+            guard let id = row["delivery_id"] as? String, let folder = folders[id], let path = row["path"] as? String,
+                  let listed = row["listed_at"] as? Double else { return nil }
+            var found = folder
+            found.delivery.id = Membership.id(folder: id, path: path)
+            found.delivery.path = path
+            found.delivery.capture = Capture(
                 sha256: row["sha256"] as? String, size: row["size"] as? Int64,
                 modifiedAt: (row["modified_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
                 observedAt: Date(timeIntervalSince1970: row["observed_at"] as? Double ?? listed),
                 savedAt: (row["saved_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
                 provenance: Provenance(rawValue: row["provenance"] as? String ?? "") ?? .listed, kind: .file)
-            var delivery = Self.delivery(row, id: Membership.id(folder: folder, path: path), path: path, capture: capture,
-                                         evidence: evidence[folder]!)
-            delivery.member = Membership(folderDelivery: folder, folder: row["folder"] as? String ?? "",
-                                         changedSince: row["changed_since"] as? Int64 == 1)
-            return Found(delivery: delivery, repository: row["repository"] as? String, checkout: row["checkout"] as? String,
-                         order: order + index)
+            found.delivery.member = Membership(folderDelivery: id, folder: folder.delivery.path)
+            found.delivery.unpacking = nil
+            found.order = order + index
+            return found
         }
     }
 
@@ -242,7 +341,9 @@ extension Registry {
     }
 
     /// A delivered folder's row for `path` not read yet whose listing the file still matches: the
-    /// same identity, size and modification date. With the time of the folder's reply.
+    /// same inode, creation and modification dates, and size, on the volume the path names. The
+    /// device number isn't compared: a volume mounted again may be given another. With the time of
+    /// the folder's reply.
     struct ListedMember {
         var folder: String
         var deliveredAt: Date?
@@ -251,8 +352,8 @@ extension Registry {
     func listedMembers(of path: String, as file: Workspace.File) throws -> [ListedMember] {
         try db.rows("""
             SELECT m.delivery_id, d.delivered_at FROM members m LEFT JOIN deliveries d ON d.id = m.delivery_id
-            WHERE m.path = ? AND m.sha256 IS NULL AND m.size = ? AND m.modified_at = ? AND m.device = ? AND m.inode = ?
-            """, [path, file.size, file.modifiedAt, file.device, file.inode]).compactMap { row in
+            WHERE m.path = ? AND m.sha256 IS NULL AND m.size = ? AND m.modified_at = ? AND m.created_at IS ? AND m.inode = ?
+            """, [path, file.size, file.modifiedAt, file.createdAt, file.inode]).compactMap { row in
             (row["delivery_id"] as? String).map {
                 ListedMember(folder: $0, deliveredAt: (row["delivered_at"] as? Double).map(Date.init(timeIntervalSince1970:)))
             }

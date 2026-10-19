@@ -362,17 +362,11 @@ struct InformationSection: View {
                 if let member = delivery.member {
                     // The reply named the folder; the file came with it.
                     InfoRow(label: "Handed Over In") {
-                        HStack(spacing: Space.s) {
-                            if let folder = model.folderDelivery(member) {
-                                LinkButton(title: Wording.folderName(member)) { model.select(folder) }
-                                    .help("Show the folder the reply named, \(Wording.tilde(member.folder))")
-                            } else {
-                                Text(Wording.folderName(member)).help(Wording.tilde(member.folder))
-                            }
-                            if let caveat = Wording.changedSince(member) {
-                                StatusLabel(mark: caveat.mark, text: caveat.title)
-                                InfoButton(text: caveat.detail)
-                            }
+                        if let folder = model.folderDelivery(member) {
+                            LinkButton(title: Wording.folderName(member)) { model.select(folder) }
+                                .help("Show the folder the reply named, \(Wording.tilde(member.folder))")
+                        } else {
+                            Text(Wording.folderName(member)).help(Wording.tilde(member.folder))
                         }
                     }
                 }
@@ -577,12 +571,16 @@ struct VersionsSection: View {
             ?? earlier.first { $0.sha256 != nil && $0.sha256 == delivery.sha256 }
     }
 
-    /// For a delivery Gleaner hasn't read: an earlier one of the same file, else of another, listed
-    /// or read with the same size and modification date. Only that is said, never "same as".
+    /// For a delivery Gleaner hasn't read: an earlier one of the same file, else of another, with the
+    /// same size and modification date, recorded as the file was at that delivery: listed with its
+    /// folder, which counts only a file unchanged since the reply (SPEC §5.4), or read at delivery.
+    /// One read later records the file as it was then. Only that is said, never "same as".
     func sameSizeAndDates(_ delivery: Delivery) -> Delivery? {
         guard delivery.sha256 == nil, let size = delivery.capture?.size, let modified = delivery.capture?.modifiedAt else { return nil }
         let earlier = work.deliveries.drop { $0.id != delivery.id }.dropFirst()
-        let alike = { (d: Delivery) in d.capture?.size == size && d.capture?.modifiedAt == modified }
+        let alike = { (d: Delivery) in
+            (d.member != nil || d.capture?.provenance == .atDelivery) && d.capture?.size == size && d.capture?.modifiedAt == modified
+        }
         return earlier.first { $0.path == delivery.path && alike($0) } ?? earlier.first(where: alike)
     }
 

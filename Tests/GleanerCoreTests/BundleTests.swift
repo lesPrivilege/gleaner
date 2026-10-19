@@ -132,7 +132,7 @@ import Testing
         // The folder's reply, session, request, time and evidence, through the folder's delivery.
         let delivery = video.latest
         #expect(video.deliveries.count == 1 && delivery.number == 1)
-        #expect(delivery.member == Membership(folderDelivery: folder.latest.id, folder: out.path, changedSince: false))
+        #expect(delivery.member == Membership(folderDelivery: folder.latest.id, folder: out.path))
         #expect(delivery.request == "Render episode zero with every segment" && delivery.sessionTitle == "Pipeline")
         #expect(delivery.deliveredAt == folder.latest.deliveredAt && delivery.logPath == log)
         #expect(delivery.evidence.map(\.rawTarget) == ["out/"] && delivery.replyLine == folder.latest.replyLine)
@@ -252,7 +252,7 @@ import Testing
             (url.lastPathComponent, try artifact(url.path).latest.unpacking?.notUnpacked)
         })
         #expect(reasons["app"] == "a Git checkout’s folder")
-        #expect(reasons["clients"] == "a folder holding a Git checkout")
+        #expect(reasons["clients"] == "a folder holding a Git repository")
         #expect(reasons["Desktop"] == "a folder directly in the home")
         #expect(reasons["home"] == "the home folder or a folder holding it")
         #expect(reasons["site"] == "the folder its conversation worked in")
@@ -264,48 +264,259 @@ import Testing
         #expect(report.sources[.claudeCode]?.hasProblems == false)
     }
 
+    /// The reasons each delivered folder at `paths` isn't unpacked, by its last two path components,
+    /// after a reply in `cwd` names them all; and that no file was listed.
+    func notUnpacked(_ paths: [String], cwd: URL) throws -> [String: String?] {
+        let links = paths.map { "[\(($0 as NSString).lastPathComponent)](<\($0)/>)" }.joined(separator: ", ")
+        try session("handed", in: cwd, asked: t0, replied: minutes(60), reply: "Handed over: \(links).")
+        _ = try indexer.run()
+        #expect(try indexer.registry.db.rows("SELECT path FROM members").isEmpty)
+        return Dictionary(uniqueKeysWithValues: try paths.map { path in
+            (((path as NSString).pathComponents.suffix(2)).joined(separator: "/"), try artifact(path).latest.unpacking?.notUnpacked)
+        })
+    }
+
+    /// A folder inside a hidden folder holds what Finder hides, settings and their tokens among
+    /// them; one inside a cache, what a tool rebuilds. Neither is unpacked, however deep. Counted
+    /// from the repository holding the folder, an agent's worktree kept in a hidden folder is
+    /// unpacked as any of its repository's folders.
+    @Test func aFolderInsideAHiddenFolderOrACacheIsNotUnpacked() throws {
+        let gh = try folder(".config/gh")
+        try file("hosts.yml", in: gh, created: minutes(10), text: "oauth_token: synthetic")
+        let repo = try folder("Projects/tool")
+        try FileManager.default.createDirectory(at: repo.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        let release = repo.appendingPathComponent(".build/release")
+        try file("tool", in: release, created: minutes(10))
+        try file("CACHEDIR.TAG", in: repo.appendingPathComponent("target"), created: minutes(10))
+        let cargo = repo.appendingPathComponent("target/release")
+        try file("deps/libserde-1234.rlib", in: cargo, created: minutes(10))
+        let widget = repo.appendingPathComponent("node_modules/widget/dist")
+        try file("widget.js", in: widget, created: minutes(10))
+        let worktree = repo.appendingPathComponent(".claude/worktrees/x")
+        try file(".git", in: worktree, created: minutes(10), text: "gitdir: \(repo.path)/.git/worktrees/x")
+        let dist = worktree.appendingPathComponent("dist")
+        try file("app.js", in: dist, created: minutes(10))
+
+        let reasons = try notUnpacked([gh.path, release.path, cargo.path, widget.path], cwd: repo)
+        #expect(reasons == [".config/gh": "inside a hidden folder", ".build/release": "inside a hidden folder",
+                            "target/release": "inside a cache a tool left", "widget/dist": "inside a cache a tool left"])
+        let organization = try organization()
+        #expect(search("hosts", in: organization).isEmpty && search("oauth", in: organization).isEmpty)
+        #expect(((try? FileManager.default.contentsOfDirectory(atPath: indexer.store.objects.path)) ?? []).isEmpty)
+
+        try session("worktree", in: worktree, asked: t0, replied: minutes(60), reply: "Built into [dist](dist/).")
+        _ = try indexer.run()
+        #expect(try members(of: dist.path) == 1)
+    }
+
+    /// A volume and a cloud drive hold a person's things, as the home does: neither they nor a
+    /// folder directly in one is unpacked, by depth; a folder deeper in is. A link isn't followed,
+    /// to another volume or anywhere.
+    @Test func aCloudDriveAFolderDirectlyInOneOrALinkIsNotUnpacked() throws {
+        let dropbox = try folder("Library/CloudStorage/Dropbox")
+        try file("Family/photo.jpg", in: dropbox, created: minutes(10))
+        let taxes = try folder("Library/CloudStorage/Dropbox/Taxes")
+        try file("2024.pdf", in: taxes, created: minutes(10))
+        let icloud = try folder("Library/Mobile Documents/com~apple~CloudDocs")
+        let personal = try folder("Library/Mobile Documents/com~apple~CloudDocs/Personal")
+        try file("passport.pdf", in: personal, created: minutes(10))
+        let deck = try folder("Library/CloudStorage/Dropbox/Taxes/deck")
+        try file("deck.pdf", in: deck, created: minutes(10))
+        let project = try folder("Projects/site")
+        let builds = try folder("Projects/site/builds/v2")
+        try file("new-build.png", in: builds, created: minutes(10))
+        let out = project.appendingPathComponent("out")
+        try FileManager.default.createSymbolicLink(atPath: out.path, withDestinationPath: builds.path)
+
+        let reasons = try notUnpacked([dropbox.path, taxes.path, icloud.path, personal.path, out.path], cwd: project)
+        #expect(reasons == ["CloudStorage/Dropbox": "a cloud drive", "Dropbox/Taxes": "a folder directly in a cloud drive",
+                            "Mobile Documents/com~apple~CloudDocs": "a cloud drive",
+                            "com~apple~CloudDocs/Personal": "a folder directly in a cloud drive", "site/out": "a link"])
+        try session("deck", in: project, asked: t0, replied: minutes(60), reply: "The [deck](\(deck.path)/) is in your Dropbox.")
+        _ = try indexer.run()
+        #expect(try members(of: deck.path) == 1)
+    }
+
+    /// The folder a conversation worked in is its project's, inside a repository as outside one,
+    /// and so is a folder holding it; a bare repository is a repository's own folder.
+    @Test func theFolderAConversationWorkedInOrABareRepositoryIsNotUnpacked() throws {
+        let mono = try folder("work/mono")
+        try FileManager.default.createDirectory(at: mono.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        let web = mono.appendingPathComponent("packages/web")
+        try file("src/App.tsx", in: web, created: minutes(-5000))
+        let site = try folder("work/git/site.git")
+        try file("HEAD", in: site, created: minutes(10), text: "ref: refs/heads/main")
+        try file("config", in: site, created: minutes(10), text: "url = https://user:synthetic@example.com/site")
+        try file("objects/ab/cdef", in: site, created: minutes(10))
+        try file("refs/heads/main", in: site, created: minutes(10))
+        let git = site.deletingLastPathComponent()
+
+        let reasons = try notUnpacked([web.path, web.deletingLastPathComponent().path, site.path, git.path], cwd: web)
+        #expect(reasons == ["packages/web": "the folder its conversation worked in",
+                            "mono/packages": "a folder holding the one its conversation worked in",
+                            "git/site.git": "a Git repository", "work/git": "a folder holding a Git repository"])
+    }
+
+    /// A folder gone, or one Gleaner can't read, isn't listed now and waits: the next run that can
+    /// list it does, claiming only what the dates show, and until then each run says why.
+    @Test func aFolderGoneOrUnreadableIsListedOnceItCanBe() throws {
+        let project = try folder("Projects/later")
+        let shut = project.appendingPathComponent("shut"), out = shut.appendingPathComponent("out")
+        let locked = project.appendingPathComponent("locked"), gone = project.appendingPathComponent("gone")
+        try file("a.png", in: out, created: minutes(10))
+        try file("b.png", in: locked, created: minutes(10))
+        try file("c.png", in: gone, created: minutes(10))
+        let log = try session("later", in: project, asked: t0, replied: minutes(60), reply: "In [out](shut/out/), [locked](locked/) and [gone](gone/).")
+        // Captured as folders; then one's parent can't be searched, one can't be listed, one is gone.
+        _ = try indexer.ingest(try #require(try ClaudeCodeAdapter.parse(URL(fileURLWithPath: log))), isComplete: true, now: minutes(61))
+        try FileManager.default.removeItem(at: gone)
+        #expect(chmod(shut.path, 0) == 0 && chmod(locked.path, 0) == 0)
+        defer { chmod(shut.path, 0o755); chmod(locked.path, 0o755) }
+        var report = try indexer.run()
+        #expect(try indexer.registry.pendingFolders().map(\.path).sorted() == [gone.path, locked.path, out.path])
+        #expect(report.sources[.claudeCode]?.folderProblems.sorted() == ["\(locked.path): not listed yet, couldn’t be read",
+                                                                          "\(out.path): not listed yet, couldn’t be read"])
+        #expect(report.sources[.claudeCode]?.foldersNotUnpacked == ["\(gone.path): not listed yet, no longer there"])
+        #expect(try artifact(out.path).latest.unpacking == nil)
+        // Each run says so again until it can list them.
+        #expect(try indexer.run().sources[.claudeCode]?.folderProblems.count == 2)
+
+        #expect(chmod(shut.path, 0o755) == 0 && chmod(locked.path, 0o755) == 0)
+        try file("c.png", in: gone, created: minutes(10))
+        report = try indexer.run()
+        #expect(try indexer.registry.pendingFolders().isEmpty)
+        #expect(try members(of: out.path) == 1 && members(of: locked.path) == 1 && members(of: gone.path) == 1)
+        #expect(report.sources[.claudeCode]?.folderProblems == [] && report.sources[.claudeCode]?.foldersNotUnpacked == [])
+    }
+
+    /// A reply that names a folder and the file in it in another spelling delivers the file once,
+    /// as named; another reply's delivery of the folder numbers with it.
+    @Test func aFileNamedInAnotherSpellingIsDeliveredOnceAsNamed() throws {
+        let project = try folder("Projects/docs")
+        let out = project.appendingPathComponent("out")
+        try file("readme.md", in: out, created: minutes(10))
+        try file("index.html", in: out, created: minutes(10))
+        // On a volume that tells case apart, the two spellings are two files.
+        guard FileManager.default.fileExists(atPath: out.path + "/README.md") else { return }
+        try session("docs", in: project, asked: t0, replied: minutes(60),
+                    reply: "Everything is in [out](out/); start with [the readme](out/README.md).",
+                    more: [(minutes(70), minutes(80), "The [docs](out/) again.")])
+        _ = try indexer.run()
+
+        let artifacts = try indexer.registry.artifacts()
+        #expect(names(artifacts.map(\.path)) == ["README.md", "index.html", "out"])
+        let readme = try artifact(out.path + "/README.md")
+        #expect(readme.deliveries.map { $0.member == nil } == [false, true] && readme.deliveries.map(\.number) == [2, 1])
+    }
+
+    /// A reply that names a folder and a later one naming a file in it, read in one run: the file's
+    /// bytes, read for the second, complete the folder's listing as they would on two runs.
+    @Test func aFileNamedLaterInTheSameRunCompletesItsFoldersListing() throws {
+        let project = try folder("Projects/film")
+        let cut = try file("out/cut.mp4", in: project, created: minutes(10))
+        try session("film", in: project, asked: t0, replied: minutes(60), reply: "Everything is in [out](out/).",
+                    more: [(minutes(60.5), minutes(61), "The [cut](out/cut.mp4).")])
+        _ = try indexer.run(now: { self.minutes(62) })
+        let artifact = try artifact(cut)
+        #expect(artifact.deliveries.map { $0.member == nil } == [true, false])
+        #expect(artifact.deliveries.allSatisfy { $0.capture?.provenance == .atDelivery } && artifact.deliveries[1].sha256 == artifact.deliveries[0].sha256)
+    }
+
+    /// The registry's artifact at one path is the one it reads with every other: what the window
+    /// puts in place after a first read. A file handed over in a folder is in its folder's project.
+    @Test func oneArtifactReadAloneIsTheOneReadWithTheRest() throws {
+        let project = try folder("work/clips")
+        let outside = try folder("work/renders")
+        try file("a.mov", in: outside, created: minutes(10))
+        try file("sub/b.mov", in: outside, created: minutes(10))
+        try file("notes.md", in: project, created: minutes(10))
+        try session("clips", in: project, asked: t0, replied: minutes(60), reply: "The [renders](\(outside.path)/) and [notes](notes.md).",
+                    more: [(minutes(70), minutes(80), "Again: [renders](\(outside.path)/) and [a](\(outside.path)/a.mov).")])
+        _ = try indexer.run()
+        #expect(try indexer.completeCaptures(of: outside.path + "/sub/b.mov", now: minutes(81)))
+        let all = try indexer.registry.artifacts()
+        func described(_ a: Artifact) -> String {
+            "\(a.path) \(a.projectFolder) \(a.inRepository) \(a.checkout?.folder ?? "") "
+                + a.deliveries.map { "\($0.id) \($0.number) \($0.capture?.provenance.rawValue ?? "") \($0.sha256 ?? "") \($0.member?.folder ?? "")" }
+                .joined(separator: ",")
+        }
+        for artifact in all {
+            #expect(try indexer.registry.artifact(at: artifact.path).map(described) == described(artifact))
+        }
+        let folder = try #require(all.first { $0.path == outside.path })
+        #expect(all.filter { $0.latest.member != nil }.allSatisfy { $0.projectFolder == folder.projectFolder })
+        #expect(try indexer.registry.artifact(at: project.path + "/nothing.md") == nil)
+    }
+
+    /// A volume mounted again may give its files another device number; what was listed is
+    /// matched by its inode, dates and size on the path, and is still read as listed.
+    @Test func aListedFileIsReadAsListedWhateverItsDeviceNumberNow() throws {
+        let project = try folder("Projects/disk")
+        let clip = try file("out/clip.mov", in: project, created: minutes(10))
+        try session("disk", in: project, asked: t0, replied: minutes(60), reply: "On the disk: [out](out/).")
+        _ = try indexer.run()
+        try indexer.registry.db.execute("UPDATE members SET device = device + 4")
+        #expect(try indexer.completeCaptures(of: clip, now: minutes(61)))
+        #expect(try artifact(clip).latest.capture?.provenance == .atDelivery)
+    }
+
     // MARK: membership by time
 
-    /// Read as the agent replies: what was there by then was handed over; what came after wasn't;
-    /// what changed after, or was copied in with older dates, may have changed since.
+    /// Read as the agent replies: what was there by then, unchanged, was handed over. What came
+    /// after wasn't, nor what changed after: a file edited, or moved, linked or copied in keeping
+    /// a creation date from before the reply, isn't shown to have been there, and is missed rather
+    /// than claimed.
     @Test func membershipByTimeOnALiveRead() throws {
         indexer.clockTolerance = 0
         let project = try folder("Projects/film")
         let out = project.appendingPathComponent("out")
         let kept = try file("cut.mp4", in: out)
         let edited = try file("notes.md", in: out)
+        let elsewhere = try folder("Archive")
+        let moved = try file("moved.mov", in: elsewhere, created: Date().addingTimeInterval(-86_400))
+        let linked = try file("linked.mov", in: elsewhere, created: Date().addingTimeInterval(-86_400))
+        let copied = try file("copied.mov", in: elsewhere, created: Date().addingTimeInterval(-86_400))
         Thread.sleep(forTimeInterval: 0.05)
         let replied = Date()
         Thread.sleep(forTimeInterval: 0.05)
         try file("later.wav", in: out)
         try Data("edited after the reply".utf8).write(to: URL(fileURLWithPath: edited))
-        try file("copied.mov", in: out, created: replied.addingTimeInterval(-3600))
+        let fm = FileManager.default
+        try fm.moveItem(atPath: moved, toPath: out.path + "/moved.mov")
+        try fm.linkItem(atPath: linked, toPath: out.path + "/linked.mov")
+        try fm.copyItem(atPath: copied, toPath: out.path + "/copied.mov")
+        try Self.date(out.path + "/copied.mov", created: replied.addingTimeInterval(-86_400), modified: replied.addingTimeInterval(-86_400))
+        for name in ["moved.mov", "linked.mov", "copied.mov"] {
+            #expect(try #require(fm.attributesOfItem(atPath: out.path + "/" + name)[.creationDate] as? Date) < replied)
+        }
         try session("film", in: project, asked: replied.addingTimeInterval(-600), replied: replied, reply: "The [cut](out/).")
         _ = try indexer.run(now: { replied.addingTimeInterval(1) })
 
-        let changed = Dictionary(uniqueKeysWithValues: try indexer.registry.artifacts().compactMap { a in
-            a.latest.member.map { (a.name, $0.changedSince) }
-        })
-        #expect(changed == ["cut.mp4": false, "notes.md": true, "copied.mov": true])
+        #expect(names(try indexer.registry.artifacts().filter { $0.latest.member != nil }.map(\.path)) == ["cut.mp4"])
         #expect(try artifact(kept).latest.capture?.provenance == .listed)
+        #expect(try artifact(out.path).latest.unpacking?.members == 1)
     }
 
-    /// Read long after the reply: every file the test writes changed after it, so none is said to
-    /// be as handed over; one created after it isn't counted.
+    /// Read long after the reply: a file unchanged since is handed over, and read then, it was
+    /// first seen after the delivery; one changed after the reply, whatever its dates say, isn't.
     @Test func membershipByTimeOnABackfill() throws {
+        indexer.clockTolerance = 0
         let project = try folder("Projects/archive")
         let out = project.appendingPathComponent("out")
-        let replied = Date().addingTimeInterval(-3600)
-        try file("old.pdf", in: out, created: replied.addingTimeInterval(-1800))
+        let old = try file("old.pdf", in: out, created: Date().addingTimeInterval(-1800))
+        Thread.sleep(forTimeInterval: 0.05)
+        let replied = Date()
+        Thread.sleep(forTimeInterval: 0.05)
         try file("copied.pdf", in: out, created: replied.addingTimeInterval(-7200), modified: replied.addingTimeInterval(-7000))
-        try file("touched.pdf", in: out, created: replied.addingTimeInterval(-1800), modified: replied.addingTimeInterval(600))
+        try file("touched.pdf", in: out, created: replied.addingTimeInterval(-1800), modified: replied.addingTimeInterval(-60))
         try file("new.pdf", in: out)
         try session("archive", in: project, asked: replied.addingTimeInterval(-600), replied: replied, reply: "In [out](out/).")
-        _ = try indexer.run()
+        let later = replied.addingTimeInterval(3 * 3600)
+        _ = try indexer.run(now: { later })
 
-        let found = try indexer.registry.artifacts().compactMap { a in a.latest.member.map { (a.name, $0.changedSince) } }
-        #expect(found.map(\.0).sorted() == ["copied.pdf", "old.pdf", "touched.pdf"])
-        #expect(found.allSatisfy { $0.1 })
+        #expect(names(try indexer.registry.artifacts().filter { $0.latest.member != nil }.map(\.path)) == ["old.pdf"])
+        #expect(try indexer.completeCaptures(of: old, now: later))
+        #expect(try artifact(old).latest.capture?.provenance == .firstSeenAfterDelivery)
     }
 
     @Test func aFolderDeliveredTwiceListsItsFilesAtEachDelivery() throws {
@@ -392,7 +603,7 @@ import Testing
         _ = try indexer.run()
         func snapshot(_ registry: Registry) throws -> [String] {
             try registry.artifacts().flatMap { a in
-                a.deliveries.map { "\(a.path) \($0.id) \($0.number) \($0.capture?.provenance.rawValue ?? "") \($0.member?.changedSince ?? false)" }
+                a.deliveries.map { "\(a.path) \($0.id) \($0.number) \($0.capture?.provenance.rawValue ?? "") \($0.member?.folder ?? "")" }
             }.sorted()
         }
         let first = try snapshot(indexer.registry)
@@ -524,7 +735,8 @@ import Testing
         let siteFiles = artifacts.filter { $0.latest.member?.folder == site }
         #expect(names(siteFiles.map(\.path)) == ["app.js", "hero.png", "index.html", "style.css"])
         #expect(artifacts.first { $0.path == site }?.deliveries.count == 2)
-        #expect(artifacts.first { $0.path == site + "/index.html" }?.deliveries.count == 2)
+        // Written after the first reply, whatever their dates say: only the second hands them over.
+        #expect(artifacts.first { $0.path == site + "/index.html" }?.deliveries.count == 1)
         #expect(artifacts.first { $0.path == site + "/assets/hero.png" }?.deliveries.count == 1)
         #expect(!artifacts.contains { $0.name == ".env" })
         // The project folder handed over stands alone, and says why.

@@ -167,10 +167,7 @@ public struct Organization: Sendable {
         func date(_ d: Delivery) -> Date { d.deliveredAt ?? .distantPast }
         var works: [Work] = groups.values.map { files in
             let files = files.sorted { (date($0.deliveries.last!), $0.path) < (date($1.deliveries.last!), $1.path) }
-            let deliveries = files.flatMap(\.deliveries).sorted {
-                date($0) != date($1) ? date($0) > date($1) : ($0.path, $0.number) > ($1.path, $1.number)
-            }
-            return Work(files: files, deliveries: deliveries, project: "")
+            return Work(files: files, deliveries: Self.newestFirst(files), project: "")
         }
         for index in works.indices {
             let work = works[index]
@@ -238,6 +235,30 @@ public struct Organization: Sendable {
         candidates.sort(by: Candidate.newestFirst)
         self.candidates = candidates
         for (index, candidate) in candidates.enumerated() { candidateIndex[candidate.path] = index }
+    }
+
+    /// Every delivery of the files, newest first.
+    private static func newestFirst(_ files: [Artifact]) -> [Delivery] {
+        func date(_ d: Delivery) -> Date { d.deliveredAt ?? .distantPast }
+        return files.flatMap(\.deliveries).sorted {
+            date($0) != date($1) ? date($0) > date($1) : ($0.path, $0.number) > ($1.path, $1.number)
+        }
+    }
+
+    /// The organization with `artifact` in place of the file at its path, in its work wherever the
+    /// work is listed: what a first read of the file or a saved copy of it changes, its captures,
+    /// and nothing that places a work. Suggestions stay as they were made.
+    public func replacing(_ artifact: Artifact) -> Organization {
+        guard let index = workIndex[artifact.path] else { return self }
+        var organization = self
+        var work = works[index]
+        work.files = work.files.map { $0.path == artifact.path ? artifact : $0 }
+        work.deliveries = Self.newestFirst(work.files)
+        organization.works[index] = work
+        if let project = projectIndex[work.project], let at = projects[project].works.firstIndex(where: { $0.id == work.id }) {
+            organization.projects[project].works[at] = work
+        }
+        return organization
     }
 
     public func work(containing path: String) -> Work? { workIndex[path].map { works[$0] } }

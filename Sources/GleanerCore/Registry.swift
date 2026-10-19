@@ -71,11 +71,12 @@ public final class Registry: @unchecked Sendable {
                 size INTEGER NOT NULL, created_at REAL, modified_at REAL NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL,
                 repository TEXT, checkout TEXT, observed_at REAL NOT NULL, PRIMARY KEY (path, log_path)) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS listings (
-                delivery_id TEXT PRIMARY KEY, listed_at REAL NOT NULL, not_unpacked TEXT, problems TEXT) WITHOUT ROWID;
+                delivery_id TEXT PRIMARY KEY, listed_at REAL NOT NULL, members INTEGER NOT NULL, not_unpacked TEXT,
+                problems TEXT) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS members (
                 delivery_id TEXT NOT NULL, path TEXT NOT NULL, size INTEGER NOT NULL, created_at REAL, modified_at REAL NOT NULL,
-                changed_at REAL NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL, changed_since INTEGER NOT NULL,
-                listed_at REAL NOT NULL, sha256 TEXT, observed_at REAL, saved_at REAL, provenance TEXT NOT NULL,
+                changed_at REAL NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL, listed_at REAL NOT NULL,
+                sha256 TEXT, observed_at REAL, saved_at REAL, provenance TEXT NOT NULL,
                 PRIMARY KEY (path, delivery_id)) WITHOUT ROWID;
             """)
         // Each change of several statements is made whole or not at all: a launch that stops partway,
@@ -349,21 +350,78 @@ public final class Registry: @unchecked Sendable {
     /// files replies named, and the files handed over in the folders they named (SPEC §5.4), whose
     /// deliveries of one file number together by time.
     public func artifacts() throws -> [Artifact] {
-        let rows = try db.rows("""
+        try artifacts(at: nil)
+    }
+
+    /// The artifact at `path` alone, as `artifacts` reads it, without reading the others: what a
+    /// first read of a file or a saved copy changed. Nil when no delivery names it.
+    public func artifact(at path: String) throws -> Artifact? {
+        try artifacts(at: path).first
+    }
+
+    private func artifacts(at path: String?) throws -> [Artifact] {
+        var found = try deliveries(path.map { ("d.path = ?", [$0]) })
+        // The files handed over in folders, each a copy of its folder's delivery, which is read
+        // here when only one path is.
+        var folders: [String: Found] = [:]
+        for item in found where item.delivery.unpacking != nil { folders[item.delivery.id] = item }
+        if let path {
+            let ids = Set(try db.rows("SELECT delivery_id FROM members WHERE path = ?", [path]).compactMap { $0["delivery_id"] as? String })
+                .subtracting(folders.keys).sorted()
+            if !ids.isEmpty {
+                for item in try deliveries(("d.id IN (\(Array(repeating: "?", count: ids.count).joined(separator: ", ")))", ids)) {
+                    folders[item.delivery.id] = item
+                }
+            }
+        }
+        // A folder's files are where it is: one that holds a repository isn't unpacked.
+        for (id, folder) in folders {
+            let artifact = Artifact(path: folder.delivery.path, deliveries: [folder.delivery], repository: folder.repository,
+                                    checkout: folder.repository.flatMap { r in folder.checkout.map { Checkout(folder: $0, repository: r) } })
+            folders[id]?.location = artifact.location
+        }
+        found += try members(at: path, folders: folders, after: found.count)
+
+        let artifacts = Dictionary(grouping: found, by: \.delivery.path).map { path, found in
+            // Oldest first, deliveries of one time in the order they were read. The earliest recorded
+            // repository and checkout win, the likeliest to have been found while a worktree that held
+            // the file was there. A file only ever handed over in folders is where its latest folder is.
+            let found = Self.onePerReply(found).sorted {
+                let (a, b) = ($0.delivery.deliveredAt ?? .distantPast, $1.delivery.deliveredAt ?? .distantPast)
+                return a != b ? a < b : $0.order < $1.order
+            }
+            let deliveries = found.enumerated().map { n, found in
+                var delivery = found.delivery
+                delivery.number = n + 1
+                return delivery
+            }
+            if let location = found.last?.location, found.allSatisfy({ $0.delivery.member != nil }) {
+                return Artifact(path: path, deliveries: deliveries.reversed(), location: location)
+            }
+            let recorded = found.first { $0.repository != nil }
+            let checkout = found.first { $0.repository != nil && $0.checkout != nil }
+            return Artifact(path: path, deliveries: deliveries.reversed(), repository: recorded?.repository,
+                            checkout: checkout.map { Checkout(folder: $0.checkout!, repository: $0.repository!) })
+        }
+        return artifacts.sorted {
+            let (a, b) = ($0.latest.deliveredAt ?? .distantPast, $1.latest.deliveredAt ?? .distantPast)
+            return a != b ? a > b : $0.path < $1.path
+        }
+    }
+
+    /// The deliveries `filter` picks, as `artifacts` reads them: each with its capture, and a
+    /// folder's with its listing.
+    private func deliveries(_ filter: (sql: String, arguments: [Any?])?) throws -> [Found] {
+        try db.rows("""
             SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.request, d.evidence, d.model,
                    s.provider, s.title, d.log_path, d.session_id, s.cwd AS session_cwd, s.model_provider,
                    c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind, c.repository, c.checkout,
-                   l.listed_at, l.not_unpacked, l.problems
+                   l.listed_at, l.members, l.not_unpacked, l.problems
             FROM deliveries d JOIN sessions s ON s.id = d.session_id
             LEFT JOIN captures c ON c.delivery_id = d.id
             LEFT JOIN listings l ON l.delivery_id = d.id
-            ORDER BY d.path, d.delivered_at
-            """)
-        // The files handed over in folders, and how many each folder delivery listed.
-        let members = try members(after: rows.count)
-        let listedFiles = Dictionary(members.compactMap { $0.delivery.member.map { ($0.folderDelivery, 1) } }, uniquingKeysWith: +)
-        var byPath: [String: [Found]] = [:]
-        for (index, row) in rows.enumerated() {
+            """ + (filter.map { " WHERE " + $0.sql } ?? "") + " ORDER BY d.path, d.delivered_at", filter?.arguments ?? [])
+        .enumerated().map { index, row in
             let id = row["id"] as! String, path = row["path"] as! String
             let capture = (row["observed_at"] as? Double).map { observed in
                 Capture(
@@ -376,47 +434,24 @@ public final class Registry: @unchecked Sendable {
             }
             var delivery = Self.delivery(row, id: id, path: path, capture: capture, evidence: Self.evidence(row["evidence"] as? String))
             delivery.unpacking = (row["listed_at"] as? Double).map { listed in
-                Unpacking(listedAt: Date(timeIntervalSince1970: listed), members: listedFiles[id] ?? 0,
+                Unpacking(listedAt: Date(timeIntervalSince1970: listed), members: Int(row["members"] as? Int64 ?? 0),
                           notUnpacked: row["not_unpacked"] as? String, problems: Self.list(row["problems"] as? String))
             }
-            let found = Found(delivery: delivery, repository: row["repository"] as? String, checkout: row["checkout"] as? String,
-                              order: index)
-            byPath[path, default: []].append(found)
-        }
-        for found in members { byPath[found.delivery.path, default: []].append(found) }
-
-        let artifacts = byPath.map { path, found in
-            // Oldest first, deliveries of one time in the order they were read. The earliest recorded
-            // repository and checkout win, the likeliest to have been found while a worktree that held
-            // the file was there.
-            let found = Self.onePerReply(found).sorted {
-                let (a, b) = ($0.delivery.deliveredAt ?? .distantPast, $1.delivery.deliveredAt ?? .distantPast)
-                return a != b ? a < b : $0.order < $1.order
-            }
-            let recorded = found.first { $0.repository != nil }
-            let checkout = found.first { $0.repository != nil && $0.checkout != nil }
-            let deliveries = found.enumerated().map { n, found in
-                var delivery = found.delivery
-                delivery.number = n + 1
-                return delivery
-            }
-            return Artifact(path: path, deliveries: deliveries.reversed(), repository: recorded?.repository,
-                            checkout: checkout.map { Checkout(folder: $0.checkout!, repository: $0.repository!) })
-        }
-        return artifacts.sorted {
-            let (a, b) = ($0.latest.deliveredAt ?? .distantPast, $1.latest.deliveredAt ?? .distantPast)
-            return a != b ? a > b : $0.path < $1.path
+            return Found(delivery: delivery, repository: row["repository"] as? String, checkout: row["checkout"] as? String,
+                         order: index)
         }
     }
 
     /// A delivery as `artifacts` reads it, with where the file was found, and its place among the
-    /// rows read.
+    /// rows read. A folder's delivery has where its files are shown.
     struct Found {
         var delivery: Delivery
         var repository: String?
         var checkout: String?
         var order: Int
+        var location: Artifact.Location?
     }
+
 
     /// A delivery from a row of `deliveries` joined with its session: the reply's own fields, and
     /// those given.

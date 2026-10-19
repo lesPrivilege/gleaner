@@ -83,11 +83,13 @@ import Testing
         let model = LibraryModel(indexer: indexer)
         let project = try #require(model.organization.project(try work(model, "brief.md").project))
         model.place = .project(project.key)
+        let outline = model.outline(of: project)
+        #expect(outline.map(\.folder) == ["", "notes", "out", "out/frames"] && outline.map(\.count) == [2, 14, 2, 30])
         let folders = Dictionary(grouping: model.results) { model.outlineFolder($0.work, in: project) }
-        #expect(Set(folders.keys) == ["", "notes", "out", "out/frames"])
 
         // Thirty frames handed over in the folder: one row, closed until opened or chosen.
-        let frames = model.outlineItems(try #require(folders["out/frames"]))
+        let frames = try #require(outline.last).items
+        #expect(frames.map(\.id) == model.outlineItems(try #require(folders["out/frames"])).map(\.id))
         guard frames.count == 1, case .folded(let key, .image, let results) = frames[0] else {
             Issue.record("expected the frames folded: \(frames.map(\.id))"); return
         }
@@ -169,6 +171,36 @@ import Testing
         #expect(Wording.sameSizeAndDates(cut.deliveries[1], named: false) == "Same size and dates as 1")
     }
 
+    /// A delivery read long after its reply recorded the file's size and dates as they were then,
+    /// which say nothing of the file at that delivery: nothing is said to match it.
+    @Test func sizeAndDatesReadLaterAreNotSaidToMatch() throws {
+        let late = root.appendingPathComponent("home/late")
+        try FileManager.default.createDirectory(at: late.appendingPathComponent("out"), withIntermediateDirectories: true)
+        try Data("deck".utf8).write(to: late.appendingPathComponent("out/deck.pdf"))
+        func log(_ turns: [(Date, String)]) throws {
+            let stamp = { (date: Date) in date.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)) }
+            let lines = try turns.flatMap { at, reply in
+                try [["type": "user", "sessionId": "late", "cwd": late.path, "timestamp": stamp(at.addingTimeInterval(-60)),
+                      "origin": ["kind": "human"], "message": ["role": "user", "content": "Make the deck"]],
+                     ["type": "assistant", "sessionId": "late", "cwd": late.path, "timestamp": stamp(at),
+                      "message": ["role": "assistant", "model": "m", "content": [["type": "text", "text": reply]]]]]
+                    .map { String(decoding: try JSONSerialization.data(withJSONObject: $0), as: UTF8.self) }
+            }
+            try FileManager.default.createDirectory(at: root.appendingPathComponent("claude/late"), withIntermediateDirectories: true)
+            try (lines.joined(separator: "\n") + "\n").write(to: root.appendingPathComponent("claude/late/late.jsonl"), atomically: false, encoding: .utf8)
+        }
+        // Named two hours ago and read now, first seen after; then the folder, handed over just now, listed.
+        let first = (Date().addingTimeInterval(-7200), "The [deck](out/deck.pdf).")
+        try log([first])
+        _ = try indexer.run()
+        try log([first, (Date().addingTimeInterval(5), "Everything is in [out](out/).")])
+        _ = try indexer.run()
+        let model = LibraryModel(indexer: indexer)
+        let deck = try work(model, "deck.pdf")
+        #expect(deck.deliveries.map { $0.capture?.provenance } == [.listed, .firstSeenAfterDelivery])
+        #expect(VersionsSection(work: deck, selected: deck.deliveries[0]).sameSizeAndDates(deck.deliveries[0]) == nil)
+    }
+
     @Test func aFileHandedOverInAFolderMovesAndComesBackAsAnyWork() async throws {
         let model = LibraryModel(indexer: indexer)
         let cut = try work(model, "cut.mp4")
@@ -193,15 +225,18 @@ import Testing
         let listed = Capture(sha256: nil, size: 4, modifiedAt: t0, observedAt: t0, savedAt: nil, provenance: .listed, kind: .file)
         #expect(Wording.provenanceShort(listed) == (.dashed, "Listed, not read"))
         #expect(Wording.provenance(listed).1.hasPrefix("Listed with its folder"))
-        let member = Membership(folderDelivery: "f", folder: "/p/out", changedSince: false)
+        let member = Membership(folderDelivery: "f", folder: "/p/out")
         var delivery = Delivery(id: "m", number: 1, path: "/p/out/cut.mp4", deliveredAt: t0, provider: .claudeCode, sessionTitle: nil,
                                 request: nil, cwd: "/p", evidence: [], logPath: "/l", capture: listed)
         delivery.member = member
         #expect(Wording.noCopy(delivery, large: false) == "Gleaner listed delivery 1 with its folder and hasn’t read it.")
         #expect(Wording.storage(delivery, hasSaved: false, large: false, now: nil) == (.dashed, "Not saved: listed, not read yet"))
         #expect(Wording.folderName(member) == "out/")
-        #expect(Wording.changedSince(member) == nil)
-        #expect(Wording.changedSince(Membership(folderDelivery: "f", folder: "/p/out", changedSince: true))?.title == "May have changed since")
+        // A file that isn't as listed is said to be only that, not changed.
+        let artifact = Artifact(path: delivery.path, deliveries: [delivery])
+        let now = FileObservation(state: LocatorState(kind: .file, size: 5, sha256: "abc", git: .notInRepo), checkedAt: t0)
+        let disk = Wording.onDisk(artifact.onDisk(now, hasSaved: { _ in false }), in: artifact, now: now)
+        #expect(disk.title == "Can’t verify" && disk.detail.contains("isn’t as listed") && !disk.detail.contains("has changed"))
         // A row without a check says nothing; one Gleaner couldn't read says why in a few words.
         #expect(Wording.row(delivery, latest: 1, now: nil, changed: false, available: true).mark == nil)
         #expect(Wording.row(delivery, latest: 1, now: .unreadable, changed: false, available: false).mark?.1 == "Unavailable · not read")
@@ -213,6 +248,12 @@ import Testing
         #expect(Wording.unpacking(listed).title == "32 files" && Wording.unpacking(listed).mark == .done)
         let repo = Unpacking(listedAt: t0, members: 0, notUnpacked: "a Git checkout’s folder", problems: [])
         #expect(Wording.unpacking(repo).title == "Not unpacked" && Wording.unpacking(repo).detail.contains("it is a Git checkout’s folder."))
+        #expect(Wording.unpacking(repo).detail.contains("points at the project"))
+        // Each reason completes "it is", and only a project's says that handing it over points at the project.
+        for reason in ["named by a reply without a time", "a folder directly in the home", "inside a hidden folder", "a link"] {
+            let detail = Wording.unpacking(Unpacking(listedAt: t0, members: 0, notUnpacked: reason, problems: [])).detail
+            #expect(detail == "Gleaner doesn’t list its files as handed over: it is \(reason).")
+        }
         let partial = Unpacking(listedAt: t0, members: 40, notUnpacked: nil, problems: ["/p/out: stopped after 40 entries"])
         #expect(Wording.unpacking(partial).mark == .attention && Wording.unpacking(partial).title == "40 files, listed in part")
         var source = Indexer.Report.Source(folder: .listed)

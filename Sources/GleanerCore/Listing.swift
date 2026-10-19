@@ -86,11 +86,38 @@ public enum Listing {
     /// Handed over before observed; within each, what a person opens before what a program reads;
     /// then newest first, and by path.
     public static func ordered(_ entries: [Entry]) -> [Entry] {
-        entries.sorted { a, b in
+        keyed(entries).map(\.entry)
+    }
+
+    /// What ordering and grouping ask of an entry, worked out once for each, not at each comparison.
+    private struct Keyed {
+        var entry: Entry
+        var isHandedOver: Bool
+        var isNamed: Bool
+        var kind: Artifact.Kind
+        var date: Date
+        var path: String
+        var folder: String
+        var name: String
+
+        init(_ entry: Entry) {
+            self.entry = entry
+            isHandedOver = entry.isHandedOver
+            isNamed = entry.isNamed
+            kind = entry.kind
+            date = entry.date ?? .distantPast
+            path = entry.path
+            folder = (path as NSString).deletingLastPathComponent
+            name = (path as NSString).lastPathComponent
+        }
+    }
+
+    /// `entries` with their keys, in `ordered` order.
+    private static func keyed(_ entries: [Entry]) -> [Keyed] {
+        entries.map(Keyed.init).sorted { a, b in
             if a.isHandedOver != b.isHandedOver { return a.isHandedOver }
             if a.kind.isOpenedByPerson != b.kind.isOpenedByPerson { return a.kind.isOpenedByPerson }
-            let (x, y) = (a.date ?? .distantPast, b.date ?? .distantPast)
-            return x != y ? x > y : a.path < b.path
+            return a.date != b.date ? a.date > b.date : a.path < b.path
         }
     }
 
@@ -99,28 +126,26 @@ public enum Listing {
     /// more; a file a reply named never folds. The other files that share a stem with another file of
     /// their folder are shown together, at the place of the first.
     public static func rows(_ entries: [Entry], crowded: Int = crowded) -> [Row] {
-        let entries = ordered(entries)
-        func key(_ entry: Entry) -> String { entry.folder + "\n" + entry.isHandedOver.description + "\n" + entry.kind.rawValue }
+        let entries = keyed(entries)
+        let kinds = entries.map { $0.isNamed ? nil : $0.folder + "\n" + $0.isHandedOver.description + "\n" + $0.kind.rawValue }
         var crowds: [String: [Entry]] = [:]
-        for entry in entries where !entry.isNamed { crowds[key(entry), default: []].append(entry) }
+        for (entry, key) in zip(entries, kinds) { if let key { crowds[key, default: []].append(entry.entry) } }
         crowds = crowds.filter { $0.value.count >= crowded }
-        func crowd(_ entry: Entry) -> String? {
-            guard !entry.isNamed else { return nil }
-            return crowds[key(entry)] == nil ? nil : key(entry)
-        }
-        func family(_ entry: Entry) -> String { entry.folder + "\n" + Search.form(stem(entry.name)) }
-        let families = Dictionary(grouping: entries.filter { crowd($0) == nil }, by: family)
+        let crowd = kinds.map { $0.flatMap { crowds[$0] == nil ? nil : $0 } }
+        let family = entries.map { $0.folder + "\n" + Search.form(stem($0.name)) }
+        var families: [String: [Entry]] = [:]
+        for index in entries.indices where crowd[index] == nil { families[family[index], default: []].append(entries[index].entry) }
 
         var rows: [Row] = [], shown = Set<String>()
-        for entry in entries {
-            if let key = crowd(entry) {
+        for (index, entry) in entries.enumerated() {
+            if let key = crowd[index] {
                 if shown.insert("crowd\n" + key).inserted {
                     rows.append(.folded(folder: entry.folder, kind: entry.kind, entries: crowds[key] ?? []))
                 }
-            } else if let members = families[family(entry)], members.count > 1 {
-                if shown.insert("stem\n" + family(entry)).inserted { rows.append(.together(stem: stem(entry.name), entries: members)) }
+            } else if let members = families[family[index]], members.count > 1 {
+                if shown.insert("stem\n" + family[index]).inserted { rows.append(.together(stem: stem(entry.name), entries: members)) }
             } else {
-                rows.append(.entry(entry))
+                rows.append(.entry(entry.entry))
             }
         }
         return rows

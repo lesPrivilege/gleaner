@@ -71,7 +71,7 @@ import Testing
     func member(_ path: String, at minutes: Double) -> Listing.Entry {
         var delivery = Delivery(id: path, number: 1, path: path, deliveredAt: t0.addingTimeInterval(minutes * 60), provider: .claudeCode,
                                 sessionTitle: nil, request: nil, cwd: "/w", evidence: [], logPath: "/logs/s.jsonl", capture: nil)
-        delivery.member = Membership(folderDelivery: "out", folder: "/w/out", changedSince: false)
+        delivery.member = Membership(folderDelivery: "out", folder: "/w/out")
         return .work(Work(files: [Artifact(path: path, deliveries: [delivery])], deliveries: [delivery], project: "/w"))
     }
 

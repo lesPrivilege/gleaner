@@ -193,6 +193,7 @@ public final class Indexer: @unchecked Sendable {
             }
         }
 
+        var reads: [(Read, Provider)] = []
         for (index, (provider, url, size, mtime, shortened)) in changed.enumerated() {
             progress(index, changed.count)
             switch parsed[index] {
@@ -205,8 +206,8 @@ public final class Indexer: @unchecked Sendable {
                 let complete = log.map { $0.isComplete && !shortened } ?? true
                 let derived = log.flatMap(span(of:))
                 do {
-                    report.newDeliveries += try registry.transaction {
-                        let added = try log.map { try ingest($0, isComplete: complete, now: now()) } ?? 0
+                    let ingested = try registry.transaction {
+                        let ingested = try log.map { try ingest($0, isComplete: complete, now: now()) }
                         // With the log's reading, so a session whose walk a quit cut off is walked next run.
                         if let log, let derived {
                             try registry.recordSpan(of: log.session, provider: provider, span: derived.span,
@@ -218,8 +219,10 @@ public final class Indexer: @unchecked Sendable {
                             try registry.markRead(logFile: url.path, size: size, mtime: mtime,
                                                   unknownRecordTypes: log?.unknownRecordTypes ?? [:])
                         }
-                        return added
+                        return ingested
                     }
+                    report.newDeliveries += ingested?.added ?? 0
+                    reads += (ingested?.reads ?? []).map { ($0, provider) }
                 } catch {
                     // A log the registry refuses fails alone; the run goes on.
                     report.sources[provider]?.failures.append("\(url.path): \(error)")
@@ -234,9 +237,17 @@ public final class Indexer: @unchecked Sendable {
             }
         }
 
-        // Every log is in: each delivered folder not listed yet is listed, and each workspace waiting
-        // to be walked is walked once, for every session in it.
-        let unpacked = unpack(at: now(), providers: providers)
+        // Every log is in: each delivered folder not listed yet is listed, the files read in this run
+        // complete the listings they still match, whichever was made first, and each workspace
+        // waiting to be walked is walked once, for every session in it.
+        var unpacked = unpack(at: now(), providers: providers)
+        for (read, provider) in reads {
+            do {
+                try registry.transaction { try completeMembers(of: read.path, with: read.capture, file: read.file) }
+            } catch {
+                unpacked.problems[provider, default: []].append("\(read.path): its listing not completed: \(error)")
+            }
+        }
         let observed = observe(at: now(), providers: providers)
         report.newObservations = observed.recorded
         let problems = try registry.workspaceProblems(), unwalked = try registry.unwalkedWorkspaces()
@@ -244,18 +255,18 @@ public final class Indexer: @unchecked Sendable {
         for provider in report.sources.keys {
             report.sources[provider]?.workspaceProblems = (problems[provider] ?? []) + (observed.failures[provider] ?? [])
             report.sources[provider]?.unwalkedWorkspaces = unwalked[provider] ?? []
-            report.sources[provider]?.folderProblems = (folders.problems[provider] ?? []) + (unpacked[provider] ?? [])
-            report.sources[provider]?.foldersNotUnpacked = folders.notUnpacked[provider] ?? []
+            report.sources[provider]?.folderProblems = (folders.problems[provider] ?? []) + (unpacked.problems[provider] ?? [])
+            report.sources[provider]?.foldersNotUnpacked = (folders.notUnpacked[provider] ?? []) + (unpacked.waiting[provider] ?? [])
         }
         progress(changed.count, changed.count)
         return report
     }
 
     /// `isComplete` says the whole log was read: only then does it show that a delivery it no
-    /// longer admits is gone.
-    func ingest(_ log: SessionLog, isComplete: Bool, now: Date) throws -> Int {
+    /// longer admits is gone. Returns how many deliveries are new, and the files read for them.
+    func ingest(_ log: SessionLog, isComplete: Bool, now: Date) throws -> (added: Int, reads: [Read]) {
         try registry.upsert(log.session)
-        var added = 0
+        var added = 0, reads: [Read] = []
         var admitted = Set<String>()
         let turns = log.turns.map { turn in
             (turn, MentionExtractor.candidates(in: turn).enumerated().filter { Admission.admits($0.element) })
@@ -290,11 +301,11 @@ public final class Indexer: @unchecked Sendable {
                     let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
                     try registry.addCapture(captured, for: id, logPath: log.session.logPath, path: candidate.path,
                                             replyTimes: Turn.times(turn))
-                    // Gleaner's first read of the file for an earlier delivery whose bytes it never had,
-                    // or one in a folder, listed as the file still is.
+                    // Gleaner's first read of the file for an earlier delivery whose bytes it never had;
+                    // and, once the run has listed the folders, for one in a folder the file still matches.
                     if captured.sha256 != nil {
                         try registry.complete(capturesOf: candidate.path, with: captured)
-                        try completeMembers(of: candidate.path, with: captured, file: file)
+                        reads.append(Read(path: candidate.path, capture: captured, file: file))
                     }
                     added += 1
                 }
@@ -307,7 +318,7 @@ public final class Indexer: @unchecked Sendable {
             }
         }
         if isComplete { try registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
-        return added
+        return (added, reads)
     }
 
     /// A delivery keeps the id, and the capture, it was first given: a new capture would record the

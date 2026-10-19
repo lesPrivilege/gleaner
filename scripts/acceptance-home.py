@@ -27,10 +27,10 @@ session answers after its files are written, as a session that wrote them would.
 Phase bundle (on its own or after the others) adds `work/launch`, outside git, for folders handed
 over (SPEC §5.4): a session whose first reply, an hour ago, names the folder `site/` and the Git
 checkout `app/`, and whose second, now, names `site/` again with `renders/`. The site's files are
-dated before the first reply but written now, so the first delivery says they may have changed
-since; its hidden `.env` and `.DS_Store` are never handed over; `assets/hero.png` came after the
-first reply, so only the second hands it over; thirty renders crowd their folder and fold; and
-`app/`, a project's own folder, stands alone and says why.
+dated before the first reply but written now, after it, so only the second delivery hands them
+over, as it does `assets/hero.png`, which came after the first reply; its hidden `.env` and
+`.DS_Store` are never handed over; thirty renders crowd their folder and fold; and `app/`, a
+project's own folder, stands alone and says why.
 
 Phase initial delivers:
 - Claude Code: CJK Markdown, a PNG, a symlink, a folder and an HTML page inside it, a

@@ -70,20 +70,11 @@ enum Staging: Equatable {
 @MainActor @Observable
 final class LibraryModel {
     /// Every delivery the library holds, whichever agent's.
-    private var library: [Artifact] = [] {
-        didSet { artifacts = Self.shown(library, without: sourcesOff) }
-    }
+    private var library: [Artifact] = []
     /// The agents whose logs the person turned off: not read, not watched, not shown.
     private(set) var sourcesOff: Set<Provider> = []
     /// What the window shows: the library without the deliveries of the agents turned off.
-    private(set) var artifacts: [Artifact] = [] {
-        didSet {
-            siblings = Artifact.deliveredWith(artifacts)
-            missing = Self.missing(artifacts)
-            saved = Self.saved(artifacts, in: indexer.store)
-            reorganize()
-        }
-    }
+    private(set) var artifacts: [Artifact] = []
     /// Each file Gleaner observed appearing or changing during sessions, whichever agent's, with its
     /// observations: candidates beside the deliveries, never deliveries (docs/design/capture.md).
     /// Grouped by file once per load, off the main thread after a run.
@@ -178,21 +169,61 @@ final class LibraryModel {
             } ?? .standard)
         // A session working in the home folder has no workspace walked, the synthetic one included.
         if let home { indexer.home = home.path }
-        self.init(indexer: indexer)
+        self.init(indexer: indexer, loads: false)
     }
 
-    init(indexer: Indexer) {
+    /// With `loads`, the library is read at once, on the caller's thread; the app opens its window
+    /// first and reads it when it starts, off the main thread.
+    init(indexer: Indexer, loads: Bool = true) {
         self.indexer = indexer
         corrections = (try? indexer.registry.corrections()) ?? []
         userProjects = (try? indexer.registry.userProjects()) ?? []
         sourcesOff = (try? indexer.registry.sourcesOff()) ?? []
-        observed = Candidate.files((try? indexer.registry.observations()) ?? [])
-        library = (try? indexer.registry.artifacts()) ?? []
+        if loads {
+            observed = Candidate.files((try? indexer.registry.observations()) ?? [])
+            show((try? indexer.registry.artifacts()) ?? [])
+        }
+    }
+
+    /// Shows the library as just read, and what the window works out from it: what each file was
+    /// delivered with, what is gone, which versions are saved, and the organization.
+    private func show(_ library: [Artifact]) {
+        self.library = library
+        showArtifacts()
+    }
+
+    private func showArtifacts() {
         artifacts = Self.shown(library, without: sourcesOff)
         siblings = Artifact.deliveredWith(artifacts)
         missing = Self.missing(artifacts)
         saved = Self.saved(artifacts, in: indexer.store)
         reorganize()
+    }
+
+    /// Puts `artifact` in place of the file at its path, after Gleaner first read the file or saved
+    /// a copy of it: only that file's deliveries changed, so nothing else is read or worked out
+    /// again, however large the library (SPEC §5.4). Its work takes it in place, wherever it is
+    /// listed; joins suggested from its new hash wait for the next read of the library.
+    private func replace(_ artifact: Artifact) {
+        guard let index = library.firstIndex(where: { $0.path == artifact.path }) else { return }
+        library[index] = artifact
+        guard let shown = Self.shown([artifact], without: sourcesOff).first,
+              let place = artifacts.firstIndex(where: { $0.path == artifact.path }) else { return }
+        artifacts[place] = shown
+        // A delivered folder's files aren't among the files a reply named with others.
+        if shown.deliveries.contains(where: { $0.member == nil }) { siblings = Artifact.deliveredWith(artifacts) }
+        saved.formUnion(shown.deliveries.compactMap(\.sha256).filter(indexer.store.has))
+        organization = organization.replacing(shown)
+        organizationVersion += 1
+    }
+
+    /// Reads the deliveries of the file at `path` again, off the main thread, after Gleaner first
+    /// read it or saved a copy of it, and puts them in place.
+    private func reread(_ path: String) async {
+        let registry = indexer.registry
+        if let artifact = await Task.detached(priority: .userInitiated, operation: { try? registry.artifact(at: path) }).value {
+            replace(artifact)
+        }
     }
 
     private func reorganize() {
@@ -295,8 +326,19 @@ final class LibraryModel {
         chosenDelivery = delivery.id
     }
 
+    /// Watches the logs, shows the library as it was while they are read, then reads them. The
+    /// library is read off the main thread, and never shown over what a finished run showed.
     func start() {
         watch()
+        let indexer = indexer
+        work.async {
+            let artifacts = try? indexer.registry.artifacts(), observed = Candidate.files((try? indexer.registry.observations()) ?? [])
+            Task { @MainActor [weak self] in
+                guard let self, !self.indexed, let artifacts else { return }
+                self.observed = observed
+                self.show(artifacts)
+            }
+        }
         reindex()
     }
 
@@ -324,7 +366,7 @@ final class LibraryModel {
         }
         guard case .success(let off) = stored else { return }
         sourcesOff = off
-        artifacts = Self.shown(library, without: off)
+        showArtifacts()
         if watcher != nil || on { watch() }
         if on { reindex() }
         announce("\(Wording.provider(provider)) \(on ? "on" : "off")")
@@ -365,7 +407,7 @@ final class LibraryModel {
                 if case .success(let (artifacts, observed)) = library {
                     // Set first: the library's change reorganizes with them.
                     if let observed { self.observed = observed }
-                    self.library = artifacts
+                    self.show(artifacts)
                 }
                 self.progress = nil
                 self.indexed = true
@@ -476,6 +518,21 @@ final class LibraryModel {
             }
         }
     }
+
+    /// A project's outline below its head: each folder its works are in (`outlineFolder`), in the
+    /// project's own layout, with how many works it holds and its rows (`outlineItems`). Made again
+    /// only when what the window lists changes, not each time the outline is drawn.
+    func outline(of project: Organization.Project) -> [(folder: String, count: Int, items: [FolderItem])] {
+        let key = ResultsKey(tokens: tokens, kind: kind, place: place, organization: organizationVersion)
+        if let cached = outlineCache, cached.key == key, cached.project == project.key { return cached.outline }
+        let folders = Dictionary(grouping: results) { outlineFolder($0.work, in: project) }
+        let outline = folders.keys
+            .sorted { a, b in a.isEmpty != b.isEmpty ? a.isEmpty : a.localizedStandardCompare(b) == .orderedAscending }
+            .map { (folder: $0, count: folders[$0]!.count, items: outlineItems(folders[$0]!)) }
+        outlineCache = (key, project.key, outline)
+        return outline
+    }
+    @ObservationIgnored private var outlineCache: (key: ResultsKey, project: String, outline: [(folder: String, count: Int, items: [FolderItem])])?
 
     /// A folder's works as its outline lists them (docs/design/capture.md, "Order and grouping"):
     /// what a person opens before what a program reads, newest first, files sharing a stem side by
@@ -967,16 +1024,11 @@ final class LibraryModel {
                 } catch {
                     done(nil, false, error)
                 }
-                Task { @MainActor [weak self] in self?.reload() }
+                Task { @MainActor [weak self] in await self?.reread(source) }
             }
             return nil
         }
         return provider
-    }
-
-    /// Reads the library again, after Gleaner first read a file or saved a copy of it.
-    private func reload() {
-        library = (try? indexer.registry.artifacts()) ?? library
     }
 
     /// The version `sha` of `artifact`'s file for another app, under the file's own name: a
@@ -1124,19 +1176,20 @@ final class LibraryModel {
     }
 
     /// Checks the file now (hash and git), and which of its versions the store holds, off the main
-    /// thread. When it is Gleaner's first read of a file whose bytes a delivery never had, the
-    /// library is read again with them.
+    /// thread. When it is Gleaner's first read of a file whose bytes a delivery never had, that
+    /// file's deliveries are read again with them.
     func observe(_ artifact: Artifact) async {
         let path = artifact.path, checkout = artifact.checkout, versions = Set(artifact.deliveries.compactMap(\.sha256))
         let indexer = indexer
         let (state, held, completed) = await Task.detached(priority: .userInitiated) {
-            (Locator.observe(path, checkout: checkout), versions.filter(indexer.store.has),
-             (try? indexer.completeCaptures(of: path, now: Date())) == true)
+            let state = Locator.observe(path, checkout: checkout), held = versions.filter(indexer.store.has)
+            let completed = (try? indexer.completeCaptures(of: path, now: Date())) == true
+            return (state, held, completed ? try? indexer.registry.artifact(at: path) : nil)
         }.value
         observations[path] = FileObservation(state: state, checkedAt: Date())
         saved.subtract(versions)
         saved.formUnion(held)
-        if completed { reload() }
+        if let completed { replace(completed) }
         // Whether a file is gone decides which joins Gleaner suggests.
         let goneChanged = (state.kind == .missing) != missing.contains(path)
         if state.kind == .missing {
@@ -1187,7 +1240,7 @@ final class LibraryModel {
         let indexer = indexer
         let result = await Task.detached { Result { try indexer.saveCopy(of: delivery, at: Date()) } }.value
         switch result {
-        case .success: reload()
+        case .success: await reread(artifact.path)
         case .failure(let error): actionFailure = (artifact.id, delivery.id, Wording.saveFailed(error, delivery: delivery))
         }
         await observe(artifact)

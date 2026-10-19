@@ -202,8 +202,9 @@ import Testing
     }
 
     /// Folders handed over (`acceptance-home.py <home> bundle`, SPEC §5.4): the launch project's
-    /// outline with its renders folded, a file of the site in its folder and as the first reply
-    /// handed it over, the site itself, the app folder that isn't unpacked, and Sources saying why.
+    /// outline with its renders folded, a file of the site in its folder, the site as its first
+    /// reply handed it over, before its files were written, and as the second did, the app folder
+    /// that isn't unpacked, and Sources saying why.
     @Test(.enabled(if: folder != nil)) func walkTheFoldersHandedOver() async throws {
         let out = try #require(Self.folder)
         let fm = FileManager.default
@@ -253,8 +254,8 @@ import Testing
         let page = try work("index.html")
         try await show(page)
         try await shot("site-page-handed-over-in-site")
-        try await show(try work("index.html"), delivery: try work("index.html").deliveries.last)
-        try await shot("site-page-first-reply-may-have-changed")
+        try await show(try work("site"), delivery: try work("site").deliveries.last)
+        try await shot("site-folder-first-reply-before-its-files-were-written")
         try await show(try work("site"))
         try await shot("site-folder-files")
         try await show(try work("app"))

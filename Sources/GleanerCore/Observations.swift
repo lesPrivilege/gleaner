@@ -198,9 +198,11 @@ public enum Workspace {
     struct Walk: Sendable {
         var files: [File] = []
         var problems: [String] = []
-        /// Where a walk that stops at a checkout stopped: the first folder it found holding `.git`.
-        /// What it found before is only part of the folder.
-        var checkout: String?
+        /// Where a walk that stops at a repository stopped: the first folder it found that is one
+        /// (`isRepository`). What it found before is only part of the folder.
+        var repository: String?
+        /// Whether the root itself could be listed: when it couldn't, the walk saw nothing of it.
+        var listedRoot = false
     }
 
     /// The workspace of a folder a session worked in: the Git checkout holding it (a worktree's own
@@ -249,11 +251,18 @@ public enum Workspace {
         return (resolved(parent) as NSString).appendingPathComponent((path as NSString).lastPathComponent)
     }
 
+    /// Whether a folder holding `names` is a Git repository's own folder, as git looks for one: a
+    /// checkout's, holding `.git`, or a bare repository, holding `HEAD`, `objects` and `refs`.
+    static func isRepository(_ names: Set<String>) -> Bool {
+        names.contains(".git") || ["HEAD", "objects", "refs"].allSatisfy(names.contains)
+    }
+
     /// Lists every regular file under `root`, by name, size, dates and identity; never opens one.
     /// Doesn't enter hidden folders, caches, or folders on another volume, and doesn't follow
     /// links. Folders are read in name order, so a walk cut at `limit` entries stops at the same
-    /// place each time. With `stopsAtCheckout`, it stops at the first folder holding `.git`.
-    static func walk(_ root: String, limit: Int = limit, stopsAtCheckout: Bool = false) -> Walk {
+    /// place each time. With `stopsAtRepository`, it stops at the first folder that is a Git
+    /// repository's own (`isRepository`).
+    static func walk(_ root: String, limit: Int = limit, stopsAtRepository: Bool = false) -> Walk {
         var walk = Walk(), seen = 0
         var info = Darwin.stat()
         // stat(2), following a linked root, by the name `Locator.stat` uses: the struct's name hides the function's.
@@ -271,8 +280,9 @@ public enum Workspace {
                 walk.problems.append("\(folder): \(error.localizedDescription)")
                 continue
             }
-            if stopsAtCheckout, names.contains(".git") {
-                walk.checkout = folder
+            if folder == root { walk.listedRoot = true }
+            if stopsAtRepository, isRepository(Set(names)) {
+                walk.repository = folder
                 return walk
             }
             if names.contains("CACHEDIR.TAG") { continue }
@@ -483,16 +493,31 @@ extension Registry {
     }
 
     /// The paths the replies of these logs named, and those named under `workspace` in any case
-    /// (as APFS compares names), each once: a delivered folder's files among them.
+    /// (as APFS compares names), each once; and the files handed over in the folders among them
+    /// and under `workspace` (SPEC §5.4).
     func deliveredPaths(logs: [String], under workspace: String) throws -> [String] {
-        let pattern = workspace.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "_", with: "\\_") + "/%"
         let marks = Array(repeating: "?", count: logs.count).joined(separator: ", ")
-        return try db.rows("""
-            SELECT path FROM deliveries WHERE path LIKE ? ESCAPE '\\' OR log_path IN (\(marks))
-            UNION SELECT m.path FROM members m JOIN deliveries d ON d.id = m.delivery_id
-                WHERE m.path LIKE ? ESCAPE '\\' OR d.log_path IN (\(marks))
-            """, [pattern] + logs + [pattern] + logs).compactMap { $0["path"] as? String }
+        // Each folder's files by a range of the files' key, never by reading every file listed.
+        let listed = try db.rows("""
+            SELECT m.path FROM (SELECT DISTINCT d.path AS folder FROM deliveries d JOIN captures c ON c.delivery_id = d.id
+                                WHERE c.kind = 'directory' AND (d.path LIKE ? ESCAPE '\\' OR d.log_path IN (\(marks)))) f
+                JOIN members m ON m.path > f.folder || '/' AND m.path < f.folder || '0'
+            UNION SELECT path FROM members WHERE path > ? AND path < ?
+            """, [Self.pattern(under: workspace)] + logs + [workspace + "/", workspace + "0"]).compactMap { $0["path"] as? String }
+        return Array(Set(try namedPaths(logs: logs, under: workspace) + listed))
+    }
+
+    /// The paths the replies of these logs named, and those named under `folder` in any case, each once.
+    func namedPaths(logs: [String], under folder: String) throws -> [String] {
+        let marks = Array(repeating: "?", count: logs.count).joined(separator: ", ")
+        return try db.rows("SELECT DISTINCT path FROM deliveries WHERE path LIKE ? ESCAPE '\\' OR log_path IN (\(marks))",
+                           [Self.pattern(under: folder)] + logs).compactMap { $0["path"] as? String }
+    }
+
+    /// What `LIKE` matches for every path under `folder`, with the folder's own wildcards escaped.
+    private static func pattern(under folder: String) -> String {
+        folder.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_") + "/%"
     }
 
     /// Records observations the first time Gleaner sees each file during each session: one already

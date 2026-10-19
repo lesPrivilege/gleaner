@@ -115,16 +115,33 @@ public struct Artifact: Sendable, Identifiable {
     /// The checkout holding the file; nil when the file is in no repository.
     public var checkout: Checkout?
 
+    /// Where a file is shown: its project folder, whether a repository holds it, and its checkout.
+    struct Location: Sendable {
+        var projectFolder: String
+        var inRepository: Bool
+        var checkout: Checkout?
+    }
+
+    var location: Location { Location(projectFolder: projectFolder, inRepository: inRepository, checkout: checkout) }
+
     /// `repository` and `checkout` are the ones recorded at delivery. They win over what can be
     /// found now, which is worse once a worktree is gone.
     public init(path: String, deliveries: [Delivery], repository: String? = nil, checkout: Checkout? = nil) {
-        self.path = path
-        self.deliveries = deliveries
         let cwd = deliveries.first?.cwd
         let root = repository ?? Projects.repository(path: path, cwd: cwd)
-        projectFolder = root ?? Projects.folder(path: path, cwd: cwd)
-        inRepository = root != nil
-        self.checkout = checkout ?? Projects.checkout(path: path)
+        self.init(path: path, deliveries: deliveries, location: Location(
+            projectFolder: root ?? Projects.folder(path: path, cwd: cwd), inRepository: root != nil,
+            checkout: checkout ?? Projects.checkout(path: path)))
+    }
+
+    /// Where it is already known: a file handed over in a folder is where its folder is, with no
+    /// repository found again for each file.
+    init(path: String, deliveries: [Delivery], location: Location) {
+        self.path = path
+        self.deliveries = deliveries
+        projectFolder = location.projectFolder
+        inRepository = location.inRepository
+        checkout = location.checkout
         // One line each: a search word holds no whitespace, so it never reads across two of them. A
         // file handed over in a folder has none of its own: the reply's words find the folder.
         ownWords = deliveries.map { d in
@@ -145,10 +162,7 @@ public struct Artifact: Sendable, Identifiable {
         let deliveries = deliveries.filter(kept)
         guard !deliveries.isEmpty else { return nil }
         guard deliveries.count < self.deliveries.count else { return self }
-        var artifact = Artifact(path: path, deliveries: deliveries, repository: inRepository ? projectFolder : nil, checkout: checkout)
-        artifact.projectFolder = projectFolder
-        artifact.inRepository = inRepository
-        return artifact
+        return Artifact(path: path, deliveries: deliveries, location: location)
     }
 
     /// The project's name, its folder's. Two projects can share one.

@@ -48,7 +48,7 @@ enum Wording {
                              detail: "Matches what Gleaner first saw for delivery \(k) on \(date(seen)), after that delivery. Not the latest, delivery \(number(latest, in: artifact)). \(when)")
         case .changed(let n) where now.state.kind == .file && latest.capture?.provenance == .listed:
             return Statement(mark: .attention, title: "Can’t verify",
-                             detail: "Gleaner listed delivery \(n) with its folder and never read it, and the file has changed since, so it can’t tell whether this file is it. \(when)")
+                             detail: "Gleaner listed delivery \(n) with its folder and never read it, and this file isn’t as listed: its size, dates or identity differ, so Gleaner can’t tell whether it is that delivery. \(when)")
         case .changed(let n) where now.state.kind == .file && latest.sha256 == nil && latest.capture?.isDirectory != true:
             return Statement(mark: .attention, title: "Can’t verify",
                              detail: "Gleaner never read delivery \(n), so it can’t tell whether this file is it. \(when)")
@@ -538,26 +538,18 @@ enum Wording {
         (member.folder as NSString).lastPathComponent + "/"
     }
 
-    /// Said beside the folder a file was handed over in, only when its dates show a change after the
-    /// reply (SPEC §5.4): it was in the folder then, by its creation date, but may have been changed
-    /// or replaced since. Otherwise nothing needs saying.
-    static func changedSince(_ member: Membership) -> Statement? {
-        guard member.changedSince else { return nil }
-        return Statement(mark: .hollow, title: "May have changed since",
-                         detail: "It was in \(folderName(member)) when the reply named that folder, by its creation date, but its inode changed after the reply: it may have been changed or replaced since.")
-    }
-
     /// What listing a delivered folder's files found, for its detail: how many were handed over in
     /// it, or why they aren't listed, and what the listing couldn't see.
     static func unpacking(_ unpacking: Unpacking?) -> Statement {
         guard let unpacking else {
-            return Statement(mark: .dashed, title: "Not listed yet", detail: "Gleaner lists a delivered folder’s files when it next reads the logs.")
+            return Statement(mark: .dashed, title: "Not listed yet",
+                             detail: "Gleaner lists a delivered folder’s files the next time it reads the logs while the folder is there and can be read.")
         }
         if let reason = unpacking.notUnpacked {
-            return Statement(mark: .na, title: "Not unpacked",
-                             detail: "Gleaner doesn’t list its files as handed over: it is \(reason). Handing over a project’s own folder points at the project.")
+            let project = unpacking.pointsAtProject ? " Handing over a project’s own folder points at the project; what changed there is observed instead." : ""
+            return Statement(mark: .na, title: "Not unpacked", detail: "Gleaner doesn’t list its files as handed over: it is \(reason).\(project)")
         }
-        let listed = "Listed \(date(unpacking.listedAt)) by name, size and dates, without reading them: the files the reply’s time shows were in it, hidden ones left out. Each is read when you select, open, compare or hand it on."
+        let listed = "Listed \(date(unpacking.listedAt)) by name, size and dates, without reading them: the files their dates show were in it, unchanged, when the reply named it, hidden ones left out. Each is read when you select, open, compare or hand it on."
         guard unpacking.problems.isEmpty else {
             return Statement(mark: .attention, title: "\(count(unpacking.members, "file")), listed in part",
                              detail: listed + " The listing couldn’t see everything: " + unpacking.problems.map(tilde).joined(separator: "; ") + ".")
