@@ -248,17 +248,20 @@ extension CommandTests {
         }
     }
 
-    @Test func mcpListsTheSixCommandsAsTools() throws {
+    @Test func mcpListsTheCommandsAsTools() throws {
         let host = try Host(home: home)
         try host.initialize()
         let listed = try #require((try host.request("tools/list")["result"] as? [String: Any])?["tools"] as? [[String: Any]])
         try host.close()
         let tools = Dictionary(uniqueKeysWithValues: listed.map { ($0["name"] as? String ?? "", $0) })
-        #expect(listed.map { $0["name"] as? String } == ["gleaner_find", "gleaner_show", "gleaner_read", "gleaner_resolve", "gleaner_handoff", "gleaner_verify"])
+        #expect(listed.map { $0["name"] as? String } == ["gleaner_find", "gleaner_projects", "gleaner_show", "gleaner_outline", "gleaner_section", "gleaner_read", "gleaner_resolve", "gleaner_handoff", "gleaner_verify"])
 
         // The command's arguments, by its names.
         let arguments: [String: (all: Set<String>, required: [String])] = [
-            "gleaner_find": (["terms", "project", "kind", "limit"], ["terms"]),
+            "gleaner_find": (["terms", "project", "kind", "limit", "offset", "generation"], ["terms"]),
+            "gleaner_projects": (["limit", "offset", "generation"], []),
+            "gleaner_outline": (["delivery", "terms", "limit", "offset"], ["delivery"]),
+            "gleaner_section": (["delivery", "section", "max"], ["delivery", "section"]),
             "gleaner_show": (["delivery"], ["delivery"]),
             "gleaner_read": (["delivery", "lines", "bytes", "max"], ["delivery"]),
             "gleaner_resolve": (["delivery"], ["delivery"]),
@@ -424,7 +427,7 @@ extension CommandTests {
         }
 
         // A tool that isn't one is the protocol's error, not a refusal.
-        let unknown = try host.request("tools/call", ["name": "gleaner_outline", "arguments": [:]])
+        let unknown = try host.request("tools/call", ["name": "gleaner_unknown", "arguments": [:]])
         #expect((unknown["error"] as? [String: Any])?["code"] as? Int == -32602)
         try host.close()
     }

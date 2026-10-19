@@ -53,11 +53,13 @@ extension Catalog {
     /// collections' names, after the person's corrections. `project` names that project by its name as shown, or a derived one by its
     /// folder, in any form an agent may have it (`/private/tmp/app/` is `/tmp/app`); the project
     /// Gleaner found a file in, by its folder or name, finds it too, wherever the person put it.
-    public func find(_ terms: [String], project: String? = nil, kind: Artifact.Kind? = nil, limit: Int = 20) throws -> Found {
-        guard limit > 0 else { throw Failure.usage("The limit must be at least 1.") }
+    public func find(_ terms: [String], project: String? = nil, kind: Artifact.Kind? = nil, limit: Int = 20,
+                     offset: Int = 0, generation: Int? = nil) throws -> Found {
+        try Self.validatePage(limit: limit, offset: offset)
         let tokens = Search.tokens(terms.joined(separator: " "))
         let folder = project.flatMap { $0.hasPrefix("/") ? Paths.standard($0) : nil }
         let index = try registry.index()
+        try Self.requireGeneration(generation, in: index)
         let organization = try organize(try shown().artifacts)
         func place(_ work: Work) -> Project {
             organization.project(work.project).map { Project(name: $0.name, folder: $0.folder) }
@@ -65,18 +67,20 @@ extension Catalog {
         }
         let matches = organization.search(tokens, kind: kind) { work in
             guard let project else { return true }
+            if work.project == project { return true }
             let shown = place(work)
             if let folder, folder == shown.folder || work.files.contains(where: { $0.projectFolder == folder }) { return true }
             return ([shown.name] + work.files.flatMap { [organization.projectName($0.projectFolder), $0.project] })
                 .contains { $0.caseInsensitiveCompare(project) == .orderedSame }
         }
-        let results = matches.prefix(limit).map { work, delivery in
+        let results = matches.dropFirst(offset).prefix(limit).map { work, delivery in
             let artifact = work.file(of: delivery)
             return Hit(reference: reference(delivery, of: artifact, now: check(artifact), library: index.library),
                        project: place(work), kind: artifact.kind,
                        deliveredAt: delivery.deliveredAt, request: Self.excerpt(delivery.request))
         }
-        return Found(index: index, total: matches.count, truncated: matches.count > limit, results: Array(results))
+        return Found(index: index, total: matches.count, truncated: offset < matches.count && results.count < matches.count - offset,
+                     results: Array(results))
     }
 
     /// The delivery `id` with every delivery of its file, the file on disk now, what handing it on
@@ -233,14 +237,14 @@ extension Catalog {
     }
 
     /// The library as the app shows it (`Artifact.shown`), and all of it.
-    private func shown() throws -> (artifacts: [Artifact], library: [Artifact]) {
+    func shown() throws -> (artifacts: [Artifact], library: [Artifact]) {
         let library = try registry.artifacts()
         return (Artifact.shown(library, without: try registry.sourcesOff()), library)
     }
 
     /// Projects, collections and works as the app shows them: what Gleaner found and observed, with
     /// the person's corrections (`Organization(shown:registry:)`).
-    private func organize(_ artifacts: [Artifact]) throws -> Organization {
+    func organize(_ artifacts: [Artifact]) throws -> Organization {
         try Organization(shown: artifacts, registry: registry)
     }
 
@@ -320,6 +324,10 @@ extension Catalog {
         case notText
         /// The bytes changed, or couldn't be read, while Gleaner read them.
         case changed
+        /// A continuation belongs to a different completed indexing run.
+        case staleIndex(expected: Int, found: Int)
+        /// This exact document version has no section with the supplied identity.
+        case sectionNotFound(String)
         /// What was asked can't be answered as asked: a range, a limit.
         case usage(String)
         /// Anything else that stopped an answer, with what it was: the library couldn't be queried,
@@ -330,7 +338,7 @@ extension Catalog {
         /// the wrong version.
         public var exitCode: Int32 {
             switch self {
-            case .notFound, .sourceOff, .otherLibrary, .unavailable, .notText, .changed, .failed: 1
+            case .notFound, .sourceOff, .otherLibrary, .unavailable, .notText, .changed, .staleIndex, .sectionNotFound, .failed: 1
             case .usage: 2
             case .noLibrary, .unreadableLibrary, .wrongVersion, .newerLibrary: 3
             }
@@ -359,6 +367,10 @@ extension Catalog {
                 "This version isn’t text."
             case .changed:
                 "The bytes changed, or couldn’t be read, while Gleaner read them. Try again."
+            case .staleIndex(let expected, let found):
+                "The index generation changed from \(expected) to \(found). Restart the query before continuing its pages."
+            case .sectionNotFound:
+                "This document version has no section with that identity. Read its outline again."
             case .usage(let message):
                 message
             case .failed(let what):
@@ -379,6 +391,8 @@ extension Catalog {
             case .unavailable: "unavailable"
             case .notText: "not_text"
             case .changed: "changed"
+            case .staleIndex: "stale_index"
+            case .sectionNotFound: "section_not_found"
             case .usage: "usage"
             case .failed: "failed"
             }

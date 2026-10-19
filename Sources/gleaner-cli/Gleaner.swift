@@ -17,7 +17,7 @@ struct Gleaner: AsyncParsableCommand {
             the message on stderr too. Exit codes: 0 success; 1 not found, no bytes for that version, \
             or another failure; 2 usage; 3 no library, or the wrong version (open Gleaner).
             """,
-        subcommands: [Find.self, Show.self, Read.self, Resolve.self, Handoff.self, Verify.self, Serve.self])
+        subcommands: [Find.self, Projects.self, Show.self, Outline.self, Section.self, Read.self, Resolve.self, Handoff.self, Verify.self, Serve.self])
 
     /// Runs the command as `AsyncParsableCommand.main` does, with the contract's exit codes: a
     /// failure exits with its own, and a usage error with 2, where ArgumentParser would give 64. A
@@ -62,16 +62,20 @@ extension Gleaner {
 
         @Argument(help: "Words to find together in one delivery's request, reply or session, or in the file's name or project.")
         var terms: [String]
-        @Option(help: "Only this project, by its name or folder.")
+        @Option(help: "Only this project, by its key, name or folder.")
         var project: String?
         @Option(help: "Only this kind of file.")
         var kind: Artifact.Kind?
-        @Option(help: "The most files to list.")
+        @Option(help: "The most works to list, between 1 and 1000.")
         var limit = Find.limit
+        @Option(help: "Skip this many matching works. Continue with offset plus the number returned.")
+        var offset = 0
+        @Option(help: "Require this completed index generation when continuing a page.")
+        var generation: Int?
         @OptionGroup var library: Library
 
         func run() throws {
-            try write(library.answer { try $0.find(terms, project: project, kind: kind, limit: limit) })
+            try write(library.answer { try $0.find(terms, project: project, kind: kind, limit: limit, offset: offset, generation: generation) })
         }
     }
 

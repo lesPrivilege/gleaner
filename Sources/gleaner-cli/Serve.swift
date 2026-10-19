@@ -5,7 +5,7 @@ import Logging
 import MCP
 
 extension Gleaner {
-    /// `gleaner mcp`: the six commands as the tools of a stdio MCP server, for an agent's host
+    /// `gleaner mcp`: the commands as the tools of a stdio MCP server, for an agent's host
     /// (docs/design/mcp-adapter.md). Each tool takes its command's arguments and answers with its
     /// JSON and its refusals (`Tools`). stdout carries only protocol messages. The server keeps no
     /// state: each call opens the library afresh, to read only, as the command does.
@@ -117,10 +117,10 @@ actor Stdio: Transport {
     }
 }
 
-/// The command's six calls as MCP tools, with its arguments, its JSON and its refusals
+/// The command's calls as MCP tools, with its arguments, its JSON and its refusals
 /// (mcp-adapter.md "Tools"). Each description says what the tool never does.
 enum Tools {
-    static let all = [find, show, read, resolve, handoff, verify]
+    static let all = [find, projects, show, outline, section, read, resolve, handoff, verify]
 
     /// As bundle-app.sh names a build between releases, less the commit, which a build from source
     /// doesn't know.
@@ -140,18 +140,21 @@ enum Tools {
                 "type": "array", "items": ["type": "string"], "minItems": 1,
                 "description": "Words to find together in one delivery's request, reply or session, or in the file's name or project.",
             ],
-            "project": ["type": "string", "description": "Only this project, by its name or folder."],
+            "project": ["type": "string", "description": "Only this project, by its key, name or folder."],
             "kind": [
                 "type": "string", "enum": .array(Artifact.Kind.allCases.map { .string($0.rawValue) }),
                 "description": "Only this kind of file.",
             ],
-            "limit": ["type": "integer", "minimum": 1, "default": .int(Gleaner.Find.limit), "description": "The most files to list."],
+            "limit": ["type": "integer", "minimum": 1, "maximum": .int(Catalog.pageLimit), "default": .int(Gleaner.Find.limit), "description": "The most works to list."],
+            "offset": ["type": "integer", "minimum": 0, "default": 0, "description": "Skip this many matched works; continue with offset plus the number returned."],
+            "generation": ["type": "integer", "description": "Require this completed index generation when continuing a page."],
         ],
         required: ["terms"], annotations: readOnly
     ) { (arguments: FindArguments, library) in
         guard !arguments.terms.isEmpty else { throw Catalog.Failure.usage("Give at least one term.") }
         return library.answer {
-            try $0.find(arguments.terms, project: arguments.project, kind: arguments.kind, limit: arguments.limit ?? Gleaner.Find.limit)
+            try $0.find(arguments.terms, project: arguments.project, kind: arguments.kind, limit: arguments.limit ?? Gleaner.Find.limit,
+                        offset: arguments.offset ?? 0, generation: arguments.generation)
         }
     }
 
@@ -252,6 +255,8 @@ enum Tools {
         var project: String?
         var kind: Artifact.Kind?
         var limit: Int?
+        var offset: Int?
+        var generation: Int?
     }
 
     struct DeliveryArguments: Decodable {
