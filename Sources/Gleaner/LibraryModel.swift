@@ -11,14 +11,18 @@ struct SearchResult: Identifiable {
     var id: Work.ID { work.id }
 }
 
-/// A row of a list: a work, or one of its revisions (a delivery) listed under it.
+/// A row of a list: a work, one of its revisions (a delivery) listed under it, or a collection,
+/// whose review page the detail shows.
 enum OutlineRow: Hashable {
     case work(Work.ID)
     case revision(Work.ID, Delivery.ID)
+    case unit(String)
 
-    var work: Work.ID {
+    /// The work it names; nil for a collection.
+    var work: Work.ID? {
         switch self {
         case .work(let id), .revision(let id, _): id
+        case .unit: nil
         }
     }
 }
@@ -37,11 +41,42 @@ enum FolderItem: Identifiable {
     }
 }
 
-/// Where the library window is: every delivery, one project, or what Gleaner reads and keeps.
+/// Where the library window is: every delivery, what waits on the person's review, one project,
+/// one collection, or what Gleaner reads and keeps.
 enum Place: Hashable {
     case all
+    case toReview
     case project(String)
+    /// A collection (a work unit), by its key: its works and the collections inside it.
+    case unit(String)
     case sources
+}
+
+/// A collection being named in place in the sidebar: a new one, in a project or inside another
+/// collection, to hold the works or observed files at `adding` once named; or one being renamed.
+enum Naming: Equatable {
+    case new(project: String, parent: String?, adding: [String])
+    case rename(String)
+}
+
+/// A session's files observed in a project and handed over in none, newest first: what a project's
+/// Observed section lists under the session (docs/design/review.md, Keeping an observed file).
+struct ObservedSession: Identifiable {
+    var logPath: String
+    var candidates: [Candidate]
+    /// Its rows, as `Listing` lays them out.
+    var items: [ObservedItem]
+
+    init(logPath: String, candidates: [Candidate]) {
+        self.logPath = logPath
+        self.candidates = candidates
+        items = ObservedItem.items(candidates)
+    }
+
+    var id: String { logPath }
+    /// The session as its newest observation names it.
+    var title: String? { candidates[0].latest.sessionTitle }
+    var provider: Provider { candidates[0].latest.provider }
 }
 
 /// A page of what Gleaner reads and keeps.
@@ -87,7 +122,9 @@ final class LibraryModel {
     /// The work units the person made, as made; `organization` shows them as named last.
     private(set) var units: [WorkUnit] = []
     /// Every verdict and published mark, by the file each was made on.
-    private(set) var reviews = Reviews([])
+    private(set) var reviews = Reviews([]) {
+        didSet { reviewsVersion += 1 }
+    }
     /// Why the last correction couldn't be recorded.
     private(set) var correctionFailure: String?
     /// Why the last verdict or mark couldn't be made.
@@ -96,10 +133,13 @@ final class LibraryModel {
     /// work in a unit or with a verdict or mark), nil when no regular file is there: taken with each
     /// organization, never by reading bytes, so the review states never touch the disk while they
     /// are drawn.
-    private var listed: [String: FileStat?] = [:]
+    private var listed: [String: FileStat?] = [:] { didSet { reviewsVersion += 1 } }
     /// The bytes read of a file this session, on select or for a verdict, with the file as it was
     /// then: they stand for the file while it is still so.
-    private var reads: [String: (sha256: String, file: FileStat)] = [:]
+    private var reads: [String: (sha256: String, file: FileStat)] = [:] { didSet { reviewsVersion += 1 } }
+    /// What is at each of those paths when no regular file is: gone, a folder, not a regular file
+    /// or unreadable, taken with `listed`, from the file's metadata.
+    private var absent: [String: LocatorState.Kind] = [:]
     /// Paths not on disk, checked once per load and refreshed when a file is observed, so list
     /// rows never touch the disk while drawing.
     private(set) var missing: Set<String> = []
@@ -127,13 +167,33 @@ final class LibraryModel {
     }
     var kind: Artifact.Kind?
     var place: Place = .all {
-        didSet { if place != oldValue, case .project = place { kind = nil } }
+        didSet {
+            guard place != oldValue else { return }
+            if case .project = place { kind = nil }
+            // A collection opens on its review page; elsewhere no collection's page is shown.
+            if case .unit(let key) = place {
+                selection = nil
+                shownUnit = key
+            } else {
+                shownUnit = nil
+            }
+        }
     }
     var sourcePage: SourcePage = .agent(.claudeCode)
     /// The work shown: its id, or any of its files' paths.
     var selection: Work.ID? {
-        didSet { if selection != oldValue { chosenDelivery = nil; comparison = nil } }
+        didSet {
+            if selection != oldValue { chosenDelivery = nil; comparison = nil; alsoSelected = [] }
+            if selection != nil { shownUnit = nil }
+        }
     }
+    /// The collection whose review page the detail shows, when its row is chosen rather than a work.
+    var shownUnit: String?
+    /// The rows chosen with the selected one (⌘-click, ⇧-click), for decisions on several works at
+    /// once; the detail then says how many.
+    var alsoSelected: Set<OutlineRow> = []
+    /// A collection being named in place in the sidebar.
+    var naming: Naming?
     /// Set when the person picks a delivery; otherwise the delivery the search matched.
     var chosenDelivery: Delivery.ID?
     /// Works the person opened or closed in a list this session, wherever it is listed; the rest
@@ -303,6 +363,12 @@ final class LibraryModel {
         organizationVersion += 1
         statReviewed()
         if indexed { updateStatus() }
+        // A collection deleted, or taken back, while shown: its project is shown instead.
+        if case .unit(let key) = place, organization.unit(key) == nil {
+            let project = units.first { $0.key == key }.flatMap { organization.project($0.project) }
+            place = project.map { .project($0.key) } ?? .all
+        }
+        if let shown = shownUnit, organization.unit(shown) == nil { shownUnit = nil }
     }
 
     /// The subtitle: what the library holds, as organized now.
@@ -390,8 +456,11 @@ final class LibraryModel {
     /// going to its work's project when the window shows another.
     func select(_ delivery: Delivery) {
         guard let work = organization.work(containing: delivery.path) else { return }
-        if case .project(let key) = place, key != work.project { place = .project(work.project) }
-        if place == .sources { place = .all }
+        switch place {
+        case .sources: place = .all
+        case .project, .unit, .toReview: if !holds(place, work) { place = .project(work.project) }
+        case .all: break
+        }
         if !results.contains(where: { $0.id == work.id }) { clearFilters() }
         selection = work.id
         chosenDelivery = delivery.id
@@ -506,26 +575,37 @@ final class LibraryModel {
     /// The works the window lists, newest first: in the project shown, of the kind chosen, matching the search.
     var results: [SearchResult] {
         let tokens = tokens
-        let key = ResultsKey(tokens: tokens, kind: kind, place: place, organization: organizationVersion)
+        let key = resultsKey
         if let cached = resultsCache, cached.key == key { return cached.results }
-        let results = organization.works.compactMap { result(for: $0, tokens: tokens) }
+        // To Review's works are what it holds: the queue is worked out once, not once for each.
+        let results = place == .toReview
+            ? toReview.flatMap(\.works).compactMap { result(for: $0, tokens: tokens, anywhere: true) }
+            : organization.works.compactMap { result(for: $0, tokens: tokens) }
         resultsCache = (key, results)
         return results
     }
 
     /// What the list depends on: it is listed again only when one of these changes, not each time
-    /// a view asks for it.
+    /// a view asks for it. To Review also follows the verdicts, and what is known of each file.
     private struct ResultsKey: Equatable {
-        var tokens: [String], kind: Artifact.Kind?, place: Place, organization: Int
+        var tokens: [String], kind: Artifact.Kind?, place: Place, organization: Int, reviews: Int
     }
+
+    private var resultsKey: ResultsKey {
+        ResultsKey(tokens: tokens, kind: kind, place: place, organization: organizationVersion,
+                   reviews: place == .toReview ? reviewsVersion : 0)
+    }
+
+    /// Bumped with each change to the verdicts and marks, or to what is known of a reviewed file
+    /// (its size and dates, or a read of it), so To Review is listed again.
+    @ObservationIgnored private(set) var reviewsVersion = 0
     @ObservationIgnored private var resultsCache: (key: ResultsKey, results: [SearchResult])?
 
     /// The work as the list shows it, or nil when the place, kind or search leaves it out.
     func result(for work: Work) -> SearchResult? { result(for: work, tokens: tokens) }
 
-    private func result(for work: Work, tokens: [String]) -> SearchResult? {
-        if case .project(let key) = place, work.project != key { return nil }
-        guard kind == nil || work.kind == kind,
+    private func result(for work: Work, tokens: [String], anywhere: Bool = false) -> SearchResult? {
+        guard anywhere || holds(place, work), kind == nil || work.kind == kind,
               let matched = work.match(tokens, project: organization.projectName(work.project)) else { return nil }
         return SearchResult(work: work, matched: matched)
     }
@@ -535,7 +615,19 @@ final class LibraryModel {
     var selected: SearchResult? {
         // The Sources page hides the selection: menus and Quick Look don't act on what isn't shown.
         guard place != .sources, let selection, let work = organization.work(containing: selection) else { return nil }
-        return result(for: work, tokens: tokens)
+        // A work reviewed in To Review stays shown, as Mail keeps a message read in Unread.
+        return result(for: work, tokens: tokens, anywhere: place == .toReview)
+    }
+
+    /// Whether the place lists the work: a project its own, a collection its works and those of the
+    /// collections inside it, To Review what waits on the person.
+    func holds(_ place: Place, _ work: Work) -> Bool {
+        switch place {
+        case .all, .sources: true
+        case .project(let key): work.project == key
+        case .unit(let key): work.unit.map { $0 == key || organization.unit($0)?.parent == key } ?? false
+        case .toReview: toReview.contains { $0.works.contains { $0.id == work.id } }
+        }
     }
 
     func delivery(in result: SearchResult) -> Delivery {
@@ -564,12 +656,13 @@ final class LibraryModel {
         return project.origin != .repository
     }
 
-    /// The selected row: the revision shown, while its work is open; otherwise the work. Choosing a
-    /// row shows what it names, as choosing a delivery under Versions does; choosing the row
-    /// already selected changes nothing.
+    /// The selected row: the revision shown, while its work is open; otherwise the work; with no
+    /// work, the collection whose page is shown. Choosing a row shows what it names, as choosing a
+    /// delivery under Versions does; choosing the row already selected changes nothing.
     var outlineSelection: OutlineRow? {
         get {
-            guard let selection, let work = organization.work(containing: selection) else { return selection.map(OutlineRow.work) }
+            guard let selection else { return shownUnit.map(OutlineRow.unit) }
+            guard let work = organization.work(containing: selection) else { return .work(selection) }
             if let chosen = chosenDelivery, isOpen(work), work.deliveries.contains(where: { $0.id == chosen }) {
                 return .revision(work.id, chosen)
             }
@@ -580,21 +673,48 @@ final class LibraryModel {
             switch newValue {
             case nil:
                 selection = nil
+                shownUnit = nil
             case .work(let id):
                 selection = id
                 chosenDelivery = nil
             case .revision(let id, let delivery):
                 selection = id
                 chosenDelivery = delivery
+            case .unit(let key):
+                selection = nil
+                shownUnit = key
             }
         }
+    }
+
+    /// Every row chosen: the selected one, and those chosen with it. Choosing several keeps the
+    /// one shown while it stays chosen, else shows one just added.
+    var selectedRows: Set<OutlineRow> {
+        get { outlineSelection.map { alsoSelected.union([$0]) } ?? alsoSelected }
+        set {
+            let shown = outlineSelection.flatMap { newValue.contains($0) ? $0 : nil }
+                ?? newValue.subtracting(selectedRows).first ?? newValue.first
+            outlineSelection = shown
+            alsoSelected = newValue.subtracting(shown.map { [$0] } ?? [])
+        }
+    }
+
+    /// The works the chosen rows name, the shown one first, each once.
+    var selectedWorks: [Work] {
+        let rows = (outlineSelection.map { [$0] } ?? []) + alsoSelected.filter { $0 != outlineSelection }
+        var seen = Set<Work.ID>(), works: [Work] = []
+        for row in rows {
+            guard let id = row.work, let work = organization.work(containing: id), seen.insert(work.id).inserted else { continue }
+            works.append(work)
+        }
+        return works
     }
 
     /// A project's outline below its head: each folder its works are in (`outlineFolder`), in the
     /// project's own layout, with how many works it holds and its rows (`outlineItems`). Made again
     /// only when what the window lists changes, not each time the outline is drawn.
     func outline(of project: Organization.Project) -> [(folder: String, count: Int, items: [FolderItem])] {
-        let key = ResultsKey(tokens: tokens, kind: kind, place: place, organization: organizationVersion)
+        let key = resultsKey
         if let cached = outlineCache, cached.key == key, cached.project == project.key { return cached.outline }
         let folders = Dictionary(grouping: results) { outlineFolder($0.work, in: project) }
         let outline = folders.keys
@@ -643,7 +763,7 @@ final class LibraryModel {
 
     /// The file and delivery a row names: a revision's own, or what its work's row names.
     func target(_ row: OutlineRow) -> (artifact: Artifact, delivery: Delivery)? {
-        guard let work = organization.work(containing: row.work) else { return nil }
+        guard let id = row.work, let work = organization.work(containing: id) else { return nil }
         if case .revision(_, let id) = row, let delivery = work.deliveries.first(where: { $0.id == id }) {
             return (work.file(of: delivery), delivery)
         }
@@ -910,16 +1030,28 @@ final class LibraryModel {
     }
 
     /// What decisions made together did, in a sentence: those of one kind and target with every
-    /// file named, then the others.
+    /// file named, then the others. Observed files kept to go in a collection are said once, as
+    /// kept and added, with the sessions they were observed during.
     func describe(_ group: [Correction]) -> String {
         guard group.count > 1 else { return group.first.map(describe) ?? "" }
-        let ordered = group.sorted { $0.id < $1.id }
+        var ordered = group.sorted { $0.id < $1.id }
         var parts: [String] = [], said = Set<String>()
+        let name = { (c: Correction) in (c.subject as NSString).lastPathComponent }
+        let kept = ordered.filter { $0.kind == .kept }, added = ordered.filter { $0.kind == .unit }
+        if !kept.isEmpty, let unit = added.first?.target, added.allSatisfy({ $0.target == unit }),
+           Set(kept.map(\.subject)).isSubset(of: added.map(\.subject)) {
+            var sessions: [String] = []
+            for c in kept where !sessions.contains(sessionName(c.target)) { sessions.append(sessionName(c.target)) }
+            parts.append("Kept and added \(added.map(name).joined(separator: ", ")) to \(organization.unitName(unit)), "
+                         + "observed during \(sessions.joined(separator: " and "))")
+            ordered.removeAll { $0.kind == .kept || $0.kind == .unit }
+        }
         for c in ordered where said.insert(c.kind.rawValue + "\n" + c.target).inserted {
             let same = ordered.filter { $0.kind == c.kind && $0.target == c.target }
-            let names = same.map { ($0.subject as NSString).lastPathComponent }.joined(separator: ", ")
+            let names = same.map(name).joined(separator: ", ")
             switch c.kind {
             case .project: parts.append("Moved \(names) to \(organization.projectName(c.target))")
+            case .kept: parts.append("Kept \(names), observed during \(sessionName(c.target))")
             case .unit: parts.append("Added \(names) to \(organization.unitName(c.target))")
             case .outOfUnit: parts.append("Removed \(names) from \(organization.unitName(c.target))")
             default: parts += same.map(describe)
@@ -1008,7 +1140,7 @@ final class LibraryModel {
              (kind: .unit, subject: candidate.path, target: unit.key)]
                 + (candidate.project == unit.project ? [] : [(kind: .project, subject: candidate.path, target: unit.project)])
         }
-        await decide(decisions, as: "Add to Collection", saying: "Added \(names(candidates.map(\.name))) to \(unit.name)")
+        await decide(decisions, as: "Add to Collection", saying: "Kept and added \(names(candidates.map(\.name), "file")) to \(unit.name)")
     }
 
     func remove(_ works: [Work], from unit: WorkUnit) async {
@@ -1016,10 +1148,14 @@ final class LibraryModel {
         await decide(decisions, as: "Remove from Collection", saying: "Removed \(names(works.map(\.name))) from \(unit.name)")
     }
 
-    /// Keeps the observed file: a work whose one revision is the file as its latest session saw it.
-    func keep(_ candidate: Candidate) async {
-        await decide([(.kept, candidate.path, candidate.latest.logPath)], as: "Keep",
-                     saying: "Kept \(candidate.name), observed during \(Wording.session(candidate.latest.sessionTitle))")
+    /// Keeps the observed files, as one decision: each a work whose one revision is the file as its
+    /// latest session saw it.
+    func keep(_ candidates: [Candidate]) async {
+        guard let first = candidates.first else { return }
+        let text = candidates.count == 1
+            ? "Kept \(first.name), observed during \(Wording.session(first.latest.sessionTitle))"
+            : "Kept \(Wording.count(candidates.count, "file"))"
+        await decide(candidates.map { (.kept, $0.path, $0.latest.logPath) }, as: "Keep", saying: text)
     }
 
     /// Records decisions made as one, puts them on Edit › Undo as `name`, and says `text`.
@@ -1031,8 +1167,8 @@ final class LibraryModel {
         said(text)
     }
 
-    private func names(_ names: [String]) -> String {
-        names.count == 1 ? names[0] : Wording.count(names.count, "work")
+    private func names(_ names: [String], _ noun: String = "work") -> String {
+        names.count == 1 ? names[0] : Wording.count(names.count, noun)
     }
 
     /// Makes a verdict or a published mark on each work's current file, on the bytes there now,
@@ -1058,6 +1194,11 @@ final class LibraryModel {
         }
         announce(reviewFailure ?? Wording.reviewed(kind, count: made.count))
         return made
+    }
+
+    /// Clears why the last verdict or mark wasn't made, once the person looks again.
+    func lookAgain() {
+        reviewFailure = nil
     }
 
     /// Takes back verdicts and marks; those made before or after them stay.
@@ -1093,18 +1234,153 @@ final class LibraryModel {
         Review.standing(reviews.published(of: work), now: present(work))
     }
 
-    /// What waits on the person's review, grouped by unit (`Organization.toReview`).
+    /// What waits on the person's review, grouped by unit (`Organization.toReview`). Worked out
+    /// again only when the organization, the verdicts or what is known of a file changed: the
+    /// sidebar asks for it on every collection's row.
     var toReview: [Organization.ReviewGroup] {
-        organization.toReview(reviews, present: present)
+        // Read for the views that ask, so they follow every change the queue follows.
+        _ = (organization.works.count, reviews, listed.count, reads.count)
+        let key = [organizationVersion, reviewsVersion]
+        if let cached = queueCache, cached.key == key { return cached.groups }
+        let groups = organization.toReview(reviews, present: present)
+        queueCache = (key, groups)
+        return groups
+    }
+    @ObservationIgnored private var queueCache: (key: [Int], groups: [Organization.ReviewGroup])?
+
+    /// How many works wait on the person's review.
+    var toReviewCount: Int { toReview.reduce(0) { $0 + $1.works.count } }
+
+    /// How many works in the collection, and in the collections inside it, wait on the person.
+    func waiting(in key: String) -> Int {
+        toReview.lazy.filter { group in group.unit.map { $0 == key || self.organization.unit($0)?.parent == key } ?? false }
+            .reduce(0) { $0 + $1.works.count }
+    }
+
+    /// What waits on the person about the work, on its row: none in a collection yet, or a verdict
+    /// on other bytes. A folder has no bytes to judge, so nothing waits on one.
+    func waits(_ work: Work) -> (Mark, String)? {
+        guard work.kind != .folder else { return nil }
+        return Wording.waiting(verdict(of: work), inUnit: work.unit != nil)
+    }
+
+    /// The On this Mac state of the work's current file, as the library knows it without reading
+    /// it: a regular file there when its size and dates were taken, else this session's check or
+    /// what the library found gone.
+    func onThisMac(_ work: Work) -> Statement {
+        let file = work.latest, now = rowNow(file)
+        if let kind = now.kind { return Wording.onThisMac(kind, changed: now.changed) }
+        if let kind = absent[file.path] { return Wording.onThisMac(kind, changed: false) }
+        return Wording.onThisMac(file.kind == .folder ? .directory : .file, changed: false)
+    }
+
+    /// The file as the person was last shown it in the detail, while it is still as read: what a
+    /// verdict made there binds to (A17). Nil when the detail shows other bytes than the file's.
+    func shownFile(_ work: Work, sha: String?) -> FileStat? {
+        guard let sha, let read = reads[work.latest.path], read.sha256 == sha else { return nil }
+        return read.file
+    }
+
+    /// The collection to make a new one in from the File menu, or to rename or delete: the one
+    /// shown, else the one whose page is shown.
+    var currentUnit: WorkUnit? {
+        if let key = shownUnit, let unit = organization.unit(key) { return unit }
+        if case .unit(let key) = place { return organization.unit(key) }
+        return nil
+    }
+
+    /// Where New Collection makes one: inside the collection shown (beside it, when it is itself
+    /// inside another, since collections nest one level deep), else in the project shown, else in
+    /// the selected work's project.
+    var newUnitPlace: (project: String, parent: String?)? {
+        if case .unit(let key) = place, let unit = organization.unit(key) { return (unit.project, unit.parent ?? unit.key) }
+        if let project = currentProject { return (project.key, nil) }
+        return selectedWorks.first.map { ($0.project, nil) }
+    }
+
+    /// Starts naming a new collection in place in the sidebar; once named, `adding` (works' or
+    /// observed files' paths) go in it.
+    func startNewUnit(in project: String, inside parent: String? = nil, adding: [String] = []) {
+        sidebarClosed.remove(project)
+        if let parent { sidebarClosed.remove(parent) }
+        naming = .new(project: project, parent: parent, adding: adding)
+    }
+
+    /// Ends naming in place with `name`: makes the collection, or renames it. An empty name makes
+    /// nothing. A new one is shown, unless it was made to hold what the person was adding.
+    func commitNaming(_ name: String) async {
+        guard let naming else { return }
+        self.naming = nil
+        await commit(naming, name: name)
+    }
+
+    func commit(_ naming: Naming, name: String) async {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        switch naming {
+        case .new(let project, let parent, let adding):
+            guard let made = await newUnit(named: name, in: project, inside: parent),
+                  let unit = organization.unit(made.key) else { return }
+            let works = adding.compactMap { organization.work(containing: $0) }
+            let candidates = adding.compactMap { organization.candidate($0) }
+            if !works.isEmpty { await add(works, to: unit) }
+            if !candidates.isEmpty, let unit = organization.unit(made.key) { await add(candidates, to: unit) }
+            if works.isEmpty && candidates.isEmpty { place = .unit(made.key) }
+        case .rename(let key):
+            if let unit = organization.unit(key) { await rename(unit, to: name) }
+        }
+    }
+
+    /// The projects and collections closed in the sidebar this session; the rest are open.
+    var sidebarClosed: Set<String> = []
+
+    /// A project's observed files, by the session each was last observed during, newest first,
+    /// of the kind chosen (docs/design/review.md, Keeping an observed file).
+    /// Made again only when the organization or the kind changes, not each time the outline is drawn.
+    func observedSessions(in project: Organization.Project) -> [ObservedSession] {
+        let key = ObservedKey(project: project.key, kind: kind, organization: organizationVersion)
+        if let cached = observedCache, cached.key == key { return cached.sessions }
+        var order: [String] = [], groups: [String: [Candidate]] = [:]
+        for candidate in organization.candidates(in: project.key) where kind == nil || candidate.kind == kind {
+            let log = candidate.latest.logPath
+            if groups[log] == nil { order.append(log) }
+            groups[log, default: []].append(candidate)
+        }
+        let sessions = order.map { ObservedSession(logPath: $0, candidates: groups[$0]!) }
+        observedCache = (key, sessions)
+        return sessions
+    }
+
+    private struct ObservedKey: Equatable {
+        var project: String, kind: Artifact.Kind?, organization: Int
+    }
+    @ObservationIgnored private var observedCache: (key: ObservedKey, sessions: [ObservedSession])?
+
+    /// Whether a session's observed files are shown: as the person left it, else open where a
+    /// project's works open (`opensByDefault`).
+    func isOpen(_ session: ObservedSession) -> Bool {
+        unfolded["observed\n" + session.logPath] ?? opensByDefault
+    }
+
+    /// The decisions about a selection of rows dropped on a collection: the works the rows name,
+    /// or, when a row of a multiple selection was dragged, every work chosen.
+    func dropped(_ paths: [String]) -> [Work] {
+        let works = paths.compactMap { organization.work(containing: $0) }
+        let chosen = selectedWorks
+        return works.contains(where: { work in chosen.contains { $0.id == work.id } }) ? chosen : works
     }
 
     /// Takes the size and dates of each file a review state is shown for: the current file of each
     /// work in a unit or with a verdict or mark. Metadata only.
     private func statReviewed() {
-        listed = [:]
+        var listed: [String: FileStat?] = [:], absent: [String: LocatorState.Kind] = [:]
         for work in organization.works where work.unit != nil || reviews.any(work) {
-            listed[work.latest.path] = .some(FileStat(work.latest.path))
+            let path = work.latest.path, file = FileStat(path)
+            listed[path] = .some(file)
+            if file == nil { absent[path] = Locator.stat(path).kind }
         }
+        self.listed = listed
+        self.absent = absent
     }
 
     /// Records a read of the file at `path` this session: its bytes stand for the file while it is
@@ -1115,7 +1391,11 @@ final class LibraryModel {
             listed[path] = .some(file)
         } else {
             reads[path] = nil
-            if listed[path] != nil { listed[path] = .some(FileStat(path)) }
+            if listed[path] != nil {
+                let file = FileStat(path)
+                listed[path] = .some(file)
+                absent[path] = file == nil ? Locator.stat(path).kind : nil
+            }
         }
     }
 
@@ -1286,6 +1566,18 @@ final class LibraryModel {
         case .bytes(let sha): handoffItem(sha: sha, artifact: artifact)
         case .unread: unreadItem(delivery, artifact: artifact)
         }
+    }
+
+    /// What dragging a row of `work` hands over: what `dragItem` hands another app, when there is
+    /// something, and the work itself, which only Gleaner reads, to drop on a collection.
+    func rowDragItem(_ work: Work, _ artifact: Artifact, _ delivery: Delivery) -> NSItemProvider {
+        let provider = dragItem(artifact, delivery) ?? NSItemProvider()
+        let id = work.id
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.gleanerWork.identifier, visibility: .ownProcess) { done in
+            done(Data(id.utf8), nil)
+            return nil
+        }
+        return provider
     }
 
     /// A file listed with its folder, or kept from an observation, and not read yet, for another app:
@@ -1529,4 +1821,9 @@ final class LibraryModel {
         }
         await observe(artifact)
     }
+}
+
+extension UTType {
+    /// A work dragged from a list to a collection in the sidebar: its id, read only by Gleaner.
+    static let gleanerWork = UTType(exportedAs: "app.gleaner.work")
 }

@@ -44,6 +44,13 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHumanReadableCopyright</key><string>© 2026 lesPrivilege</string>
+  <!-- A work dragged from a list onto a collection, read only by Gleaner. -->
+  <key>UTExportedTypeDeclarations</key>
+  <array><dict>
+    <key>UTTypeIdentifier</key><string>app.gleaner.work</string>
+    <key>UTTypeDescription</key><string>Gleaner work</string>
+    <key>UTTypeConformsTo</key><array><string>public.data</string></array>
+  </dict></array>
   $icon
 </dict>
 </plist>

@@ -232,7 +232,9 @@ struct CorrectionsPage: View {
                 }
                 ForEach(model.correctionGroups, id: \.first!.id) { group in
                     HStack(spacing: Space.s + 2) {
-                        GlyphView(glyph: glyph(group[0].kind), size: 16).foregroundStyle(Palette.mark).frame(width: 20)
+                        // A file kept to go in a collection is listed by the collection.
+                        let kind = group.contains { $0.kind == .unit } ? .unit : group[0].kind
+                        GlyphView(glyph: glyph(kind), size: 16).foregroundStyle(Palette.mark).frame(width: 20)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(model.describe(group)).lineLimit(2).truncationMode(.middle)
                             Text(Wording.date(group[0].madeAt)).font(.caption).foregroundStyle(.secondary)
@@ -285,7 +287,7 @@ struct CorrectionsPage: View {
         .confirmationDialog("Undo every correction?", isPresented: $confirming) {
             Button("Undo All", role: .destructive) { Task { await model.undoAllCorrections() } }
         } message: {
-            Text("The library returns to how Gleaner found it, and your projects are removed. Files and saved copies stay.")
+            Text("The library returns to how Gleaner found it: your projects, collections and kept files are removed. Files, saved copies, verdicts and published marks stay.")
         }
     }
 
@@ -297,10 +299,10 @@ struct CorrectionsPage: View {
         case .notSameWork: .rejected
         case .notFromSession: .outside
         case .related: .work
-        case .kept: .person
-        case .unit: .folder
+        case .kept: .unverified
+        case .unit: .collection
         case .outOfUnit: .outside
-        case .unitName: .work
+        case .unitName: .collection
         case .unitDeleted: .na
         }
     }

@@ -22,7 +22,7 @@ struct ProjectOutline: View {
         let suggestions = model.organization.suggestions(in: project)
         VStack(spacing: 0) {
             FilterBar(named: false)
-            List(selection: $model.outlineSelection) {
+            List(selection: $model.selectedRows) {
                 Section { ProjectHeader(project: project).listRowSeparator(.hidden) }
                 if !suggestions.isEmpty {
                     Section {
@@ -51,6 +51,21 @@ struct ProjectOutline: View {
                         }
                     } header: {
                         FolderHeader(name: Wording.folder(folder.folder), count: folder.count)
+                    }
+                }
+                // What sessions were observed doing here and handed over in no reply, after
+                // everything that was.
+                let sessions = model.observedSessions(in: project)
+                if !sessions.isEmpty {
+                    Section {
+                        ForEach(sessions) { ObservedSessionGroup(session: $0, project: project) }
+                    } header: {
+                        SectionHeader(title: "Observed", count: sessions.map(\.candidates.count).reduce(0, +), noun: "file") {
+                            GlyphView(glyph: Mark.observed.glyph, size: 12).foregroundStyle(.secondary)
+                        }
+                    } footer: {
+                        Text("No reply handed these over. Keeping one never moves or changes it.")
+                            .font(.caption).foregroundStyle(.secondary)
                     }
                 }
             }
@@ -133,15 +148,16 @@ struct ProjectHeader: View {
                     .help("Show \(combined.name) as its own project again, as you set on \(Wording.date(combined.correction.madeAt))")
                 }
             }
-            // What replies named; a folder's files come with it, under it in the outline.
-            let recent = project.works.lazy.filter { $0.deliveries.contains { $0.member == nil } }.prefix(3)
+            // What replies named; a folder's files come with it, under it in the outline, and no
+            // reply named a file the person kept.
+            let recent = project.works.lazy.filter { $0.deliveries.contains { $0.member == nil && $0.kept == nil } }.prefix(3)
             if !recent.isEmpty {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                     Text("Recent").foregroundStyle(.secondary)
                     ForEach(Array(recent)) { work in
                         LinkButton(title: work.name) { model.select(work.deliveries[0]) }
                             .lineLimit(1)
-                            .help("Delivery \(work.deliveries[0].number), \(Wording.date(work.deliveries[0].deliveredAt))")
+                            .help("\(Wording.revision(work.deliveries[0])), \(Wording.date(work.deliveries[0].deliveredAt))")
                     }
                 }
                 .font(.caption)
@@ -234,5 +250,163 @@ struct SuggestionView: View {
             .help("Gleaner stops suggesting this")
         }
         .controlRole(.inline)
+    }
+}
+
+/// A row of a session's observed files: a file, or a folder's files of one kind folded into one
+/// row when they crowd it, as `Listing` lays them out.
+enum ObservedItem: Identifiable {
+    case file(Candidate)
+    case folded(folder: String, kind: Artifact.Kind, candidates: [Candidate])
+
+    var id: String {
+        switch self {
+        case .file(let candidate): candidate.path
+        case .folded(let folder, let kind, _): "folded\n" + folder + "\n" + kind.rawValue
+        }
+    }
+
+    static func items(_ candidates: [Candidate]) -> [ObservedItem] {
+        Listing.rows(candidates.map(Listing.Entry.candidate)).flatMap { row -> [ObservedItem] in
+            func files(_ entries: [Listing.Entry]) -> [Candidate] {
+                entries.compactMap { if case .candidate(let candidate) = $0 { candidate } else { nil } }
+            }
+            switch row {
+            case .entry(let entry): return files([entry]).map(ObservedItem.file)
+            case .together(_, let entries): return files(entries).map(ObservedItem.file)
+            case .folded(let folder, let kind, let entries): return [.folded(folder: folder, kind: kind, candidates: files(entries))]
+            }
+        }
+    }
+}
+
+/// One session's files observed in the project and handed over in no reply, under the session's
+/// name: open where a project's works open, closed in a repository, as the person leaves it.
+struct ObservedSessionGroup: View {
+    @Environment(LibraryModel.self) private var model
+    var session: ObservedSession
+    var project: Organization.Project
+
+    var body: some View {
+        DisclosureGroup(isExpanded: Binding(get: { model.isOpen(session) }, set: { model.unfolded["observed\n" + session.logPath] = $0 })) {
+            ForEach(session.items) { item in
+                switch item {
+                case .file(let candidate):
+                    CandidateRow(candidate: candidate, project: project)
+                case .folded(let folder, let kind, let candidates):
+                    FoldedCandidates(session: session, folder: folder, kind: kind, candidates: candidates, project: project)
+                }
+            }
+        } label: {
+            HStack(alignment: .firstTextBaseline, spacing: Space.xs + 2) {
+                AgentMark(provider: session.provider, size: 12).foregroundStyle(.secondary)
+                    .help(Wording.provider(session.provider))
+                Text(Wording.session(session.title)).lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: Space.s)
+                Text("\(session.candidates.count)").monospacedDigit().foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Observed during \(Wording.session(session.title)), \(Wording.count(session.candidates.count, "file"))")
+        }
+    }
+}
+
+/// A folder's observed files of one kind, folded into one row with their count, opened on demand.
+/// Keep All and Add All to Collection act on every file it holds.
+struct FoldedCandidates: View {
+    @Environment(LibraryModel.self) private var model
+    var session: ObservedSession
+    var folder: String
+    var kind: Artifact.Kind
+    var candidates: [Candidate]
+    var project: Organization.Project
+
+    var body: some View {
+        let key = "observed\n" + session.logPath + "\n" + folder + "\n" + kind.rawValue
+        DisclosureGroup(isExpanded: Binding(get: { model.unfolded[key] ?? false }, set: { model.unfolded[key] = $0 })) {
+            ForEach(candidates) { CandidateRow(candidate: $0, project: project) }
+        } label: {
+            SectionHeader(title: Wording.folded(model.outlineFolder(candidates[0], in: project), count: candidates.count),
+                          count: candidates.count, noun: "file") {
+                FileIcon(path: candidates[0].path, folder: false, size: 16)
+            }
+            .contextMenu {
+                Button("Keep All") { Task { await model.keep(candidates) } }
+                Menu("Add All to Collection") {
+                    CollectionChoices(project: project.key) { unit in
+                        Task { await model.add(candidates, to: unit) }
+                    } new: {
+                        model.startNewUnit(in: project.key, adding: candidates.map(\.path))
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// A file observed during a session and handed over in no reply: its name, whether it appeared or
+/// changed and when, and where it is. Keep admits it; Add to Collection keeps it in one; Not From
+/// This Session detaches it from the session it is listed under (docs/design/review.md).
+struct CandidateRow: View {
+    @Environment(LibraryModel.self) private var model
+    var candidate: Candidate
+    var project: Organization.Project
+
+    var body: some View {
+        let latest = candidate.latest
+        let statement = Wording.observed(latest)
+        let others = candidate.observations.dropFirst().map { Wording.session($0.sessionTitle) }
+        let folder = Wording.folder(model.outlineFolder(candidate, in: project))
+        HStack(alignment: .center, spacing: Space.s + 2) {
+            FileIcon(path: candidate.path, folder: false, size: 24)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                    Text(candidate.name).lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: Space.xs)
+                    Text(Wording.shortDate(latest.date)).font(.caption).foregroundStyle(.secondary).monospacedDigit()
+                        .help(Wording.date(latest.date))
+                }
+                HStack(spacing: Space.s) {
+                    // The session is said once, by its group; the row says what it saw, and where.
+                    StatusLabel(mark: .observed, text: latest.kind == .appeared ? "Appeared" : "Changed", size: 11)
+                    Text(folder).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                }
+                .font(.caption)
+                .help(([statement.detail] + candidate.observations.dropFirst().map { Wording.observed($0).title + "." }).joined(separator: " "))
+            }
+            Button("Keep") { Task { await model.keep([candidate]) } }
+                .controlRole(.inline)
+                .help("Add it to the library, as this session left it")
+            Menu {
+                actions
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("More")
+            .accessibilityLabel("More")
+        }
+        .padding(.vertical, 2)
+        .contextMenu {
+            Button("Keep") { Task { await model.keep([candidate]) } }
+            actions
+            Divider()
+            Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: candidate.path)]) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(candidate.name), \(statement.title)" + (others.isEmpty ? "" : ", also during \(others.joined(separator: ", "))"))
+    }
+
+    @ViewBuilder var actions: some View {
+        Menu("Add to Collection") {
+            CollectionChoices(project: project.key) { unit in
+                Task { await model.add([candidate], to: unit) }
+            } new: {
+                model.startNewUnit(in: project.key, adding: [candidate.path])
+            }
+        }
+        Button("Not From This Session") { Task { await model.detach(candidate.path, from: candidate.latest.logPath) } }
     }
 }

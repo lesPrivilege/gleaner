@@ -24,7 +24,7 @@ struct WorkEntry: View {
             DisclosureGroup(isExpanded: Binding(get: { model.isOpen(work) }, set: { model.disclosed[work.id] = $0 })) {
                 ForEach(work.deliveries) { delivery in
                     let file = work.file(of: delivery)
-                    HandingOver(available: model.rowHandoff(file, delivery) != nil, item: { model.dragItem(file, delivery) }) {
+                    HandingOver(item: { model.rowDragItem(work, file, delivery) }) {
                         RevisionRow(work: work, delivery: delivery, status: model.revisionStatus(file, delivery))
                     }
                     .tag(OutlineRow.revision(work.id, delivery.id))
@@ -45,12 +45,13 @@ struct WorkEntry: View {
     /// chosen another of its revisions since the row was drawn.
     func row(open: Bool) -> some View {
         let delivery = model.workDelivery(result), file = result.work.file(of: delivery)
-        return HandingOver(available: model.rowHandoff(file, delivery) != nil, item: {
+        return HandingOver(item: {
             let delivery = model.workDelivery(result)
-            return model.dragItem(result.work.file(of: delivery), delivery)
+            return model.rowDragItem(result.work, result.work.file(of: delivery), delivery)
         }) {
             ResultRow(result: result, file: file, delivery: delivery, project: project, showFolder: showFolder,
-                      status: open ? (model.fileStatus(file), nil) : model.rowStatus(result), placement: placement, open: open)
+                      status: open ? (model.fileStatus(file), nil) : model.rowStatus(result), placement: placement, open: open,
+                      waiting: model.waits(result.work))
         }
         .tag(OutlineRow.work(result.work.id))
         .id(OutlineRow.work(result.work.id))
@@ -72,19 +73,15 @@ struct FollowsSelection: ViewModifier {
     }
 }
 
-/// A row that can be dragged into another app when it has something to hand over. A row with
-/// nothing starts no drag, rather than one that fails at drop.
+/// A row dragged: into another app, when it has something to hand over, and onto a collection in
+/// the sidebar, always (`LibraryModel.rowDragItem`). A row with nothing to hand over offers another
+/// app nothing, so no drop there fails: only a collection takes it.
 struct HandingOver<Content: View>: View {
-    var available: Bool
-    var item: () -> NSItemProvider?
+    var item: () -> NSItemProvider
     @ViewBuilder var content: Content
 
     var body: some View {
-        if available {
-            content.onDrag { item() ?? NSItemProvider() }
-        } else {
-            content
-        }
+        content.onDrag(item)
     }
 }
 
@@ -106,14 +103,14 @@ struct RevisionRow: View {
     static let leading: CGFloat = 32 + Space.s + 2 - indent - 12 - Space.s
 
     var body: some View {
-        let provenance = Wording.provenanceShort(delivery.capture)
+        let provenance = Wording.provenanceShort(delivery.capture, kept: delivery.kept != nil)
         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
             // The first tier: a state as it should be, by its mark alone, its word in the help tag.
             StatusMark(mark: provenance.0, word: provenance.1, size: 10)
                 .frame(width: 12)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-                    Text(([("Delivery " + Wording.number(delivery))]
+                    Text(([Wording.revision(delivery)]
                           + (work.files.count > 1 ? [(delivery.path as NSString).lastPathComponent] : [])).joined(separator: " · "))
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: Space.xs)
@@ -123,6 +120,8 @@ struct RevisionRow: View {
                 }
                 if let request = delivery.request {
                     Text(request).foregroundStyle(.secondary).lineLimit(2)
+                } else if delivery.kept != nil {
+                    Text("Observed during \(Wording.session(delivery.sessionTitle))").foregroundStyle(.secondary).lineLimit(2)
                 }
                 if let status {
                     StatusLabel(mark: status.label.0, text: status.label.1, size: 11).font(.caption)
