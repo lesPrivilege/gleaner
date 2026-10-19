@@ -151,8 +151,8 @@ public enum Listing {
         return rows
     }
 
-    /// A file name's stem: the name before its first dot, so `ep00.mp4`, `ep00.mix.wav` and
-    /// `ep00.inputs.json` share `ep00`, and `ov-4x3.svg` and `ov-4x3.png` share `ov-4x3`. A hidden
+    /// A file name's stem: the name before its first dot, so `intro.mp4`, `intro.mix.wav` and
+    /// `intro.inputs.json` share `intro`, and `chart-4x3.svg` and `chart-4x3.png` share `chart-4x3`. A hidden
     /// file's leading dot is part of its name. Two stems are compared as the disk compares names,
     /// without case.
     public static func stem(_ name: String) -> String {

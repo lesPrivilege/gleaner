@@ -107,6 +107,13 @@ public enum Locator {
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
     }
 
+    /// What Git says of the file at `path` now, in the checkout holding it: committed, modified,
+    /// untracked or ignored; not in a repository outside one. Reads no bytes of the file.
+    public static func gitState(of path: String) -> GitState {
+        guard let root = Projects.resolve((path as NSString).deletingLastPathComponent)?.folder else { return .notInRepo }
+        return gitState(path, root: root)
+    }
+
     static func gitState(_ path: String, root: String) -> GitState {
         let result = run(["-C", root, "status", "--porcelain=v1", "--ignored", "--", relative(path, to: root)])
         guard result.status == 0 else { return .notInRepo }

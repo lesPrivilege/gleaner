@@ -176,9 +176,10 @@ public enum Workspace {
 
     /// Folders a walk never enters by name: the dependency caches tools leave. Nor does it enter a
     /// hidden folder (`.git`, `.build` and `.venv` among them), a folder its tool marked as a cache
-    /// with a `CACHEDIR.TAG` file (Cargo's `target`, for one), or a folder on another volume. These
-    /// skips are structural. No file type is skipped, since a script may itself be what was made,
-    /// and no output folder is: `dist` or `build` may hold what was asked for.
+    /// with a `CACHEDIR.TAG` file (Cargo's `target`, for one), or a folder on another volume, nor
+    /// list a hidden file (`.env`, `.DS_Store`). These skips are structural. No file type is
+    /// skipped, since a script may itself be what was made, and no output folder is: `dist` or
+    /// `build` may hold what was asked for.
     static let caches: Set<String> = ["node_modules", "__pycache__", "DerivedData"]
 
     /// A regular file as a walk found it, without opening it; or a package, which Finder shows as
@@ -279,7 +280,9 @@ public enum Workspace {
 
     /// Lists every regular file under `root`, by name, size, dates and identity; never opens one.
     /// A package (`isPackage`) is listed as one entry by its own metadata, never entered. Doesn't
-    /// enter hidden folders, caches, or folders on another volume, and doesn't follow links.
+    /// list hidden files, enter hidden folders, caches, or folders on another volume, or follow
+    /// links: what a walk finds is never `.env`, whether a session is observed or a delivered
+    /// folder listed (SPEC §5.3, §5.4).
     /// Folders are read in name order, so a walk cut at `limit` entries stops at the same place
     /// each time. Without `entersRepositories`, a folder below the root that is a Git repository's
     /// own (`isRepository`), another project, is left out whole and named in `repositories`.
@@ -323,7 +326,7 @@ public enum Workspace {
                     walk.files.append(package)
                 case S_IFDIR where !name.hasPrefix(".") && !caches.contains(name) && info.st_dev == volume:
                     inner.append(path)
-                case S_IFREG:
+                case S_IFREG where !name.hasPrefix("."):
                     walk.files.append(file(path, info))
                 default:
                     break

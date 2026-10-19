@@ -139,11 +139,12 @@ import Testing
         // Listed, not read: size and dates, no hash, nothing saved.
         #expect(delivery.capture?.provenance == .listed && delivery.capture?.sha256 == nil && delivery.capture?.size == 1)
         #expect(delivery.capture?.kind == .file && delivery.capture?.savedAt == nil)
-        // Its observation stays beside it; the hidden files observed in the workspace stay candidates,
-        // never searched or listed as works.
+        // Its observation stays beside it. The hidden files, written while the session worked, aren't
+        // observed either: never a candidate to keep, search or list (SPEC §5.3).
         let work = try #require(organization.work(containing: video.path))
         #expect(organization.observations(of: work).map(\.kind) == [.appeared])
-        #expect(names(organization.candidates.map(\.path)) == [".DS_Store", ".env", "render.py"])
+        #expect(names(organization.candidates.map(\.path)) == ["render.py"])
+        #expect(try indexer.registry.observations().allSatisfy { !($0.path as NSString).lastPathComponent.hasPrefix(".") })
         #expect(search("env", in: organization).isEmpty && search("API_KEY", in: organization).isEmpty)
         // A delivered folder's files aren't the reply's siblings: they are reached through the folder.
         #expect(Artifact.deliveredWith(try indexer.registry.artifacts()).isEmpty)

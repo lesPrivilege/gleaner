@@ -93,7 +93,7 @@ extension Indexer {
     /// listed before. A folder is walked as a workspace is (`Workspace.walk`), by metadata only,
     /// once per run whatever the number of its deliveries, without entering a repository inside it,
     /// which is another project; each delivery takes the files and packages its reply's time shows
-    /// were there, and never the hidden ones. A package is one of them, a folder, captured as a
+    /// were there, never a hidden one, which no walk lists. A package is one of them, a folder, captured as a
     /// delivered folder is. A folder that is never unpacked (`listability`) keeps why. A delivery's
     /// listing and its files are recorded together, so a listing that couldn't be recorded is made
     /// next run, as is one of a folder that is gone or can't be read now. Only the folders of
@@ -134,8 +134,7 @@ extension Indexer {
                 // the live window of a reply that came after its last write (SPEC §5.1).
                 let live = now.timeIntervalSince(deliveredAt) <= liveWindow
                 members = walk.files.compactMap { file in
-                    guard !(file.path as NSString).lastPathComponent.hasPrefix("."),
-                          Membership.handedOver(file, deliveredAt: deliveredAt, grace: clockTolerance) else { return nil }
+                    guard Membership.handedOver(file, deliveredAt: deliveredAt, grace: clockTolerance) else { return nil }
                     var file = file
                     if let names = named[FileIdentity(device: file.device, inode: file.inode)], !names.contains(file.path) {
                         file.path = names.min()!

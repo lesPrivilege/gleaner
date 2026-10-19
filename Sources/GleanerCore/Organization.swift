@@ -28,11 +28,14 @@ public struct Work: Sendable, Identifiable {
     public func contains(_ path: String) -> Bool { files.contains { $0.path == path } }
 
     /// For a search (SPEC §10), across its files: the newest delivery whose own words matched, else
-    /// the newest delivery of a file whose name, folder or project did. Each delivery is matched
-    /// with its own file's name; words from different deliveries never combine.
-    public func match(_ tokens: [String], project: String) -> Delivery? {
+    /// the newest delivery of a file whose name, folder, project or collection did. `collections`
+    /// names the collection holding the work and the one that is inside, matched as the project is
+    /// (SPEC §5.5). Each delivery is matched with its own file's name; words from different
+    /// deliveries never combine.
+    public func match(_ tokens: [String], project: String, collections: [String] = []) -> Delivery? {
+        let shared = ([project] + collections).joined(separator: " ")
         let found = files.compactMap { file in
-            file.matches(tokens, project: project).map { (file.deliveries[$0.index], $0.ownWords) }
+            file.matches(tokens, project: shared).map { (file.deliveries[$0.index], $0.ownWords) }
         }
         func newest(_ list: [(Delivery, Bool)]) -> Delivery? {
             list.max { ($0.0.deliveredAt ?? .distantPast) < ($1.0.deliveredAt ?? .distantPast) }?.0
@@ -351,6 +354,13 @@ public struct Organization: Sendable {
     /// stands for it in a list.
     public func poster(of key: String) -> Work? {
         works(in: key, inner: true).first { $0.kind == .image }
+    }
+
+    /// The names of the unit holding the work and of the one it is inside, as a search matches
+    /// them; none for a work in no unit.
+    public func unitNames(of work: Work) -> [String] {
+        guard let key = work.unit, let unit = unit(key) else { return [] }
+        return [unit.name] + (unit.parent.map { [unitName($0)] } ?? [])
     }
 
     /// The unit holding the work, with the decision that put it there.

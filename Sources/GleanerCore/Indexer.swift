@@ -384,10 +384,19 @@ public final class Indexer: @unchecked Sendable {
         try registry.markSaved(delivery, at: date)
     }
 
+    /// Saves a copy of the bytes a verdict or a published mark was made on, while the file still
+    /// holds them (SPEC §6): the same saved copy a delivery's Save a Copy keeps. Throws
+    /// `ContentStore.Failure.changed` when it no longer does.
+    public func saveCopy(of review: Review) throws {
+        let saved = try store.save(review.path)
+        guard saved.sha == review.sha256 else { throw ContentStore.Failure.changed(expected: review.sha256, found: saved.sha) }
+    }
+
     /// Reads the delivery's bytes once, saves small files, and records when that happened relative
     /// to the delivery (SPEC §5.1). A path whose bytes it can't read (nothing there, a file it
-    /// can't open, a pipe) is recorded as never observed, with what it found instead.
-    public func capture(_ path: String, deliveredAt: Date?, now: Date) -> Capture {
+    /// can't open, a pipe) is recorded as never observed, with what it found instead. `saving` saves
+    /// a file over the save limit too, as Save a Copy does, when the person asked for it.
+    public func capture(_ path: String, deliveredAt: Date?, now: Date, saving: Bool = false) -> Capture {
         let info = Locator.stat(path)
         let live = deliveredAt.map { delivered in
             now.timeIntervalSince(delivered) <= liveWindow
@@ -404,7 +413,7 @@ public final class Indexer: @unchecked Sendable {
             return Capture(sha256: nil, size: nil, modifiedAt: info.modifiedAt, observedAt: now, savedAt: nil,
                            provenance: provenance, kind: .directory)
         case .file:
-            if let size = info.size, size <= saveLimit, let saved = try? store.save(path) {
+            if let size = info.size, size <= saveLimit || saving, let saved = try? store.save(path) {
                 return Capture(sha256: saved.sha, size: saved.size, modifiedAt: info.modifiedAt, observedAt: now,
                                savedAt: now, provenance: provenance, kind: .file)
             }
