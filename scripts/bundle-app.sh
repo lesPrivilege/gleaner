@@ -2,7 +2,7 @@
 # Builds Gleaner.app into build/ (release build; signing as below).
 set -eu
 cd "$(dirname "$0")/.."
-swift build -c release --product Gleaner
+swift build -c release --product GleanerApp
 
 # The version is the tag on HEAD: v0.1.0, or a candidate's v0.1.0-rc.1. CFBundleShortVersionString
 # holds its three numbers (0.1.0); the whole of it, the display version, is GleanerDisplayVersion and
@@ -38,7 +38,7 @@ esac
 app=build/Gleaner.app
 rm -rf "$app"
 mkdir -p "$app/Contents/MacOS"
-cp .build/release/Gleaner "$app/Contents/MacOS/Gleaner"
+cp .build/release/GleanerApp "$app/Contents/MacOS/Gleaner"
 # The notices for the drawings the app carries.
 mkdir -p "$app/Contents/Resources"
 cp THIRD-PARTY-NOTICES.md "$app/Contents/Resources/THIRD-PARTY-NOTICES.md"
@@ -49,6 +49,7 @@ if [ -f Resources/AppIcon.icns ]; then
   cp Resources/AppIcon.icns "$app/Contents/Resources/AppIcon.icns"
   icon="<key>CFBundleIconFile</key><string>AppIcon</string>"
 fi
+# CFBundleURLTypes: a gleaner://delivery/<id> link opens the app on that delivery.
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -66,6 +67,14 @@ cat > "$app/Contents/Info.plist" <<PLIST
   <key>NSHighResolutionCapable</key><true/>
   <key>LSApplicationCategoryType</key><string>public.app-category.developer-tools</string>
   <key>NSHumanReadableCopyright</key><string>© 2026 lesPrivilege</string>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key><string>app.gleaner.Gleaner.delivery</string>
+      <key>CFBundleTypeRole</key><string>Viewer</string>
+      <key>CFBundleURLSchemes</key><array><string>gleaner</string></array>
+    </dict>
+  </array>
   <!-- A work dragged from a list onto a collection, read only by Gleaner. -->
   <key>UTExportedTypeDeclarations</key>
   <array><dict>

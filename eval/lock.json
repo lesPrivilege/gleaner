@@ -1,0 +1,24 @@
+{
+  "locked_at": "2026-10-18T01:41:42+00:00",
+  "commit": "ba428b1755d65bfe6ffa182a0f7e1cdbea63915f",
+  "seeds": [
+    1,
+    2,
+    3
+  ],
+  "results": "eval/results/2026-10-18/dev/results.json",
+  "note": "The raw recipe (and the gleaner policy, runner and scorer) as run on the development seeds. Scored seeds run only while every eval/*.py has these hashes and the tree is clean.",
+  "summary": {
+    "R": "45 of 45 correct, 0 with hard failures",
+    "G": "45 of 45 correct, 0 with hard failures"
+  },
+  "files": {
+    "eval/check_worlds.py": "86e41e2042c37f167d75a532411d8cb080253f8be9f89ff2815661189e3e7ef0",
+    "eval/history.py": "c9aced1713a9de6c2369f5d929f54be2cc2cde4baaf9d9601527aeae83637a75",
+    "eval/policies.py": "91d03da5fec550fcf62bd461e25beaa1f4a61906c2229e95aeb27319df523911",
+    "eval/prepare.py": "53203863ddcbc11d877c63c1b9fa1c907f7ec0ab36561da0067385b4ee70940b",
+    "eval/run.py": "b025059162e18793a5e7f5dd3510d136400b7567ab5695c62facf0a50cca3c01",
+    "eval/score.py": "c482a3e4c0eb745976e7deb0fecff9c45941d03a7464289cd5287d2e33348236",
+    "eval/worlds.py": "771ac59751f7028aaa09eeec88b980958066f531db59d51133167f594a2917f5"
+  }
+}

@@ -197,6 +197,7 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 - Each provider is an isolated module that turns its log format into `Session`, turns, user requests, and final replies. The extractor downstream is provider-agnostic.
 - Log formats are undocumented and change. Each adapter ships fixture tests built from real record shapes (sanitized). An unknown record type, or an unknown key in a known one, is counted and reported, never silently dropped into "no deliveries". An adapter change merges only with passing fixture tests and the owner's review (`AGENTS.md`).
 - Each read of a log counts its records, the records of a known type, the closed turns the assistant answered in, its final replies and, among them, those of closed turns, and the candidates every final reply names, the open last turn's too. A turn is closed once the log holds the next one. The last turn is open and isn't counted as answered: the session may still be running, the text it ends on may yet be followed by a tool call, or it ended on one. A turn the person interrupted was not answered. A library read by an older reading compares no closed replies on its first read by this one. The source status reports a log with assistant records in a closed turn but no final reply anywhere, the open last turn's included, and a log whose closed turns hold fewer final replies on a complete reread.
+- Agents record a `cwd` as the system resolves it, with the `/private` that `/tmp`, `/var` and `/etc` lead to. A delivered path, and the `cwd` it resolves against, are kept in one form decided by their text alone, never by the disk: `.` and `..` resolved, and that `/private` dropped. Without one form, a project under `/private/tmp` would be named `tmp`, and a path would change form once its file was gone.
 - Sub-agent and side-chain transcripts are excluded: they are not replies to the user.
 - A log that disappears (agents prune old transcripts) leaves its deliveries as last derived: they are not re-derived on an extractor change, and their captures and saved copies stay.
 
@@ -295,8 +296,8 @@ Ratified direction. None of this blocks the v0.1 release.
 **Three layers.** The core is narrow, the connections are thin, and distribution is broad.
 
 1. **Gleaner Core** — evidence, registry, snapshots, library, native drag. It runs on its own.
-2. **Stable local API / CLI** — the only surface extensions use.
-3. **Extensions** — one per ecosystem, built on whatever entry point it actually exposes (plugin, skill, MCP, CLI, deep link). Do not assume every ecosystem has a plugin system.
+2. **Stable local API / CLI** — the only surface extensions use. It is the `gleaner` command ([query-core](design/query-core.md)): `find`, `show`, `read`, `resolve`, `handoff` and `verify` as JSON over the app's library, which it opens read-only and never indexes. Every answer, and every failure once the library is open, carries the index it is evidence of.
+3. **Extensions** — one per ecosystem, built on whatever entry point it actually exposes (plugin, skill, MCP, CLI, deep link). Do not assume every ecosystem has a plugin system. For MCP, `gleaner mcp` ([mcp-adapter](design/mcp-adapter.md)) serves the command's six calls as stdio tools, from the same executable. Claude Code, Codex and the DeepSeek Harness read the same skill format, so one skill, `extensions/gleaner` ([extensions](design/extensions.md)), serves all three.
 
 **Source adapter ≠ extension.** An adapter reads a runtime's history into Gleaner. An extension lets that runtime's users call Gleaner. They evolve separately.
 
@@ -310,7 +311,7 @@ Ratified direction. None of this blocks the v0.1 release.
 
 Adapters are capability-based. A runtime may offer only a read-only log, or also hooks, MCP, or reasoning.
 
-**Extensions stay thin.** They offer three actions: *Find in Gleaner*, *Open in Gleaner*, and *Handoff from Gleaner*, which returns the chosen version's file reference, or an explicitly authorized snapshot transfer for a remote runtime. An extension keeps no artifact database, does not re-parse sessions, copies no snapshots, and manages no versions. Uninstalling it leaves Gleaner fully working.
+**Extensions stay thin.** They offer three actions: *Find in Gleaner* (`gleaner find`), *Open in Gleaner* (a `gleaner://delivery/<id>` link), and *Handoff from Gleaner*, which returns the chosen version's file reference (`gleaner resolve`, or `gleaner handoff` for a verified copy), or an explicitly authorized snapshot transfer for a remote runtime. An extension keeps no artifact database, does not re-parse sessions, copies no snapshots, and manages no versions. Uninstalling it leaves Gleaner fully working.
 
 **Optional reasoning (e.g. DeepSeek through a DSH extension).** A model proposes, and Gleaner verifies.
 

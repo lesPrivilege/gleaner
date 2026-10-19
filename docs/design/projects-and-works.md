@@ -62,7 +62,7 @@ Sources → each agent shows its log folder, how the last read went and when (an
 
 ## Paths keep one spelling
 
-Dogfooding the window on a synthetic home under `/var/folders` showed one folder as two projects. `standardizingPath` drops `/private` from `/private/var`, `/private/tmp` and `/private/etc` only while the path exists, so a delivered file that was gone at a reread became another path, a new artifact without its history, and the agent's working folder never matched the files in it. Paths are now spelled one way (`standardPath`), and the working folder is compared in that spelling. The extractor version moved to 13, so logs are read again once.
+Dogfooding the window on a synthetic home under `/var/folders` showed one folder as two projects. `standardizingPath` drops `/private` from `/private/var`, `/private/tmp` and `/private/etc` only while the path exists, so a delivered file that was gone at a reread became another path, a new artifact without its history, and the agent's working folder never matched the files in it. Paths are now spelled one way (`Paths.standard`), and the working folder is compared in that spelling. The extractor version moved to 13, so logs are read again once.
 
 ## Not in this contract
 

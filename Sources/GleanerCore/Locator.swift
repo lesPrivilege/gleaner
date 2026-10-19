@@ -98,13 +98,22 @@ public enum Locator {
         defer { try? handle.close() }
         var hasher = SHA256()
         do {
-            while let chunk = try handle.read(upToCount: 4 << 20), !chunk.isEmpty {
-                hasher.update(data: chunk)
-            }
+            try read(handle) { hasher.update(data: $0) }
         } catch {
             return nil
         }
         return hasher.finalize().map { String(format: "%02x", $0) }.joined()
+    }
+
+    /// Hands `body` the rest of `handle`'s file a piece at a time, each let go once `body` returns.
+    /// Foundation hands a piece over autoreleased: without a pool of its own, a file read whole
+    /// would be held until the thread's pool drains.
+    static func read(_ handle: FileHandle, each body: (Data) -> Void) throws {
+        while try autoreleasepool(invoking: {
+            guard let piece = try handle.read(upToCount: 4 << 20), !piece.isEmpty else { return false }
+            body(piece)
+            return true
+        }) {}
     }
 
     /// What Git says of the file at `path` now, in the checkout holding it: committed, modified,

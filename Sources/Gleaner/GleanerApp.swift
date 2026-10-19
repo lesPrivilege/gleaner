@@ -22,6 +22,7 @@ struct GleanerApp: App {
                 LibraryView()
                     .environment(model)
                     .onAppear { model.start() }
+                    .onOpenURL { model.open($0) }
             } else {
                 ContentUnavailableView(
                     "Gleaner couldn’t open its library",
@@ -42,11 +43,20 @@ struct GleanerApp: App {
                 Button("Show in Finder") { if let model, let result = model.selected { model.reveal(model.file(in: result)) } }
                     .keyboardShortcut("r", modifiers: [.command, .shift])
                     .disabled(model?.selected == nil)
+                Button("Show in Log") { if let model, let delivery = model.selectedDelivery { model.revealLog(delivery) } }
+                    .disabled(model?.selected == nil)
                 Button("Copy Path") { if let model, let result = model.selected { model.copyPath(model.file(in: result)) } }
                     .keyboardShortcut("c", modifiers: [.command, .option])
                     .disabled(model?.selected == nil)
                 Divider()
                 if let model { CollectionMenu().environment(model) }
+            }
+            CommandGroup(after: .pasteboard) {
+                Button("Copy Reference") {
+                    if let model, let delivery = model.selectedDelivery { Task { await model.copyReference(delivery) } }
+                }
+                .keyboardShortcut("c", modifiers: [.command, .shift])
+                .disabled(model?.selected == nil)
             }
             CommandGroup(after: .toolbar) {
                 Button("Quick Look") { model?.toggleQuickLook() }

@@ -261,26 +261,13 @@ final class LibraryModel {
     private var indexing = false
     private var pending = false
 
-    /// The library in its standard places: Application Support, and Caches for hand-off copies.
+    /// The library in its standard places (`LibraryFolders`), where the `gleaner` command reads it.
     /// Launched with `-GleanerHome <folder>`, the app takes that folder for the home directory, so an
     /// acceptance run on synthetic logs never touches the person's own library or agent history.
     convenience init() throws {
-        let fm = FileManager.default
         let home = UserDefaults.standard.string(forKey: "GleanerHome").map { URL(fileURLWithPath: $0, isDirectory: true) }
-        let library = home.map { $0.appendingPathComponent("Library") }
-        let support = (library?.appendingPathComponent("Application Support")
-            ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
-        let caches = (library?.appendingPathComponent("Caches")
-            ?? fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
-        try fm.createDirectory(at: support, withIntermediateDirectories: true)
-        let indexer = Indexer(
-            registry: try Registry(path: support.appendingPathComponent("registry.sqlite").path),
-            store: ContentStore(objects: support.appendingPathComponent("objects"), staging: caches.appendingPathComponent("handoff")),
-            sources: home.map {
-                LogSources(claudeProjects: $0.appendingPathComponent(".claude/projects"), codexHome: $0.appendingPathComponent(".codex"))
-            } ?? .standard)
         // A session working in the home folder has no workspace walked, the synthetic one included.
-        if let home { indexer.home = home.path }
+        let indexer = try Indexer(folders: LibraryFolders(home: home))
         self.init(indexer: indexer, loads: false)
     }
 
@@ -307,7 +294,7 @@ final class LibraryModel {
     }
 
     private func showArtifacts() {
-        artifacts = Self.shown(library, without: sourcesOff)
+        artifacts = Artifact.shown(library, without: sourcesOff)
         siblings = Artifact.deliveredWith(artifacts)
         missing = Self.missing(artifacts)
         saved = Self.saved(artifacts, in: indexer.store).union(reviews.hashes.filter(indexer.store.has))
@@ -324,7 +311,7 @@ final class LibraryModel {
     private func replace(_ artifact: Artifact) {
         guard let index = library.firstIndex(where: { $0.path == artifact.path }) else { return }
         library[index] = artifact
-        guard let shown = Self.shown([artifact], without: sourcesOff).first,
+        guard let shown = Artifact.shown([artifact], without: sourcesOff).first,
               let place = artifacts.firstIndex(where: { $0.path == artifact.path }) else { return }
         let before = artifacts[place]
         artifacts[place] = shown
@@ -505,6 +492,30 @@ final class LibraryModel {
         chosenDelivery = delivery.id
     }
 
+    /// Why the last `gleaner://` link showed nothing, until the person dismisses it.
+    var linkFailure: String?
+
+    /// The delivery id a `gleaner://delivery/<id>` link names; nil for any other URL, and for one
+    /// whose id isn't shaped as Gleaner makes them, so words a link carries are never shown as Gleaner's.
+    static func deliveryID(in link: URL) -> String? {
+        guard link.scheme?.lowercased() == "gleaner", link.host()?.lowercased() == "delivery",
+              link.pathComponents.count == 2, Delivery.isID(link.pathComponents[1]) else { return nil }
+        return link.pathComponents[1]
+    }
+
+    /// Opens a `gleaner://delivery/<id>` link, as an extension or another tool sends it: shows that
+    /// delivery as `select` does, or says why it can't, naming the agent when it is turned off.
+    func open(_ link: URL) {
+        guard let id = Self.deliveryID(in: link) else { linkFailure = Wording.notADeliveryLink(link); return }
+        guard let delivery = artifacts.lazy.flatMap(\.deliveries).first(where: { $0.id == id }) else {
+            let hidden = library.lazy.flatMap(\.deliveries).first { $0.id == id }
+            linkFailure = hidden.map { Wording.deliveryOff($0.provider) } ?? Wording.noDelivery(id)
+            return
+        }
+        linkFailure = nil
+        select(delivery)
+    }
+
     /// Watches the logs, shows the library as it was while they are read, then reads them. The
     /// library is read off the main thread, and never shown over what a finished run showed.
     func start() {
@@ -527,12 +538,6 @@ final class LibraryModel {
         watcher = folders.isEmpty ? nil : LogWatcher(directories: folders, queue: work) { [weak self] in
             Task { @MainActor in self?.reindex() }
         }
-    }
-
-    /// The library without `off`'s deliveries, and without the files left with none.
-    private static func shown(_ library: [Artifact], without off: Set<Provider>) -> [Artifact] {
-        guard !off.isEmpty else { return library }
-        return library.compactMap { $0.keeping { !off.contains($0.provider) } }
     }
 
     /// Turns an agent's logs on or off (`Registry.setSource`). On again, they are read at once.
@@ -669,6 +674,9 @@ final class LibraryModel {
         case .toReview: toReview.contains { $0.works.contains { $0.id == work.id } }
         }
     }
+
+    /// The delivery the detail pane shows.
+    var selectedDelivery: Delivery? { selected.map(delivery(in:)) }
 
     func delivery(in result: SearchResult) -> Delivery {
         if let chosen = chosenDelivery, let d = result.work.deliveries.first(where: { $0.id == chosen }) { return d }
@@ -1823,6 +1831,50 @@ final class LibraryModel {
     func copyPath(_ artifact: Artifact) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(artifact.path, forType: .string)
+    }
+
+    /// Puts `delivery`'s reference on `pasteboard` as text, for a composer that takes only text:
+    /// the JSON `gleaner resolve` writes, its identity fields kept apart (query-core "In the app").
+    /// The file is checked off the main thread, as `resolve` checks it on each call.
+    func copyReference(_ delivery: Delivery, to pasteboard: NSPasteboard = .general) async {
+        actionFailure = nil
+        var catalog = Catalog(registry: indexer.registry, store: indexer.store)
+        catalog.saveLimit = indexer.saveLimit
+        let result = await Task.detached(priority: .userInitiated) { [catalog] in
+            Result { String(decoding: try Catalog.encoder.encode(catalog.resolve(delivery.id)), as: UTF8.self) }
+        }.value
+        switch result {
+        case .success(let reference):
+            pasteboard.clearContents()
+            pasteboard.setString(reference, forType: .string)
+        case .failure(let error):
+            fail(delivery, Wording.referenceFailed(error))
+        }
+    }
+
+    /// Shows the log of the session that delivered `delivery` in Finder: the reply that named the
+    /// file is at the line More Info gives (`Wording.logLine`). The log is not the conversation;
+    /// going back to that is `resume`. When the agent has removed the log, the delivery's panel says so.
+    func revealLog(_ delivery: Delivery) {
+        actionFailure = nil
+        if !isLogGone(delivery) {
+            NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: delivery.logPath)])
+        } else {
+            fail(delivery, Wording.logGone(delivery.logPath))
+        }
+    }
+
+    /// True when the agent has removed the log of the session that delivered `delivery`, checked now:
+    /// Show in Log has nothing to show, and the detail says so where it would be.
+    func isLogGone(_ delivery: Delivery) -> Bool {
+        Locator.stat(delivery.logPath).kind == .missing
+    }
+
+    /// Says why an action on `delivery` did nothing, in its hand-off panel, and shows the delivery
+    /// so the panel is on screen.
+    private func fail(_ delivery: Delivery, _ message: String) {
+        select(delivery)
+        actionFailure = (delivery.path, delivery.id, message)
     }
 
     /// What a list row hands over: the version the detail pane would, of the delivery the row

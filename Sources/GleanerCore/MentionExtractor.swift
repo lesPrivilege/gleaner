@@ -9,7 +9,7 @@ public struct Mention: Sendable, Hashable {
     public var syntax: Syntax
     /// The target exactly as written.
     public var rawTarget: String
-    /// Absolute, standardized path.
+    /// Absolute, in Gleaner's one form (`Paths.standard`).
     public var path: String
     /// Line anchor or fragment stripped from the target (`:42`, `#L10`).
     public var anchor: String?
@@ -35,11 +35,13 @@ public enum MentionExtractor {
     static let ignoredSchemes = ["mailto:", "sandbox:", "data:", "javascript:", "tel:", "about:"]
 
     /// Candidates in a whole reply: one per path, in order of first mention, each keeping every
-    /// occurrence with the record it came from.
+    /// occurrence with the record it came from. That record's working folder, which relative paths
+    /// resolve against, takes the paths' form, so the two compare as they are.
     public static func candidates(in turn: Turn) -> [DeliveryCandidate] {
         var order: [String] = []
         var evidence: [String: [(part: ReplyPart, mention: Mention)]] = [:]
-        for part in turn.parts {
+        for var part in turn.parts {
+            part.cwd = part.cwd.map(Paths.standard)
             for mention in extract(from: part.text, cwd: part.cwd) {
                 if evidence[mention.path] == nil { order.append(mention.path) }
                 evidence[mention.path, default: []].append((part, mention))
@@ -117,7 +119,9 @@ public enum MentionExtractor {
             guard let cwd else { return nil }
             target = (cwd as NSString).appendingPathComponent(target)
         }
-        return (standardPath(target), anchor)
+        // `~name` for an account this Mac doesn't have stays as written: not a local path.
+        guard target.hasPrefix("/") else { return nil }
+        return (Paths.standard(target), anchor)
     }
 
     /// Inline code is mostly identifiers and commands; keep spans that read as paths.

@@ -176,10 +176,19 @@ import Testing
         try renamedReport()
         let model = relaunch()
         let suggestion = try #require(model.organization.suggestions.first)
-        // The indexer's connection holds a transaction, as while it reads a log, and gives it up.
-        let db = indexer.registry.db
-        try db.execute("BEGIN IMMEDIATE")
-        DispatchQueue.global().asyncAfter(deadline: .now() + 0.3) { try? db.execute("ROLLBACK") }
+        // A log is read as the indexer reads one: in a transaction on its own connection, through
+        // the library's write gate. The decision is made while that transaction is open, and the
+        // read gives it up.
+        let registry = indexer.registry
+        await withCheckedContinuation { (open: CheckedContinuation<Void, Never>) in
+            Thread.detachNewThread {
+                try? registry.transaction {
+                    open.resume()
+                    Thread.sleep(forTimeInterval: 0.3)
+                    throw CancellationError()
+                }
+            }
+        }
         await model.join(suggestion.earlier, suggestion.later)
         #expect(model.correctionFailure == nil)
         #expect(relaunch().corrections.map(\.kind) == [.sameWork])

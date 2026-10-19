@@ -121,11 +121,66 @@ When neither the file nor a saved copy holds the version, Gleaner says why it ha
 | Quick Look | Space or ⌘Y |
 | Show the original in Finder | ⇧⌘R |
 | Copy the original's path | ⌥⌘C |
+| Copy the delivery's reference (Copy Reference) | ⇧⌘C |
 | Check for new deliveries | ⌘R |
 | Undo a join, keep-apart or move | ⌘Z |
 | Close a comparison | Esc |
 
 Show in Finder and Copy Path act on the original location, which may have changed since delivery. When the file is gone, Show Folder opens the folder it was in, or says that folder is gone too. Copy, Open, Quick Look and drag use the verified copy.
+
+## The gleaner command
+
+`gleaner` lets a coding agent on your Mac (Claude Code, Codex) find the file you mean, select its exact version, read only what it needs, and hand those bytes on, without reading logs itself. It is built from source, beside the app: `swift build -c release --product gleaner` puts it at `.build/release/gleaner`. The release zip holds only the app. Agents run it as `gleaner`, so link it into a folder on your PATH, such as `/usr/local/bin`, which macOS puts on every shell's PATH (`sudo` if the folder isn't yours); the link follows each rebuild:
+
+```bash
+ln -s "$PWD/.build/release/gleaner" /usr/local/bin/gleaner
+```
+
+| Command | Answers |
+|---|---|
+| `gleaner find <terms…> [--project P] [--kind K] [--limit N]` | The files whose words match every term, newest first, each by the delivery that matched, with the total |
+| `gleaner show <delivery>` | That delivery with every delivery of its file, the file on disk now, what handing it on would give, and the request and reply that delivered it |
+| `gleaner read <delivery> [--lines A:B \| --bytes A:B] [--max N]` | The text of that version's exact bytes, at most 16 KB unless asked; never the current file's bytes in their place |
+| `gleaner resolve <delivery>` | Its reference: the library, the delivery's id, its hash and path, the log line that named it, how Gleaner first read it, and where its bytes are now |
+| `gleaner handoff <delivery>` | The path of a read-only copy of that version in Gleaner's caches, checked by hash |
+| `gleaner verify <delivery or reference file>` | Whether the original, Gleaner's saved copy, both or neither still hold the reference's bytes |
+
+Each command writes one JSON object to stdout, and so does each failure, as `{"error": {"kind": …, "message": …}}` with the message on stderr too. Exit codes: 0 success; 1 not found, no bytes for that version, or another failure; 2 usage; 3 no library, or a library of another version (open Gleaner to make or update it). `--home <folder>` reads the library kept for another home folder, as the app's `-GleanerHome` does.
+
+The command never indexes, and opens the library read-only: it answers from what the app last read. Every answer, and every failure once the library is open, carries that `index` (the library, how many runs it has had, when the last one finished, and how each agent's logs read, or that it is off), so an empty answer from a stale or partial index is not taken as proof that nothing was delivered. Open Gleaner to bring it up to date. It answers from the library as the app shows it: an agent turned off in Sources is `off` in that index and its deliveries are left out, and each file is in the project the app shows it in, after your corrections. The command never writes the library or a project folder; `handoff` writes only its copy, in Gleaner's caches.
+
+**For an agent's host.** `gleaner mcp` serves the same six calls over stdio as MCP tools: `gleaner_find`, `gleaner_show`, `gleaner_read`, `gleaner_resolve`, `gleaner_handoff` and `gleaner_verify`. They take the command's arguments by the same names (`lines` and `bytes` as `"A:B"`; where the command takes a reference file, `gleaner_verify` takes a delivery's id or a reference as an object), and answer with the same JSON, as structured content and as text. A failure is a tool error that carries the same `{"error", "index"}` object. The server keeps no state: it opens the library read-only for each call, and writes nothing to stdout but protocol messages. Gleaner never registers itself with a host. To add it to Claude Code, at the scope you choose (local by default; `--scope user` for all your projects, `--scope project` to share it in the project's `.mcp.json`):
+
+```bash
+claude mcp add gleaner -- <path to gleaner> mcp
+```
+
+To add it to the DeepSeek Harness, insert a row for its MCP client, in `$DSH_HOME/cordis.patch.yml` (merged into what is there) or in a file you pass with `--patch`:
+
+```yaml
+- insert:
+    - id: mcp-gleaner
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: gleaner
+        transport: stdio
+        command: <path to gleaner>
+        args: [mcp]
+```
+
+`<path to gleaner>` is the command you built, such as the full path of `.build/release/gleaner`. `--home <folder>` after `mcp` serves the library kept for another home folder.
+
+**As a skill.** `extensions/gleaner` is an [Agent Skills](https://agentskills.io) folder that tells an agent when to use Gleaner and how: find a file an agent delivered earlier from your own description of it, open it in Gleaner with its `gleaner://delivery/<id>` link, and hand on its exact version with `handoff` or `read`, giving you the hand-off path or the reference rather than pasting the file. It runs only the `gleaner` command, and `open` for a `gleaner://` link; it keeps nothing of its own. Claude Code, Codex and the DeepSeek Harness read the same folder. Gleaner never installs it: link (or copy) it where each one reads skills, from the repository:
+
+```bash
+mkdir -p ~/.claude/skills ~/.agents/skills
+ln -s "$PWD/extensions/gleaner" ~/.claude/skills/gleaner   # Claude Code
+ln -s "$PWD/extensions/gleaner" ~/.agents/skills/gleaner   # Codex and the DeepSeek Harness
+```
+
+A project's own `.claude/skills` or `.agents/skills` folder works too. The skill expects `gleaner` on PATH, or you tell the agent where it is.
+
+From the app, **Copy Reference** (⇧⌘C, in the Edit menu, the detail's ⋯ menu, and a row's or a version's context menu) copies a delivery's reference as `gleaner resolve` gives it, to paste to an agent. **Show in Log** (in the File menu, the ⋯ menu and the same context menus) selects the session log in Finder; More Info gives the line of the reply that named the file, or says the agent has removed the log. Showing the log is not resuming the conversation: Copy Resume Command does that. A `gleaner://delivery/<id>` link opens Gleaner on that delivery, and says so when the link names no delivery in this library, or one whose agent is off in Sources.
 
 ## What counts as a delivery
 
@@ -172,12 +227,26 @@ swift test                      # fixture tests
 - `Sources/GleanerCore`: provider adapters (Claude Code, Codex), mention extraction, locator, redaction, the registry (SQLite), the content store (saved copies, verified hand-off copies), the indexer, observations of each session's workspace (`Observations.swift`), the files of delivered folders (`Bundles.swift`), how a list of them is ordered (`Listing.swift`), work units, kept files and review (`WorkUnits.swift`, `Keeping.swift`, `Review.swift`), the log watcher, and the status logic (`Library.swift`).
 - `Sources/GleanerUI`: the component library the window draws with: marks, status, surfaces, controls and motion, after [docs/design/components.md](docs/design/components.md). SwiftUI and AppKit only.
 - `Sources/Gleaner`: the macOS app (SwiftUI and AppKit, Quick Look, AVKit).
+- `Sources/gleaner-cli`: the `gleaner` command, the catalog's answers as JSON, and `gleaner mcp`, the same answers as MCP tools.
 - `Sources/gleaner-spike`: Spike A, read-only extraction over local logs that writes a labeling sheet.
-- `Tests/GleanerCoreTests`: fixture tests built from sanitized record shapes, the library flow (concurrent edits, deleted worktrees, rollback, backfill, verified staging), observations and delivered folders in several kinds of work, and work units, kept files and verdicts bound to bytes.
+- `Sources/gleaner-index`: a development tool that indexes a synthetic home once, without the window, for `gleaner` to read. Not in the release.
+- `extensions/gleaner`: the skill that Claude Code, Codex and the DeepSeek Harness read.
+- `Tests/GleanerCoreTests`: fixture tests built from sanitized record shapes, the library flow (concurrent edits, deleted worktrees, rollback, backfill, verified staging), observations and delivered folders in several kinds of work, work units, kept files and verdicts bound to bytes, and the catalog's queries.
 - `Tests/GleanerUITests`: the marks, the tokens, and the gallery of every component (`GLEANER_GALLERY=<folder> swift test --filter GalleryTests`).
 - `Tests/GleanerTests`: the app's decisions on a synthetic library (which delivery a click lands on, which bytes Quick Look, Compare and a drag use) and its wording.
+- `Tests/GleanerCommandTests`: the built `gleaner` run as an agent's shell runs it: its JSON, its exit codes, and that it writes neither the library nor the project; `gleaner mcp` run as a host runs it, each tool's answer and refusal compared with the command's own; every command the skill shows, checked against the built command; and `gleaner-index`, whose library matches the app's indexer's.
 
 The decisions behind v0.1 are in [docs/SPEC.md](docs/SPEC.md); the design exploration and its rulings are in [docs/design/](docs/design/README.md).
+
+### Indexing a synthetic home without the window
+
+```bash
+scripts/acceptance-home.py /tmp/gleaner-home initial
+swift run gleaner-index --home /tmp/gleaner-home
+.build/debug/gleaner find guide --home /tmp/gleaner-home
+```
+
+`gleaner-index` runs one index of the home as the app does with `-GleanerHome`, and prints the library's index and what the run read and added as JSON; `--now <ISO 8601>` pins the run's clock. It needs `--home`, refuses your own home folder and a library a later Gleaner opened, and is never bundled ([docs/design/headless-indexing.md](docs/design/headless-indexing.md)).
 
 ### Spike A
 

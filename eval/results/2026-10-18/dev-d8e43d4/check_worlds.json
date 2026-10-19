@@ -1,0 +1,780 @@
+{
+  "seeds": [
+    1,
+    2,
+    3,
+    101,
+    102
+  ],
+  "tasks": [
+    "T01",
+    "T02",
+    "T03",
+    "T04",
+    "T07",
+    "T09",
+    "T10",
+    "T12",
+    "T16",
+    "T19",
+    "T20",
+    "T21",
+    "T22",
+    "T23",
+    "T25"
+  ],
+  "seconds": 414,
+  "failed": 0,
+  "worlds": [
+    {
+      "seed": 1,
+      "task": "T01",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.92,
+      "library_bytes": 326015,
+      "saved_copies": 5
+    },
+    {
+      "seed": 1,
+      "task": "T02",
+      "ok": true,
+      "failures": [],
+      "index_runs": 2,
+      "index_seconds": 0.643,
+      "library_bytes": 409034,
+      "saved_copies": 7
+    },
+    {
+      "seed": 1,
+      "task": "T03",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.367,
+      "library_bytes": 363856,
+      "saved_copies": 9
+    },
+    {
+      "seed": 1,
+      "task": "T04",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.266,
+      "library_bytes": 437669,
+      "saved_copies": 7
+    },
+    {
+      "seed": 1,
+      "task": "T07",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.258,
+      "library_bytes": 400203,
+      "saved_copies": 6
+    },
+    {
+      "seed": 1,
+      "task": "T09",
+      "ok": true,
+      "failures": [],
+      "index_runs": 2,
+      "index_seconds": 0.762,
+      "library_bytes": 400202,
+      "saved_copies": 7
+    },
+    {
+      "seed": 1,
+      "task": "T10",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.271,
+      "library_bytes": 363265,
+      "saved_copies": 6
+    },
+    {
+      "seed": 1,
+      "task": "T12",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.375,
+      "library_bytes": 400086,
+      "saved_copies": 7
+    },
+    {
+      "seed": 1,
+      "task": "T16",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.369,
+      "library_bytes": 326170,
+      "saved_copies": 5
+    },
+    {
+      "seed": 1,
+      "task": "T19",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.366,
+      "library_bytes": 330004,
+      "saved_copies": 5
+    },
+    {
+      "seed": 1,
+      "task": "T20",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.28,
+      "library_bytes": 313607,
+      "saved_copies": 5
+    },
+    {
+      "seed": 1,
+      "task": "T21",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.385,
+      "library_bytes": 483369,
+      "saved_copies": 9
+    },
+    {
+      "seed": 1,
+      "task": "T22",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.282,
+      "library_bytes": 363267,
+      "saved_copies": 6
+    },
+    {
+      "seed": 1,
+      "task": "T23",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.374,
+      "library_bytes": 313641,
+      "saved_copies": 5
+    },
+    {
+      "seed": 1,
+      "task": "T25",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.39,
+      "library_bytes": 276257,
+      "saved_copies": 4
+    },
+    {
+      "seed": 2,
+      "task": "T01",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.385,
+      "library_bytes": 437740,
+      "saved_copies": 8
+    },
+    {
+      "seed": 2,
+      "task": "T02",
+      "ok": true,
+      "failures": [],
+      "index_runs": 2,
+      "index_seconds": 0.639,
+      "library_bytes": 446196,
+      "saved_copies": 8
+    },
+    {
+      "seed": 2,
+      "task": "T03",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.318,
+      "library_bytes": 363859,
+      "saved_copies": 9
+    },
+    {
+      "seed": 2,
+      "task": "T04",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.262,
+      "library_bytes": 487150,
+      "saved_copies": 8
+    },
+    {
+      "seed": 2,
+      "task": "T07",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.26,
+      "library_bytes": 400317,
+      "saved_copies": 6
+    },
+    {
+      "seed": 2,
+      "task": "T09",
+      "ok": true,
+      "failures": [],
+      "index_runs": 2,
+      "index_seconds": 0.668,
+      "library_bytes": 400306,
+      "saved_copies": 7
+    },
+    {
+      "seed": 2,
+      "task": "T10",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.38,
+      "library_bytes": 363097,
+      "saved_copies": 6
+    },
+    {
+      "seed": 2,
+      "task": "T12",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.386,
+      "library_bytes": 487177,
+      "saved_copies": 9
+    },
+    {
+      "seed": 2,
+      "task": "T16",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.38,
+      "library_bytes": 363320,
+      "saved_copies": 6
+    },
+    {
+      "seed": 2,
+      "task": "T19",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.389,
+      "library_bytes": 330060,
+      "saved_copies": 5
+    },
+    {
+      "seed": 2,
+      "task": "T20",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.391,
+      "library_bytes": 313803,
+      "saved_copies": 5
+    },
+    {
+      "seed": 2,
+      "task": "T21",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.277,
+      "library_bytes": 429474,
+      "saved_copies": 8
+    },
+    {
+      "seed": 2,
+      "task": "T22",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.277,
+      "library_bytes": 437661,
+      "saved_copies": 8
+    },
+    {
+      "seed": 2,
+      "task": "T23",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.374,
+      "library_bytes": 400524,
+      "saved_copies": 7
+    },
+    {
+      "seed": 2,
+      "task": "T25",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.382,
+      "library_bytes": 276170,
+      "saved_copies": 4
+    },
+    {
+      "seed": 3,
+      "task": "T01",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.39,
+      "library_bytes": 437577,
+      "saved_copies": 8
+    },
+    {
+      "seed": 3,
+      "task": "T02",
+      "ok": true,
+      "failures": [],
+      "index_runs": 2,
+      "index_seconds": 0.654,
+      "library_bytes": 495666,
+      "saved_copies": 9
+    },
+    {
+      "seed": 3,
+      "task": "T03",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.268,
+      "library_bytes": 409018,
+      "saved_copies": 10
+    },
+    {
+      "seed": 3,
+      "task": "T04",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.258,
+      "library_bytes": 524426,
+      "saved_copies": 9
+    },
+    {
+      "seed": 3,
+      "task": "T07",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.265,
+      "library_bytes": 400308,
+      "saved_copies": 6
+    },
+    {
+      "seed": 3,
+      "task": "T09",
+      "ok": true,
+      "failures": [],
+      "index_runs": 2,
+      "index_seconds": 0.64,
+      "library_bytes": 437618,
+      "saved_copies": 8
+    },
+    {
+      "seed": 3,
+      "task": "T10",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.391,
+      "library_bytes": 400475,
+      "saved_copies": 7
+    },
+    {
+      "seed": 3,
+      "task": "T12",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.384,
+      "library_bytes": 400109,
+      "saved_copies": 7
+    },
+    {
+      "seed": 3,
+      "task": "T16",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.387,
+      "library_bytes": 363396,
+      "saved_copies": 6
+    },
+    {
+      "seed": 3,
+      "task": "T19",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.382,
+      "library_bytes": 330262,
+      "saved_copies": 5
+    },
+    {
+      "seed": 3,
+      "task": "T20",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.386,
+      "library_bytes": 400557,
+      "saved_copies": 7
+    },
+    {
+      "seed": 3,
+      "task": "T21",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.273,
+      "library_bytes": 479118,
+      "saved_copies": 9
+    },
+    {
+      "seed": 3,
+      "task": "T22",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.376,
+      "library_bytes": 487173,
+      "saved_copies": 9
+    },
+    {
+      "seed": 3,
+      "task": "T23",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.276,
+      "library_bytes": 363191,
+      "saved_copies": 6
+    },
+    {
+      "seed": 3,
+      "task": "T25",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.387,
+      "library_bytes": 276216,
+      "saved_copies": 4
+    },
+    {
+      "seed": 101,
+      "task": "T01",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.383,
+      "library_bytes": 400270,
+      "saved_copies": 7
+    },
+    {
+      "seed": 101,
+      "task": "T02",
+      "ok": true,
+      "failures": [],
+      "index_runs": 2,
+      "index_seconds": 0.65,
+      "library_bytes": 495807,
+      "saved_copies": 9
+    },
+    {
+      "seed": 101,
+      "task": "T03",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.267,
+      "library_bytes": 326643,
+      "saved_copies": 8
+    },
+    {
+      "seed": 101,
+      "task": "T04",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.266,
+      "library_bytes": 400421,
+      "saved_copies": 6
+    },
+    {
+      "seed": 101,
+      "task": "T07",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.268,
+      "library_bytes": 362895,
+      "saved_copies": 5
+    },
+    {
+      "seed": 101,
+      "task": "T09",
+      "ok": true,
+      "failures": [],
+      "index_runs": 2,
+      "index_seconds": 0.554,
+      "library_bytes": 359049,
+      "saved_copies": 6
+    },
+    {
+      "seed": 101,
+      "task": "T10",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.261,
+      "library_bytes": 313600,
+      "saved_copies": 5
+    },
+    {
+      "seed": 101,
+      "task": "T12",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.356,
+      "library_bytes": 400067,
+      "saved_copies": 7
+    },
+    {
+      "seed": 101,
+      "task": "T16",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.367,
+      "library_bytes": 325942,
+      "saved_copies": 5
+    },
+    {
+      "seed": 101,
+      "task": "T19",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.382,
+      "library_bytes": 330121,
+      "saved_copies": 5
+    },
+    {
+      "seed": 101,
+      "task": "T20",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.374,
+      "library_bytes": 400387,
+      "saved_copies": 7
+    },
+    {
+      "seed": 101,
+      "task": "T21",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.249,
+      "library_bytes": 355187,
+      "saved_copies": 6
+    },
+    {
+      "seed": 101,
+      "task": "T22",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.352,
+      "library_bytes": 400535,
+      "saved_copies": 7
+    },
+    {
+      "seed": 101,
+      "task": "T23",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.249,
+      "library_bytes": 363293,
+      "saved_copies": 6
+    },
+    {
+      "seed": 101,
+      "task": "T25",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.344,
+      "library_bytes": 400342,
+      "saved_copies": 7
+    },
+    {
+      "seed": 102,
+      "task": "T01",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.244,
+      "library_bytes": 363114,
+      "saved_copies": 6
+    },
+    {
+      "seed": 102,
+      "task": "T02",
+      "ok": true,
+      "failures": [],
+      "index_runs": 2,
+      "index_seconds": 0.653,
+      "library_bytes": 446161,
+      "saved_copies": 8
+    },
+    {
+      "seed": 102,
+      "task": "T03",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.271,
+      "library_bytes": 326470,
+      "saved_copies": 8
+    },
+    {
+      "seed": 102,
+      "task": "T04",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.379,
+      "library_bytes": 400337,
+      "saved_copies": 6
+    },
+    {
+      "seed": 102,
+      "task": "T07",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.369,
+      "library_bytes": 325828,
+      "saved_copies": 4
+    },
+    {
+      "seed": 102,
+      "task": "T09",
+      "ok": true,
+      "failures": [],
+      "index_runs": 2,
+      "index_seconds": 0.627,
+      "library_bytes": 358979,
+      "saved_copies": 6
+    },
+    {
+      "seed": 102,
+      "task": "T10",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.381,
+      "library_bytes": 437605,
+      "saved_copies": 8
+    },
+    {
+      "seed": 102,
+      "task": "T12",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.374,
+      "library_bytes": 362866,
+      "saved_copies": 6
+    },
+    {
+      "seed": 102,
+      "task": "T16",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.378,
+      "library_bytes": 288979,
+      "saved_copies": 4
+    },
+    {
+      "seed": 102,
+      "task": "T19",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.368,
+      "library_bytes": 379520,
+      "saved_copies": 6
+    },
+    {
+      "seed": 102,
+      "task": "T20",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.262,
+      "library_bytes": 437847,
+      "saved_copies": 8
+    },
+    {
+      "seed": 102,
+      "task": "T21",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.373,
+      "library_bytes": 479182,
+      "saved_copies": 9
+    },
+    {
+      "seed": 102,
+      "task": "T22",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.272,
+      "library_bytes": 487224,
+      "saved_copies": 9
+    },
+    {
+      "seed": 102,
+      "task": "T23",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.37,
+      "library_bytes": 400354,
+      "saved_copies": 7
+    },
+    {
+      "seed": 102,
+      "task": "T25",
+      "ok": true,
+      "failures": [],
+      "index_runs": 1,
+      "index_seconds": 0.272,
+      "library_bytes": 276180,
+      "saved_copies": 4
+    }
+  ]
+}

@@ -162,7 +162,7 @@ extension SessionLog {
     /// The folders the session worked in, as its records name them, in one spelling, first first.
     public var workingFolders: [String] {
         var seen = Set<String>()
-        return ([session.cwd] + turns.flatMap(\.parts).map(\.cwd)).compactMap { $0.map(standardPath) }
+        return ([session.cwd] + turns.flatMap(\.parts).map(\.cwd)).compactMap { $0.map(Paths.standard) }
             .filter { seen.insert($0).inserted }
     }
 }

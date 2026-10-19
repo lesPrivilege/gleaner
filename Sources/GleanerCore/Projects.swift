@@ -31,7 +31,7 @@ public enum Projects {
     /// The main folder of the repository holding the file at `path`, else of the one the agent
     /// worked in; nil outside git.
     public static func repository(path: String, cwd: String?) -> String? {
-        (checkout(path: path) ?? cwd.map(standardPath).flatMap(checkout(containing:)))?.repository
+        (checkout(path: path) ?? cwd.map(Paths.standard).flatMap(checkout(containing:)))?.repository
     }
 
     /// The checkout holding the file at `path`, or nil outside git. Found once per folder, like the
@@ -105,17 +105,17 @@ public enum Projects {
         guard let common = try? String(contentsOfFile: gitDir + "/commondir", encoding: .utf8) else { return worktree }
         var commonDir = common.trimmingCharacters(in: .whitespacesAndNewlines)
         if !commonDir.hasPrefix("/") { commonDir = (gitDir as NSString).appendingPathComponent(commonDir) }
-        commonDir = (commonDir as NSString).standardizingPath
+        commonDir = Paths.standard(commonDir)
         return (commonDir as NSString).lastPathComponent.hasPrefix(".") ? (commonDir as NSString).deletingLastPathComponent : commonDir
     }
 
     /// Outside git: the folder the agent worked in, or, when the file sits outside it, the first
     /// folder where the two paths part.
-    /// The cwd is spelled as a delivered path is (`standardPath`), so a folder under `/private/tmp`
+    /// The cwd is spelled as a delivered path is (`Paths.standard`), so a folder under `/private/tmp`
     /// or `/private/var` is the same folder as the paths in it.
     static func folder(path: String, cwd: String?) -> String {
         let directory = (path as NSString).deletingLastPathComponent
-        guard let cwd = cwd.map(standardPath) else { return outsideWorktrees(directory) }
+        guard let cwd = cwd.map(Paths.standard) else { return outsideWorktrees(directory) }
         if directory == cwd || directory.hasPrefix(cwd + "/") { return outsideWorktrees(cwd) }
         let a = directory.split(separator: "/"), b = cwd.split(separator: "/")
         let shared = zip(a, b).prefix { $0 == $1 }.count

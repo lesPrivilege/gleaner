@@ -318,6 +318,38 @@ enum Wording {
         "Its folder is gone too: \(tilde(folder))"
     }
 
+    /// Where the reply that delivered `delivery` is in its session's log, beside Show in Log; nil
+    /// when the delivery records no line.
+    static func logLine(_ delivery: Delivery) -> String? {
+        delivery.evidence.first.map { "Line \($0.line)" }
+    }
+
+    /// Said in More Info in place of Show in Log when the agent has removed the log, and in the
+    /// detail's header when Show in Log is chosen from a menu.
+    static func logGone(_ log: String) -> String {
+        "The session log is gone: \(tilde(log))"
+    }
+
+    /// Said where Copy Reference was pressed when the library couldn't name the delivery.
+    static func referenceFailed(_ error: Error) -> String {
+        "Couldn’t copy the reference: \(error)"
+    }
+
+    /// Why a `gleaner://` link showed nothing: it doesn't name a delivery.
+    static func notADeliveryLink(_ link: URL) -> String {
+        "Gleaner opens links to a delivery, gleaner://delivery/ and its id. This link isn’t one: \(link.absoluteString)"
+    }
+
+    /// Why a `gleaner://delivery/` link showed nothing: this library has no delivery `id`.
+    static func noDelivery(_ id: String) -> String {
+        "This library has no delivery \(id). The link may be from another library, or from a log Gleaner hasn’t read yet."
+    }
+
+    /// Why a `gleaner://delivery/` link showed nothing: its delivery is from an agent turned off in Sources.
+    static func deliveryOff(_ agent: Provider) -> String {
+        "This delivery is from \(provider(agent)), which is off in Sources. Turn it on to show its deliveries."
+    }
+
     /// A delivery as one end of a comparison, keeping "first seen later" (SPEC §6).
     static func compareTitle(_ delivery: Delivery) -> String {
         revision(delivery)
@@ -361,7 +393,7 @@ enum Wording {
     }
 
     static func provider(_ provider: Provider) -> String {
-        AgentMark.Agent(provider).name
+        provider.name
     }
 
     /// One agent's log folder as last read (SPEC §8): not on this Mac, unreadable, read with

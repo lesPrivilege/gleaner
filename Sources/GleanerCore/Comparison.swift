@@ -77,9 +77,18 @@ public enum Comparison {
         var isWhole: Bool { Int64(data.count) == size }
     }
 
-    /// Reads an end once, hashing as it goes, and keeps its first `limit` bytes. Only a regular
-    /// file is opened, as for staging: opening a pipe would block for ever.
+    /// Reads an end once, hashing as it goes, and keeps its first `limit` bytes.
     static func read(_ end: End, keeping limit: Int) -> Result<Read, Failure> {
+        var data = Data()
+        return read(end) { piece in
+            if data.count < limit { data.append(piece.prefix(limit - data.count)) }
+        }.map { Read(data: data, size: $0) }
+    }
+
+    /// Reads an end once, hashing as it goes, and hands `body` each piece as it is read, so the end
+    /// is never held whole; what `body` was handed is the end's only if this succeeds. Returns its
+    /// size. Only a regular file is opened, as for staging: opening a pipe would block for ever.
+    static func read(_ end: End, each body: (Data) -> Void) -> Result<Int64, Failure> {
         let unreadable = Failure(message: "\(end.title) can no longer be read.")
         let url = end.url.resolvingSymlinksInPath()
         guard ContentStore.isRegularFile(url), let handle = try? FileHandle(forReadingFrom: url) else {
@@ -87,12 +96,12 @@ public enum Comparison {
         }
         defer { try? handle.close() }
         var hasher = SHA256()
-        var read = Read()
+        var size: Int64 = 0
         do {
-            while let chunk = try handle.read(upToCount: 4 << 20), !chunk.isEmpty {
-                hasher.update(data: chunk)
-                read.size += Int64(chunk.count)
-                if read.data.count < limit { read.data.append(chunk.prefix(limit - read.data.count)) }
+            try Locator.read(handle) { piece in
+                hasher.update(data: piece)
+                size += Int64(piece.count)
+                body(piece)
             }
         } catch {
             return .failure(unreadable)
@@ -100,7 +109,7 @@ public enum Comparison {
         guard hasher.finalize().map({ String(format: "%02x", $0) }).joined() == end.sha else {
             return .failure(Failure(message: "\(end.title) changed since Gleaner checked it. Check again."))
         }
-        return .success(read)
+        return .success(size)
     }
 
     /// Strict UTF-8 without NUL bytes; anything else is compared as bytes. When only the start of
@@ -108,5 +117,29 @@ public enum Comparison {
     static func isText(_ read: Read) -> Bool {
         let cut = read.isWhole ? 0 : 3
         return !read.data.contains(0) && (0...cut).contains { String(data: read.data.dropLast($0), encoding: .utf8) != nil }
+    }
+
+    /// `isText` for an end read a piece at a time and never held whole: strict UTF-8 without NUL
+    /// bytes, a character split between two pieces included.
+    struct TextCheck {
+        private var valid = true
+        /// The start of a character the last piece ended inside.
+        private var carried = Data()
+
+        /// True when every piece so far was text, and the last didn't end inside a character.
+        var isText: Bool { valid && carried.isEmpty }
+
+        mutating func add(_ piece: Data) {
+            guard valid, !piece.isEmpty else { return }
+            let bytes = carried + piece
+            // Back past continuation bytes (10xxxxxx) to the last character's first byte; that
+            // character waits for the next piece when this one ends inside it.
+            var lead = bytes.endIndex - 1
+            while lead > bytes.startIndex, bytes.endIndex - lead < 4, bytes[lead] & 0xC0 == 0x80 { lead -= 1 }
+            let length = bytes[lead] >= 0xF0 ? 4 : bytes[lead] >= 0xE0 ? 3 : bytes[lead] >= 0xC0 ? 2 : 1
+            let whole = lead + length > bytes.endIndex ? lead : bytes.endIndex
+            carried = bytes[whole...]
+            valid = !bytes[..<whole].contains(0) && String(data: bytes[..<whole], encoding: .utf8) != nil
+        }
     }
 }

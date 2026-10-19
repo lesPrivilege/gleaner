@@ -121,11 +121,66 @@ Gleaner 没见过或没读到的交付，会在 Gleaner 第一次读到该文件
 | Quick Look | 空格或 ⌘Y |
 | 在 Finder 中显示原文件（Show in Finder） | ⇧⌘R |
 | 拷贝原文件路径（Copy Path） | ⌥⌘C |
+| 拷贝交付的引用（Copy Reference） | ⇧⌘C |
 | 检查新交付 | ⌘R |
 | 撤销一次 Join、Keep Apart 或移动 | ⌘Z |
 | 关闭对比 | Esc |
 
 Show in Finder 和 Copy Path 针对原文件所在位置，那里的文件可能在交付后改过。文件已不在时，Show Folder 打开它原来所在的文件夹；那个文件夹也不在了，就如实说明。复制、打开、Quick Look 和拖拽用的都是核验过的副本。
+
+## gleaner 命令
+
+`gleaner` 让 Mac 上的编码 agent（Claude Code、Codex）自己找到你说的那个文件，选定确切的版本，只读需要的部分，再把这些字节交出去，不必自己翻日志。它从源码构建，与应用放在一起：`swift build -c release --product gleaner` 会生成 `.build/release/gleaner`。发布包里只有应用。agent 按 `gleaner` 这个名字运行它，所以要把它链接到 PATH 上的某个文件夹，例如 `/usr/local/bin`，macOS 会把它放进每个 shell 的 PATH（文件夹不归你所有时加 `sudo`）；每次重新构建后，链接指向的就是新版本：
+
+```bash
+ln -s "$PWD/.build/release/gleaner" /usr/local/bin/gleaner
+```
+
+| 命令 | 回答 |
+|---|---|
+| `gleaner find <terms…> [--project P] [--kind K] [--limit N]` | 所有词都匹配的文件，从新到旧，各按匹配到的那次交付列出，并附总数 |
+| `gleaner show <delivery>` | 这次交付及其文件的每次交付、磁盘上的现状、转交时会交出什么，以及交付它的那次要求和回复 |
+| `gleaner read <delivery> [--lines A:B \| --bytes A:B] [--max N]` | 这一版原样字节的文本，不另行指定时最多 16 KB；绝不拿当前文件的字节顶替 |
+| `gleaner resolve <delivery>` | 它的引用：资料库、交付的 id、哈希和路径、提到它的日志行、Gleaner 第一次怎样读到它，以及它的字节现在在哪里 |
+| `gleaner handoff <delivery>` | Gleaner 缓存里这一版的一份只读副本的路径，已按哈希核对 |
+| `gleaner verify <delivery or reference file>` | 原文件、Gleaner 的存档副本，是两者都有、只有其一，还是都没有引用里的字节 |
+
+每条命令向 stdout 写一个 JSON 对象，失败时也一样，写成 `{"error": {"kind": …, "message": …}}`，消息同时写到 stderr。退出码：0 成功；1 找不到、这一版没有字节，或其他失败；2 用法错误；3 没有资料库，或资料库属于另一个版本（打开 Gleaner 即可创建或更新）。`--home <folder>` 读取为另一个主文件夹保存的资料库，与应用的 `-GleanerHome` 相同。
+
+命令从不建索引，以只读方式打开资料库：它按应用最近一次读到的内容回答。每个回答，以及资料库打开之后的每次失败，都带着这份 `index`（资料库、运行过几次、最近一次何时结束、各 agent 的日志读得怎样，或已关闭），所以过时或不完整的索引给出的空结果，不会被当成什么都没交付的证据。打开 Gleaner 就能更新它。它按应用呈现的样子回答：在 Sources 里关掉的 agent 在这份索引里记为 `off`，它的交付不在回答里；每个文件归在应用显示它的那个项目里，你做过的更正都算数。命令从不写入资料库或项目文件夹；`handoff` 只写它的副本，放在 Gleaner 的缓存里。
+
+**给 agent 的宿主用。** `gleaner mcp` 通过 stdio，把同样的六个调用作为 MCP 工具提供：`gleaner_find`、`gleaner_show`、`gleaner_read`、`gleaner_resolve`、`gleaner_handoff` 和 `gleaner_verify`。参数与命令同名（`lines` 和 `bytes` 写成 `"A:B"`；命令接收引用文件的地方，`gleaner_verify` 接收交付的 id，或以对象形式给出的引用），回答是同样的 JSON，既作为结构化内容，也作为文本。失败时是一个工具错误，带着同样的 `{"error", "index"}` 对象。服务端不保留状态：每次调用都以只读方式打开资料库，stdout 上只写协议消息。Gleaner 从不自行注册到任何宿主。要把它加到 Claude Code，范围由你选定（默认是 local；`--scope user` 用于你的所有项目，`--scope project` 通过项目的 `.mcp.json` 共享）：
+
+```bash
+claude mcp add gleaner -- <path to gleaner> mcp
+```
+
+要把它加到 DeepSeek Harness，就为它的 MCP 客户端插入一行，写在 `$DSH_HOME/cordis.patch.yml` 里（与其中已有的内容合并），或写在一个用 `--patch` 传入的文件里：
+
+```yaml
+- insert:
+    - id: mcp-gleaner
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: gleaner
+        transport: stdio
+        command: <path to gleaner>
+        args: [mcp]
+```
+
+`<path to gleaner>` 是你构建好的命令，例如 `.build/release/gleaner` 的完整路径。在 `mcp` 后加 `--home <folder>`，就为另一个主文件夹保存的资料库提供服务。
+
+**作为 skill 使用。** `extensions/gleaner` 是一个 [Agent Skills](https://agentskills.io) 文件夹，告诉 agent 何时、怎样使用 Gleaner：凭你自己的描述，找到 agent 早先交付的文件；用它的 `gleaner://delivery/<id>` 链接在 Gleaner 里打开；用 `handoff` 或 `read` 交出它确切的那一版，给你转交副本的路径或引用，而不是把文件内容贴出来。它只运行 `gleaner` 命令，以及打开 `gleaner://` 链接的 `open`，自己什么也不保存。Claude Code、Codex 和 DeepSeek Harness 读的是同一个文件夹。Gleaner 从不自行安装它：在仓库里运行下面的命令，把它链接（或拷贝）到各自读取 skill 的位置：
+
+```bash
+mkdir -p ~/.claude/skills ~/.agents/skills
+ln -s "$PWD/extensions/gleaner" ~/.claude/skills/gleaner   # Claude Code
+ln -s "$PWD/extensions/gleaner" ~/.agents/skills/gleaner   # Codex 和 DeepSeek Harness
+```
+
+放在项目自己的 `.claude/skills` 或 `.agents/skills` 文件夹里也可以。skill 默认 `gleaner` 在 PATH 上，否则由你告诉 agent 它在哪里。
+
+在应用里，**Copy Reference**（⇧⌘C，位于 Edit 菜单、详情栏的 ⋯ 菜单，以及列表行和版本行的右键菜单）把一次交付的引用按 `gleaner resolve` 给出的样子拷贝下来，可以贴给 agent。**Show in Log**（位于 File 菜单、⋯ 菜单和同样的右键菜单）在 Finder 中选中会话日志；More Info 给出提到这个文件的那条回复所在的行；agent 已删掉日志时则说明这一点。显示日志并不是恢复对话：恢复对话用 Copy Resume Command。`gleaner://delivery/<id>` 链接会打开 Gleaner 并定位到那次交付；链接指向的交付不在这个资料库里，或它的 agent 在 Sources 里已关闭时，如实说明。
 
 ## 交付的认定
 
@@ -172,12 +227,26 @@ swift test                      # fixture 测试
 - `Sources/GleanerCore`：各 agent 的日志适配器（Claude Code、Codex）、提及抽取、文件定位、脱敏、索引库（SQLite）、内容库（存档副本与核验过的转交副本）、索引器、对每个会话工作区的观察（`Observations.swift`）、所交付文件夹里的文件（`Bundles.swift`）、这些列表的排序（`Listing.swift`）、合集、保留的文件与审阅（`WorkUnits.swift`、`Keeping.swift`、`Review.swift`）、日志监视，以及状态判断（`Library.swift`）。
 - `Sources/GleanerUI`：窗口所用的组件库：标记、状态、表面、控件与动效，依 [docs/design/components.md](docs/design/components.md)。只依赖 SwiftUI 与 AppKit。
 - `Sources/Gleaner`：macOS 应用（SwiftUI、AppKit、Quick Look、AVKit）。
+- `Sources/gleaner-cli`：`gleaner` 命令，以 JSON 给出 catalog 的回答；以及 `gleaner mcp`，把同样的回答作为 MCP 工具提供。
 - `Sources/gleaner-spike`：Spike A，只读地抽取本地日志，输出一份标注表。
-- `Tests/GleanerCoreTests`：用脱敏后的日志记录结构写成的 fixture 测试，整个流程的测试（并发编辑、删除 worktree、回滚、补读旧日志、核验后转交），几类工作中的观察和所交付的文件夹，以及合集、保留的文件和绑定在字节上的审阅结论。
+- `Sources/gleaner-index`：开发工具，不开窗口就为一个合成的 home 建一次索引，供 `gleaner` 读取。不随发布包提供。
+- `extensions/gleaner`：Claude Code、Codex 和 DeepSeek Harness 读取的 skill。
+- `Tests/GleanerCoreTests`：用脱敏后的日志记录结构写成的 fixture 测试，整个流程的测试（并发编辑、删除 worktree、回滚、补读旧日志、核验后转交），几类工作中的观察和所交付的文件夹，合集、保留的文件和绑定在字节上的审阅结论，以及 catalog 的查询。
 - `Tests/GleanerUITests`：标记、设计令牌，以及画出每个组件的图库（`GLEANER_GALLERY=<文件夹> swift test --filter GalleryTests`）。
 - `Tests/GleanerTests`：在合成的资料库上检验应用的判断（点一下落在哪次交付上，Quick Look、Compare 和拖拽用的是哪份字节）及其措辞。
+- `Tests/GleanerCommandTests`：像 agent 的 shell 那样运行构建好的 `gleaner`：检验它的 JSON、退出码，以及它既不写资料库也不写项目；再像宿主那样运行 `gleaner mcp`，把每个工具的回答和拒绝与命令自己的对照；拿构建好的命令核对 skill 里给出的每条命令；以及 `gleaner-index`，检验它建出的资料库与应用的索引器建出的一致。
 
 v0.1 的设计决定见 [docs/SPEC.md](docs/SPEC.md)，设计探索与裁决见 [docs/design/](docs/design/README.md)。
+
+### 不开窗口为合成的 home 建索引
+
+```bash
+scripts/acceptance-home.py /tmp/gleaner-home initial
+swift run gleaner-index --home /tmp/gleaner-home
+.build/debug/gleaner find guide --home /tmp/gleaner-home
+```
+
+`gleaner-index` 像应用带 `-GleanerHome` 启动时那样为这个 home 建一次索引，并以 JSON 输出资料库的 index，以及这次读了什么、新增了什么；`--now <ISO 8601>` 固定这次运行的时钟。它必须给出 `--home`，拒绝你自己的 home 文件夹和更新版 Gleaner 打开过的资料库，也从不打包进应用（[docs/design/headless-indexing.md](docs/design/headless-indexing.md)）。
 
 ### Spike A
 

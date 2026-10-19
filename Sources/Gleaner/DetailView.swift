@@ -64,8 +64,9 @@ struct DetailView: View {
 }
 
 /// The file, as the thing you drag: its own icon and name, which bytes they are, and whether
-/// Gleaner vouches for them. Open and Show in Finder sit beside it; the rest is in the menu. When
-/// the version can't be handed over, the reason and what can be done instead follow.
+/// Gleaner vouches for them. Open and Show in Finder sit beside it; the rest, Show in Log and Copy
+/// Reference among it, is in the menu. When the version can't be handed over, the reason and what
+/// can be done instead follow.
 struct DetailHeader: View {
     @Environment(LibraryModel.self) private var model
     var artifact: Artifact
@@ -195,8 +196,10 @@ struct DetailHeader: View {
 
     @ViewBuilder var menu: some View {
         Button("Quick Look") { model.toggleQuickLook() }.disabled(openURL == nil)
+        Button("Show in Log") { model.revealLog(delivery) }
         Divider()
         Button("Copy Path") { model.copyPath(artifact) }
+        Button("Copy Reference") { Task { await model.copyReference(delivery) } }
         if case .command(let command) = model.resume(delivery) {
             Button("Copy Resume Command") { model.copy(command) }
         }
@@ -572,6 +575,12 @@ struct VersionsSection: View {
                     in: RoundedRectangle(cornerRadius: Radius.row))
         .contentShape(Rectangle())
         .onTapGesture { model.chosenDelivery = delivery.id }
+        .contextMenu {
+            // A gone log would be said at the top of the detail, out of sight from here; More Info
+            // says it for the chosen version.
+            Button("Show in Log") { model.revealLog(delivery) }.disabled(model.isLogGone(delivery))
+            Button("Copy Reference") { Task { await model.copyReference(delivery) } }
+        }
         .accessibilityElement(children: .combine)
         .accessibilityLabel(spoken(delivery))
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
@@ -648,7 +657,24 @@ struct MoreInfoSection: View {
                                         "git " + observation.state.git.rawValue.replacingOccurrences(of: "_", with: " "),
                                         "checked \(Wording.date(observation.checkedAt))"].compactMap { $0 }.joined(separator: " · "))
                 }
-                InfoRow(label: "Session Log") { mono(delivery.logPath) }
+                InfoRow(label: "Session Log") {
+                    VStack(alignment: .leading, spacing: Space.xs) {
+                        mono(delivery.logPath)
+                        HStack(spacing: Space.s) {
+                            if let line = Wording.logLine(delivery) { Text(line).foregroundStyle(.secondary) }
+                            // Said here, where Show in Log would be: a failure is drawn at the top of
+                            // the detail, out of sight from this far down.
+                            if model.isLogGone(delivery) {
+                                StatusLabel(mark: .cross, text: "Gone")
+                                InfoButton(text: Wording.logGone(delivery.logPath))
+                            } else {
+                                Button("Show in Log") { model.revealLog(delivery) }
+                                    .controlRole(.inline)
+                                    .help("Select the session log in Finder")
+                            }
+                        }
+                    }
+                }
             }
             .font(.callout)
             .padding(.top, Space.s)

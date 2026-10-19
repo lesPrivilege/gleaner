@@ -298,7 +298,7 @@ extension Registry {
             }
             return PendingFolder(id: id, path: path, deliveredAt: (row["delivered_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
                                  provider: provider, logPath: log,
-                                 workingFolders: ([row["session_cwd"] as? String].compactMap { $0 } + worked[log]!).map(standardPath))
+                                 workingFolders: ([row["session_cwd"] as? String].compactMap { $0 } + worked[log]!).map(Paths.standard))
         }
     }
 

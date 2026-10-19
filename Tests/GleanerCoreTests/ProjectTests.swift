@@ -175,6 +175,26 @@ import Testing
         #expect(c.projectFolder == folder && c.project == "tool")
     }
 
+    @Test func aFolderUnderPrivateIsOneProjectWithWhatItsAgentDelivered() throws {
+        // An agent records the folder it works in as the system resolves it, /private/var/folders/…
+        // for what Foundation calls /var/folders/…. Its reply links a file there, one not yet
+        // written, and one outside git.
+        let atlas = try repository("Atlas")
+        let cwd = LogWatcher.resolved(atlas)
+        try #require(cwd.hasPrefix("/private/") && !atlas.hasPrefix("/private/"))
+        try FileManager.default.createDirectory(atPath: atlas + "/out", withIntermediateDirectories: true)
+        try "r1".write(toFile: atlas + "/out/report.md", atomically: true, encoding: .utf8)
+        let reply = "Report: [report](out/report.md). Notes: [notes](out/notes.md). Plan: [plan](../plan.md)"
+        let artifacts = try index(turn(reply, cwd: cwd, at: "00:00:00")).artifacts().sorted { $0.path < $1.path }
+
+        // The files, the folder the agent worked in and the project take one form.
+        #expect(artifacts.map(\.path) == [atlas + "/out/notes.md", atlas + "/out/report.md", root.path + "/plan.md"])
+        #expect(artifacts.map(\.latest.cwd) == [atlas, atlas, atlas])
+        #expect(artifacts.map(\.projectFolder) == [atlas, atlas, atlas])
+        #expect(artifacts.map(\.project) == ["Atlas", "Atlas", "Atlas"])
+        #expect(artifacts.map(\.folder) == ["out", "out", (root.path as NSString).abbreviatingWithTildeInPath])
+    }
+
     @Test func aFileOutsideGitIsNamedAfterItsFolder() {
         let notes = artifact(root.path + "/notes/plan.md", cwd: root.path + "/notes")
         #expect(notes.project == "notes")
@@ -189,17 +209,17 @@ import Testing
         try FileManager.default.createDirectory(atPath: board + "/charts", withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(atPath: board) }
         try Data("chart".utf8).write(to: URL(fileURLWithPath: board + "/charts/revenue.png"))
-        let there = standardPath(board + "/charts/revenue.png"), gone = standardPath(board + "/charts/gone.png")
+        let there = Paths.standard(board + "/charts/revenue.png"), gone = Paths.standard(board + "/charts/gone.png")
         #expect(there.hasPrefix("/var/") && gone.hasPrefix("/var/"))
-        #expect(Projects.folder(path: there, cwd: board) == standardPath(board))
-        #expect(Projects.folder(path: gone, cwd: board) == standardPath(board))
-        #expect(standardPath("/private/tmp/a/../b.md") == "/tmp/b.md")
+        #expect(Projects.folder(path: there, cwd: board) == Paths.standard(board))
+        #expect(Projects.folder(path: gone, cwd: board) == Paths.standard(board))
+        #expect(Paths.standard("/private/tmp/a/../b.md") == "/tmp/b.md")
         // The repository an agent worked in, reached through its cwd, is the one its own files are in.
         let repo = board + "/app"
         try FileManager.default.createDirectory(atPath: repo + "/.git", withIntermediateDirectories: true)
         Projects.forgetRepositories()
-        #expect(Projects.repository(path: there, cwd: repo) == Projects.repository(path: standardPath(repo + "/report.md"), cwd: nil))
-        #expect(Projects.repository(path: there, cwd: repo) == standardPath(repo))
-        #expect(standardPath("/private/varnish/x") == "/private/varnish/x")
+        #expect(Projects.repository(path: there, cwd: repo) == Projects.repository(path: Paths.standard(repo + "/report.md"), cwd: nil))
+        #expect(Projects.repository(path: there, cwd: repo) == Paths.standard(repo))
+        #expect(Paths.standard("/private/varnish/x") == "/private/varnish/x")
     }
 }

@@ -37,6 +37,11 @@ struct LibraryView: View {
         .onChange(of: model.query) { savedQuery = model.query }
         .onChange(of: model.kind) { savedKind = model.kind?.rawValue ?? "" }
         .onChange(of: model.place) { savedPlace = Self.encode(model.place) }
+        .alert("Gleaner couldn’t open this link",
+               isPresented: Binding(get: { model.linkFailure != nil }, set: { if !$0 { model.linkFailure = nil } })) {
+        } message: {
+            Text(model.linkFailure ?? "")
+        }
         // A collection is named in place in the sidebar, so the sidebar shows while it is.
         .onChange(of: model.naming) { if model.naming != nil { columns = .all } }
         .navigationSubtitle(model.progress.map { "Reading logs… \($0.done) of \($0.total)" } ?? model.status)
@@ -261,15 +266,17 @@ struct ListHandoff: ViewModifier {
             .contextMenu(forSelectionType: OutlineRow.self) { rows in
                 let works = rows.compactMap(\.work).compactMap { model.organization.work(containing: $0) }
                 if rows.count == 1, let row = rows.first, let id = row.work, let work = model.organization.work(containing: id),
-                   let (artifact, _) = model.target(row) {
-                    // The file the row names and drags: a revision's own, or the one its work's row shows.
+                   let (artifact, delivery) = model.target(row) {
+                    // The file the row names and drags, and its delivery: a revision's own, or the one its work's row shows.
                     if row == model.outlineSelection {
                         Button("Open") { model.openSelected() }.disabled(!model.canHandOver)
                         Button("Quick Look") { model.toggleQuickLook() }.disabled(!model.canHandOver)
                         Divider()
                     }
                     Button(model.missing.contains(artifact.path) ? "Show Folder in Finder" : "Show in Finder") { model.reveal(artifact) }
+                    Button("Show in Log") { model.revealLog(delivery) }
                     Button("Copy Path") { model.copyPath(artifact) }
+                    Button("Copy Reference") { Task { await model.copyReference(delivery) } }
                     Divider()
                     Button("Go to \(model.projectName(work))") { model.place = .project(work.project); model.selection = work.id }
                 }

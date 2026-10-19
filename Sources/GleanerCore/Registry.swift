@@ -90,9 +90,10 @@ public final class Registry: @unchecked Sendable {
     /// record types and fields a log holds that Gleaner doesn't know, what a read counts, each
     /// session's span and workspaces; a session whose span or workspaces moved is walked again).
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
-    /// at a moment in time, are never rewritten. Bump it too when the tables change: it is the
-    /// library's version, and an older Gleaner opens no library of a later one (`Failure.newer`).
-    public static let extractorVersion = 17
+    /// at a moment in time, are never rewritten. Bump it too when the tables change, or when the
+    /// library gains something its readers need: it is the library's version, an older Gleaner
+    /// opens no library of a later one (`Failure.newer`), and `init(readingAt:)` reads no other.
+    public static let extractorVersion = 20
 
     public enum Failure: Error, Equatable, CustomStringConvertible {
         /// The library was last opened by a later Gleaner, whose tables and readings this one
@@ -126,6 +127,7 @@ public final class Registry: @unchecked Sendable {
         // hash and never rewritten.
         if found > 0, found < Self.extractorVersion { try backUp(version: Int(found)) }
         try db.execute("""
+            CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value);
             CREATE TABLE IF NOT EXISTS log_files (
                 path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL, unknown_types TEXT, shortened INTEGER,
                 unknown_fields TEXT, records INTEGER, known_records INTEGER, turns INTEGER, final_replies INTEGER,
@@ -170,6 +172,13 @@ public final class Registry: @unchecked Sendable {
                 size INTEGER NOT NULL, created_at REAL, modified_at REAL NOT NULL, inode INTEGER NOT NULL, made_at REAL NOT NULL);
             CREATE INDEX IF NOT EXISTS reviews_path ON reviews(path);
             """)
+        // The library's namespace, made once with it: every delivery id is unique only within it.
+        // Written only when missing, and through the gate: a library already made is opened without
+        // a write, so a second connection opened while a log is read (`LibraryModel`'s, for
+        // corrections) never waits on SQLite's lock.
+        if try db.rows("SELECT 1 FROM meta WHERE key = 'library'").isEmpty {
+            try writing { try db.run("INSERT OR IGNORE INTO meta (key, value) VALUES ('library', ?)", [UUID().uuidString.lowercased()]) }
+        }
         // Each change of several statements is made whole or not at all: a launch that stops partway,
         // say while another copy of Gleaner holds the library, leaves all of it to the next launch.
 
@@ -202,13 +211,13 @@ public final class Registry: @unchecked Sendable {
         // And the keys it held that Gleaner doesn't know, what its read counted, and whether that read
         // found fewer final replies than the one before: an adapter that stops understanding a format
         // shows in its counts. Each column is added on its own: a library from a build between two of
-        // them has some and not the others.
-        try db.transaction {
-            for (column, type) in [("unknown_fields", "TEXT"), ("records", "INTEGER"), ("known_records", "INTEGER"),
-                                   ("turns", "INTEGER"), ("final_replies", "INTEGER"), ("closed_replies", "INTEGER"),
-                                   ("candidates", "INTEGER"), ("fewer_replies", "INTEGER")]
-            where try !has("log_files", column) {
-                try db.execute("ALTER TABLE log_files ADD COLUMN \(column) \(type);")
+        // them has some and not the others. A library that has them all is opened without a write.
+        let counts = try [("unknown_fields", "TEXT"), ("records", "INTEGER"), ("known_records", "INTEGER"),
+                          ("turns", "INTEGER"), ("final_replies", "INTEGER"), ("closed_replies", "INTEGER"),
+                          ("candidates", "INTEGER"), ("fewer_replies", "INTEGER")].filter { try !has("log_files", $0.0) }
+        if !counts.isEmpty {
+            try db.transaction {
+                for (column, type) in counts { try db.execute("ALTER TABLE log_files ADD COLUMN \(column) \(type);") }
             }
         }
         // Each capture keeps what was at the path, so one without a hash says why. Before, it kept
@@ -266,14 +275,16 @@ public final class Registry: @unchecked Sendable {
         if try !has("sessions", "model_provider") { try db.execute("ALTER TABLE sessions ADD COLUMN model_provider TEXT;") }
         let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
         // Paths under /private/var, /private/tmp and /private/etc were kept in whichever spelling
-        // the disk gave at the time; they now have one (`standardPath`).
-        if version < 13 {
+        // the disk gave at the time; they now have one (`Paths.standard`). Versions 13 to 17 were
+        // numbered on two lines of work, only one of which made this change, so every library
+        // from before 18 gets it; a path already in its one form is left as it is.
+        if version < 18 {
             try db.transaction {
                 for (table, key, columns) in [("captures", "delivery_id", ["path", "repository", "checkout"]), ("deliveries", "id", ["path"])] {
                     for column in columns {
                         for row in try db.rows("SELECT \(key) AS key, \(column) AS value FROM \(table) WHERE \(column) LIKE '/private/%'") {
-                            guard let value = row["value"] as? String, standardPath(value) != value else { continue }
-                            try db.run("UPDATE \(table) SET \(column) = ? WHERE \(key) = ?", [standardPath(value), row["key"] as? String])
+                            guard let value = row["value"] as? String, Paths.standard(value) != value else { continue }
+                            try db.run("UPDATE \(table) SET \(column) = ? WHERE \(key) = ?", [Paths.standard(value), row["key"] as? String])
                         }
                     }
                 }
@@ -282,8 +293,13 @@ public final class Registry: @unchecked Sendable {
         if version != Int64(Self.extractorVersion) {
             // No log has this modification time, so every log is read again; each keeps the size
             // it was read at, and whether it lost records, so one that did still removes nothing.
-            // Its replies were counted by the older reading, so fewer by this one is no alarm.
-            try db.execute("UPDATE log_files SET mtime = -1, closed_replies = NULL; PRAGMA user_version = \(Self.extractorVersion);")
+            // Its replies were counted by the older reading, so fewer by this one is no alarm. The
+            // last run's status was another version's reading, kept in that version's shape: none
+            // is given until this version's first run ends (`recordRun`).
+            try db.execute("""
+                UPDATE log_files SET mtime = -1, closed_replies = NULL; DELETE FROM meta WHERE key = 'sources';
+                PRAGMA user_version = \(Self.extractorVersion);
+                """)
         }
     }
 
@@ -312,12 +328,68 @@ public final class Registry: @unchecked Sendable {
         }
     }
 
+    /// Opens the library at `path` to read only, as the query core does: no schema change, and no
+    /// reread scheduled. A library that isn't there, that can't be read as it is, or that another
+    /// version of Gleaner wrote, is refused (`Catalog.Failure`); opening Gleaner makes, restores or
+    /// updates it, unless a later Gleaner wrote it (`newerLibrary`), which this one never opens. One
+    /// that lost its write-ahead log, say to another SQLite client that removed it on closing, can't be read until Gleaner opens it to write and makes the log again.
+    public init(readingAt path: String) throws {
+        self.path = path
+        gate = Self.gates.gate(URL(fileURLWithPath: path).standardizedFileURL.path)
+        guard FileManager.default.fileExists(atPath: path) else { throw Catalog.Failure.noLibrary(path) }
+        let version: Int64
+        do {
+            db = try Database(readingAt: path)
+            version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
+        } catch {
+            throw Catalog.Failure.unreadableLibrary(path, reason: "\(error)")
+        }
+        if version > Int64(Self.extractorVersion) { throw Catalog.Failure.newerLibrary(path, found: Int(version)) }
+        guard version == Int64(Self.extractorVersion) else { throw Catalog.Failure.wrongVersion(path, found: Int(version)) }
+    }
+
     private func has(_ table: String, _ column: String) throws -> Bool {
         try db.rows("PRAGMA table_info(\(table))").contains { $0["name"] as? String == column }
     }
 
     @discardableResult
     public func transaction<T>(_ body: () throws -> T) throws -> T { try writing { try db.transaction(body) } }
+
+    /// Records a completed run of the indexer: one more generation, when it finished, how the logs
+    /// of each agent it read read, and the agents it didn't read because they are turned off (`off`).
+    public func recordRun(finishedAt date: Date, sources: [Provider: Indexer.Report.Source], off: Set<Provider>) throws {
+        var status = Dictionary(uniqueKeysWithValues: sources.map { ($0.key.rawValue, Catalog.Source($0.value)) })
+        for provider in off { status[provider.rawValue] = Catalog.Source(state: .off) }
+        let json = String(decoding: try Catalog.encoder.encode(status), as: UTF8.self)
+        try transaction {
+            try db.run("""
+                INSERT INTO meta (key, value) VALUES ('generation', 1)
+                ON CONFLICT(key) DO UPDATE SET value = value + 1
+                """)
+            try db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('scanned_at', ?)", [date])
+            try db.run("INSERT OR REPLACE INTO meta (key, value) VALUES ('sources', ?)", [json])
+        }
+    }
+
+    /// The library's namespace and its last completed run (`recordRun`), with each agent turned off
+    /// now as `off`: turning one off starts no run, and its deliveries are left out at once.
+    public func index() throws -> Catalog.Index {
+        var meta: [String: Any] = [:]
+        for row in try db.rows("SELECT key, value FROM meta") {
+            if let key = row["key"] as? String { meta[key] = row["value"] }
+        }
+        guard let library = meta["library"] as? String else { throw Database.Failure(description: "the library has no id") }
+        var sources = try (meta["sources"] as? String).map {
+            try Catalog.decoder.decode([String: Catalog.Source].self, from: Data($0.utf8))
+        } ?? [:]
+        // None until this version's first run ends: the status stays empty until then.
+        if !sources.isEmpty {
+            for provider in try sourcesOff() { sources[provider.rawValue] = Catalog.Source(state: .off) }
+        }
+        return Catalog.Index(
+            library: library, generation: (meta["generation"] as? Int64).map(Int.init) ?? 0,
+            scannedAt: (meta["scanned_at"] as? Double).map(Date.init(timeIntervalSince1970:)), sources: sources)
+    }
 
     /// What reading a log found, when it is unchanged since it was read whole. Nil when it must be read.
     public func findings(unchangedLog path: String, size: Int64, mtime: Date) throws -> LogFindings? {

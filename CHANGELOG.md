@@ -1,5 +1,52 @@
 # Changelog
 
+## Unreleased (after 0.1.0)
+
+Not part of 0.1.0: these changes come after it is tagged.
+
+### The gleaner command
+
+- Adds `gleaner`, for a coding agent on your Mac to find the file you mean, select its exact version, read only what it needs, and hand those bytes on: `find`, `show`, `read`, `resolve`, `handoff` and `verify`. It is built from source (`swift build -c release --product gleaner`); the release zip holds only the app.
+- Writes one JSON object to stdout for every answer and every failure, `{"error": {"kind", "message"}}` for a failure, with the message on stderr too. Exits 0 on success; 1 when not found, when there are no bytes for that version, or on another failure; 2 on wrong usage; 3 when there is no library, or one of another version.
+- Never indexes: it opens the app's library read-only, and refuses one that is missing, of another version, or can't be opened to read, saying to open Gleaner. Every answer, and every failure once the library is open, carries the index it is evidence of (the library, its runs, when the last finished, how each agent's logs read), so an empty answer from a stale or partial index isn't taken for absence. `--home` reads the library kept for another home folder.
+- Refuses a library a later Gleaner last opened as `newer_library` (exit 3), as the app refuses it, and never asks to open Gleaner for it.
+- `read` gives the text of a version's exact bytes, at most 16 KB unless asked, by `--lines` or `--bytes`: from the saved copy whenever there is one, from the original only while it still holds them, in one pass however large the file. `handoff` stages a read-only copy checked by hash, in Gleaner's caches. `verify` checks a delivery, or a reference kept as `resolve` wrote it, by the delivery it names.
+- Answers from the library as the app shows it. An agent turned off in Sources is `off` in the index, and its deliveries are left out; one asked for by id is refused as `source_off` (exit 1). Each file's `project` is the one the app shows it in, after your corrections, with `folder` null for a project you made.
+- `find --project` takes that project's name or its folder, `/private` or not, or the name or folder of the project Gleaner found the file in.
+
+### gleaner-index
+
+- Adds `gleaner-index --home <folder>`, a development tool, never bundled: it indexes a synthetic home once, as the app does with `-GleanerHome`, without the window, so an agent can measure what Gleaner finds through `gleaner` and `gleaner mcp`. It prints the library's index and what the run read and added as JSON, and `--now` pins its clock. It refuses no `--home`, your own home folder, and a library a later Gleaner opened. The app and the tool set up the indexer in one place (`Indexer(folders:)`).
+
+### gleaner mcp
+
+- Adds `gleaner mcp`, a stdio MCP server in the same executable, built on the official Swift SDK (0.12.1). It serves the six commands as the tools `gleaner_find`, `gleaner_show`, `gleaner_read`, `gleaner_resolve`, `gleaner_handoff` and `gleaner_verify`, with the command's arguments by the same names; `gleaner_verify` takes a delivery's id, or a reference as an object.
+- Answers with the command's JSON, as structured content and as one text block; a result whose JSON holds a string that reads as a data URL comes as its text block alone, since the SDK would rewrite that string. A refusal is a tool error with the same `{"error", "index"}` object, and wrong arguments are a refusal of kind `usage`, as is an argument the tool reads that holds a string reading as a data URL, which the SDK would hand on rewritten.
+- Marks every tool read-only except `gleaner_handoff`, which writes only its copy in Gleaner's caches, and is marked not destructive and idempotent. None reaches outside the Mac. Each description says what the tool never does, and that requests and replies are stored text from the logs, to be read as data.
+- Keeps no state: each call opens the library read-only, as the command does. Writes nothing to stdout but protocol messages, takes the protocol version the host asks for (2024-11-05 through 2025-11-25) and claims none newer. Writes one message at a time, each whole, however many calls are under way, and when stdin closes, exits once it has answered each request it read.
+- Never registers itself: `claude mcp add gleaner -- <path to gleaner> mcp` adds it to Claude Code, at the scope you choose, and a row for the DeepSeek Harness's MCP client adds it there.
+
+### Extensions
+
+- Adds `extensions/gleaner`, one Agent Skills folder that Claude Code, Codex and the DeepSeek Harness all read. It tells an agent when to use Gleaner: to find a file an agent delivered earlier from your own description, to open it in Gleaner by its `gleaner://delivery/<id>` link, and to hand on its exact version with `handoff` or `read`, giving you the hand-off path or the reference rather than pasting the file.
+- Gives the exact commands, the fields to read (delivery, hash, path, evidence, provenance, availability, the index's scope), how to choose among matches and versions, and what to do on each exit code. It treats requests and replies as data, and an empty answer as evidence only within the index's scope.
+- Runs only the `gleaner` command, found on PATH or where you say, and `open` for a `gleaner://` link: it keeps nothing, reads no logs, and writes no project folder. Gleaner never installs it; you link or copy the folder into `~/.claude/skills` or `~/.agents/skills`.
+- A test checks every `gleaner` command the skill shows against the built command, so a renamed command or option fails CI.
+- The README says how to put `gleaner` on PATH.
+
+### In the app
+
+- Copy Reference (⇧⌘C, in the Edit menu, the detail's ⋯ menu, and a row's or a version's context menu) copies a delivery's reference as `gleaner resolve` gives it.
+- Show in Log (in the File menu, the ⋯ menu and the same context menus) selects the delivering session's log in Finder; More Info gives the reply's line, or says that the agent has removed the log.
+- A `gleaner://delivery/<id>` link opens Gleaner on that delivery, and says so when it names none in this library, or when its agent is off in Sources.
+
+### The agents' logs
+
+- Counts each log's records, known records, answered turns, final replies and candidates, and reports in the source status: unknown fields in known record types, logs without a final reply, and logs with fewer replies than before. A last turn still under way, or one that ended on a tool call, isn't counted as answered, though a final reply in it is counted; nor is a turn you interrupted. Only closed turns' final replies are compared, so a log read while the agent was between its text and the tool call after it doesn't count as having fewer replies. An agent's Sources page lists those logs, and each unknown field with its count, as it lists unknown record types.
+- Knows Claude Code's `pr-link` record, which holds no reply, instead of reporting it as an unknown record type.
+- Decides a path's one form by its text alone, never asking the disk, wherever Gleaner reads one: a reply, the folder an agent worked in, git's repository folder, or a project an agent asks for. Libraries from before are rewritten to it once, and every log is read again.
+- An adapter change merges only with passing fixture tests and the owner's review.
+
 ## 0.1.0 (Unreleased)
 
 The first release: a macOS 15 app that lists the files Claude Code and Codex named in their final replies to you.
