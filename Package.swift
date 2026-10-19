@@ -32,23 +32,23 @@ let portableCoreDependencies: [Target.Dependency] = []
 let portableCryptoDependencies: [Target.Dependency] = []
 #endif
 
-let package = Package(
-    name: "Gleaner",
-    platforms: [.macOS(.v15)],
-    products: [
-        .library(name: "GleanerCore", targets: ["GleanerCore"]),
-        .executable(name: "gleaner", targets: ["gleaner-cli"]),
-        .executable(name: "gleaner-spike", targets: ["gleaner-spike"]),
-        // A development tool: indexes a synthetic home without the window. Never bundled.
-        .executable(name: "gleaner-index", targets: ["gleaner-index"]),
-    ] + nativeProducts,
-    dependencies: [
-        .package(url: "https://github.com/apple/swift-argument-parser", from: "1.8.2"),
-        .package(url: "https://github.com/modelcontextprotocol/swift-sdk", from: "0.12.1"),
-        // Logging, which the SDK's Transport names, by the URL the SDK gives, so that the two resolve as one.
-        .package(url: "https://github.com/apple/swift-log.git", from: "1.16.1"),
-    ] + portableDependencies,
-    targets: [
+// Convergence experiments only: never linked by the app, command or MCP and not an
+// adopted product API. Keep a typed array so SwiftPM's manifest type checker stays bounded.
+let experimentTargets: [Target] = [
+    .target(name: "GleanerRetrievalExperiments", dependencies: [.target(name: "GleanerCore")] + portableCryptoDependencies,
+            path: "Experiments/GleanerRetrieval"),
+    .testTarget(name: "GleanerRetrievalExperimentTests",
+                dependencies: ["GleanerCore", "GleanerRetrievalExperiments"],
+                path: "Tests/GleanerRetrievalExperimentTests"),
+    .testTarget(name: "GleanerRetrievalHeldOutTests",
+                dependencies: ["GleanerCore", "GleanerRetrievalExperiments"],
+                path: "eval/retrieval/cycle2",
+                exclude: ["heldout-labels.json", "heldout-results.json", "heldout-results-first-run.json",
+                          "heldout-policy-hashes.json", "native", "results", "measure.py"],
+                sources: ["heldout.swift"]),
+]
+
+let baseTargets: [Target] = [
         .target(name: "GleanerCore", dependencies: portableCoreDependencies, exclude: coreExcludes),
         .executableTarget(
             name: "gleaner-cli",
@@ -71,5 +71,20 @@ let package = Package(
             resources: [.copy("Fixtures")]
         ),
         .testTarget(name: "GleanerCommandTests", dependencies: ["GleanerCore"]),
-    ] + nativeTargets + portableTargets
-)
+]
+let allTargets: [Target] = baseTargets + nativeTargets + portableTargets + experimentTargets
+let allProducts: [Product] = [
+    .library(name: "GleanerCore", targets: ["GleanerCore"]),
+    .executable(name: "gleaner", targets: ["gleaner-cli"]),
+    .executable(name: "gleaner-spike", targets: ["gleaner-spike"]),
+    // A development tool: indexes a synthetic home without the window. Never bundled.
+    .executable(name: "gleaner-index", targets: ["gleaner-index"]),
+] + nativeProducts
+let allDependencies: [Package.Dependency] = [
+    .package(url: "https://github.com/apple/swift-argument-parser", from: "1.8.2"),
+    .package(url: "https://github.com/modelcontextprotocol/swift-sdk", from: "0.12.1"),
+    // Logging, which the SDK's Transport names, by the URL the SDK gives, so that the two resolve as one.
+    .package(url: "https://github.com/apple/swift-log.git", from: "1.16.1"),
+] + portableDependencies
+let package = Package(name: "Gleaner", platforms: [.macOS(.v15)],
+                      products: allProducts, dependencies: allDependencies, targets: allTargets)

@@ -1,0 +1,140 @@
+{
+  "schema": 1,
+  "status": "sealed before policy evaluation; synthetic only",
+  "state_cases": [
+    {
+      "id": "divergent-four-states",
+      "domain": "aquaculture safety handbook",
+      "path": "handbook/operating-card.md",
+      "versions": [
+        {"text": "# Operating card\nInspect valves at dawn.\n", "delivered": true, "review": "approved", "published": true},
+        {"text": "# Operating card\nInspect valves at noon.\n", "delivered": true},
+        {"text": "# Operating card\nUnreviewed dusk experiment.\n", "delivered": false}
+      ],
+      "wanted": {"last_delivered": 1, "last_reviewed": 0, "last_published": 0, "current_working": null, "current_observation": 2},
+      "ambiguous": [],
+      "reason": "No explicit working-state designation exists. A disk hash is an observation, not a published, reviewed, or delivered state."
+    },
+    {
+      "id": "reviewed-does-not-mean-approved",
+      "domain": "public garden maintenance",
+      "path": "manual/pruning.txt",
+      "versions": [
+        {"text": "Prune in winter.\n", "delivered": true, "review": "approved", "published": true},
+        {"text": "Prune in summer.\n", "delivered": true, "review": "changes_requested"}
+      ],
+      "wanted": {"last_delivered": 1, "last_reviewed": 1, "last_published": 0, "current_working": null, "current_observation": 1},
+      "ambiguous": [],
+      "reason": "Last reviewed selects the actual most recent verdict, including a negative one; last approved would be another task."
+    },
+    {
+      "id": "published-without-review",
+      "domain": "community astronomy leaflet",
+      "path": "out/night-sky.md",
+      "versions": [
+        {"text": "# Night sky\nBring red lights.\n", "delivered": true, "published": true}
+      ],
+      "wanted": {"last_delivered": 0, "last_reviewed": null, "last_published": 0, "current_working": null, "current_observation": 0},
+      "ambiguous": [],
+      "reason": "Published is an independent human mark, not implicit approval."
+    },
+    {
+      "id": "missing-current-retained-published",
+      "domain": "small ferry timetable",
+      "path": "handout/departures.md",
+      "versions": [
+        {"text": "# Departures\nBoat leaves at 10:15.\n", "delivered": true, "review": "rejected", "published": true}
+      ],
+      "remove_current": true,
+      "wanted": {"last_delivered": 0, "last_reviewed": 0, "last_published": 0, "current_working": null, "current_observation": null},
+      "ambiguous": [],
+      "reason": "Retained historical states remain known while the original is missing; publishing does not erase rejection."
+    }
+  ],
+  "selection_cases": [
+    {
+      "id": "named-primary-and-contextual-debris",
+      "project": "HarborMuseum",
+      "query": ["permit", "booklet"],
+      "request": "Prepare the permit booklet and retain the calculation inputs",
+      "files": [
+        {"path": "deliveries/permit-booklet.md", "wanted": true, "text": "# Permit booklet\nSubmit the access permit.\n"},
+        {"path": "calculations/sensor-a.csv", "wanted": false, "text": "sensor,value\na,1\n"},
+        {"path": "calculations/sensor-b.csv", "wanted": false, "text": "sensor,value\nb,2\n"},
+        {"path": "calculations/sensor-c.csv", "wanted": false, "text": "sensor,value\nc,3\n"},
+        {"path": "scratch/layout.json", "wanted": false, "text": "{\"page\":1}\n"},
+        {"path": "scratch/export-log.txt", "wanted": false, "text": "render complete\n"}
+      ],
+      "ambiguous": [],
+      "task": "Open the booklet to submit the permit; calculation files remain reachable evidence."
+    },
+    {
+      "id": "contextual-intermediate-is-the-wanted-object",
+      "project": "LighthouseLab",
+      "query": ["stakeholder", "slides"],
+      "request": "Prepare stakeholder slides and the editing guide",
+      "files": [
+        {"path": "working/deck.key", "wanted": true, "text": "Synthetic editable presentation\n"},
+        {"path": "guides/stakeholder-slides-guide.md", "wanted": false, "text": "# Guide\nHow to edit slides.\n"},
+        {"path": "working/theme.json", "wanted": false, "text": "{\"theme\":\"blue\"}\n"},
+        {"path": "working/slide-build.txt", "wanted": false, "text": "synthetic build output\n"}
+      ],
+      "ambiguous": ["Query alone does not identify the presentation versus its guide; desired editable deck comes from the declared task."],
+      "task": "Continue editing the presentation, not read instructions about it."
+    },
+    {
+      "id": "named-intermediate-must-stay-visible",
+      "project": "SeedArchive",
+      "query": ["threshold", "matrix"],
+      "request": "Deliver the threshold matrix with the plain-language summary",
+      "files": [
+        {"path": "analysis/threshold-matrix.csv", "wanted": true, "text": "species,threshold\nreed,4\n"},
+        {"path": "report/summary.md", "wanted": false, "text": "# Summary\nMost seedlings survived.\n"},
+        {"path": "report/overview.svg", "wanted": false, "text": "<svg>overview</svg>\n"}
+      ],
+      "ambiguous": [],
+      "task": "Reuse the actual intermediate threshold values. Human-openable kind cannot decide relevance."
+    },
+    {
+      "id": "equal-bytes-different-projects",
+      "project": "CedarReserve",
+      "second_project": "MarshReserve",
+      "query": ["permit"],
+      "request": "Deliver the permit form",
+      "files": [
+        {"path": "forms/permit.md", "wanted": true, "text": "Blank permit form\n"}
+      ],
+      "ambiguous": [],
+      "task": "Retrieve both independently scoped permit forms; equal bytes do not merge their contexts."
+    }
+  ],
+  "current_cases": [
+    {"id": "listed-hash-now", "state": "listed", "original": "present", "expected": "current_observation_without_historical_hash"},
+    {"id": "delivered-original-mutated", "state": "delivered", "original": "mutated", "expected": "current_and_captured_hashes_differ"},
+    {"id": "listed-missing", "state": "listed", "original": "missing", "expected": "missing_without_hash"},
+    {"id": "listed-symlink-escape", "state": "listed", "original": "outside_symlink", "expected": "denied_scope_without_hash"},
+    {"id": "listed-symlink-inside", "state": "listed", "original": "inside_symlink", "expected": "current_hash_within_authorized_root"},
+    {"id": "listed-directory-replacement", "state": "listed", "original": "directory", "expected": "not_regular_without_hash"},
+    {"id": "listed-mutation-during-read", "state": "listed", "original": "concurrent_mutation", "expected": "changed_during_read_without_verified_hash"}
+  ],
+  "section_cases": [
+    {"id": "exact-report-id", "document": "# Pier inspection\n\n## R1 — Corrosion\nReplace the exposed bolt.\n\n## R10 — Access\nRetain the stair.\n", "query": "R1", "wanted_titles": ["R1 — Corrosion"], "global_search_expected": "not implied by report-local lookup"},
+    {"id": "same-id-other-report", "document": "# Dune inspection\n\n## R1 — Footpath\nMove the route inland.\n", "query": "R1", "wanted_titles": ["R1 — Footpath"], "cross_report_identity": "distinct"},
+    {"id": "duplicate-id-within-report", "document": "# Round notes\n\n## R1 — First pass\nQuestion remains open.\n\n## R1 — Second pass\nNo decision communicated.\n", "query": "R1", "wanted_titles": ["R1 — First pass", "R1 — Second pass"], "ambiguity": "two sections, no inferred ruling or collapse"},
+    {"id": "id-only-in-table", "document": "# Cost audit\n\n| ID | Finding |\n| --- | --- |\n| R1 | Allowance missing |\n", "query": "R1", "wanted_titles": [], "limitation": "heading-only policy cannot expose table-backed finding; record as unmet logical finding task"}
+  ],
+  "metrics": [
+    "selected_state_and_hash_correct",
+    "unknown_state_preserved",
+    "verdict_kind_not_upgraded",
+    "first_layer_object_precision_and_recall",
+    "reachable_recall_after_group_expansion",
+    "minimum_group_expansions_for_wanted_objects",
+    "cross_project_identity_preserved",
+    "captured_hash_vs_current_hash_truth",
+    "no_registry_capture_review_or_source_writes",
+    "exact_identifier_precision_within_selected_report",
+    "direct_global_search_separate_from_report_expansion",
+    "latency_resource_observations_not_generalized"
+  ]
+}
