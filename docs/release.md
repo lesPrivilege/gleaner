@@ -62,4 +62,4 @@ A Homebrew cask and in-app updates (Sparkle) come after the first release (SPEC 
 
 ## What is not in 0.1.0
 
-The limits users meet are listed in the README. Design work queued after release: Thread, Outline, Project timeline (`docs/design/structure.md`).
+The limits users meet are listed in the README. A project's outline, the page a project opens on, is in 0.1.0. Queued after release (`docs/design/structure.md`): Thread, a Markdown file's Contents (the headings it has), and Project timeline.

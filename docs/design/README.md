@@ -43,6 +43,6 @@ The native library now implements registry/captures, saved regular-file copies, 
 
 **No rendered visual audit was possible:** the cloud browser control tool was unavailable, the HTML prototype references absent `support.js`, and cloud Linux cannot validate native macOS behavior. No working-UI screenshots or substitute reconstruction were produced.
 
-**Two gates remain open:** human-labeled extractor precision/recall is unmeasured, so admission remains provisional; successful drops into Finder, Claude Desktop, Codex and browser upload are unverified. Public source and fixture tests do not close those gates. No private logs or `out/` data are part of this package.
+**Two checks wait for after release:** extractor precision and recall are measured on broader feedback after release (SPEC §12, Gate 1), so admission remains provisional; drops into Finder, Claude Desktop, Codex and browser upload are checked in post-release use. Public source and fixture tests do not close those gates. No private logs or `out/` data are part of this package.
 
 For Opus: **first choose information organization, then walk real retrieval/review/takeaway tasks, then refine visual and motion polish.** Compare alternatives using the same tasks; observe unnecessary expansion, lost place and mistaken-version selection. Validate native interaction before judging density, focus, typography and motion. Preserve meaningful differences between proposals and keep only customization that earns its cost. Final choices remain with Opus.

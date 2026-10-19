@@ -92,7 +92,7 @@ What the person navigates is built over the four objects, never stored in them (
 
 - **Project:** the one derived above, or one the person made. The person can move a work into another project, and show a derived project inside another. Each work says why it is in its project. A work's moves are appended, the latest placing it, so undoing one returns it to the project before it; Put Back undoes them all.
 - **Work:** a file, or several files the person said are versions of one work. Its revisions are its files' deliveries, numbered per file. Gleaner may suggest a join, with its reason (the later file first came, after the earlier one's last delivery, with the bytes that one last had, and that one is no longer at its path; or the two names in one folder differ only by a version mark such as `v2` or `final`, never a date or a bare number), and never joins files itself.
-- **Corrections** are kept in their own tables. They never change a delivery, a capture or a status; rereading the logs and relaunching keep them; each can be undone, and all can be undone at once.
+- **Corrections** are kept in their own tables. They never change a delivery, a capture or a status; rereading the logs and relaunching keep them; each can be undone, and all can be undone at once. The name the person gives a project of their own is not a correction: it is changed by renaming it again.
 
 ### 5.2 Versions
 

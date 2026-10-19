@@ -86,7 +86,7 @@ A mark stays when the file changes, and the item says "Changed since review". No
 
 Provider code is one map per provider, from record shapes to requests, replies, folders and times. It is what the adapters already are. Everything else is shared: the span, observations, order, groups, marks and the window. A new agent is one adapter and its fixtures. When a provider adds a structured record of what a tool wrote (as Claude Code's Write tool and Codex's `apply_patch` do), the adapter may report it as extra evidence ("written by the agent"). Capture never depends on it.
 
-Each shape an adapter knows keeps a sanitized fixture line from a real log. Today an unknown record type is counted and reported (SPEC §8). Planned, and not built yet: each shape's known keys, with drift shown as unknown-field counts, and `docs/MAINTAINING.md`, to give a coding agent the loop: take the new log line, sanitize it, add the fixture, update the map, and run the fixture tests.
+Each shape an adapter knows keeps a sanitized fixture line from a real log. Each read of a log counts unknown record types, unknown keys in known ones, and the log's records, answered turns and final replies, and the source status reports them (SPEC §8): a shape that drifts shows as counts before replies go missing. `AGENTS.md` gives a coding agent the loop for a new shape: take the log line, sanitize it, add the fixture, update the map, and run the fixture tests. An adapter change merges only with them passing and the owner's review.
 
 ## Layers
 
