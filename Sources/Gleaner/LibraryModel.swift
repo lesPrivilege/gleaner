@@ -1475,16 +1475,27 @@ final class LibraryModel {
         return read.file
     }
 
-    /// What Git said of each file a Not kept label names, asked when the label is shown, and again
-    /// whenever the file is selected.
-    private(set) var gitStates: [String: GitState] = [:]
+    /// What Git said of each file a Not kept label names, with the file as it was when Git was
+    /// asked: asked when the label is shown, and again whenever the file is selected.
+    private var gitStates: [String: (file: FileStat, state: GitState)] = [:]
 
-    /// Asks Git, off the main thread, about the files at `paths` it wasn't asked about this session.
+    /// What Git said of the file at `path` while it was `file`: nil once its size, dates or identity
+    /// differ, so Git's word about other bytes is never repeated about these.
+    func gitState(of path: String, as file: FileStat) -> GitState? {
+        gitStates[path].flatMap { $0.file == file ? $0.state : nil }
+    }
+
+    /// Asks Git, off the main thread, about the files at `paths` it wasn't asked about as they are now.
     func lookUpGit(_ paths: [String]) async {
-        let wanted = Array(Set(paths.filter { gitStates[$0] == nil }))
-        guard !wanted.isEmpty else { return }
-        let found = await Task.detached(priority: .utility) { wanted.map { ($0, Locator.gitState(of: $0)) } }.value
-        for (path, state) in found { gitStates[path] = state }
+        let known = gitStates
+        let found = await Task.detached(priority: .utility) {
+            Set(paths).compactMap { path -> (String, FileStat, GitState)? in
+                guard let file = FileStat(path), known[path]?.file != file else { return nil }
+                let state = Locator.gitState(of: path)
+                return FileStat(path) == file ? (path, file, state) : nil
+            }
+        }.value
+        for (path, file, state) in found { gitStates[path] = (file, state) }
     }
 
     /// Whether the file at `path` is in a worktree of its own, where its folder may be removed.
@@ -1501,7 +1512,7 @@ final class LibraryModel {
         guard !hasSaved(review.sha256) else { return nil }
         let held = mayStillHold(review)
         return Wording.notKept(review.kind, size: review.file.size, overLimit: review.file.size > indexer.saveLimit,
-                               failed: unsaved[review.sha256], git: held ? gitStates[review.path] : nil,
+                               failed: unsaved[review.sha256], git: held ? gitState(of: review.path, as: review.file) : nil,
                                worktree: held && inWorktree(review.path))
     }
 
@@ -1513,12 +1524,12 @@ final class LibraryModel {
     /// asks, with their size: over the save limit, as shown, and not bytes Gleaner holds, as far as
     /// it knows without reading them: read this session, or with the size and dates recorded of a
     /// revision or verdict whose bytes it saved.
-    func wouldNotKeep(_ works: [Work], shown: [String: FileStat]) -> [(work: Work, size: Int64)] {
+    func wouldNotKeep(_ works: [Work], shown: [String: FileStat]) -> [(work: Work, size: Int64, file: FileStat)] {
         works.compactMap { work in
             let path = work.latest.path
             guard let file = shown[path] ?? (listed[path] ?? nil), file.size > indexer.saveLimit else { return nil }
             let bytes = reads[path].flatMap { $0.file == file ? $0.sha256 : nil } ?? recordedBytes(of: work, as: file)
-            return bytes.map(hasSaved) == true ? nil : (work, file.size)
+            return bytes.map(hasSaved) == true ? nil : (work, file.size, file)
         }
     }
 
@@ -2094,7 +2105,7 @@ final class LibraryModel {
             return (state, held, completed ? try? indexer.registry.artifact(at: path) : nil, before == file ? file : nil)
         }.value
         observations[path] = FileObservation(state: state, checkedAt: Date())
-        if state.kind == .file { gitStates[path] = state.git }
+        if state.kind == .file, let file { gitStates[path] = (file, state.git) }
         noteRead(path, sha256: state.kind == .file ? state.sha256 : nil, file: file)
         saved.subtract(versions)
         saved.formUnion(held)

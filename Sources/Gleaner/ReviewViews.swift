@@ -744,9 +744,10 @@ struct NoteSheet: View {
                       prompt: Text(asking.kind == .published ? "Where it was published" : "What to change"), axis: .vertical)
                 .lineLimit(3...6)
             if !unkept.isEmpty {
-                let one = unkept.count == 1 ? unkept[0].work.latest : nil
+                let one = unkept.count == 1 ? unkept[0] : nil
                 let statement = Wording.wontKeep(count: unkept.count, size: unkept.map(\.size).reduce(0, +),
-                                                 git: one.flatMap { model.gitStates[$0.path] }, worktree: one?.inWorktree ?? false)
+                                                 git: one.flatMap { model.gitState(of: $0.work.latest.path, as: $0.file) },
+                                                 worktree: one?.work.latest.inWorktree ?? false)
                 // What would be lost, then what keeps it.
                 HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                     StatusLabel(mark: statement.mark, text: statement.title, size: 11).font(.caption)

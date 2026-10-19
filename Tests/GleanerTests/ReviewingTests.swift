@@ -619,10 +619,19 @@ import UniformTypeIdentifiers
         let committed = try #require(model.notKept(approved))
         #expect(committed.title == "Not kept · \(size) · committed" && committed.detail.contains("Git has these bytes committed"))
         #expect(!committed.detail.contains("nothing can"))
-        // Rendered over and selected: Git now speaks of other bytes, so nothing of Git is said of these.
+        // Rendered over and judged again on its page, never selected: what Git said of the first
+        // bytes is never said of these, before Git is asked about them or after.
         try master65(master, first: 2)
+        let rerendered = try #require(FileStat(master))
+        let changes = try #require(await model.review([work], as: .changesRequested, shown: [master: rerendered]).first)
+        #expect(model.gitState(of: master, as: rerendered) == nil)
+        #expect(model.notKept(changes).map { !$0.title.hasSuffix("· committed") && !$0.detail.contains("Git has these bytes committed") } == true)
+        await model.lookUpGit([master])
+        #expect(model.gitState(of: master, as: rerendered) == .modified)
+        #expect(model.notKept(changes).map { !$0.title.hasSuffix("· committed") && !$0.detail.contains("Git has these bytes committed") } == true)
+        // Selected: Git now speaks of other bytes than the first verdict's, so nothing of Git is said of those.
         await model.observe(try #require(model.organization.work(containing: master)).latest)
-        #expect(model.gitStates[master] == .modified && !model.mayStillHold(approved))
+        #expect(model.gitState(of: master, as: rerendered) == .modified && !model.mayStillHold(approved))
         let rewritten = try #require(model.notKept(approved))
         #expect(rewritten.title == "Not kept · \(size)" && !rewritten.detail.contains("Git") && !rewritten.detail.contains("uncommitted"))
     }
