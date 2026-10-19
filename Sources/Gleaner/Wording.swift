@@ -573,9 +573,34 @@ enum Wording {
 
     /// What Review All leaves to a verdict of each one's own: the videos and audio on the page that
     /// wait on one ("2 videos to review one by one"). Nil when none waits.
-    static func oneByOne(videos: Int, audio: Int) -> String? {
-        let parts = [videos > 0 ? count(videos, "video") : nil, audio > 0 ? count(audio, "audio file") : nil].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " and ") + " to review one by one"
+    static func oneByOne(videos: Int, audio: Int, others: Int = 0) -> String? {
+        let parts = [videos > 0 ? count(videos, "video") : nil, audio > 0 ? count(audio, "audio file") : nil,
+                     others > 0 ? count(others, videos + audio > 0 ? "other file" : "file") : nil].compactMap { $0 }
+        guard let last = parts.last else { return nil }
+        return (parts.count == 1 ? last : parts.dropLast().joined(separator: ", ") + " and " + last) + " to review one by one"
+    }
+
+    /// A Review All command with how many works it acts on: "Approve All 3", "Reject All 3…";
+    /// with none, the plain command, shown disabled.
+    static func reviewAll(_ kind: Review.Kind, _ n: Int) -> String {
+        let number = n > 0 ? " \(n)" : ""
+        return switch kind {
+        case .approved: "Approve All" + number
+        case .changesRequested: "Request Changes to All\(number)…"
+        case .rejected: "Reject All\(number)…"
+        case .published: "Mark All\(number) Published…"
+        }
+    }
+
+    /// What Review All never reaches: the collections inside this one, each reviewed on its own page.
+    static func notInReviewAll(collections n: Int) -> String {
+        n == 1 ? "The collection inside is reviewed on its own page" : "The \(n) collections inside are reviewed on their own pages"
+    }
+
+    /// The command that puts works in a collection: "Move to Collection" when any is in one already,
+    /// since a work is in one collection at most, else "Add to Collection".
+    static func collectionCommand(_ works: [Work]) -> String {
+        works.contains { $0.unit != nil } ? "Move to Collection" : "Add to Collection"
     }
 
     /// That Gleaner keeps no copy of the bytes a verdict or mark was made on (docs/design/review.md,

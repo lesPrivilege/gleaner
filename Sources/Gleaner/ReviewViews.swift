@@ -89,6 +89,9 @@ struct ReviewAll {
     var approve: [Work] = [], changes: [Work] = [], reject: [Work] = []
     /// The videos and the audio files on the page with a file there and no verdict on its bytes.
     var videos = 0, audio = 0
+    /// The other files with a file there and no verdict on its bytes that it leaves out: images and
+    /// documents not drawn whole (yet), and files only named on the page.
+    var others = 0
 
     /// `works` as the page lists them; `drawn` the files drawn whole, `shown` each file as drawn;
     /// `hasFile` whether a regular file is at a work's file, as the library last found it.
@@ -101,7 +104,10 @@ struct ReviewAll {
                 if case .current = verdict(work) { continue }
                 if form == .video { videos += 1 } else { audio += 1 }
             case .image?, .document?:
-                guard shown[work.latest.path] != nil, drawn.contains(work.latest.path) else { continue }
+                guard shown[work.latest.path] != nil, drawn.contains(work.latest.path) else {
+                    if hasFile(work), !isCurrent(verdict(work)) { others += 1 }
+                    continue
+                }
                 let standing = verdict(work)
                 func has(_ kind: Review.Kind) -> Bool { if case .current(let review) = standing { review.kind == kind } else { false } }
                 if !has(.approved) { approve.append(work) }
@@ -109,15 +115,19 @@ struct ReviewAll {
                 if !has(.rejected) { reject.append(work) }
             default:
                 // A model, a build, or what a program reads: drawn as its icon, judged on its own.
-                continue
+                if hasFile(work), !isCurrent(verdict(work)) { others += 1 }
             }
         }
+    }
+
+    private func isCurrent(_ standing: Standing) -> Bool {
+        if case .current = standing { true } else { false }
     }
 
     /// Nothing for any of its verdicts to act on.
     var isEmpty: Bool { approve.isEmpty && changes.isEmpty && reject.isEmpty }
     /// What it leaves to each one's own verdict, in a line of its menu.
-    var oneByOne: String? { Wording.oneByOne(videos: videos, audio: audio) }
+    var oneByOne: String? { Wording.oneByOne(videos: videos, audio: audio, others: others) }
 }
 
 /// A collection's review page (docs/design/review.md, A collection's detail): its name, what waits,
@@ -229,19 +239,22 @@ struct ReviewPage: View {
             let all = ReviewAll(layout.works, drawn: drawn, shown: shown, hasFile: { !model.hasNoFile($0) }, verdict: model.verdict)
             // Each verdict only while some image or document drawn hasn't been given it on these bytes.
             Menu("Review All") {
-                Button("Approve All") { make(.approved, all.approve, note: nil) }
+                // Each says how many it acts on, and the lines below what it leaves out.
+                Button(Wording.reviewAll(.approved, all.approve.count)) { make(.approved, all.approve, note: nil) }
                     .disabled(all.approve.isEmpty)
-                Button("Request Changes to All…") { ask(Asking(works: all.changes, kind: .changesRequested, shown: shown, place: unit.key)) }
+                Button(Wording.reviewAll(.changesRequested, all.changes.count)) { ask(Asking(works: all.changes, kind: .changesRequested, shown: shown, place: unit.key)) }
                     .disabled(all.changes.isEmpty)
-                Button("Reject All…") { ask(Asking(works: all.reject, kind: .rejected, shown: shown, place: unit.key)) }
+                Button(Wording.reviewAll(.rejected, all.reject.count)) { ask(Asking(works: all.reject, kind: .rejected, shown: shown, place: unit.key)) }
                     .disabled(all.reject.isEmpty)
-                if let oneByOne = all.oneByOne {
+                let inner = organization.units(inside: unit.key).count
+                if all.oneByOne != nil || inner > 0 {
                     Divider()
-                    Text(oneByOne)
+                    if let oneByOne = all.oneByOne { Text(oneByOne) }
+                    if inner > 0 { Text(Wording.notInReviewAll(collections: inner)) }
                 }
             }
             .fixedSize()
-            .disabled(all.isEmpty && all.oneByOne == nil)
+            .disabled(all.isEmpty && all.oneByOne == nil && organization.units(inside: unit.key).isEmpty)
             .help("A verdict on each image and document shown whole here, bound to the bytes hashed as it is made. Videos and audio each need their own; files only named, or that couldn’t be drawn whole, are judged on their own.")
         }
     }
@@ -614,7 +627,11 @@ struct ReviewBar: View {
         let path = work.latest.path, place = work.unit
         let judged = shown.map { [path: $0] } ?? [:]
         if model.hasNoFile(work) && work.kind != .folder {
-            // Nothing here to judge: what the person can do instead.
+            // Nothing here to judge: first what can still be read, then taking it out.
+            if let saved = model.savedVersion(of: work) {
+                Button("Show Saved Version") { model.select(saved) }
+                    .help("Show \(Wording.revisionInText(saved)) from Gleaner’s saved copy, to read, compare or hand over")
+            }
             Button("Remove from Collection") { Task { await model.remove([work]) } }
                 .help("Take it out of its collection. No file changes.")
         } else {

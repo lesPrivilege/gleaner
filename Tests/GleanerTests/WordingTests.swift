@@ -445,6 +445,13 @@ import Testing
         #expect(Wording.oneByOne(videos: 2, audio: 0) == "2 videos to review one by one")
         #expect(Wording.oneByOne(videos: 1, audio: 1) == "1 video and 1 audio file to review one by one")
         #expect(Wording.oneByOne(videos: 0, audio: 0) == nil)
+        #expect(Wording.oneByOne(videos: 0, audio: 0, others: 2) == "2 files to review one by one")
+        #expect(Wording.oneByOne(videos: 1, audio: 0, others: 1) == "1 video and 1 other file to review one by one")
+        // Each Review All command says how many works it acts on.
+        #expect(Wording.reviewAll(.approved, 3) == "Approve All 3" && Wording.reviewAll(.approved, 0) == "Approve All")
+        #expect(Wording.reviewAll(.changesRequested, 2) == "Request Changes to All 2…" && Wording.reviewAll(.rejected, 1) == "Reject All 1…")
+        #expect(Wording.notInReviewAll(collections: 1) == "The collection inside is reviewed on its own page")
+        #expect(Wording.notInReviewAll(collections: 6) == "The 6 collections inside are reviewed on their own pages")
         // An image that can't be drawn says so, never as one still being read (A20).
         #expect(Wording.undrawable.title == "Can’t show this image" && !Wording.undrawable.detail.lowercased().contains("loading"))
     }

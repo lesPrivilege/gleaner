@@ -127,7 +127,7 @@ struct CollectionCommands: View {
 
     var body: some View {
         if let project = works.first?.project {
-            Menu("Add to Collection") {
+            Menu(Wording.collectionCommand(works)) {
                 CollectionChoices(project: project, except: Set(works.compactMap(\.unit))) { unit in
                     Task { await model.add(works, to: unit) }
                 } new: {

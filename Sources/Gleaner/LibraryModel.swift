@@ -1241,8 +1241,17 @@ final class LibraryModel {
     /// decided again.
     func add(_ works: [Work], to unit: WorkUnit) async {
         let works = works.filter { $0.unit != unit.key }
-        await decide(decisions(adding: works, [], to: unit), as: "Add to Collection",
-                     saying: "Added \(names(works.map(\.name))) to \(unit.name)")
+        // A work is in one collection at most: one in another is taken out of it, and said so.
+        let out = Wording.takenOut(unitsHolding(works), of: works.count)
+        await decide(decisions(adding: works, [], to: unit), as: Wording.collectionCommand(works),
+                     saying: ["\(out == nil ? "Added" : "Moved") \(names(works.map(\.name))) to \(unit.name)", out.map { "Took \($0)" }]
+                        .compactMap { $0 }.joined(separator: ". "))
+    }
+
+    /// The newest revision of the work whose bytes Gleaner keeps a saved copy of: what can still be
+    /// read when no file is at its path. Nil when it keeps none.
+    func savedVersion(of work: Work) -> Delivery? {
+        work.deliveries.first { $0.sha256.map(hasSaved) == true }
     }
 
     /// Keeps the observed files and puts them in the unit, as one decision.
