@@ -1,0 +1,1079 @@
+{
+  "schema": 1,
+  "label": "provisional",
+  "revision": "44624ba8ed9c189fe903710d16f0b4f534ef8c0e",
+  "variant": "original",
+  "executables": {
+    "gleaner_sha256": "0406b3fa4aab70955b1b24e2fd94fecf7193efd4b96582f0de5c54113de89e79",
+    "gleaner_index_sha256": "072948dc9be121edfd92ce61365fd5915ff7064ed787ccca8a044c879e322b35"
+  },
+  "method": "Actual gleaner-index and Catalog-backed gleaner commands; no alternative retriever",
+  "corpus": {
+    "files": 42,
+    "logs": 10,
+    "scale_members": 0,
+    "ground_truth": "Task-specific wanted paths; helpers are relevant evidence but not requested outputs",
+    "ambiguities": [
+      "vocabulary-mismatch",
+      "same-request-noise",
+      "report-finding",
+      "missing-original"
+    ]
+  },
+  "capture": {
+    "wanted": 40,
+    "found": 40,
+    "coverage": 1.0,
+    "missing": [],
+    "enumeration_truncated": false,
+    "unsupported_pattern_rows": []
+  },
+  "tasks": [
+    {
+      "id": "numeric-series",
+      "terms": [
+        "episode"
+      ],
+      "wanted": [
+        "Projects/SilverMarsh/season-two/episode-01.mp4",
+        "Projects/SilverMarsh/season-two/episode-02.mp4",
+        "Projects/SilverMarsh/season-two/episode-03.mp4",
+        "Projects/SilverMarsh/season-two/episode-04.mp4",
+        "Projects/SilverMarsh/season-two/episode-05.mp4",
+        "Projects/SilverMarsh/season-two/episode-06.mp4",
+        "Projects/SilverMarsh/season-two/episode-07.mp4",
+        "Projects/SilverMarsh/season-two/episode-08.mp4",
+        "Projects/SilverMarsh/season-two/episode-09.mp4",
+        "Projects/SilverMarsh/season-two/episode-10.mp4",
+        "Projects/SilverMarsh/season-two/episode-11.mp4",
+        "Projects/SilverMarsh/season-two/episode-12.mp4",
+        "Projects/SilverMarsh/season-two/episode-13.mp4",
+        "Projects/SilverMarsh/season-two/episode-14.mp4",
+        "Projects/SilverMarsh/season-two/episode-15.mp4",
+        "Projects/SilverMarsh/season-two/episode-16.mp4",
+        "Projects/SilverMarsh/season-two/episode-17.mp4",
+        "Projects/SilverMarsh/season-two/episode-18.mp4",
+        "Projects/SilverMarsh/season-two/episode-19.mp4",
+        "Projects/SilverMarsh/season-two/episode-20.mp4",
+        "Projects/SilverMarsh/season-two/episode-21.mp4",
+        "Projects/SilverMarsh/season-two/episode-22.mp4",
+        "Projects/SilverMarsh/season-two/episode-23.mp4",
+        "Projects/SilverMarsh/season-two/episode-24.mp4"
+      ],
+      "project": "SilverMarsh",
+      "note": "",
+      "returned": [
+        "Projects/SilverMarsh/season-two/episode-01.mp4",
+        "Projects/SilverMarsh/season-two/episode-02.mp4",
+        "Projects/SilverMarsh/season-two/episode-03.mp4",
+        "Projects/SilverMarsh/season-two/episode-04.mp4",
+        "Projects/SilverMarsh/season-two/episode-05.mp4",
+        "Projects/SilverMarsh/season-two/episode-06.mp4",
+        "Projects/SilverMarsh/season-two/episode-07.mp4",
+        "Projects/SilverMarsh/season-two/episode-08.mp4",
+        "Projects/SilverMarsh/season-two/episode-09.mp4",
+        "Projects/SilverMarsh/season-two/episode-10.mp4",
+        "Projects/SilverMarsh/season-two/episode-11.mp4",
+        "Projects/SilverMarsh/season-two/episode-12.mp4",
+        "Projects/SilverMarsh/season-two/episode-13.mp4",
+        "Projects/SilverMarsh/season-two/episode-14.mp4",
+        "Projects/SilverMarsh/season-two/episode-15.mp4",
+        "Projects/SilverMarsh/season-two/episode-16.mp4",
+        "Projects/SilverMarsh/season-two/episode-17.mp4",
+        "Projects/SilverMarsh/season-two/episode-18.mp4",
+        "Projects/SilverMarsh/season-two/episode-19.mp4",
+        "Projects/SilverMarsh/season-two/episode-20.mp4",
+        "Projects/SilverMarsh/season-two/episode-21.mp4",
+        "Projects/SilverMarsh/season-two/episode-22.mp4",
+        "Projects/SilverMarsh/season-two/episode-23.mp4",
+        "Projects/SilverMarsh/season-two/episode-24.mp4"
+      ],
+      "total": 24,
+      "recall": 1.0,
+      "first_5_precision": 1.0,
+      "first_5_noise": 0,
+      "duplicate_rows": 0,
+      "scope_correct": true,
+      "originals_resolvable": 24,
+      "exact_versions_usable": 24,
+      "expansions_to_verify": 24,
+      "task_success": true,
+      "query_seconds": 0.08840055400003166,
+      "index_generation": 1
+    },
+    {
+      "id": "relative-folder",
+      "terms": [
+        "moodboard"
+      ],
+      "wanted": [
+        "Projects/GlassStudio/exports/moodboard-dusk.svg",
+        "Projects/GlassStudio/exports/moodboard-sand.svg",
+        "Projects/GlassStudio/exports/moodboard-lake.svg"
+      ],
+      "project": "GlassStudio",
+      "note": "",
+      "returned": [
+        "Projects/GlassStudio/exports/moodboard-dusk.svg",
+        "Projects/GlassStudio/exports/moodboard-lake.svg",
+        "Projects/GlassStudio/exports/moodboard-sand.svg"
+      ],
+      "total": 3,
+      "recall": 1.0,
+      "first_5_precision": 1.0,
+      "first_5_noise": 0,
+      "duplicate_rows": 0,
+      "scope_correct": true,
+      "originals_resolvable": 3,
+      "exact_versions_usable": 0,
+      "expansions_to_verify": 0,
+      "task_success": false,
+      "query_seconds": 0.0908668880000505,
+      "index_generation": 1
+    },
+    {
+      "id": "parent-context",
+      "terms": [
+        "CedarVault",
+        "cover"
+      ],
+      "wanted": [
+        "Projects/Harbor/CedarVault/artwork/cover-square.svg"
+      ],
+      "project": "Harbor",
+      "note": "",
+      "returned": [
+        "Projects/Harbor/CedarVault/artwork/cover-square.svg"
+      ],
+      "total": 1,
+      "recall": 1.0,
+      "first_5_precision": 1.0,
+      "first_5_noise": 0,
+      "duplicate_rows": 0,
+      "scope_correct": true,
+      "originals_resolvable": 1,
+      "exact_versions_usable": 1,
+      "expansions_to_verify": 1,
+      "task_success": true,
+      "query_seconds": 0.09411907300000166,
+      "index_generation": 1
+    },
+    {
+      "id": "vocabulary-mismatch",
+      "terms": [
+        "shipping",
+        "illustration"
+      ],
+      "wanted": [
+        "Projects/Harbor/CedarVault/artwork/cover-square.svg"
+      ],
+      "project": "Harbor",
+      "note": "Intended cover; terms absent from indexed evidence. No inferred synonym authority.",
+      "returned": [],
+      "total": 0,
+      "recall": 0.0,
+      "first_5_precision": 0,
+      "first_5_noise": 0,
+      "duplicate_rows": 0,
+      "scope_correct": null,
+      "originals_resolvable": 0,
+      "exact_versions_usable": 0,
+      "expansions_to_verify": 0,
+      "task_success": false,
+      "query_seconds": 0.08878820699999324,
+      "index_generation": 1
+    },
+    {
+      "id": "same-request-noise",
+      "terms": [
+        "spec"
+      ],
+      "wanted": [
+        "Projects/RelayForge/docs/spec.md"
+      ],
+      "project": "RelayForge",
+      "note": "Helpers are useful evidence, but not answers to the requested spec.",
+      "returned": [
+        "Projects/RelayForge/docs/spec.md",
+        "Projects/RelayForge/tools/check-0.py",
+        "Projects/RelayForge/tools/check-1.py",
+        "Projects/RelayForge/tools/check-2.py",
+        "Projects/RelayForge/tools/check-3.py",
+        "Projects/RelayForge/tools/check-4.py",
+        "Projects/RelayForge/tools/check-5.py",
+        "Projects/RelayForge/tools/check-6.py",
+        "Projects/RelayForge/tools/check-7.py"
+      ],
+      "total": 9,
+      "recall": 1.0,
+      "first_5_precision": 0.2,
+      "first_5_noise": 4,
+      "duplicate_rows": 0,
+      "scope_correct": true,
+      "originals_resolvable": 1,
+      "exact_versions_usable": 1,
+      "expansions_to_verify": 1,
+      "task_success": true,
+      "query_seconds": 0.0918567900000653,
+      "index_generation": 1
+    },
+    {
+      "id": "equal-bytes-separate-context",
+      "terms": [
+        "round-one"
+      ],
+      "wanted": [
+        "Projects/FieldLab/reports/round-one.md"
+      ],
+      "project": "FieldLab",
+      "note": "",
+      "returned": [
+        "Projects/FieldLab/reports/round-one.md"
+      ],
+      "total": 1,
+      "recall": 1.0,
+      "first_5_precision": 1.0,
+      "first_5_noise": 0,
+      "duplicate_rows": 0,
+      "scope_correct": true,
+      "originals_resolvable": 1,
+      "exact_versions_usable": 1,
+      "expansions_to_verify": 1,
+      "task_success": true,
+      "query_seconds": 0.0950314309999385,
+      "index_generation": 1
+    },
+    {
+      "id": "report-finding",
+      "terms": [
+        "R1"
+      ],
+      "wanted": [
+        "Projects/FieldLab/reports/round-one.md"
+      ],
+      "project": "FieldLab",
+      "note": "Body-only section; global file metadata search is not section search. Scoped outline evaluated separately.",
+      "returned": [],
+      "total": 0,
+      "recall": 0.0,
+      "first_5_precision": 0,
+      "first_5_noise": 0,
+      "duplicate_rows": 0,
+      "scope_correct": null,
+      "originals_resolvable": 0,
+      "exact_versions_usable": 0,
+      "expansions_to_verify": 0,
+      "task_success": false,
+      "query_seconds": 0.10527506900007211,
+      "index_generation": 1
+    },
+    {
+      "id": "missing-original",
+      "terms": [
+        "unavailable"
+      ],
+      "wanted": [
+        "Projects/FieldLab/reports/unavailable.pdf"
+      ],
+      "project": "FieldLab",
+      "note": "Retrievable evidence, no bytes; task success must stay false.",
+      "returned": [
+        "Projects/FieldLab/reports/unavailable.pdf"
+      ],
+      "total": 1,
+      "recall": 1.0,
+      "first_5_precision": 1.0,
+      "first_5_noise": 0,
+      "duplicate_rows": 0,
+      "scope_correct": true,
+      "originals_resolvable": 0,
+      "exact_versions_usable": 0,
+      "expansions_to_verify": 0,
+      "task_success": false,
+      "query_seconds": 0.09398798300003364,
+      "index_generation": 1
+    }
+  ],
+  "outline": {
+    "supported": true,
+    "answer": {
+      "format": "markdown_headings",
+      "index": {
+        "generation": 1,
+        "library": "52ca5869-e294-448b-9530-b0d0347a6870",
+        "scanned_at": "2026-10-19T14:52:33Z",
+        "sources": {
+          "claude-code": {
+            "failures": 0,
+            "logs_with_fewer_replies": 0,
+            "logs_without_final_reply": 0,
+            "partial_logs": 0,
+            "shortened_logs": 0,
+            "state": "read",
+            "unknown_fields": {},
+            "unknown_record_types": {},
+            "unlisted_folders": 0
+          },
+          "codex": {
+            "failures": 0,
+            "logs_with_fewer_replies": 0,
+            "logs_without_final_reply": 0,
+            "partial_logs": 0,
+            "shortened_logs": 0,
+            "state": "read",
+            "unknown_fields": {},
+            "unknown_record_types": {},
+            "unlisted_folders": 0
+          }
+        }
+      },
+      "offset": 0,
+      "reference": {
+        "availability": {
+          "state": "original"
+        },
+        "delivery": "61f0228e5c68b04e812a",
+        "evidence": {
+          "line": 4,
+          "log": "{synthetic_home}/.codex/sessions/2026/10/19/rollout-FieldLab-main.jsonl"
+        },
+        "library": "52ca5869-e294-448b-9530-b0d0347a6870",
+        "name": "round-one.md",
+        "path": "{synthetic_home}/Projects/FieldLab/reports/round-one.md",
+        "provenance": {
+          "observed_at": "2026-10-19T14:52:33Z",
+          "state": "at_delivery"
+        },
+        "sha256": "2c8f96e87372e74f06a7a1b548a2a2867bdf60ea43ffd1411be823485e3263ad"
+      },
+      "sections": [
+        {
+          "id": "section:v1:eyJkZWxpdmVyeSI6IjYxZjAyMjhlNWM2OGIwNGU4MTJhIiwibGlicmFyeSI6IjUyY2E1ODY5LWUyOTQtNDQ4Yi05NTMwLWIwZDAzNDdhNjg3MCIsInJhbmdlIjpbMCwxMjhdLCJzaGEyNTYiOiIyYzhmOTZlODczNzJlNzRmMDZhN2ExYjU0OGEyYTI4NjdiZGY2MGVhNDNmZmQxNDExYmU4MjM0ODVlMzI2M2FkIn0=",
+          "level": 1,
+          "range": [
+            0,
+            128
+          ],
+          "title": "Estuary observations"
+        },
+        {
+          "id": "section:v1:eyJkZWxpdmVyeSI6IjYxZjAyMjhlNWM2OGIwNGU4MTJhIiwibGlicmFyeSI6IjUyY2E1ODY5LWUyOTQtNDQ4Yi05NTMwLWIwZDAzNDdhNjg3MCIsInJhbmdlIjpbMjQsODBdLCJzaGEyNTYiOiIyYzhmOTZlODczNzJlNzRmMDZhN2ExYjU0OGEyYTI4NjdiZGY2MGVhNDNmZmQxNDExYmU4MjM0ODVlMzI2M2FkIn0=",
+          "level": 2,
+          "range": [
+            24,
+            80
+          ],
+          "title": "R1 Sampling bias"
+        },
+        {
+          "id": "section:v1:eyJkZWxpdmVyeSI6IjYxZjAyMjhlNWM2OGIwNGU4MTJhIiwibGlicmFyeSI6IjUyY2E1ODY5LWUyOTQtNDQ4Yi05NTMwLWIwZDAzNDdhNjg3MCIsInJhbmdlIjpbODAsMTI4XSwic2hhMjU2IjoiMmM4Zjk2ZTg3MzcyZTc0ZjA2YTdhMWI1NDhhMmEyODY3YmRmNjBlYTQzZmZkMTQxMWJlODIzNDg1ZTMyNjNhZCJ9",
+          "level": 2,
+          "range": [
+            80,
+            128
+          ],
+          "title": "R3 Recheck"
+        }
+      ],
+      "size": 128,
+      "total": 3
+    },
+    "seconds": 0.08327894699993976
+  },
+  "freshness": {
+    "stale_query_total": 0,
+    "stale_index": {
+      "generation": 1,
+      "library": "52ca5869-e294-448b-9530-b0d0347a6870",
+      "scanned_at": "2026-10-19T14:52:33Z",
+      "sources": {
+        "claude-code": {
+          "failures": 0,
+          "logs_with_fewer_replies": 0,
+          "logs_without_final_reply": 0,
+          "partial_logs": 0,
+          "shortened_logs": 0,
+          "state": "read",
+          "unknown_fields": {},
+          "unknown_record_types": {},
+          "unlisted_folders": 0
+        },
+        "codex": {
+          "failures": 0,
+          "logs_with_fewer_replies": 0,
+          "logs_without_final_reply": 0,
+          "partial_logs": 0,
+          "shortened_logs": 0,
+          "state": "read",
+          "unknown_fields": {},
+          "unknown_record_types": {},
+          "unlisted_folders": 0
+        }
+      }
+    },
+    "partial_negative_index": {
+      "generation": 2,
+      "library": "52ca5869-e294-448b-9530-b0d0347a6870",
+      "scanned_at": "2026-10-19T14:52:43Z",
+      "sources": {
+        "claude-code": {
+          "failures": 0,
+          "logs_with_fewer_replies": 0,
+          "logs_without_final_reply": 0,
+          "partial_logs": 1,
+          "shortened_logs": 0,
+          "state": "read_with_problems",
+          "unknown_fields": {},
+          "unknown_record_types": {},
+          "unlisted_folders": 0
+        },
+        "codex": {
+          "failures": 0,
+          "logs_with_fewer_replies": 0,
+          "logs_without_final_reply": 0,
+          "partial_logs": 0,
+          "shortened_logs": 0,
+          "state": "read",
+          "unknown_fields": {},
+          "unknown_record_types": {},
+          "unlisted_folders": 0
+        }
+      }
+    },
+    "partial_negative_total": 0,
+    "new_log_found_after_reindex": true
+  },
+  "resources": {
+    "index_seconds": 0.12608078699997805,
+    "reindex_seconds": 0.08596451900007196,
+    "query_seconds": [
+      0.08840055400003166,
+      0.0908668880000505,
+      0.09411907300000166,
+      0.08878820699999324,
+      0.0918567900000653,
+      0.0950314309999385,
+      0.10527506900007211,
+      0.09398798300003364
+    ],
+    "peak_rss": null,
+    "peak_rss_note": "Not measured in this convergence checkpoint; requires a separate workload/resource experiment"
+  },
+  "index": {
+    "index": {
+      "generation": 1,
+      "library": "52ca5869-e294-448b-9530-b0d0347a6870",
+      "scanned_at": "2026-10-19T14:52:33Z",
+      "sources": {
+        "claude-code": {
+          "failures": 0,
+          "logs_with_fewer_replies": 0,
+          "logs_without_final_reply": 0,
+          "partial_logs": 0,
+          "shortened_logs": 0,
+          "state": "read",
+          "unknown_fields": {},
+          "unknown_record_types": {},
+          "unlisted_folders": 0
+        },
+        "codex": {
+          "failures": 0,
+          "logs_with_fewer_replies": 0,
+          "logs_without_final_reply": 0,
+          "partial_logs": 0,
+          "shortened_logs": 0,
+          "state": "read",
+          "unknown_fields": {},
+          "unknown_record_types": {},
+          "unlisted_folders": 0
+        }
+      }
+    },
+    "logs_read": 8,
+    "new_deliveries": 38,
+    "new_observations": 43
+  },
+  "reindex": {
+    "index": {
+      "generation": 2,
+      "library": "52ca5869-e294-448b-9530-b0d0347a6870",
+      "scanned_at": "2026-10-19T14:52:43Z",
+      "sources": {
+        "claude-code": {
+          "failures": 0,
+          "logs_with_fewer_replies": 0,
+          "logs_without_final_reply": 0,
+          "partial_logs": 1,
+          "shortened_logs": 0,
+          "state": "read_with_problems",
+          "unknown_fields": {},
+          "unknown_record_types": {},
+          "unlisted_folders": 0
+        },
+        "codex": {
+          "failures": 0,
+          "logs_with_fewer_replies": 0,
+          "logs_without_final_reply": 0,
+          "partial_logs": 0,
+          "shortened_logs": 0,
+          "state": "read",
+          "unknown_fields": {},
+          "unknown_record_types": {},
+          "unlisted_folders": 0
+        }
+      }
+    },
+    "logs_read": 2,
+    "new_deliveries": 1,
+    "new_observations": 4
+  },
+  "commands": [
+    {
+      "command": "gleaner-index",
+      "arguments": [
+        "--home",
+        "{synthetic_home}",
+        "--now",
+        "2026-10-19T14:52:33.873Z"
+      ],
+      "seconds": 0.12608078699997805,
+      "stdout_bytes": 582,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "find",
+        "",
+        "--limit",
+        "1000",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.09649752500001796,
+      "stdout_bytes": 31219,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "find",
+        "episode",
+        "--limit",
+        "1000",
+        "--project",
+        "SilverMarsh",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08840055400003166,
+      "stdout_bytes": 18759,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "5d62bef598a36671e054",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.0744455219999054,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "db7a74a6f0dc482bf9cd",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07587454499991964,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "cc232dad5bab71ef4aa3",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08160777599994162,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "4bfcafcf8af38e614b43",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07873696400008612,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "923ce02aa0b16cd8f964",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07872561800002131,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "27c11b6256c26c40b527",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08168859099998826,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "e08b000002ddc409f320",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08176523899999211,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "12f0ddf01ef287dea92d",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08005119699998886,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "4f398e7ab3575fc25207",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07622434000006706,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "00a1fe31c5cd3b18b497",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07701198499989914,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "8fad9e09bb2f1c8030c7",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07542947600006755,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "4a8bd92520db1b5d06cf",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07838601599996764,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "1894a084dec9ee8a74ef",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08239793400002782,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "325cc8dd1c2f10ffc180",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08226834200002031,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "e0e84e409ac4c64cc84c",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08211279199997534,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "90ccf6f7b24e895fbf57",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07674261800002569,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "908be330b9d9e7262cbd",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07987739899999724,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "119df0e030bc222597bb",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08315261999996437,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "8a81e6d18105f707d534",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08205717999999251,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "e874df582fd8d74fc3b0",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07540271599998505,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "a071b335634538d40528",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08338784800002941,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "48081fba7b2be5673afc",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07997984600001473,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "1dbc3960ba70922c4f90",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07952534900005048,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "dbfa705067d83008a7fe",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07179928700008986,
+      "stdout_bytes": 1067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "find",
+        "moodboard",
+        "--limit",
+        "1000",
+        "--project",
+        "GlassStudio",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.0908668880000505,
+      "stdout_bytes": 2705,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "find",
+        "CedarVault",
+        "cover",
+        "--limit",
+        "1000",
+        "--project",
+        "Harbor",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.09411907300000166,
+      "stdout_bytes": 1298,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "f95dc43c1e26adcc1f88",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07958220500006519,
+      "stdout_bytes": 1069,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "find",
+        "shipping",
+        "illustration",
+        "--limit",
+        "1000",
+        "--project",
+        "Harbor",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08878820699999324,
+      "stdout_bytes": 567,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "find",
+        "spec",
+        "--limit",
+        "1000",
+        "--project",
+        "RelayForge",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.0918567900000653,
+      "stdout_bytes": 7286,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "c6d89ad1aa313cef7589",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.07549351499994827,
+      "stdout_bytes": 1045,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "find",
+        "round-one",
+        "--limit",
+        "1000",
+        "--project",
+        "FieldLab",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.0950314309999385,
+      "stdout_bytes": 1311,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "resolve",
+        "61f0228e5c68b04e812a",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08027649600001041,
+      "stdout_bytes": 1064,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "find",
+        "R1",
+        "--limit",
+        "1000",
+        "--project",
+        "FieldLab",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.10527506900007211,
+      "stdout_bytes": 567,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "find",
+        "unavailable",
+        "--limit",
+        "1000",
+        "--project",
+        "FieldLab",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.09398798300003364,
+      "stdout_bytes": 1270,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "outline",
+        "61f0228e5c68b04e812a",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08327894699993976,
+      "stdout_bytes": 2067,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "find",
+        "late-note",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.08499069000004056,
+      "stdout_bytes": 567,
+      "status": 0
+    },
+    {
+      "command": "gleaner-index",
+      "arguments": [
+        "--home",
+        "{synthetic_home}",
+        "--now",
+        "2026-10-19T14:52:43.873Z"
+      ],
+      "seconds": 0.08596451900007196,
+      "stdout_bytes": 594,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "find",
+        "a-term-not-in-this-corpus",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.09037658299996565,
+      "stdout_bytes": 581,
+      "status": 0
+    },
+    {
+      "command": "gleaner",
+      "arguments": [
+        "find",
+        "late-note",
+        "--home",
+        "{synthetic_home}"
+      ],
+      "seconds": 0.09070325499999399,
+      "stdout_bytes": 1309,
+      "status": 0
+    }
+  ],
+  "limits": [
+    "No Finder/user comparison",
+    "No semantic authority/supersession inference",
+    "First 5 precision differs from exhaustive recall",
+    "Folder members may be listed but lack captured bytes in read-only Catalog",
+    "Synthetic workloads only; native Mac validation separate"
+  ]
+}

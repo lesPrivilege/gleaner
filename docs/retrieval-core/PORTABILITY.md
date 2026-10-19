@@ -80,6 +80,12 @@ and an unknown-tool sentinel had become a newly supported tool. Focused rerun
 results are reported separately after those repairs; the machine-readable record
 preserves the actual full runs.
 
+Final checkpoint rerun at implementation commit `44624ba` plus the independently
+authored held-out test: **346 tests, 328 passed, 18 failed with 25 issues**, 6.831
+seconds. The failed test names exactly match the baseline's 18. All added tests
+and CLI/MCP checks pass in this Linux execution boundary. This rerun does not turn
+the native compatibility failures into passes.
+
 The shared 18 failing tests concern unavailable creation dates, case-sensitive
 paths, macOS aliases/system folders, and SQLite's ability to read a checkpointed
 database without WAL sidecars. The full Linux suite is therefore **not green**.

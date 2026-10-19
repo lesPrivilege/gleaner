@@ -1,0 +1,31 @@
+{
+  "schema": 1,
+  "suite": "RetrievalHeldOutTests",
+  "test_source_sha256": "a7405521b331eec91b7580fb95b11789f6aaf50d1f41c3ee6d241421c99fffd9",
+  "command": "swift test -j 2 --filter RetrievalHeldOutTests",
+  "runtime": "official Swift 6.2.4 Jammy container, x86_64-unknown-linux-gnu, unprivileged gleaner user",
+  "baseline": {
+    "revision": "2648094610facfd1ae1805f52a9de282043c808f",
+    "portability_patch": "docs/retrieval-core/portability.patch",
+    "passed": 4,
+    "failed": 0,
+    "suite_seconds": 0.047
+  },
+  "provisional": {
+    "revision": "b4fdad1+uncommitted-prototype",
+    "passed": 4,
+    "failed": 0,
+    "suite_seconds": 0.053
+  },
+  "tests": [
+    "correctionsAndByteBoundReviewSurviveRepeatedDerivation",
+    "simultaneousSessionsKeepSeparateReplyEvidenceWithoutCombiningRequests",
+    "deliveredDirectoryDoesNotAuthorizeFollowingAnExternalSymlink",
+    "duplicateMentionsDoNotMakeDuplicateReviewObjectsOrChangeEvidenceAnchors"
+  ],
+  "limitations": [
+    "held-out invariant subset only; not a full regression-suite pass",
+    "native UI, FSEvents, UTType, APFS creation-time/case behavior not executed",
+    "prototype remains fresh-home experiment; no extractor-version migration acceptance"
+  ]
+}

@@ -1,5 +1,12 @@
 # Retrieval core goal
 
+> **Convergence checkpoint, 2026-10-19.** Later user direction supersedes the
+> build-first order below: reconcile public intent, decisions, branches and
+> implementation before selecting formal build priorities. Existing code is
+> preserved as exploratory prototypes, not an accepted architecture. Read
+> `docs/retrieval-core/CONVERGENCE.md` first. Private conversation recall is handled
+> by the parent separately; this checkout does not infer it from local logs.
+
 ## Baseline and boundary
 
 Fetched 2026-10-19 in an independent Linux cloud checkout. `origin/main` is
@@ -28,7 +35,7 @@ No alternate retrieval engine for evaluation. Preserve native provider/session,
 request/reply location, observation, capture provenance and original anchors.
 Do not merge equal hashes or infer approval, publication, or a later ruling.
 
-Focused implementation:
+Bounded prototype hypotheses (not yet selected production priorities):
 
 1. Bounded deterministic locator/extraction repairs for explicit folder and numeric
    shorthand; unresolved patterns must not become fictitious literal deliveries.
@@ -81,12 +88,15 @@ existing native release gates.
 
 ## Milestones and delivery
 
-A. Baseline/contracts/runtime, this spec, failing benchmark.
-B. Focused shared implementation and checkpoint commits.
-C. Progressive CLI/MCP access and protocol/parity checks.
-D. Regression, held-out, metamorphic and scale runs; independent review/fixes.
-E. `HANDOFF.md`, machine-readable results, source index, reproduction commands,
-   limitations and Mac validation plan on `cloud/gleaner-retrieval-core-20261019`.
+A. Verified baseline, intent/spec/implementation matrix, supersession and branch map.
+B. First substantive convergence report to the parent; identify questions needing
+   experiments versus design rulings and preserve unconsumed prior work.
+C. Bounded baseline/prototype experiments and independently authored held-out tests;
+   measure selection separately from discovery before accepting architecture.
+D. Reconcile the next research directions and owner rulings, then prioritize formal
+   implementation, regression, protocol/parity and scale validation.
+E. Reviewable checkpoints with `HANDOFF.md`, exact revisions, source index, evidence
+   and resume instructions on `cloud/gleaner-retrieval-core-20261019`; no release claim.
 
 No main merge, releases/tags, credentials, workflow enablement or changes to the
 unrelated mounted repository. Existing CI runs `swift test` on macOS for every push

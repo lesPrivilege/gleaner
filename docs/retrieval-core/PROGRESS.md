@@ -19,3 +19,27 @@ Resume: read GOAL-SPEC.md, inspect git status and agent-owned files before editi
 run eval/retrieval benchmark once binaries exist; require independent held-out run
 and review before final commit/push. Preserve public-only results. Normal existing
 macOS CI triggers on push; inspect again immediately before delivery.
+
+## Convergence-first steering and checkpoint
+
+The later user instruction superseded the build-first milestone order. Existing
+code is preserved as prototypes; no further feature scope was added. Root wrote
+CONVERGENCE.md, explorer mapped public branches and RAG mechanisms, and reviewer
+independently reconciled semantics and sealed a distinct held-out set. Private
+conversation recall was not attempted.
+
+Implementation checkpoints: `2d6319b` portability, `7cb1983` syntax, `44624ba`
+progressive queries. No extractor-version bump: fresh synthetic libraries only.
+Development benchmark rerun at exact implementation revision; binary hashes match
+the reviewer's earlier provisional run. First enumeration-harness attempt omitted
+the required empty positional query; corrected before retained metrics.
+
+Final actual Linux suite: 346 tests, 328 passed, 18 failed/25 issues matching every
+baseline failing test. Independent Swift invariants 4/4 each; 12 CLI scenarios
+each with no harness errors. Exact results and commands are committed; unsupported
+cases and native exclusions remain visible. Large-scale and semantic method arms
+were intentionally not started before contract convergence.
+
+Resume from HANDOFF.md and the intent/spec/implementation matrix, not the original
+build-first plan. Discuss the unresolved discovery/identity/selection/access
+semantics with the parent; retain defect fixes independently from product choices.

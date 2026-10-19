@@ -96,5 +96,38 @@
     "The candidate full suite includes two command test expectation failures subsequently repaired and rechecked separately; this record retains the actual full-run result.",
     "18 baseline test failures / 25 issues remain from missing birth time, case sensitivity, macOS path aliases/system folders, and SQLite read-only WAL behavior.",
     "No native macOS app, UI, FSEvents, Foundation Markdown presentation, signing, packaging, or release check executed."
-  ]
+  ],
+  "candidate_checkpoint_suite": {
+    "source_revision": "44624ba8ed9c189fe903710d16f0b4f534ef8c0e",
+    "additional_test": "Tests/GleanerCoreTests/RetrievalHeldOutTests.swift",
+    "additional_test_sha256": "a7405521b331eec91b7580fb95b11789f6aaf50d1f41c3ee6d241421c99fffd9",
+    "command": "swift test -j 4",
+    "tests": 346,
+    "suites": 30,
+    "duration_seconds": 6.831,
+    "passed_tests": 328,
+    "failed_tests": 18,
+    "issues": 25,
+    "failed_test_names": [
+      "aBuiltAppIsObservedAsOneEntry()",
+      "aDataAnalysisWithCSVFiguresAndANotebook()",
+      "aFileNamedInAnotherSpellingIsObservedUnderItsDeliveredName()",
+      "aFolderDeliveredTwiceListsItsFilesAtEachDelivery()",
+      "aFolderIsSkippedHoweverItIsSpelled()",
+      "aFolderUnderPrivateIsOneProjectWithWhatItsAgentDelivered()",
+      "aFolderUnderPrivateVarIsOneProjectWithItsFilesThereOrGone()",
+      "aHandedOverFileKeepsItsDeliveryWithItsObservationBeside()",
+      "aLaterSessionEditingAFileAddsItsOwnObservation()",
+      "aLibraryThatCantBeOpenedToReadSaysToOpenGleaner()",
+      "aMediaPipelineHandsOverItsSegmentsButNeverItsHiddenFiles()",
+      "aReportWithMarkdownPDFAndCharts()",
+      "aRewriteInPlaceThatPutsTheDatesBackIsNotAsShown()",
+      "aVideoSeriesWhoseReplyNamesOnlyAFolder()",
+      "keepingMakesAWorkWhoseOneRevisionIsTheFileAsObserved()",
+      "membershipByTimeOnALiveRead()",
+      "theHomeFolderAndSystemFoldersAreNotWalked()",
+      "theSyntheticHomesCapturePhase()"
+    ],
+    "same_failures_as_baseline": true
+  }
 }

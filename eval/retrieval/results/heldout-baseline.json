@@ -1,0 +1,455 @@
+{
+  "schema": 1,
+  "revision": "2648094610facfd1ae1805f52a9de282043c808f",
+  "binary_sha256": {
+    "gleaner": "74845b342290aa0957224e9131743e23100357dcbe5bd1c2b54d78bfaa7a9be9",
+    "gleaner-index": "314591d8600722a54e4b2179c95d463387c9279c3ef8d781f04ffccee3d57e24"
+  },
+  "fixture_source_sha256": "6f6b795716c6d3bf16c13ded7c0080e58ec9042d91cfddc0a49e4bfafe6d2bb2",
+  "corpus": "independently authored synthetic museum, ecology, civic engineering and field-work scenarios",
+  "method": "real shared-core CLI; one fresh synthetic home per scenario; no tuning from these labels",
+  "limitations": [
+    "not a human usability study",
+    "no Finder or agent-library superiority claim",
+    "first relevant rank is an analyst effort proxy, not measured human effort",
+    "small purposive corpus; no population-level generalization",
+    "subprocess startup included in latency",
+    "peak child RSS is process maximum, not whole-run allocation"
+  ],
+  "child_peak_rss_kib": 44064,
+  "cases": [
+    {
+      "name": "same-reply-selection",
+      "labels": {
+        "wanted_logical_objects": 1,
+        "capture_targets": 1,
+        "wanted_paths": [
+          "Workspaces/Estuary/deliveries/salinity-report.md"
+        ],
+        "query": [
+          "Estuary",
+          "salinity",
+          "report"
+        ],
+        "first_limit": 5,
+        "ambiguous": []
+      },
+      "capture_coverage": 1.0,
+      "task_relevant_recall": 1.0,
+      "first_actionable_recall": 1.0,
+      "first_precision": 0.2,
+      "noise_count": 4,
+      "duplicate_path_count": 0,
+      "relevant_original_count": 1,
+      "wanted_object_on_first_page": true,
+      "wanted_original_files_on_disk": 1,
+      "task_all_wanted_usable_first_page": true,
+      "rank_of_first_wanted_object": 1,
+      "first_usable_reference_rank": 1,
+      "first_paths": [
+        "Workspaces/Estuary/deliveries/salinity-report.md",
+        "Workspaces/Estuary/calculation/probe-00.csv",
+        "Workspaces/Estuary/calculation/probe-01.csv",
+        "Workspaces/Estuary/calculation/probe-02.csv",
+        "Workspaces/Estuary/calculation/probe-03.csv"
+      ],
+      "query_total": 19,
+      "command_latency_ms": {
+        "count": 4,
+        "total": 145.46,
+        "max": 52.32
+      }
+    },
+    {
+      "name": "directory-not-every-file-is-a-result",
+      "labels": {
+        "wanted_logical_objects": 6,
+        "capture_targets": 6,
+        "wanted_paths": [
+          "Workspaces/Estuary/trailbook/maps/walk-1.svg",
+          "Workspaces/Estuary/trailbook/maps/walk-2.svg",
+          "Workspaces/Estuary/trailbook/maps/walk-3.svg",
+          "Workspaces/Estuary/trailbook/maps/walk-4.svg",
+          "Workspaces/Estuary/trailbook/maps/walk-5.svg",
+          "Workspaces/Estuary/trailbook/maps/walk-6.svg"
+        ],
+        "query": [
+          "Estuary",
+          "maps"
+        ],
+        "first_limit": 5,
+        "ambiguous": []
+      },
+      "capture_coverage": 1.0,
+      "task_relevant_recall": 1.0,
+      "first_actionable_recall": 0.8333333333333334,
+      "first_precision": 1.0,
+      "noise_count": 0,
+      "duplicate_path_count": 0,
+      "relevant_original_count": 0,
+      "wanted_object_on_first_page": true,
+      "wanted_original_files_on_disk": 6,
+      "task_all_wanted_usable_first_page": false,
+      "rank_of_first_wanted_object": 1,
+      "first_usable_reference_rank": null,
+      "first_paths": [
+        "Workspaces/Estuary/trailbook/maps/walk-1.svg",
+        "Workspaces/Estuary/trailbook/maps/walk-2.svg",
+        "Workspaces/Estuary/trailbook/maps/walk-3.svg",
+        "Workspaces/Estuary/trailbook/maps/walk-4.svg",
+        "Workspaces/Estuary/trailbook/maps/walk-5.svg"
+      ],
+      "query_total": 7,
+      "command_latency_ms": {
+        "count": 4,
+        "total": 114.85,
+        "max": 31.41
+      }
+    },
+    {
+      "name": "range-shorthand",
+      "labels": {
+        "wanted_logical_objects": 5,
+        "capture_targets": 5,
+        "wanted_paths": [
+          "Workspaces/Estuary/exports/plot_03.svg",
+          "Workspaces/Estuary/exports/plot_04.svg",
+          "Workspaces/Estuary/exports/plot_05.svg",
+          "Workspaces/Estuary/exports/plot_06.svg",
+          "Workspaces/Estuary/exports/plot_07.svg"
+        ],
+        "query": [
+          "Estuary",
+          "plot"
+        ],
+        "first_limit": 10,
+        "ambiguous": []
+      },
+      "capture_coverage": 0.0,
+      "task_relevant_recall": 0.0,
+      "first_actionable_recall": 0.0,
+      "first_precision": 0.0,
+      "noise_count": 1,
+      "duplicate_path_count": 0,
+      "relevant_original_count": 0,
+      "wanted_object_on_first_page": false,
+      "wanted_original_files_on_disk": 5,
+      "task_all_wanted_usable_first_page": false,
+      "rank_of_first_wanted_object": null,
+      "first_usable_reference_rank": null,
+      "first_paths": [
+        "Workspaces/Estuary/exports/plot_03\u201307.svg"
+      ],
+      "query_total": 1,
+      "command_latency_ms": {
+        "count": 4,
+        "total": 102.07,
+        "max": 30.27
+      }
+    },
+    {
+      "name": "glob-shorthand",
+      "labels": {
+        "wanted_logical_objects": 7,
+        "capture_targets": 7,
+        "wanted_paths": [
+          "Workspaces/Estuary/exports/plot_02.svg",
+          "Workspaces/Estuary/exports/plot_03.svg",
+          "Workspaces/Estuary/exports/plot_04.svg",
+          "Workspaces/Estuary/exports/plot_05.svg",
+          "Workspaces/Estuary/exports/plot_06.svg",
+          "Workspaces/Estuary/exports/plot_07.svg",
+          "Workspaces/Estuary/exports/plot_08.svg"
+        ],
+        "query": [
+          "Estuary",
+          "plot"
+        ],
+        "first_limit": 10,
+        "ambiguous": []
+      },
+      "capture_coverage": 0.0,
+      "task_relevant_recall": 0.0,
+      "first_actionable_recall": 0.0,
+      "first_precision": 0.0,
+      "noise_count": 1,
+      "duplicate_path_count": 0,
+      "relevant_original_count": 0,
+      "wanted_object_on_first_page": false,
+      "wanted_original_files_on_disk": 7,
+      "task_all_wanted_usable_first_page": false,
+      "rank_of_first_wanted_object": null,
+      "first_usable_reference_rank": null,
+      "first_paths": [
+        "Workspaces/Estuary/exports/plot_*.svg"
+      ],
+      "query_total": 1,
+      "command_latency_ms": {
+        "count": 4,
+        "total": 98.36,
+        "max": 27.18
+      }
+    },
+    {
+      "name": "workspace-prefixed-relative",
+      "labels": {
+        "wanted_logical_objects": 1,
+        "capture_targets": 1,
+        "wanted_paths": [
+          "Workspaces/Estuary/delivery/botanical-atlas.pdf"
+        ],
+        "query": [
+          "atlas"
+        ],
+        "first_limit": 5,
+        "ambiguous": []
+      },
+      "capture_coverage": 0.0,
+      "task_relevant_recall": 0.0,
+      "first_actionable_recall": 0.0,
+      "first_precision": 0.0,
+      "noise_count": 1,
+      "duplicate_path_count": 0,
+      "relevant_original_count": 0,
+      "wanted_object_on_first_page": false,
+      "wanted_original_files_on_disk": 1,
+      "task_all_wanted_usable_first_page": false,
+      "rank_of_first_wanted_object": null,
+      "first_usable_reference_rank": null,
+      "first_paths": [
+        "Workspaces/Estuary/Estuary/delivery/botanical-atlas.pdf"
+      ],
+      "query_total": 1,
+      "command_latency_ms": {
+        "count": 4,
+        "total": 101.07,
+        "max": 30.2
+      }
+    },
+    {
+      "name": "repeated-section-identifiers",
+      "labels": {
+        "wanted_logical_objects": 1,
+        "capture_targets": 1,
+        "wanted_paths": [
+          "Workspaces/Estuary/board/harbor-review.md"
+        ],
+        "query": [
+          "Harbor",
+          "F7"
+        ],
+        "first_limit": 5,
+        "ambiguous": [],
+        "section": {
+          "id": "F7",
+          "report": "board/harbor-review.md",
+          "state": "finding only; no communicated ruling",
+          "expected_content": "gate needs replacement"
+        }
+      },
+      "capture_coverage": 1.0,
+      "task_relevant_recall": 0.0,
+      "first_actionable_recall": 0.0,
+      "first_precision": 0,
+      "noise_count": 0,
+      "duplicate_path_count": 0,
+      "relevant_original_count": 0,
+      "wanted_object_on_first_page": false,
+      "wanted_original_files_on_disk": 1,
+      "task_all_wanted_usable_first_page": false,
+      "rank_of_first_wanted_object": null,
+      "first_usable_reference_rank": null,
+      "first_paths": [],
+      "query_total": 0,
+      "progressive_sections_supported": false,
+      "command_latency_ms": {
+        "count": 6,
+        "total": 138.83,
+        "max": 30.95
+      }
+    },
+    {
+      "name": "version-exactness",
+      "labels": {
+        "wanted_logical_objects": 1,
+        "capture_targets": 1,
+        "wanted_paths": [
+          "Workspaces/Estuary/policy/inspection.md"
+        ],
+        "query": [
+          "salt",
+          "survey"
+        ],
+        "first_limit": 5,
+        "ambiguous": []
+      },
+      "capture_coverage": 1.0,
+      "task_relevant_recall": 1.0,
+      "first_actionable_recall": 1.0,
+      "first_precision": 1.0,
+      "noise_count": 0,
+      "duplicate_path_count": 0,
+      "relevant_original_count": 0,
+      "wanted_object_on_first_page": true,
+      "wanted_original_files_on_disk": 1,
+      "task_all_wanted_usable_first_page": true,
+      "rank_of_first_wanted_object": 1,
+      "first_usable_reference_rank": 1,
+      "first_paths": [
+        "Workspaces/Estuary/policy/inspection.md"
+      ],
+      "query_total": 1,
+      "correct_version": true,
+      "original_available": false,
+      "exact_bytes_available": true,
+      "command_latency_ms": {
+        "count": 7,
+        "total": 164.31,
+        "max": 29.06
+      }
+    },
+    {
+      "name": "same-bytes-independent-contexts",
+      "labels": {
+        "wanted_logical_objects": 1,
+        "capture_targets": 1,
+        "wanted_paths": [
+          "Workspaces/Estuary/forms/permit.md"
+        ],
+        "query": [
+          "permit"
+        ],
+        "first_limit": 5,
+        "ambiguous": []
+      },
+      "capture_coverage": 1.0,
+      "task_relevant_recall": 1.0,
+      "first_actionable_recall": 1.0,
+      "first_precision": 1.0,
+      "noise_count": 0,
+      "duplicate_path_count": 0,
+      "relevant_original_count": 1,
+      "wanted_object_on_first_page": true,
+      "wanted_original_files_on_disk": 1,
+      "task_all_wanted_usable_first_page": true,
+      "rank_of_first_wanted_object": 1,
+      "first_usable_reference_rank": 1,
+      "first_paths": [
+        "Workspaces/Estuary/forms/permit.md"
+      ],
+      "query_total": 1,
+      "two_contexts_retained": true,
+      "scope_correct": true,
+      "command_latency_ms": {
+        "count": 6,
+        "total": 154.01,
+        "max": 32.74
+      }
+    },
+    {
+      "name": "moved-original",
+      "labels": {
+        "wanted_logical_objects": 1,
+        "capture_targets": 1,
+        "wanted_paths": [
+          "Workspaces/Estuary/minutes/harbor.md"
+        ],
+        "query": [
+          "decisions"
+        ],
+        "first_limit": 5,
+        "ambiguous": []
+      },
+      "capture_coverage": 1.0,
+      "task_relevant_recall": 1.0,
+      "first_actionable_recall": 1.0,
+      "first_precision": 1.0,
+      "noise_count": 0,
+      "duplicate_path_count": 0,
+      "relevant_original_count": 0,
+      "wanted_object_on_first_page": true,
+      "wanted_original_files_on_disk": 0,
+      "task_all_wanted_usable_first_page": true,
+      "rank_of_first_wanted_object": 1,
+      "first_usable_reference_rank": 1,
+      "first_paths": [
+        "Workspaces/Estuary/minutes/harbor.md"
+      ],
+      "query_total": 1,
+      "availability_correct": true,
+      "exact_bytes_available": true,
+      "command_latency_ms": {
+        "count": 6,
+        "total": 145.93,
+        "max": 28.84
+      }
+    },
+    {
+      "name": "aborted-and-observed-not-delivered",
+      "labels": {
+        "wanted_logical_objects": 0,
+        "excluded": [
+          "interrupted assistant text",
+          "unannounced filesystem write"
+        ]
+      },
+      "false_deliveries": 0,
+      "no_inferred_delivery": true,
+      "command_latency_ms": {
+        "count": 2,
+        "total": 45.48,
+        "max": 24.84
+      }
+    },
+    {
+      "name": "partial-versus-negative",
+      "negative_result": true,
+      "partial_is_explicit": true,
+      "prior_delivery_preserved": true,
+      "scanned_at": "2030-09-21T13:00:00Z",
+      "command_latency_ms": {
+        "count": 4,
+        "total": 96.38,
+        "max": 31.04
+      }
+    },
+    {
+      "name": "irrelevant-evidence-metamorphism",
+      "labels": {
+        "wanted_logical_objects": 1,
+        "capture_targets": 1,
+        "wanted_paths": [
+          "Workspaces/Estuary/plates/heron-poster.svg"
+        ],
+        "query": [
+          "heron",
+          "poster"
+        ],
+        "first_limit": 5,
+        "ambiguous": []
+      },
+      "capture_coverage": 1.0,
+      "task_relevant_recall": 1.0,
+      "first_actionable_recall": 1.0,
+      "first_precision": 1.0,
+      "noise_count": 0,
+      "duplicate_path_count": 0,
+      "relevant_original_count": 1,
+      "wanted_object_on_first_page": true,
+      "wanted_original_files_on_disk": 1,
+      "task_all_wanted_usable_first_page": true,
+      "rank_of_first_wanted_object": 1,
+      "first_usable_reference_rank": 1,
+      "first_paths": [
+        "Workspaces/Estuary/plates/heron-poster.svg"
+      ],
+      "query_total": 1,
+      "unchanged_ranking_and_identity": true,
+      "command_latency_ms": {
+        "count": 7,
+        "total": 273.12,
+        "max": 93.46
+      }
+    }
+  ]
+}
