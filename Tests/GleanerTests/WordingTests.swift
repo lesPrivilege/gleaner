@@ -393,13 +393,34 @@ import Testing
         #expect(ignored.detail.contains("over the 64 MB") && ignored.detail.contains("Git ignores the file") && ignored.detail.contains("Save a Copy"))
         let worktree = Wording.notKept(.changesRequested, size: mb708, overLimit: true, git: .untracked, worktree: true)
         #expect(worktree.title == "Not kept · 708 MB · uncommitted" && worktree.detail.contains("once the worktree’s folder is removed"))
-        // Outside Git, or committed, Git's part says nothing; a small file whose save failed says that.
+        // Committed, Git's history keeps them; outside Git, or not said, Git's part says nothing.
+        let committed = Wording.notKept(.approved, size: mb708, overLimit: true, git: .committed, worktree: false)
+        #expect(committed.title == "Not kept · 708 MB · committed" && committed.detail.contains("its history keeps them"))
         #expect(Wording.notKept(.approved, size: mb708, overLimit: true, git: .notInRepo, worktree: false).title == "Not kept · 708 MB")
+        // What a rewrite takes is said of Gleaner, never of every app: Git may still hold the bytes.
+        for statement in [ignored, worktree, committed] {
+            #expect(statement.detail.contains("Gleaner can’t show them or hand them on") && !statement.detail.contains("nothing can"))
+        }
+        // A small file whose first save failed says that; a copy asked for that failed says why.
         let failed = Wording.notKept(.published, size: 2_000, overLimit: false, git: nil, worktree: false)
         #expect(failed.title == "Not kept · 2 KB" && failed.detail.hasPrefix("Gleaner couldn’t save a copy of the bytes marked published"))
+        let asked = Wording.notKept(.approved, size: mb708, overLimit: true, failed: ContentStore.Failure.changed(expected: "a", found: "b"),
+                                    git: nil, worktree: false)
+        #expect(asked.detail.hasPrefix("You asked Gleaner to keep the bytes judged, but the file changed") && !asked.detail.contains("without asking"))
+        #expect(Wording.copyFailed(ContentStore.Failure.changed(expected: "a", found: "b"), name: "master.mov")
+                == "Couldn’t save a copy of master.mov: it changed before it was saved.")
         // Before a verdict, in its note sheet: one by its size and Git, several by their count.
         #expect(Wording.wontKeep(count: 1, size: mb708, git: .ignored, worktree: false).title == "Not kept · 708 MB · ignored by Git")
         #expect(Wording.wontKeep(count: 2, size: 2 * mb708, git: .ignored, worktree: false).title == "2 not kept · 1.42 GB")
+    }
+
+    @Test func newCollectionFromTheseSaysWhatItFoundAndWhatItTakesOut() {
+        #expect(Wording.found(3, projects: 1) == "3 works found")
+        #expect(Wording.found(6, projects: 2) == "6 works found in 2 projects")
+        #expect(Wording.fromThese(files: 3, takingOut: []) == "A collection of exactly these 3 files. No file changes.")
+        #expect(Wording.fromThese(files: 3, takingOut: [("Drafts", 2)]) == "A collection of exactly these 3 files. Takes 2 of them out of Drafts. No file changes.")
+        #expect(Wording.takenOut([("Drafts", 2), ("Finals", 1), ("Notes", 1)], of: 4) == "2 of them out of Drafts, 1 out of Finals and 1 out of Notes")
+        #expect(Wording.fromThese(files: 1, takingOut: [("Drafts", 1)]) == "A collection of exactly this file. Takes it out of Drafts. No file changes.")
     }
 
     @Test func reviewAllSaysWhatItLeavesToEachOnesOwnVerdict() {

@@ -575,18 +575,21 @@ enum Wording {
 
     /// That Gleaner keeps no copy of the bytes a verdict or mark was made on (docs/design/review.md,
     /// Keeping what was judged), in a few words ("Not kept · 708 MB · ignored by Git") and in a
-    /// sentence: why it has none, what Git keeps of the file, and what a rewrite of it takes.
-    static func notKept(_ kind: Review.Kind, size: Int64, overLimit: Bool, git: GitState?, worktree: Bool) -> Statement {
+    /// sentence: why it has none, what Git holds of the file, and what a rewrite of it takes from
+    /// Gleaner. `failed` is why a copy the person asked for couldn't be saved. `git` is said only
+    /// while the file may still hold those bytes: of other bytes, it says nothing of these.
+    static func notKept(_ kind: Review.Kind, size: Int64, overLimit: Bool, failed: Error? = nil, git: GitState?, worktree: Bool) -> Statement {
         let what = kind.isVerdict ? "the bytes judged" : "the bytes marked published"
-        let why = overLimit ? "Gleaner keeps no copy of \(what): at \(bytes(size)), they are over the 64 MB it saves without asking."
-            : "Gleaner couldn’t save a copy of \(what) when it read them."
+        let why = if let failed { askedCopyFailed(failed, what: what) }
+            else if overLimit { "Gleaner keeps no copy of \(what): at \(bytes(size)), they are over the 64 MB it saves without asking." }
+            else { "Gleaner couldn’t save a copy of \(what) when it read them." }
         let (tag, held) = Self.git(git, worktree: worktree)
         return Statement(mark: .attention, title: ["Not kept", bytes(size), tag].compactMap { $0 }.joined(separator: " · "),
-                         detail: why + held + " Once the file is rewritten, nothing can show them or hand them on. Save a Copy keeps them while the file still holds them.")
+                         detail: why + held + " Once the file is rewritten, Gleaner can’t show them or hand them on. Save a Copy keeps them while the file still holds them.")
     }
 
     /// The same, said in a note sheet before the verdict is made, for the works whose bytes it
-    /// wouldn't keep unless the person asks: one by its size and what Git keeps of it, several by
+    /// wouldn't keep unless the person asks: one by its size and what Git holds of it, several by
     /// their count and size.
     static func wontKeep(count n: Int, size: Int64, git: GitState?, worktree: Bool) -> Statement {
         let (tag, held) = n == 1 ? Self.git(git, worktree: worktree) : (nil, "")
@@ -594,17 +597,18 @@ enum Wording {
         let these = n == 1 ? "At \(bytes(size)), these bytes are" : "These \(n) files, \(bytes(size)) in all, are"
         return Statement(mark: .attention, title: title,
                          detail: "\(these) over the 64 MB Gleaner saves without asking." + held
-                             + " If the file is rewritten, as it is when changes are made, the bytes judged are gone. Save a Copy keeps them.")
+                             + " If the file is rewritten, as it is when changes are made, Gleaner can’t show the bytes judged or hand them on. Save a Copy keeps them.")
     }
 
-    /// What Git keeps of a file whose bytes Gleaner doesn't: a few words for its label, nil when Git
-    /// says nothing that matters, and a sentence.
+    /// What Git holds of a file whose bytes Gleaner doesn't, while the file holds those bytes: a few
+    /// words for its label, nil when Git says nothing that matters, and a sentence.
     private static func git(_ state: GitState?, worktree: Bool) -> (tag: String?, sentence: String) {
         switch state {
         case .ignored?: ("ignored by Git", " Git ignores the file, so it keeps none either.")
         case .untracked?, .modified?:
             ("uncommitted", worktree ? " The file is uncommitted in a worktree: once the worktree’s folder is removed, it may not reopen."
                 : " The file is uncommitted, so Git doesn’t hold these bytes.")
+        case .committed?: ("committed", " Git has these bytes committed, so its history keeps them.")
         default: (nil, "")
         }
     }
@@ -613,12 +617,51 @@ enum Wording {
         ByteCountFormatter.string(fromByteCount: size, countStyle: .file)
     }
 
-    /// Why Save a Copy couldn't keep the bytes a verdict or mark was made on.
-    static func saveFailed(_ error: Error, review: Review) -> String {
+    /// Why Save a Copy couldn't keep the bytes a verdict or mark was made on, beside it.
+    static func saveFailed(_ error: Error) -> String {
         switch error {
         case ContentStore.Failure.changed: "The file has changed since, so those bytes are no longer there to save."
         default: "Couldn’t save a copy: \(error.localizedDescription)"
         }
+    }
+
+    /// Why a copy the person asked for with a verdict or mark wasn't saved, for its Not kept label.
+    private static func askedCopyFailed(_ error: Error, what: String) -> String {
+        switch error {
+        case ContentStore.Failure.changed: "You asked Gleaner to keep \(what), but the file changed before they were saved."
+        default: "You asked Gleaner to keep \(what), and it couldn’t save them: \(error.localizedDescription)"
+        }
+    }
+
+    /// The same, said with the verdict's result.
+    static func copyFailed(_ error: Error, name: String) -> String {
+        switch error {
+        case ContentStore.Failure.changed: "Couldn’t save a copy of \(name): it changed before it was saved."
+        default: "Couldn’t save a copy of \(name): \(error.localizedDescription)"
+        }
+    }
+
+    /// What a search found, on the line above its results: how many works, and in how many
+    /// projects when more than one, since a collection holds one project's works.
+    static func found(_ n: Int, projects: Int) -> String {
+        count(n, "work") + " found" + (projects > 1 ? " in \(projects) projects" : "")
+    }
+
+    /// What New Collection from These does, in its help tag: a collection of exactly these files,
+    /// which takes each work already in a collection out of it, since a work is in one at most.
+    static func fromThese(files n: Int, takingOut: [(name: String, count: Int)]) -> String {
+        [n == 1 ? "A collection of exactly this file." : "A collection of exactly these \(count(n, "file")).",
+         takenOut(takingOut, of: n).map { "Takes \($0)." }, "No file changes."]
+            .compactMap { $0 }.joined(separator: " ")
+    }
+
+    /// What a collection made of `n` files takes out of the collections some were in: "it out of
+    /// Drafts", "2 of them out of Drafts and 1 out of Finals". Nil for none.
+    static func takenOut(_ counts: [(name: String, count: Int)], of n: Int) -> String? {
+        guard !counts.isEmpty else { return nil }
+        if n == 1 { return "it out of \(counts[0].name)" }
+        let parts = counts.enumerated().map { "\($1.count)\($0 == 0 ? " of them" : "") out of \($1.name)" }
+        return parts.count == 1 ? parts[0] : parts.dropLast().joined(separator: ", ") + " and " + parts[parts.count - 1]
     }
 
     /// A note sheet's title: the verdict or mark about to be made, and on what, one work by its name

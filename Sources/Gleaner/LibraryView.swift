@@ -180,7 +180,7 @@ struct Sidebar: View {
 
     /// Whether a new collection is being named here.
     func naming(_ project: String, inside parent: String?) -> Bool {
-        if case .new(project, parent, _)? = model.naming { true } else { false }
+        if case .new(project, parent, _, _)? = model.naming { true } else { false }
     }
 
     @ViewBuilder func menu(_ project: Organization.Project) -> some View {
@@ -304,20 +304,13 @@ struct ResultsList: View {
         // Filters sit above the list, not over it: rows never scroll under the glass controls.
         VStack(spacing: 0) {
             FilterBar()
-            // What a search found, which the person may keep together.
-            if !model.query.isEmpty, !results.isEmpty {
-                HStack(spacing: Space.s) {
-                    Text(Wording.count(results.count, "work") + " found").foregroundStyle(.secondary).monospacedDigit()
-                    Spacer(minLength: Space.s)
-                    NewCollectionFromThese(works: results.map(\.work))
-                        .controlRole(.inline)
-                        .fixedSize()
-                }
-                .font(.callout)
-                .padding(.horizontal, Space.m)
-                .padding(.bottom, Space.s)
-            }
             List(selection: $model.selectedRows) {
+                // What a search found, which the person may keep together: the list's first row, as a
+                // project's head is in its outline, so it begins below the band the filters sit in,
+                // where a header pinned to the list's top would sit under it.
+                if !model.query.isEmpty, !results.isEmpty {
+                    FoundLine(works: results.map(\.work)).listRowSeparator(.hidden)
+                }
                 ForEach(results) { result in
                     WorkEntry(result: result,
                               project: model.currentProject == nil ? model.organization.project(result.work.project) : nil,
@@ -370,6 +363,24 @@ struct ResultsList: View {
                 if model.currentProject != nil { Button("Search All Deliveries") { model.place = .all } }
             }
         }
+    }
+}
+
+/// What a search found, as the header of its results: how many works, in how many projects when
+/// more than one, and New Collection from These, which a group spanning projects can't take.
+struct FoundLine: View {
+    var works: [Work]
+
+    var body: some View {
+        HStack(spacing: Space.s) {
+            Text(Wording.found(works.count, projects: Set(works.map(\.project)).count))
+                .foregroundStyle(.secondary).monospacedDigit()
+            Spacer(minLength: Space.s)
+            NewCollectionFromThese(works: works)
+                .controlRole(.inline)
+                .fixedSize()
+        }
+        .font(.callout)
     }
 }
 

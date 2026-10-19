@@ -210,20 +210,19 @@ extension Registry {
 extension Indexer {
     /// Makes a verdict or a published mark on the file at `path`, on the bytes there now: reads
     /// them, the person's action, saves a small file's bytes as a first read does, and records their
-    /// hash with the file's size, dates and inode. With `keep`, a file over the save limit is saved
-    /// too, as Save a Copy saves it: the person asked to keep what they judged. `shown` is the file
-    /// as the person was shown it; when it isn't so now, nothing is made, since they may not have
-    /// judged these bytes. Nothing is made either when the file changes while it is read. The read
-    /// completes what a first read of the file completes (`completeCaptures`).
-    public func review(_ path: String, as kind: Review.Kind, note: String? = nil, shown: FileStat? = nil, keep: Bool = false,
-                       at now: Date) throws -> Review {
+    /// hash with the file's size, dates and inode. `shown` is the file as the person was shown it;
+    /// when it isn't so now, nothing is made, since they may not have judged these bytes. Nothing is
+    /// made either when the file changes while it is read. The read completes what a first read of
+    /// the file completes (`completeCaptures`). A larger file's bytes are kept only when the person
+    /// asks, by `saveCopy(of:)` once the verdict is made.
+    public func review(_ path: String, as kind: Review.Kind, note: String? = nil, shown: FileStat? = nil, at now: Date) throws -> Review {
         guard let before = FileStat(path) else {
             let kind = Locator.stat(path).kind
             throw Review.Failure.notAFile(kind == .file ? .unreadable : kind)
         }
         if let shown, shown != before { throw Review.Failure.changedSinceShown }
         let file = Workspace.file(at: path)
-        let read = capture(path, deliveredAt: nil, now: now, saving: keep)
+        let read = capture(path, deliveredAt: nil, now: now)
         guard let sha = read.sha256 else { throw Review.Failure.notAFile(.unreadable) }
         guard read.size == before.size, FileStat(path) == before else { throw Review.Failure.changedWhileRead }
         let note = note?.trimmingCharacters(in: .whitespacesAndNewlines)

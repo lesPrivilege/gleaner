@@ -83,22 +83,26 @@ struct Asking: Identifiable {
 /// What Review All acts on (docs/design/review.md, The review page): each image and document the
 /// page drew whole, with a file there, that hasn't that verdict on these bytes already. Videos and
 /// audio each need a verdict of their own, since a file played isn't a file watched or heard (A07):
-/// they never pass with others, and the menu says how many wait one by one.
+/// they never pass with others, and the menu says how many wait one by one: all of the page's,
+/// drawn yet or not, as To Review counts them.
 struct ReviewAll {
     var approve: [Work] = [], changes: [Work] = [], reject: [Work] = []
     /// The videos and the audio files on the page with a file there and no verdict on its bytes.
     var videos = 0, audio = 0
 
-    /// `works` as the page shows them; `drawn` the files drawn whole, `shown` each file as drawn.
-    init(_ works: [Work], drawn: Set<String>, shown: [String: FileStat], verdict: (Work) -> Standing) {
-        for work in works where work.kind != .folder && shown[work.latest.path] != nil {
-            let standing = verdict(work)
+    /// `works` as the page lists them; `drawn` the files drawn whole, `shown` each file as drawn;
+    /// `hasFile` whether a regular file is at a work's file, as the library last found it.
+    init(_ works: [Work], drawn: Set<String>, shown: [String: FileStat], hasFile: (Work) -> Bool, verdict: (Work) -> Standing) {
+        for work in works where work.kind != .folder {
             switch ReviewForm(work) {
             case let form? where form == .video || form == .audio:
-                if case .current = standing { continue }
+                // Counted from what the library knows, not from the page: one not scrolled to yet waits too.
+                guard hasFile(work) else { continue }
+                if case .current = verdict(work) { continue }
                 if form == .video { videos += 1 } else { audio += 1 }
             case .image?, .document?:
-                guard drawn.contains(work.latest.path) else { continue }
+                guard shown[work.latest.path] != nil, drawn.contains(work.latest.path) else { continue }
+                let standing = verdict(work)
                 func has(_ kind: Review.Kind) -> Bool { if case .current(let review) = standing { review.kind == kind } else { false } }
                 if !has(.approved) { approve.append(work) }
                 if !has(.changesRequested) { changes.append(work) }
@@ -222,7 +226,7 @@ struct ReviewPage: View {
                 .font(.callout)
             }
             Spacer(minLength: Space.s)
-            let all = ReviewAll(layout.works, drawn: drawn, shown: shown, verdict: model.verdict)
+            let all = ReviewAll(layout.works, drawn: drawn, shown: shown, hasFile: { !model.hasNoFile($0) }, verdict: model.verdict)
             // Each verdict only while some image or document drawn hasn't been given it on these bytes.
             Menu("Review All") {
                 Button("Approve All") { make(.approved, all.approve, note: nil) }
@@ -447,10 +451,14 @@ struct ImageTile: View {
             case .some(.some(let image)):
                 Image(nsImage: image).resizable().interpolation(.high).aspectRatio(contentMode: .fit)
             case .some(.none):
-                // Said as itself, never left looking like one still being read (A20).
+                // Said as itself, never left looking like one still being read (A20); why, behind ⓘ.
                 VStack(spacing: Space.s) {
                     FileIcon(path: path, folder: false, size: 48).opacity(0.6)
-                    StatusLabel(mark: Wording.undrawable.mark, text: Wording.undrawable.title, size: 11).font(.caption)
+                    HStack(spacing: Space.xs) {
+                        StatusLabel(mark: Wording.undrawable.mark, text: Wording.undrawable.title, size: 11)
+                        InfoButton(text: Wording.undrawable.detail)
+                    }
+                    .font(.caption)
                 }
                 .help(Wording.undrawable.detail)
             case .none:
@@ -469,7 +477,7 @@ struct ImageTile: View {
         }
         .accessibilityElement()
         .accessibilityLabel((path as NSString).lastPathComponent)
-        .accessibilityValue(image == .some(nil) ? Wording.undrawable.title : "")
+        .accessibilityValue(image == .some(nil) ? Wording.undrawable.title + ". " + Wording.undrawable.detail : "")
         .accessibilityAddTraits(.isImage)
     }
 
@@ -866,8 +874,6 @@ struct HistoryLine: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             line
-                // The bytes it was made on, kept: handed over as any version is, staged and hashed.
-                .onDrag { model.reviewItem(review) ?? NSItemProvider() }
             // Bytes Gleaner holds no copy of: said, with the way to keep them while the file has them.
             if let notKept = model.notKept(review) {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s) {
@@ -889,16 +895,7 @@ struct HistoryLine: View {
 
     var line: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-            GlyphView(glyph: Wording.reviewMark(review.kind).glyph, size: 12).foregroundStyle(.secondary).frame(width: 14)
-            Text(Wording.reviewName(review.kind))
-            if let file { Text(file).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
-            Text(Wording.shortDate(review.madeAt)).foregroundStyle(.secondary).monospacedDigit()
-                .help(Wording.date(review.madeAt))
-            Text(review.sha256.prefix(8)).font(.system(.caption, design: .monospaced)).foregroundStyle(.tertiary)
-                .help("SHA-256 \(review.sha256)")
-            if let note = review.note {
-                Text(review.kind == .published ? note : "“\(note)”").foregroundStyle(.secondary).lineLimit(2)
-            }
+            judged
             Spacer(minLength: Space.s)
             // Kept bytes no revision recorded, beside other bytes on disk now: what was judged
             // beside what is there. Bytes a revision recorded are compared under Versions.
@@ -913,5 +910,35 @@ struct HistoryLine: View {
         }
         .font(.caption)
         .accessibilityElement(children: .combine)
+    }
+
+    /// What it is, when, the bytes it binds to, and its note. While Gleaner keeps those bytes, it is
+    /// the file to drag (docs/design/components.md): it washes under the pointer, takes the grab
+    /// pointer, and hands them over as any version is, staged and hashed. Otherwise it offers no drag.
+    @ViewBuilder var judged: some View {
+        let summary = HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+            GlyphView(glyph: Wording.reviewMark(review.kind).glyph, size: 12).foregroundStyle(.secondary).frame(width: 14)
+            Text(Wording.reviewName(review.kind))
+            if let file { Text(file).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle) }
+            Text(Wording.shortDate(review.madeAt)).foregroundStyle(.secondary).monospacedDigit()
+                .help(Wording.date(review.madeAt))
+            Text(review.sha256.prefix(8)).font(.system(.caption, design: .monospaced)).foregroundStyle(.tertiary)
+                .help("SHA-256 \(review.sha256)")
+            if let note = review.note {
+                Text(review.kind == .published ? note : "“\(note)”").foregroundStyle(.secondary).lineLimit(2)
+            }
+        }
+        if model.hasSaved(review.sha256) {
+            summary
+                // The wash reaches past the text by its own padding, which the line doesn't take.
+                .padding(.horizontal, Space.xs)
+                .hoverWash()
+                .padding(.horizontal, -Space.xs)
+                .pointerStyle(.grabIdle)
+                .onDrag { model.reviewItem(review) ?? NSItemProvider() }
+                .help("Drag to hand over the bytes this was made on, from Gleaner’s saved copy")
+        } else {
+            summary
+        }
     }
 }

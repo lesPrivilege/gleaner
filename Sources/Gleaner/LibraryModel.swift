@@ -63,7 +63,8 @@ enum Place: Hashable {
 /// A collection being named in place in the sidebar: a new one, in a project or inside another
 /// collection, to hold the works or observed files at `adding` once named; or one being renamed.
 enum Naming: Equatable {
-    case new(project: String, parent: String?, adding: [String])
+    /// `command` names the command that asked, for Edit › Undo.
+    case new(project: String, parent: String?, adding: [String], command: String = "New Collection")
     case rename(String)
 }
 
@@ -1156,22 +1157,37 @@ final class LibraryModel {
         return unit
     }
 
-    /// New Collection from These (docs/design/review.md): makes a unit holding exactly `works` and
-    /// the observed files `candidates`, kept as adding keeps them, as one decision. Edit › Undo
-    /// takes back the making and the adding together.
+    /// A unit made to hold works and observed files, for chosen rows or from a group the window
+    /// shows (docs/design/review.md, New Collection from These): it holds exactly `works` and
+    /// `candidates`, kept as adding keeps them, as one decision; a work in another unit leaves it,
+    /// since a work is in one at most. Edit › Undo takes back the making and the adding together,
+    /// under `command`, the name of the command that asked; the result is said in the words
+    /// Corrections lists it by, with what it took out of other units.
     @discardableResult
     func newUnit(named name: String, in project: String, inside parent: String? = nil, holding works: [Work],
-                 _ candidates: [Candidate] = []) async -> WorkUnit? {
+                 _ candidates: [Candidate] = [], as command: String = "New Collection") async -> WorkUnit? {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines), before = Set(corrections.map(\.id))
         guard !name.isEmpty else { return nil }
+        let out = Wording.takenOut(unitsHolding(works), of: works.count + candidates.count)
         guard let unit = await correcting({ try $0.addUnit(named: name, in: project, inside: parent, at: Date()) }) else { return nil }
         let decisions = decisions(adding: works, candidates, to: unit)
         if !decisions.isEmpty { await correcting { try $0.correct(decisions, at: Date()) } }
         let made = corrections.filter { !before.contains($0.id) }
         undoManager?.registerUndo(withTarget: self) { model in Task { await model.unmake(unit, with: made) } }
-        undoManager?.setActionName("New Collection")
-        said("Made \(name) with \(names(works.map(\.name) + candidates.map(\.name), "file"))")
+        undoManager?.setActionName(command)
+        said([made.isEmpty ? "Made \(name)" : describe(made), out.map { "Took \($0)" }].compactMap { $0 }.joined(separator: ". "))
         return unit
+    }
+
+    /// The units holding any of `works`, by name, with how many of them each holds, in their order:
+    /// what a unit made of them takes them out of.
+    func unitsHolding(_ works: [Work]) -> [(name: String, count: Int)] {
+        var order: [String] = [], counts: [String: Int] = [:]
+        for key in works.compactMap(\.unit) {
+            if counts[key] == nil { order.append(key) }
+            counts[key, default: 0] += 1
+        }
+        return order.map { (organization.unitName($0), counts[$0]!) }
     }
 
     /// Takes back making the unit: it goes with what was decided about it, and with `made`, the
@@ -1200,7 +1216,7 @@ final class LibraryModel {
     /// them once named. Nothing is inferred: the group is the person's choice.
     func newCollection(from works: [Work], _ candidates: [Candidate] = [], inside parent: String? = nil) {
         guard let project = project(of: works, candidates) else { return }
-        startNewUnit(in: project, inside: parent, adding: works.map(\.id) + candidates.map(\.path))
+        startNewUnit(in: project, inside: parent, adding: works.map(\.id) + candidates.map(\.path), as: "New Collection from These")
     }
 
     func rename(_ unit: WorkUnit, to name: String) async {
@@ -1285,19 +1301,28 @@ final class LibraryModel {
 
     /// Makes a verdict or a published mark on each work's current file, on the bytes there now,
     /// read then. `shown` holds each file as the person was shown it, by path: a file no longer so
-    /// is left, since they may not have judged those bytes. Edit › Undo takes back all of them.
-    /// Those refused are said `from` where the person asked: a collection's key, or a work's id.
+    /// is left, since they may not have judged those bytes. With `save`, the bytes each was made on
+    /// are then kept as Save a Copy keeps them, checked by hash; a copy that couldn't be saved is
+    /// said with the result, and its Not kept label says why (`unsaved`). Edit › Undo takes back
+    /// all of them. Those refused are said `from` where the person asked: a collection's key, or a
+    /// work's id.
     @discardableResult
     func review(_ works: [Work], as kind: Review.Kind, note: String? = nil, shown: [String: FileStat] = [:], save: Bool = false,
                 from place: String? = nil) async -> [Review] {
         let indexer = indexer, paths = works.map(\.latest.path), date = Date()
-        let (outcomes, held) = await Task.detached(priority: .userInitiated) {
+        let (outcomes, held, failed) = await Task.detached(priority: .userInitiated) {
+            var failed: [(Review, any Error)] = []
             let outcomes = paths.map { path in
-                (path, Result { try indexer.review(path, as: kind, note: note, shown: shown[path], keep: save, at: date) })
+                let outcome = Result { try indexer.review(path, as: kind, note: note, shown: shown[path], at: date) }
+                if save, case .success(let review) = outcome, !indexer.store.has(review.sha256) {
+                    do { try indexer.saveCopy(of: review) } catch { failed.append((review, error)) }
+                }
+                return (path, outcome)
             }
-            return (outcomes, Set(outcomes.compactMap { try? $0.1.get().sha256 }.filter(indexer.store.has)))
+            return (outcomes, Set(outcomes.compactMap { try? $0.1.get().sha256 }.filter(indexer.store.has)), failed)
         }.value
         saved.formUnion(held)
+        for (review, error) in failed { unsaved[review.sha256] = error }
         let made = outcomes.compactMap { try? $0.1.get() }
         let refused = outcomes.compactMap { path, outcome -> ReviewRefusal.Refused? in
             guard case .failure(let error) = outcome else { return nil }
@@ -1312,8 +1337,10 @@ final class LibraryModel {
             undoManager.registerUndo(withTarget: self) { model in Task { await model.undo(made) } }
             undoManager.setActionName(Wording.reviewAction(kind))
         }
-        // What was recorded and what wasn't, both.
-        announce(reviewRefusal.map { Wording.refusal($0).title + ". " + Wording.refusal($0).detail } ?? Wording.reviewed(kind, count: made.count))
+        // What was recorded and what wasn't, both, and any copy asked for that couldn't be saved.
+        let result = reviewRefusal.map { Wording.refusal($0).title + ". " + Wording.refusal($0).detail } ?? Wording.reviewed(kind, count: made.count)
+        let failures = failed.map { Wording.copyFailed($1, name: ($0.path as NSString).lastPathComponent) }
+        announce(failures.isEmpty ? result : ([result.hasSuffix(".") ? result : result + "."] + failures).joined(separator: " "))
         return made
     }
 
@@ -1347,17 +1374,28 @@ final class LibraryModel {
 
     /// No regular file Gleaner can read is at the work's current file: what Gleaner last saw of it
     /// this session decides as a delivery's recorded bytes do (`seen`), unless Gleaner recorded the
-    /// work's newest delivery since. Bytes read decide by their hash; a size, dates and inode by the
-    /// bytes a verdict or mark made on the file so recorded, and otherwise they may have been other
-    /// bytes.
+    /// work's newest delivery since. Bytes read decide by their hash; a size and dates by the bytes
+    /// recorded of the file so (`recordedBytes`), and otherwise they may have been other bytes.
     private func absent(_ work: Work) -> Present {
         let newest = work.deliveries[0], recorded = newest.capture?.observedAt ?? newest.deliveredAt ?? .distantPast
         guard let (last, at) = seen[work.latest.path], at > recorded else { return .absent(work) }
         switch last {
         case .read(let sha): return .absent(sha256: sha, deliveredAt: at)
-        case .listed(let file): return .absent(sha256: reviews.history(of: work).first { $0.file == file }?.sha256, deliveredAt: at)
+        case .listed(let file): return .absent(sha256: recordedBytes(of: work, as: file), deliveredAt: at)
         case .absent: return .absent(work)
         }
+    }
+
+    /// The bytes recorded of the work's current file while it was as `file`, as far as Gleaner
+    /// knows without reading it: those a verdict or mark was made on with that size, those dates
+    /// and that inode, else those a revision recorded with that size and modification date, as a
+    /// listed file is matched (SPEC §5.4). Nil when none was.
+    private func recordedBytes(of work: Work, as file: FileStat) -> String? {
+        if let review = reviews.history(of: work).first(where: { $0.file == file }) { return review.sha256 }
+        return work.latest.deliveries.first { delivery in
+            guard delivery.sha256 != nil, let capture = delivery.capture else { return false }
+            return capture.size == file.size && capture.modifiedAt?.timeIntervalSince1970 == file.modifiedAt.timeIntervalSince1970
+        }?.sha256
     }
 
     /// Records what Gleaner saw of the file at `path` now, a regular file: its bytes, when this
@@ -1455,23 +1493,32 @@ final class LibraryModel {
     }
 
     /// That Gleaner keeps no copy of the bytes `review` was made on (docs/design/review.md, Keeping
-    /// what was judged): over the save limit and not saved, or a save that failed. Nil while it
-    /// holds them.
+    /// what was judged): over the save limit and not saved, a copy the person asked for that
+    /// couldn't be saved (`unsaved`), or a first read's save that failed. What Git holds of the file
+    /// is said only while the file may still hold those bytes: then it speaks of them, and once the
+    /// file holds others, of those. Nil while Gleaner holds them.
     func notKept(_ review: Review) -> Statement? {
         guard !hasSaved(review.sha256) else { return nil }
+        let held = mayStillHold(review)
         return Wording.notKept(review.kind, size: review.file.size, overLimit: review.file.size > indexer.saveLimit,
-                               git: gitStates[review.path], worktree: inWorktree(review.path))
+                               failed: unsaved[review.sha256], git: held ? gitStates[review.path] : nil,
+                               worktree: held && inWorktree(review.path))
     }
 
+    /// Copies the person asked for, by the hash of the bytes, that couldn't be saved this session,
+    /// with why.
+    private var unsaved: [String: any Error] = [:]
+
     /// Of `works` about to be judged, those whose bytes the verdict won't keep unless the person
-    /// asks, with their size: over the save limit, as shown, and not read this session as bytes
-    /// Gleaner holds.
+    /// asks, with their size: over the save limit, as shown, and not bytes Gleaner holds, as far as
+    /// it knows without reading them: read this session, or with the size and dates recorded of a
+    /// revision or verdict whose bytes it saved.
     func wouldNotKeep(_ works: [Work], shown: [String: FileStat]) -> [(work: Work, size: Int64)] {
         works.compactMap { work in
             let path = work.latest.path
-            guard let file = shown[path] ?? (listed[path] ?? nil), file.size > indexer.saveLimit,
-                  !(reads[path].map { $0.file == file && hasSaved($0.sha256) } ?? false) else { return nil }
-            return (work, file.size)
+            guard let file = shown[path] ?? (listed[path] ?? nil), file.size > indexer.saveLimit else { return nil }
+            let bytes = reads[path].flatMap { $0.file == file ? $0.sha256 : nil } ?? recordedBytes(of: work, as: file)
+            return bytes.map(hasSaved) == true ? nil : (work, file.size)
         }
     }
 
@@ -1494,10 +1541,12 @@ final class LibraryModel {
         switch result {
         case .success:
             saved.insert(review.sha256)
+            unsaved[review.sha256] = nil
             announce("Saved a copy of \((review.path as NSString).lastPathComponent)")
             return nil
         case .failure(let error):
-            return Wording.saveFailed(error, review: review)
+            unsaved[review.sha256] = error
+            return Wording.saveFailed(error)
         }
     }
 
@@ -1551,11 +1600,11 @@ final class LibraryModel {
     }
 
     /// Starts naming a new collection in place in the sidebar; once named, `adding` (works' or
-    /// observed files' paths) go in it.
-    func startNewUnit(in project: String, inside parent: String? = nil, adding: [String] = []) {
+    /// observed files' paths) go in it, as one step on Edit › Undo named `command`.
+    func startNewUnit(in project: String, inside parent: String? = nil, adding: [String] = [], as command: String = "New Collection") {
         sidebarClosed.remove(project)
         if let parent { sidebarClosed.remove(parent) }
-        naming = .new(project: project, parent: parent, adding: adding)
+        naming = .new(project: project, parent: parent, adding: adding, command: command)
     }
 
     /// Starts naming the collection in place in the sidebar, with its project and the collection
@@ -1585,13 +1634,13 @@ final class LibraryModel {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !name.isEmpty else { return }
         switch naming {
-        case .new(let project, let parent, let adding):
+        case .new(let project, let parent, let adding, let command):
             let works = adding.compactMap { organization.work(containing: $0) }
             let candidates = adding.compactMap { organization.candidate($0) }
             if works.isEmpty && candidates.isEmpty {
                 if let made = await newUnit(named: name, in: project, inside: parent) { place = .unit(made.key) }
             } else {
-                await newUnit(named: name, in: project, inside: parent, holding: works, candidates)
+                await newUnit(named: name, in: project, inside: parent, holding: works, candidates, as: command)
             }
         case .rename(let key):
             if let unit = organization.unit(key) { await rename(unit, to: name) }

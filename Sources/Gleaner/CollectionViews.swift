@@ -102,7 +102,8 @@ struct UnitCommands: View {
 /// session's observed files, a folded row, files shown together on a review page, what a reply
 /// delivered together, what a search found (docs/design/review.md). It names a new collection in
 /// place holding exactly them, the observed files kept, as one decision with one Undo; nothing is
-/// inferred. Offered while they are in one project, since a collection holds one project's works.
+/// inferred. Its help says which collections it takes works out of, since a work is in one at
+/// most. Offered while they are in one project, since a collection holds one project's works.
 struct NewCollectionFromThese: View {
     @Environment(LibraryModel.self) private var model
     var works: [Work] = []
@@ -114,7 +115,7 @@ struct NewCollectionFromThese: View {
         let one = model.project(of: works, candidates) != nil
         Button("New Collection from These") { model.newCollection(from: works, candidates, inside: inside) }
             .disabled(!one)
-            .help(one ? "A collection of exactly these \(Wording.count(works.count + candidates.count, "file")). No file changes."
+            .help(one ? Wording.fromThese(files: works.count + candidates.count, takingOut: model.unitsHolding(works))
                   : "These are in several projects; a collection holds one project’s works.")
     }
 }

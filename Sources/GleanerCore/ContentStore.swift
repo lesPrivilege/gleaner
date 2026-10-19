@@ -40,9 +40,10 @@ public struct ContentStore: Sendable {
 
     /// Copies a regular file into the store and returns the hash of the stored bytes. The copy is
     /// hashed, not the source, so a write racing the copy can't mislabel what was saved.
-    /// On APFS the copy is a clone and costs no space until the source changes.
+    /// On APFS the copy is a clone and costs no space until the source changes. With `expected`,
+    /// only those bytes are kept: others throw `Failure.changed` and leave nothing in the store.
     @discardableResult
-    public func save(_ path: String) throws -> (sha: String, size: Int64) {
+    public func save(_ path: String, expecting expected: String? = nil) throws -> (sha: String, size: Int64) {
         let fm = FileManager.default
         try fm.createDirectory(at: objects, withIntermediateDirectories: true)
         let temporary = objects.appendingPathComponent(".incoming-\(UUID().uuidString)")
@@ -52,6 +53,10 @@ public struct ContentStore: Sendable {
         guard Self.isRegularFile(temporary), let sha = Locator.sha256(temporary.path) else {
             try? fm.removeItem(at: temporary)
             throw Failure.unavailable
+        }
+        if let expected, sha != expected {
+            try? fm.removeItem(at: temporary)
+            throw Failure.changed(expected: expected, found: sha)
         }
         let size = (try? fm.attributesOfItem(atPath: temporary.path)[.size] as? NSNumber)?.int64Value ?? 0
         let target = objectURL(sha)

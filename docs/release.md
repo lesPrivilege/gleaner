@@ -6,7 +6,7 @@ The path from a green `main` to a downloadable, notarized `Gleaner-0.1.0.zip`. S
 
 - [ ] `swift test` passes on `main`.
 - [ ] **owner** App icon: put `AppIcon.icns` in `Resources/`; `scripts/bundle-app.sh` picks it up. Until then the app shows the generic icon.
-- [ ] **owner** Make the docs say what will ship, since the tagged commit is what the zip is built from. Signing: if §3 will notarize this release, rewrite the ad-hoc install steps (Installation) and the "not notarized" limit (Limits in v0.1) in `README.md` and `README.zh-CN.md`, and the "ad-hoc signed, not notarized" known limit in `CHANGELOG.md`; if it won't, keep them. Icon: with `AppIcon.icns` in place, drop the "no icon" lines from the same three files.
+- [ ] **owner** Make the docs say what will ship, since the tagged commit is what the zip is built from. Signing: if §3 will notarize this release, rewrite the ad-hoc install steps (Installation) in `README.md` and `README.zh-CN.md`, and the "ad-hoc signed, not notarized" limit, one line in both READMEs and `CHANGELOG.md`; if it won't, keep them. Icon: with `AppIcon.icns` in place, drop the "no icon" lines from the same three files.
 - [ ] Manual checks on a build from `./scripts/bundle-app.sh`, in light and dark appearance, on a synthetic home that leaves your own library and agent history alone: `scripts/acceptance-home.py <home> initial`, then `open -n build/Gleaner.app --args -GleanerHome <home>`; the script describes its later phases.
   - drag the hand-off tile, and a result row, into Finder, Claude Desktop, Codex and a browser upload field;
   - drag a delivered folder's row into Finder: it is copied, and the original stays where it was;

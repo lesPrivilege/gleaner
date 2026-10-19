@@ -77,7 +77,7 @@ Kept apart, as the owner set them:
 
 - **Generated:** handed over in a session, or observed appearing or changing during one (which, when, which agent). These are two evidences, said as such.
 - **On this Mac:** the file is there and readable now.
-- **Reviewed:** the person's verdict on these bytes: approved, changes requested or rejected, with their hash, the time and an optional note. A verdict on bytes Gleaner keeps no copy of (a file over 64 MB, or a save that failed) says so, with the file's size and whether Git ignores it or it is uncommitted (in a worktree, that it may not reopen once its folder is gone), and offers Save a Copy ([review.md](review.md), Before landing, as built).
+- **Reviewed:** the person's verdict on these bytes: approved, changes requested or rejected, with their hash, the time and an optional note. A verdict on bytes Gleaner keeps no copy of (a file over 64 MB, or a save that failed) says so, with the file's size and, while the file still holds those bytes, whether Git ignores it, has it uncommitted (in a worktree, that it may not reopen once its folder is gone) or committed, and offers Save a Copy ([review.md](review.md), Before landing, as built).
 - **Published:** the person's mark on these bytes (the hash, the time, an optional place or link).
 
 A mark stays when the file changes, and the item says "Changed since review". None of the four implies another.

@@ -386,7 +386,7 @@ import Testing
         let page = ReviewLayout(model.organization.works(in: episodes[0].key))
         let drawnAll = Set(page.works.map(\.latest.path))
         let shownAll = Dictionary(uniqueKeysWithValues: page.works.compactMap { work in FileStat(work.latest.path).map { (work.latest.path, $0) } })
-        let all = ReviewAll(page.works, drawn: drawnAll, shown: shownAll, verdict: model.verdict)
+        let all = ReviewAll(page.works, drawn: drawnAll, shown: shownAll, hasFile: { !model.hasNoFile($0) }, verdict: model.verdict)
         #expect(all.approve.count == 4 && all.oneByOne == "1 video and 1 audio file to review one by one")
         step += 1
         try await Self.menu([("Approve All", !all.approve.isEmpty), ("Request Changes to All…", !all.changes.isEmpty),
