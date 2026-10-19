@@ -241,4 +241,35 @@ import Testing
             #expect(try await handedOver("a request").delivery.id == first)
         }
     }
+
+    /// A reply named the instructions before they were written: that delivery has no bytes, and the
+    /// file written since was never delivered. The detail shows the file on disk now, named as such,
+    /// and it can be judged; nothing claims it is the delivery.
+    @Test func aDeliveryWithoutBytesStillShowsTheFileOnDiskToReadAndJudge() async throws {
+        let log = try record("user", "write the instructions", then) + record("assistant", "[instructions](report.md)", then)
+        try log.write(to: self.log, atomically: true, encoding: .utf8)
+        _ = try indexer.run(now: { then.addingTimeInterval(1) })
+        try writeFile("Report failures back.", then.addingTimeInterval(60))
+
+        let model = LibraryModel(indexer: indexer)
+        let result = try #require(model.results.first)
+        model.selection = result.id
+        let artifact = model.file(in: result), delivery = model.delivery(in: result)
+        #expect(delivery.sha256 == nil)
+        await model.observe(artifact)
+        let observation = try #require(model.observations[file.path])
+        let plan = artifact.handoff(delivery, now: observation, hasSaved: model.hasSaved)
+        let current = try #require(observation.state.sha256)
+        #expect(plan == .unavailable(alternative: nil, currentSha: current))
+
+        await model.show(plan, artifact: artifact)
+        #expect(model.staging.ready == current)
+        #expect(model.preparedText(for: current)?.text == "Report failures back.")
+        #expect(Wording.bytesCaption(plan, staged: current, delivery: delivery, in: artifact) == "Current file · not a found delivery")
+
+        let work = result.work
+        let shown = try #require(model.shownFile(work, sha: model.staging.ready))
+        let verdict = try #require(await model.review([work], as: .approved, shown: [file.path: shown]).first)
+        #expect(verdict.sha256 == current)
+    }
 }

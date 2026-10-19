@@ -11,23 +11,101 @@ struct SearchResult: Identifiable {
     var id: Work.ID { work.id }
 }
 
-/// A row of a list: a work, or one of its revisions (a delivery) listed under it.
+/// A row of a list: a work, one of its revisions (a delivery) listed under it, or a collection,
+/// whose review page the detail shows.
 enum OutlineRow: Hashable {
     case work(Work.ID)
     case revision(Work.ID, Delivery.ID)
+    case unit(String)
 
-    var work: Work.ID {
+    /// The work it names; nil for a collection.
+    var work: Work.ID? {
         switch self {
         case .work(let id), .revision(let id, _): id
+        case .unit: nil
         }
     }
 }
 
-/// Where the library window is: every delivery, one project, or what Gleaner reads and keeps.
+/// A row under a folder's heading in a project's outline: a work, or the works of one kind that no
+/// reply named itself, folded into one row when there are many (`Listing.rows`).
+enum FolderItem: Identifiable {
+    case work(SearchResult)
+    case folded(key: String, kind: Artifact.Kind, results: [SearchResult])
+
+    /// The works the row lists: its own, or those folded into it.
+    var works: [Work] {
+        switch self {
+        case .work(let result): [result.work]
+        case .folded(_, _, let results): results.map(\.work)
+        }
+    }
+
+    var id: String {
+        switch self {
+        case .work(let result): result.id
+        case .folded(let key, _, _): "folded\n" + key
+        }
+    }
+}
+
+/// Where the library window is: every delivery, what waits on the person's review, one project,
+/// one collection, or what Gleaner reads and keeps.
 enum Place: Hashable {
     case all
+    case toReview
     case project(String)
+    /// A collection (a work unit), by its key: its works and the collections inside it.
+    case unit(String)
     case sources
+}
+
+/// A collection being named in place in the sidebar: a new one, in a project or inside another
+/// collection, to hold the works or observed files at `adding` once named; or one being renamed.
+enum Naming: Equatable {
+    /// `command` names the command that asked, for Edit › Undo.
+    case new(project: String, parent: String?, adding: [String], command: String = "New Collection")
+    case rename(String)
+}
+
+/// Verdicts or marks the person asked for together that weren't all made: how many were, and each
+/// file refused with why, said where they were asked for.
+struct ReviewRefusal: Equatable {
+    struct Refused: Equatable {
+        var path: String
+        var reason: String
+    }
+
+    /// Where they were asked for: a collection's key, for its review page, or a work's id, for its
+    /// detail.
+    var place: String?
+    var kind: Review.Kind
+    var made: Int
+    /// In the order asked.
+    var refused: [Refused]
+
+    /// Why the file at `path` was refused, if it was.
+    func reason(_ path: String) -> String? { refused.first { $0.path == path }?.reason }
+}
+
+/// A session's files observed in a project and handed over in none, newest first: what a project's
+/// Observed section lists under the session (docs/design/review.md, Keeping an observed file).
+struct ObservedSession: Identifiable {
+    var logPath: String
+    var candidates: [Candidate]
+    /// Its rows, as `Listing` lays them out.
+    var items: [ObservedItem]
+
+    init(logPath: String, candidates: [Candidate]) {
+        self.logPath = logPath
+        self.candidates = candidates
+        items = ObservedItem.items(candidates)
+    }
+
+    var id: String { logPath }
+    /// The session as its newest observation names it.
+    var title: String? { candidates[0].latest.sessionTitle }
+    var provider: Provider { candidates[0].latest.provider }
 }
 
 /// A page of what Gleaner reads and keeps.
@@ -56,27 +134,48 @@ enum Staging: Equatable {
 @MainActor @Observable
 final class LibraryModel {
     /// Every delivery the library holds, whichever agent's.
-    private var library: [Artifact] = [] {
-        didSet { artifacts = Artifact.shown(library, without: sourcesOff) }
-    }
+    private var library: [Artifact] = []
     /// The agents whose logs the person turned off: not read, not watched, not shown.
     private(set) var sourcesOff: Set<Provider> = []
     /// What the window shows: the library without the deliveries of the agents turned off.
-    private(set) var artifacts: [Artifact] = [] {
-        didSet {
-            siblings = Artifact.deliveredWith(artifacts)
-            missing = Self.missing(artifacts)
-            saved = Self.saved(artifacts, in: indexer.store)
-            reorganize()
-        }
-    }
+    private(set) var artifacts: [Artifact] = []
+    /// Each file Gleaner observed appearing or changing during sessions, whichever agent's, with its
+    /// observations: candidates beside the deliveries, never deliveries (docs/design/capture.md).
+    /// Grouped by file once per load, off the main thread after a run.
+    private var observed: [Candidate] = []
     /// Projects and works as the person sees them: what Gleaner found, with their corrections.
     private(set) var organization = Organization(artifacts: [])
     /// The person's corrections and projects, read from the library; kept apart from what Gleaner found.
     private(set) var corrections: [Correction] = []
     private(set) var userProjects: [UserProject] = []
+    /// The work units the person made, as made; `organization` shows them as named last.
+    private(set) var units: [WorkUnit] = []
+    /// Every verdict and published mark, by the file each was made on.
+    private(set) var reviews = Reviews([]) {
+        didSet { reviewsVersion += 1 }
+    }
     /// Why the last correction couldn't be recorded.
     private(set) var correctionFailure: String?
+    /// The verdicts or marks last asked for that weren't all made, said where they were asked for
+    /// until the person goes elsewhere, looks again or decides again.
+    private(set) var reviewRefusal: ReviewRefusal?
+    /// The size, dates and inode of each file a review state is shown for (the current file of each
+    /// work in a unit or with a verdict or mark), nil when no regular file is there: taken with each
+    /// organization, never by reading bytes, so the review states never touch the disk while they
+    /// are drawn.
+    private var listed: [String: FileStat?] = [:] { didSet { reviewsVersion += 1 } }
+    /// The bytes read of a file this session, on select or for a verdict, with the file as it was
+    /// then: they stand for the file while it is still so. A read of a file no review state is
+    /// shown for leaves the queue as it was (`noteRead`).
+    private var reads: [String: (sha256: String, file: FileStat)] = [:]
+    /// What Gleaner last saw this session of each file a review state is shown for, and when: its
+    /// bytes, read, or its size, dates and inode. Once the file is gone, this decides, unless the
+    /// work's newest delivery was recorded since: a file seen changed and then deleted stays
+    /// changed, never back to the verdict made before (A16). A relaunch starts without it.
+    private var seen: [String: (now: Present, at: Date)] = [:]
+    /// What is at each of those paths when no regular file Gleaner can read is: gone, a folder, not
+    /// a regular file or unreadable, taken with `listed`, from the file's metadata.
+    private var absent: [String: LocatorState.Kind] = [:]
     /// Paths not on disk, checked once per load and refreshed when a file is observed, so list
     /// rows never touch the disk while drawing.
     private(set) var missing: Set<String> = []
@@ -104,18 +203,43 @@ final class LibraryModel {
     }
     var kind: Artifact.Kind?
     var place: Place = .all {
-        didSet { if place != oldValue, case .project = place { kind = nil } }
+        didSet {
+            guard place != oldValue else { return }
+            if case .project = place { kind = nil }
+            alsoSelected = []
+            reviewRefusal = nil
+            // A collection opens on its review page; elsewhere no collection's page is shown.
+            if case .unit(let key) = place {
+                selection = nil
+                shownUnit = key
+            } else {
+                shownUnit = nil
+            }
+        }
     }
     var sourcePage: SourcePage = .agent(.claudeCode)
     /// The work shown: its id, or any of its files' paths.
     var selection: Work.ID? {
-        didSet { if selection != oldValue { chosenDelivery = nil; comparison = nil } }
+        didSet {
+            if selection != oldValue { chosenDelivery = nil; comparison = nil; alsoSelected = []; reviewRefusal = nil }
+            if selection != nil { shownUnit = nil }
+        }
     }
+    /// The collection whose review page the detail shows, when its row is chosen rather than a work.
+    var shownUnit: String?
+    /// The rows chosen with the selected one (⌘-click, ⇧-click), for decisions on several works at
+    /// once; the detail then says how many.
+    var alsoSelected: Set<OutlineRow> = []
+    /// A collection being named in place in the sidebar.
+    var naming: Naming?
     /// Set when the person picks a delivery; otherwise the delivery the search matched.
     var chosenDelivery: Delivery.ID?
     /// Works the person opened or closed in a list this session, wherever it is listed; the rest
     /// follow `opensByDefault`.
     var disclosed: [Work.ID: Bool] = [:]
+    /// Folded rows of an outline the person opened or closed this session, by folder and kind; the
+    /// rest stay folded unless they hold the selection.
+    var unfolded: [String: Bool] = [:]
     /// Two exact versions shown in place of the preview, older first.
     var comparison: (from: Comparison.End, to: Comparison.End)?
     var progress: (done: Int, total: Int)?
@@ -141,32 +265,141 @@ final class LibraryModel {
     /// Launched with `-GleanerHome <folder>`, the app takes that folder for the home directory, so an
     /// acceptance run on synthetic logs never touches the person's own library or agent history.
     convenience init() throws {
-        let folders = LibraryFolders(
-            home: UserDefaults.standard.string(forKey: "GleanerHome").map { URL(fileURLWithPath: $0, isDirectory: true) })
+        let home = UserDefaults.standard.string(forKey: "GleanerHome").map { URL(fileURLWithPath: $0, isDirectory: true) }
+        let folders = LibraryFolders(home: home)
         try FileManager.default.createDirectory(at: folders.support, withIntermediateDirectories: true)
-        self.init(indexer: Indexer(
+        let indexer = Indexer(
             registry: try Registry(path: folders.registry),
             store: ContentStore(objects: folders.objects, staging: folders.staging),
-            sources: folders.sources))
+            sources: folders.sources)
+        // A session working in the home folder has no workspace walked, the synthetic one included.
+        if let home { indexer.home = home.path }
+        self.init(indexer: indexer, loads: false)
     }
 
-    init(indexer: Indexer) {
+    /// With `loads`, the library is read at once, on the caller's thread; the app opens its window
+    /// first and reads it when it starts, off the main thread.
+    init(indexer: Indexer, loads: Bool = true) {
         self.indexer = indexer
         corrections = (try? indexer.registry.corrections()) ?? []
         userProjects = (try? indexer.registry.userProjects()) ?? []
+        units = (try? indexer.registry.units()) ?? []
+        reviews = Reviews((try? indexer.registry.reviews()) ?? [])
         sourcesOff = (try? indexer.registry.sourcesOff()) ?? []
-        library = (try? indexer.registry.artifacts()) ?? []
+        if loads {
+            observed = Candidate.files((try? indexer.registry.observations()) ?? [])
+            show((try? indexer.registry.artifacts()) ?? [])
+        }
+    }
+
+    /// Shows the library as just read, and what the window works out from it: what each file was
+    /// delivered with, what is gone, which versions are saved, and the organization.
+    private func show(_ library: [Artifact]) {
+        self.library = library
+        showArtifacts()
+    }
+
+    private func showArtifacts() {
         artifacts = Artifact.shown(library, without: sourcesOff)
         siblings = Artifact.deliveredWith(artifacts)
         missing = Self.missing(artifacts)
-        saved = Self.saved(artifacts, in: indexer.store)
+        saved = Self.saved(artifacts, in: indexer.store).union(reviews.hashes.filter(indexer.store.has))
         reorganize()
     }
 
+    /// Puts `artifact` in place of the file at its path, after Gleaner first read the file or saved
+    /// a copy of it: only that file's deliveries changed, so nothing else is read or worked out
+    /// again, however large the library (SPEC §5.4). Its work takes it in place, wherever it is
+    /// listed; joins suggested from its new hash wait for the next read of the library. When only
+    /// its captures changed, as a first read or a saved copy changes them, nothing that lists or
+    /// groups works moved: the lists already made keep their rows, with the work as it is now, and
+    /// the files its replies named with it list its deliveries as they are now.
+    private func replace(_ artifact: Artifact) {
+        guard let index = library.firstIndex(where: { $0.path == artifact.path }) else { return }
+        library[index] = artifact
+        guard let shown = Artifact.shown([artifact], without: sourcesOff).first,
+              let place = artifacts.firstIndex(where: { $0.path == artifact.path }) else { return }
+        let before = artifacts[place]
+        artifacts[place] = shown
+        saved.formUnion(shown.deliveries.compactMap(\.sha256).filter(indexer.store.has))
+        organization = organization.replacing(shown)
+        guard Self.capturesOnly(before, shown), let work = organization.work(containing: shown.path) else {
+            // A delivered folder's files aren't among the files a reply named with others.
+            if shown.deliveries.contains(where: { $0.member == nil }) { siblings = Artifact.deliveredWith(artifacts) }
+            organizationVersion += 1
+            return
+        }
+        for delivery in shown.deliveries where delivery.member == nil {
+            for other in siblings[delivery.id] ?? [] {
+                siblings[other.id] = siblings[other.id]?.map { $0.id == delivery.id ? delivery : $0 }
+            }
+        }
+        refreshLists(work)
+    }
+
+    /// Whether `new` differs from `old` only in what was recorded of its bytes: the same deliveries,
+    /// at the same times, named or handed over in folders as before, folders as before, in the same
+    /// place. What lists, orders, folds and finds a work is then the same.
+    private static func capturesOnly(_ old: Artifact, _ new: Artifact) -> Bool {
+        old.projectFolder == new.projectFolder && old.inRepository == new.inRepository && old.checkout == new.checkout
+            && old.deliveries.count == new.deliveries.count
+            && zip(old.deliveries, new.deliveries).allSatisfy { a, b in
+                a.id == b.id && a.deliveredAt == b.deliveredAt && a.member == b.member && a.capture?.isDirectory == b.capture?.isDirectory
+            }
+    }
+
+    /// Puts `work`, as it is now, in place of itself in the results and the outline already made,
+    /// which keep their rows and order, each result keeping the delivery it matched.
+    private func refreshLists(_ work: Work) {
+        let id = work.id
+        func refreshed(_ result: SearchResult) -> SearchResult {
+            guard result.work.id == id else { return result }
+            return SearchResult(work: work, matched: work.deliveries.first { $0.id == result.matched.id } ?? work.deliveries[0])
+        }
+        // Changed in place: a copy of either list held meanwhile would copy every row.
+        if let at = resultsCache?.results.firstIndex(where: { $0.id == id }), let result = resultsCache?.results[at] {
+            resultsCache?.results[at] = refreshed(result)
+        }
+        guard var cached = outlineCache, let project = organization.project(cached.project) else { return }
+        let name = outlineFolder(work, in: project)
+        guard let folder = cached.outline.firstIndex(where: { $0.folder == name }),
+              let at = cached.outline[folder].items.firstIndex(where: {
+                  switch $0 {
+                  case .work(let result): result.id == id
+                  case .folded(_, _, let results): results.contains { $0.id == id }
+                  }
+              }) else { return }
+        outlineCache = nil
+        cached.outline[folder].items[at] = switch cached.outline[folder].items[at] {
+        case .work(let result): .work(refreshed(result))
+        case .folded(let key, let kind, let results): .folded(key: key, kind: kind, results: results.map(refreshed))
+        }
+        outlineCache = cached
+    }
+
+    /// Reads the deliveries of the file at `path` again, off the main thread, after Gleaner first
+    /// read it or saved a copy of it, and puts them in place.
+    private func reread(_ path: String) async {
+        let registry = indexer.registry
+        if let artifact = await Task.detached(priority: .userInitiated, operation: { try? registry.artifact(at: path) }).value {
+            replace(artifact)
+        }
+    }
+
     private func reorganize() {
-        organization = Organization(artifacts: artifacts, corrections: corrections, projects: userProjects, missing: missing)
+        // An agent turned off has its observations hidden with its deliveries.
+        let observed = sourcesOff.isEmpty ? observed : observed.compactMap { $0.keeping { !sourcesOff.contains($0.provider) } }
+        organization = Organization(artifacts: artifacts, observed: observed, corrections: corrections,
+                                    projects: userProjects, units: units, missing: missing)
         organizationVersion += 1
+        statReviewed()
         if indexed { updateStatus() }
+        // A collection deleted, or taken back, while shown: its project is shown instead.
+        if case .unit(let key) = place, organization.unit(key) == nil {
+            let project = units.first { $0.key == key }.flatMap { organization.project($0.project) }
+            place = project.map { .project($0.key) } ?? .all
+        }
+        if let shown = shownUnit, organization.unit(shown) == nil { shownUnit = nil }
     }
 
     /// The subtitle: what the library holds, as organized now.
@@ -174,15 +407,17 @@ final class LibraryModel {
         status = Wording.library(works: organization.works.count, deliveries: artifacts.map(\.deliveries.count).reduce(0, +))
     }
 
-    /// Bumped with each rebuilt organization, so a listing made before is never reused after.
-    @ObservationIgnored private var organizationVersion = 0
+    /// Bumped with each organization rebuilt or changed in a way that moves what lists or groups a
+    /// work, so a listing made before is never reused after.
+    @ObservationIgnored private(set) var organizationVersion = 0
 
     /// Only what is shown to be gone: a file Gleaner can't reach is unreadable, not missing.
     private static func missing(_ artifacts: [Artifact]) -> Set<String> {
         Set(artifacts.lazy.map(\.path).filter { Locator.stat($0).kind == .missing })
     }
 
-    /// The store is shared by content: a copy saved for one file serves every file with its bytes.
+    /// The store is shared by content: a copy saved for one file serves every file with its bytes,
+    /// and the bytes a verdict was made on.
     private static func saved(_ artifacts: [Artifact], in store: ContentStore) -> Set<String> {
         Set(artifacts.lazy.flatMap(\.deliveries).compactMap(\.sha256).filter(store.has))
     }
@@ -213,14 +448,27 @@ final class LibraryModel {
     /// project the person made, the project Gleaner found it in comes first. Empty at the top level.
     func outlineFolder(_ work: Work, in project: Organization.Project) -> String {
         let file = work.latest
-        let directory = (file.path as NSString).deletingLastPathComponent
-        let base = file.checkout?.folder ?? project.folder ?? file.projectFolder
+        return outlineFolder(file.path, checkout: file.checkout, projectFolder: file.projectFolder, inRepository: file.inRepository, in: project)
+    }
+
+    /// The folder an observed file is listed under, as a work there is: beside what was handed over.
+    func outlineFolder(_ candidate: Candidate, in project: Organization.Project) -> String {
+        outlineFolder(candidate.path, checkout: candidate.checkout, projectFolder: candidate.projectFolder,
+                      inRepository: candidate.inRepository, in: project)
+    }
+
+    private func outlineFolder(_ path: String, checkout: Checkout?, projectFolder: String, inRepository: Bool,
+                               in project: Organization.Project) -> String {
+        let directory = (path as NSString).deletingLastPathComponent
+        let base = checkout?.folder ?? project.folder ?? projectFolder
         var folder = directory == base ? ""
             : directory.hasPrefix(base + "/") ? String(directory.dropFirst(base.count + 1))
-            : (file.inRepository ? "Outside the repository: " : "Elsewhere: ") + (directory as NSString).abbreviatingWithTildeInPath
-        if file.inWorktree { folder = file.place + (folder.isEmpty ? "" : " › " + folder) }
-        if project.origin == .yours || file.projectFolder != project.key && project.folder != base {
-            let found = organization.projectName(file.projectFolder)
+            : (inRepository ? "Outside the repository: " : "Elsewhere: ") + (directory as NSString).abbreviatingWithTildeInPath
+        if let checkout, checkout.folder != checkout.repository {
+            folder = "worktree " + (checkout.folder as NSString).lastPathComponent + (folder.isEmpty ? "" : " › " + folder)
+        }
+        if project.origin == .yours || projectFolder != project.key && project.folder != base {
+            let found = organization.projectName(projectFolder)
             folder = found + (folder.isEmpty ? "" : " › " + folder)
         }
         return folder
@@ -240,8 +488,11 @@ final class LibraryModel {
     /// going to its work's project when the window shows another.
     func select(_ delivery: Delivery) {
         guard let work = organization.work(containing: delivery.path) else { return }
-        if case .project(let key) = place, key != work.project { place = .project(work.project) }
-        if place == .sources { place = .all }
+        switch place {
+        case .sources: place = .all
+        case .project, .unit, .toReview: if !holds(place, work) { place = .project(work.project) }
+        case .all: break
+        }
         if !results.contains(where: { $0.id == work.id }) { clearFilters() }
         selection = work.id
         chosenDelivery = delivery.id
@@ -271,8 +522,19 @@ final class LibraryModel {
         select(delivery)
     }
 
+    /// Watches the logs, shows the library as it was while they are read, then reads them. The
+    /// library is read off the main thread, and never shown over what a finished run showed.
     func start() {
         watch()
+        let indexer = indexer
+        work.async {
+            let artifacts = try? indexer.registry.artifacts(), observed = Candidate.files((try? indexer.registry.observations()) ?? [])
+            Task { @MainActor [weak self] in
+                guard let self, !self.indexed, let artifacts else { return }
+                self.observed = observed
+                self.show(artifacts)
+            }
+        }
         reindex()
     }
 
@@ -294,7 +556,7 @@ final class LibraryModel {
         }
         guard case .success(let off) = stored else { return }
         sourcesOff = off
-        artifacts = Artifact.shown(library, without: off)
+        showArtifacts()
         if watcher != nil || on { watch() }
         if on { reindex() }
         announce("\(Wording.provider(provider)) \(on ? "on" : "off")")
@@ -326,10 +588,17 @@ final class LibraryModel {
                     Task { @MainActor [weak self] in self?.progress = total > 0 && done < total ? (done, total) : nil }
                 })
             }
-            let library = Swift.Result { try indexer.registry.artifacts() }
+            // The library loads on every run, which looks again at what is on disk; the observations
+            // only when the run recorded one, since nothing else changes them.
+            let recorded = (try? outcome.get()).map { $0.newObservations > 0 } ?? true
+            let library = Swift.Result { (try indexer.registry.artifacts(), recorded ? Candidate.files(try indexer.registry.observations()) : nil) }
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                if case .success(let artifacts) = library { self.library = artifacts }
+                if case .success(let (artifacts, observed)) = library {
+                    // Set first: the library's change reorganizes with them.
+                    if let observed { self.observed = observed }
+                    self.show(artifacts)
+                }
                 self.progress = nil
                 self.indexed = true
                 self.lastRead = Date()
@@ -356,27 +625,39 @@ final class LibraryModel {
     /// The works the window lists, newest first: in the project shown, of the kind chosen, matching the search.
     var results: [SearchResult] {
         let tokens = tokens
-        let key = ResultsKey(tokens: tokens, kind: kind, place: place, organization: organizationVersion)
+        let key = resultsKey
         if let cached = resultsCache, cached.key == key { return cached.results }
-        let results = organization.works.compactMap { result(for: $0, tokens: tokens) }
+        // To Review's works are what it holds: the queue is worked out once, not once for each.
+        let results = place == .toReview
+            ? toReview.flatMap(\.works).compactMap { result(for: $0, tokens: tokens, anywhere: true) }
+            : organization.works.compactMap { result(for: $0, tokens: tokens) }
         resultsCache = (key, results)
         return results
     }
 
     /// What the list depends on: it is listed again only when one of these changes, not each time
-    /// a view asks for it.
+    /// a view asks for it. To Review also follows the verdicts, and what is known of each file.
     private struct ResultsKey: Equatable {
-        var tokens: [String], kind: Artifact.Kind?, place: Place, organization: Int
+        var tokens: [String], kind: Artifact.Kind?, place: Place, organization: Int, reviews: Int
     }
+
+    private var resultsKey: ResultsKey {
+        ResultsKey(tokens: tokens, kind: kind, place: place, organization: organizationVersion,
+                   reviews: place == .toReview ? reviewsVersion : 0)
+    }
+
+    /// Bumped with each change to the verdicts and marks, or to what is known of a reviewed file
+    /// (its size and dates, or a read of it), so To Review is listed again.
+    @ObservationIgnored private(set) var reviewsVersion = 0
     @ObservationIgnored private var resultsCache: (key: ResultsKey, results: [SearchResult])?
 
     /// The work as the list shows it, or nil when the place, kind or search leaves it out.
     func result(for work: Work) -> SearchResult? { result(for: work, tokens: tokens) }
 
-    private func result(for work: Work, tokens: [String]) -> SearchResult? {
-        if case .project(let key) = place, work.project != key { return nil }
-        guard kind == nil || work.kind == kind,
-              let matched = work.match(tokens, project: organization.projectName(work.project)) else { return nil }
+    private func result(for work: Work, tokens: [String], anywhere: Bool = false) -> SearchResult? {
+        guard anywhere || holds(place, work), kind == nil || work.kind == kind,
+              let matched = work.match(tokens, project: organization.projectName(work.project),
+                                       collections: organization.unitNames(of: work)) else { return nil }
         return SearchResult(work: work, matched: matched)
     }
 
@@ -385,7 +666,19 @@ final class LibraryModel {
     var selected: SearchResult? {
         // The Sources page hides the selection: menus and Quick Look don't act on what isn't shown.
         guard place != .sources, let selection, let work = organization.work(containing: selection) else { return nil }
-        return result(for: work, tokens: tokens)
+        // A work reviewed in To Review stays shown, as Mail keeps a message read in Unread.
+        return result(for: work, tokens: tokens, anywhere: place == .toReview)
+    }
+
+    /// Whether the place lists the work: a project its own, a collection its works and those of the
+    /// collections inside it, To Review what waits on the person.
+    func holds(_ place: Place, _ work: Work) -> Bool {
+        switch place {
+        case .all, .sources: true
+        case .project(let key): work.project == key
+        case .unit(let key): work.unit.map { $0 == key || organization.unit($0)?.parent == key } ?? false
+        case .toReview: toReview.contains { $0.works.contains { $0.id == work.id } }
+        }
     }
 
     /// The delivery the detail pane shows.
@@ -417,12 +710,13 @@ final class LibraryModel {
         return project.origin != .repository
     }
 
-    /// The selected row: the revision shown, while its work is open; otherwise the work. Choosing a
-    /// row shows what it names, as choosing a delivery under Versions does; choosing the row
-    /// already selected changes nothing.
+    /// The selected row: the revision shown, while its work is open; otherwise the work; with no
+    /// work, the collection whose page is shown. Choosing a row shows what it names, as choosing a
+    /// delivery under Versions does; choosing the row already selected changes nothing.
     var outlineSelection: OutlineRow? {
         get {
-            guard let selection, let work = organization.work(containing: selection) else { return selection.map(OutlineRow.work) }
+            guard let selection else { return shownUnit.map(OutlineRow.unit) }
+            guard let work = organization.work(containing: selection) else { return .work(selection) }
             if let chosen = chosenDelivery, isOpen(work), work.deliveries.contains(where: { $0.id == chosen }) {
                 return .revision(work.id, chosen)
             }
@@ -433,14 +727,85 @@ final class LibraryModel {
             switch newValue {
             case nil:
                 selection = nil
+                shownUnit = nil
             case .work(let id):
                 selection = id
                 chosenDelivery = nil
             case .revision(let id, let delivery):
                 selection = id
                 chosenDelivery = delivery
+            case .unit(let key):
+                selection = nil
+                shownUnit = key
             }
         }
+    }
+
+    /// Every row chosen: the selected one, and those chosen with it. Choosing several keeps the
+    /// one shown while it stays chosen, else shows one just added.
+    var selectedRows: Set<OutlineRow> {
+        get { outlineSelection.map { alsoSelected.union([$0]) } ?? alsoSelected }
+        set {
+            let shown = outlineSelection.flatMap { newValue.contains($0) ? $0 : nil }
+                ?? newValue.subtracting(selectedRows).first ?? newValue.first
+            outlineSelection = shown
+            alsoSelected = newValue.subtracting(shown.map { [$0] } ?? [])
+        }
+    }
+
+    /// The works the chosen rows name, the shown one first, each once.
+    var selectedWorks: [Work] {
+        let rows = (outlineSelection.map { [$0] } ?? []) + alsoSelected.filter { $0 != outlineSelection }
+        var seen = Set<Work.ID>(), works: [Work] = []
+        for row in rows {
+            guard let id = row.work, let work = organization.work(containing: id), seen.insert(work.id).inserted else { continue }
+            works.append(work)
+        }
+        return works
+    }
+
+    /// A project's outline below its head: each folder its works are in (`outlineFolder`), in the
+    /// project's own layout, with how many works it holds and its rows (`outlineItems`). Made again
+    /// only when what the window lists changes, not each time the outline is drawn.
+    func outline(of project: Organization.Project) -> [(folder: String, count: Int, items: [FolderItem])] {
+        let key = resultsKey
+        if let cached = outlineCache, cached.key == key, cached.project == project.key { return cached.outline }
+        let folders = Dictionary(grouping: results) { outlineFolder($0.work, in: project) }
+        let outline = folders.keys
+            .sorted { a, b in a.isEmpty != b.isEmpty ? a.isEmpty : a.localizedStandardCompare(b) == .orderedAscending }
+            .map { (folder: $0, count: folders[$0]!.count, items: outlineItems(folders[$0]!)) }
+        outlineCache = (key, project.key, outline)
+        return outline
+    }
+    @ObservationIgnored private var outlineCache: (key: ResultsKey, project: String, outline: [(folder: String, count: Int, items: [FolderItem])])?
+
+    /// A folder's works as its outline lists them (docs/design/capture.md, "Order and grouping"):
+    /// what a person opens before what a program reads, newest first, files sharing a stem side by
+    /// side, and the files of one kind that no reply named itself folded when they crowd the folder.
+    /// A file a reply named never folds.
+    func outlineItems(_ results: [SearchResult]) -> [FolderItem] {
+        let byID = Dictionary(results.map { ($0.work.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return Listing.rows(results.map { .work($0.work) }).flatMap { row -> [FolderItem] in
+            switch row {
+            case .entry(let entry): [byID[entry.id]].compactMap { $0.map(FolderItem.work) }
+            case .together(_, let entries): entries.compactMap { byID[$0.id].map(FolderItem.work) }
+            case .folded(let folder, let kind, let entries):
+                [.folded(key: folder + "\n" + kind.rawValue, kind: kind, results: entries.compactMap { byID[$0.id] })]
+            }
+        }
+    }
+
+    /// Whether a folded row of an outline shows its works: as the person left it, else open while
+    /// it holds the selection, so a work chosen elsewhere is shown where it is listed.
+    func isUnfolded(_ key: String, _ results: [SearchResult]) -> Bool {
+        if let open = unfolded[key] { return open }
+        guard let selection, let selected = organization.work(containing: selection) else { return false }
+        return results.contains { $0.work.id == selected.id }
+    }
+
+    /// The delivery of the folder a file was handed over in, while the library shows it.
+    func folderDelivery(_ member: Membership) -> Delivery? {
+        organization.work(containing: member.folder)?.deliveries.first { $0.id == member.folderDelivery }
     }
 
     /// What a work's own row names. Closed, it stands for its revisions: the one chosen in the
@@ -452,7 +817,7 @@ final class LibraryModel {
 
     /// The file and delivery a row names: a revision's own, or what its work's row names.
     func target(_ row: OutlineRow) -> (artifact: Artifact, delivery: Delivery)? {
-        guard let work = organization.work(containing: row.work) else { return nil }
+        guard let id = row.work, let work = organization.work(containing: id) else { return nil }
         if case .revision(_, let id) = row, let delivery = work.deliveries.first(where: { $0.id == id }) {
             return (work.file(of: delivery), delivery)
         }
@@ -536,26 +901,46 @@ final class LibraryModel {
     /// it was.
     @discardableResult
     private func correcting<T: Sendable>(_ change: @escaping @Sendable (Registry) throws -> T) async -> T? {
-        let outcome: Result<(T, [Correction], [UserProject]), Error>
+        let outcome: Result<(T, [Correction], [UserProject], [WorkUnit], [String: Artifact?]), Error>
         do {
-            let registry = try correctionsStore(), queue = correctionQueue
+            let registry = try correctionsStore(), queue = correctionQueue, keptBefore = Self.kept(corrections)
             outcome = await withCheckedContinuation { done in
-                queue.async { done.resume(returning: Result { (try change(registry), try registry.corrections(), try registry.userProjects()) }) }
+                queue.async { done.resume(returning: Result {
+                    let value = try change(registry), corrections = try registry.corrections()
+                    // A file kept, or no longer kept, is read again: its revision comes or goes.
+                    var kept: [String: Artifact?] = [:]
+                    for path in Self.kept(corrections).symmetricDifference(keptBefore) { kept[path] = .some(try registry.artifact(at: path)) }
+                    return (value, corrections, try registry.userProjects(), try registry.units(), kept)
+                }) }
             }
         } catch {
             outcome = .failure(error)
         }
         switch outcome {
-        case .success(let (value, corrections, projects)):
+        case .success(let (value, corrections, projects, units, kept)):
             self.corrections = corrections
             userProjects = projects
+            self.units = units
             correctionFailure = nil
-            reorganize()
+            if kept.isEmpty {
+                reorganize()
+            } else {
+                for (path, artifact) in kept {
+                    library.removeAll { $0.path == path }
+                    if let artifact { library.append(artifact) }
+                }
+                showArtifacts()
+            }
             return value
         case .failure(let error):
             correctionFailure = "Couldn’t record that: \(error.localizedDescription)"
             return nil
         }
+    }
+
+    /// The files the person kept.
+    nonisolated private static func kept(_ corrections: [Correction]) -> Set<String> {
+        Set(corrections.filter { $0.kind == .kept }.map(\.subject))
     }
 
     /// Says a decision's result to VoiceOver once it is recorded; a failure is said where it shows.
@@ -621,13 +1006,52 @@ final class LibraryModel {
         said("Kept \((a as NSString).lastPathComponent) and \((b as NSString).lastPathComponent) apart")
     }
 
-    /// Undoes decisions made together, such as moving every file of a work. With `following`,
-    /// the window follows the selected work to where it now is.
+    /// The observed file at `path` isn't from the session whose log is `logPath`: its observation
+    /// stays recorded, and isn't shown with that session.
+    func detach(_ path: String, from logPath: String) async {
+        let made = Set(corrections.map(\.id))
+        await correcting { try $0.correct(.notFromSession, subject: path, target: logPath, at: Date()) }
+        undoable("Detach", since: made)
+        said("Detached \((path as NSString).lastPathComponent) from \(sessionName(logPath))")
+    }
+
+    /// The observed file at `path` goes with `work`: shown with it, never one of its versions.
+    func relate(_ path: String, to work: Work) async {
+        let made = Set(corrections.map(\.id)), target = work.latest.path
+        await correcting { try $0.correct(.related, subject: path, target: target, at: Date()) }
+        undoable("Relate", since: made)
+        said("Related \((path as NSString).lastPathComponent) to \(work.name)")
+    }
+
+    /// The session whose log is `logPath`, as its observations name it.
+    func sessionName(_ logPath: String) -> String {
+        Wording.session(observed.lazy.flatMap(\.observations).first { $0.logPath == logPath }?.sessionTitle)
+    }
+
+    /// Undoes decisions made together, such as moving every file of a work. Undoing a keep takes
+    /// back with it what was decided since about the file, while it is a work only because it was
+    /// kept: its collection and project would otherwise stay listed with nothing to act on, and
+    /// come back with the next keep. With `following`, the window follows the selected work to
+    /// where it now is.
     func undo(_ corrections: [Correction], following: Bool = true) async {
-        let ids = corrections.map(\.id), before = (place, selection)
+        let ids = (corrections + decidedSince(keeping: corrections)).map(\.id), before = (place, selection)
         await correcting { try $0.undo(ids) }
         if following, let selected = before.1 { follow(selected, from: before) }
         said("Undone")
+    }
+
+    /// The decisions about each file kept in `corrections` made after it was kept, while no reply
+    /// handed the file over: its collection and its project.
+    private func decidedSince(keeping corrections: [Correction]) -> [Correction] {
+        let undone = Set(corrections.map(\.id))
+        return corrections.filter { $0.kind == .kept }.flatMap { keep -> [Correction] in
+            guard let file = organization.work(containing: keep.subject)?.files.first(where: { $0.path == keep.subject }),
+                  file.deliveries.allSatisfy({ $0.kept != nil }) else { return [] }
+            return self.corrections.filter {
+                [.unit, .outOfUnit, .project].contains($0.kind) && $0.subject == keep.subject && !undone.contains($0.id)
+                    && ($0.madeAt, $0.id) > (keep.madeAt, keep.id)
+            }
+        }
     }
 
     func undo(_ correction: Correction, following: Bool = true) async {
@@ -654,7 +1078,8 @@ final class LibraryModel {
         await correcting { try $0.renameProject(key, to: name) }
     }
 
-    /// Removes a project the person made; its work goes back where Gleaner found it.
+    /// Removes a project the person made: each of its works goes back to the project it was in
+    /// before it was moved there, the moves into it being taken back.
     func remove(_ project: Organization.Project) async {
         let key = project.key
         guard project.origin == .yours else { return }
@@ -662,12 +1087,12 @@ final class LibraryModel {
         if place == .project(key) { place = .all }
     }
 
-    /// The corrections, newest first, a move of several files at once as one decision.
+    /// The corrections, newest first, decisions made together as one: a move of several files, a
+    /// work of several files added to a unit, an observed file kept and added to one.
     var correctionGroups: [[Correction]] {
         var groups: [[Correction]] = []
         for correction in corrections.reversed() {
-            if correction.kind == .project, let last = groups.last?.last, last.kind == .project,
-               last.target == correction.target, last.madeAt == correction.madeAt {
+            if let last = groups.last?.last, last.madeAt == correction.madeAt {
                 groups[groups.count - 1].append(correction)
             } else {
                 groups.append([correction])
@@ -676,11 +1101,35 @@ final class LibraryModel {
         return groups
     }
 
-    /// What decisions made together did, in a sentence.
+    /// What decisions made together did, in a sentence: those of one kind and target with every
+    /// file named, then the others. Observed files kept to go in a collection are said once, as
+    /// kept and added, with the sessions they were observed during.
     func describe(_ group: [Correction]) -> String {
-        guard group.count > 1, let first = group.first, first.kind == .project else { return group.first.map(describe) ?? "" }
-        return "Moved " + group.sorted { $0.id < $1.id }.map { ($0.subject as NSString).lastPathComponent }.joined(separator: ", ")
-            + " to " + organization.projectName(first.target)
+        guard group.count > 1 else { return group.first.map(describe) ?? "" }
+        var ordered = group.sorted { $0.id < $1.id }
+        var parts: [String] = [], said = Set<String>()
+        let name = { (c: Correction) in (c.subject as NSString).lastPathComponent }
+        let kept = ordered.filter { $0.kind == .kept }, added = ordered.filter { $0.kind == .unit }
+        if !kept.isEmpty, let unit = added.first?.target, added.allSatisfy({ $0.target == unit }),
+           Set(kept.map(\.subject)).isSubset(of: added.map(\.subject)) {
+            var sessions: [String] = []
+            for c in kept where !sessions.contains(sessionName(c.target)) { sessions.append(sessionName(c.target)) }
+            parts.append("Kept and added \(added.map(name).joined(separator: ", ")) to \(organization.unitName(unit)), "
+                         + "observed during \(sessions.joined(separator: " and "))")
+            ordered.removeAll { $0.kind == .kept || $0.kind == .unit }
+        }
+        for c in ordered where said.insert(c.kind.rawValue + "\n" + c.target).inserted {
+            let same = ordered.filter { $0.kind == c.kind && $0.target == c.target }
+            let names = same.map(name).joined(separator: ", ")
+            switch c.kind {
+            case .project: parts.append("Moved \(names) to \(organization.projectName(c.target))")
+            case .kept: parts.append("Kept \(names), observed during \(sessionName(c.target))")
+            case .unit: parts.append("Added \(names) to \(organization.unitName(c.target))")
+            case .outOfUnit: parts.append("Removed \(names) from \(organization.unitName(c.target))")
+            default: parts += same.map(describe)
+            }
+        }
+        return parts.joined(separator: "; ")
     }
 
     /// What a correction did, in a sentence, for the list of corrections.
@@ -691,7 +1140,628 @@ final class LibraryModel {
         case .combine: "Showed \(organization.projectName(correction.subject)) inside \(organization.projectName(correction.target))"
         case .sameWork: "Joined \(name(correction.subject)) and \(name(correction.target))"
         case .notSameWork: "Kept \(name(correction.subject)) and \(name(correction.target)) apart"
+        case .notFromSession: "Detached \(name(correction.subject)) from \(sessionName(correction.target))"
+        case .related: "Related \(name(correction.subject)) to \(organization.work(containing: correction.target)?.name ?? name(correction.target))"
+        case .kept: "Kept \(name(correction.subject)), observed during \(sessionName(correction.target))"
+        case .unit: "Added \(name(correction.subject)) to \(organization.unitName(correction.target))"
+        case .outOfUnit: "Removed \(name(correction.subject)) from \(organization.unitName(correction.target))"
+        case .unitName: "Renamed \(unitName(correction.subject, before: correction)) to \(correction.target)"
+        case .unitDeleted: "Deleted \(organization.unitName(correction.subject))"
         }
+    }
+
+    /// The name the unit `key` had before `correction` renamed it.
+    private func unitName(_ key: String, before correction: Correction) -> String {
+        corrections.last { $0.kind == .unitName && $0.subject == key && ($0.madeAt, $0.id) < (correction.madeAt, correction.id) }?.target
+            ?? units.first { $0.key == key }?.name ?? ""
+    }
+
+    // MARK: Work units, keeping and review (docs/design/review.md)
+
+    /// Makes a work unit in the project `project`, or inside the unit `parent`; Edit › Undo takes
+    /// it back. Nil when it couldn't be made, with why in `correctionFailure`.
+    @discardableResult
+    func newUnit(named name: String, in project: String, inside parent: String? = nil) async -> WorkUnit? {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        guard let unit = await correcting({ try $0.addUnit(named: name, in: project, inside: parent, at: Date()) }) else { return nil }
+        undoManager?.registerUndo(withTarget: self) { model in Task { await model.unmake(unit) } }
+        undoManager?.setActionName("New Collection")
+        said("Made \(name)")
+        return unit
+    }
+
+    /// A unit made to hold works and observed files, for chosen rows or from a group the window
+    /// shows (docs/design/review.md, New Collection from These): it holds exactly `works` and
+    /// `candidates`, kept as adding keeps them, as one decision; a work in another unit leaves it,
+    /// since a work is in one at most. Edit › Undo takes back the making and the adding together,
+    /// under `command`, the name of the command that asked; the result is said in the words
+    /// Corrections lists it by, with what it took out of other units.
+    @discardableResult
+    func newUnit(named name: String, in project: String, inside parent: String? = nil, holding works: [Work],
+                 _ candidates: [Candidate] = [], as command: String = "New Collection") async -> WorkUnit? {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines), before = Set(corrections.map(\.id))
+        guard !name.isEmpty else { return nil }
+        let out = Wording.takenOut(unitsHolding(works), of: works.count + candidates.count)
+        guard let unit = await correcting({ try $0.addUnit(named: name, in: project, inside: parent, at: Date()) }) else { return nil }
+        let decisions = decisions(adding: works, candidates, to: unit)
+        if !decisions.isEmpty { await correcting { try $0.correct(decisions, at: Date()) } }
+        let made = corrections.filter { !before.contains($0.id) }
+        undoManager?.registerUndo(withTarget: self) { model in Task { await model.unmake(unit, with: made) } }
+        undoManager?.setActionName(command)
+        said([made.isEmpty ? "Made \(name)" : describe(made), out.map { "Took \($0)" }].compactMap { $0 }.joined(separator: ". "))
+        return unit
+    }
+
+    /// The units holding any of `works`, by name, with how many of them each holds, in their order:
+    /// what a unit made of them takes them out of.
+    func unitsHolding(_ works: [Work]) -> [(name: String, count: Int)] {
+        var order: [String] = [], counts: [String: Int] = [:]
+        for key in works.compactMap(\.unit) {
+            if counts[key] == nil { order.append(key) }
+            counts[key, default: 0] += 1
+        }
+        return order.map { (organization.unitName($0), counts[$0]!) }
+    }
+
+    /// Takes back making the unit: it goes with what was decided about it, and with `made`, the
+    /// decisions made with it: the observed files it kept are candidates again, and works it brought
+    /// from another project go back there.
+    func unmake(_ unit: WorkUnit, with made: [Correction] = []) async {
+        let key = unit.key, ids = made.map(\.id)
+        await correcting { registry in
+            try registry.undo(ids)
+            try registry.removeUnit(key)
+        }
+        said("Undone")
+    }
+
+    /// The project works and observed files share, where a collection of exactly them is made; nil
+    /// when they are in several, since a collection holds one project's works, and adding the others
+    /// would move them.
+    func project(of works: [Work], _ candidates: [Candidate] = []) -> String? {
+        let projects = Set(works.map(\.project) + candidates.map(\.project))
+        return projects.count == 1 ? projects.first : nil
+    }
+
+    /// New Collection from These, for a group the window shows (a folder, a session's observed
+    /// files, a folded row, files shown together, what a reply delivered together, what a search
+    /// found): names a new collection in place, in their project or inside `parent`, to hold exactly
+    /// them once named. Nothing is inferred: the group is the person's choice.
+    func newCollection(from works: [Work], _ candidates: [Candidate] = [], inside parent: String? = nil) {
+        guard let project = project(of: works, candidates) else { return }
+        startNewUnit(in: project, inside: parent, adding: works.map(\.id) + candidates.map(\.path), as: "New Collection from These")
+    }
+
+    func rename(_ unit: WorkUnit, to name: String) async {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines), key = unit.key, made = Set(corrections.map(\.id))
+        guard !name.isEmpty, name != organization.unitName(key) else { return }
+        await correcting { try $0.correct(.unitName, subject: key, target: name, at: Date()) }
+        undoable("Rename Collection", since: made)
+        said("Renamed \(unit.name) to \(name)")
+    }
+
+    /// Deletes the unit and the units inside it: their works go back to the project. Edit › Undo,
+    /// or Undo in Sources › Corrections, brings them back as they were.
+    func delete(_ unit: WorkUnit) async {
+        let key = unit.key, made = Set(corrections.map(\.id))
+        await correcting { try $0.correct(.unitDeleted, subject: key, target: "", at: Date()) }
+        undoable("Delete Collection", since: made)
+        said("Deleted \(unit.name)")
+    }
+
+    /// Puts the works, every file of each, in the unit; a work shown in another project is moved
+    /// to the unit's with it, as one decision. A work already in it stays as it is: nothing is
+    /// decided again.
+    func add(_ works: [Work], to unit: WorkUnit) async {
+        let works = works.filter { $0.unit != unit.key }
+        // A work is in one collection at most: one in another is taken out of it, and said so.
+        let out = Wording.takenOut(unitsHolding(works), of: works.count)
+        await decide(decisions(adding: works, [], to: unit), as: Wording.collectionCommand(works),
+                     saying: ["\(out == nil ? "Added" : "Moved") \(names(works.map(\.name))) to \(unit.name)", out.map { "Took \($0)" }]
+                        .compactMap { $0 }.joined(separator: ". "))
+    }
+
+    /// The newest revision of the work whose bytes Gleaner keeps a saved copy of: what can still be
+    /// read when no file is at its path. Nil when it keeps none.
+    func savedVersion(of work: Work) -> Delivery? {
+        work.deliveries.first { $0.sha256.map(hasSaved) == true }
+    }
+
+    /// Keeps the observed files and puts them in the unit, as one decision.
+    func add(_ candidates: [Candidate], to unit: WorkUnit) async {
+        await decide(decisions(adding: [], candidates, to: unit), as: "Add to Collection",
+                     saying: "Kept and added \(names(candidates.map(\.name), "file")) to \(unit.name)")
+    }
+
+    /// The decisions that put works, every file of each, and observed files, kept, in the unit; a
+    /// work or file shown in another project moves to the unit's with them. A work already in it is
+    /// left as it is.
+    private func decisions(adding works: [Work], _ candidates: [Candidate], to unit: WorkUnit)
+        -> [(kind: Correction.Kind, subject: String, target: String)] {
+        works.filter { $0.unit != unit.key }.flatMap { work in
+            work.files.map { (kind: Correction.Kind.unit, subject: $0.path, target: unit.key) }
+                + (work.project == unit.project ? [] : work.files.map { (kind: .project, subject: $0.path, target: unit.project) })
+        } + candidates.flatMap { candidate in
+            [(kind: Correction.Kind.kept, subject: candidate.path, target: candidate.latest.logPath),
+             (kind: .unit, subject: candidate.path, target: unit.key)]
+                + (candidate.project == unit.project ? [] : [(kind: .project, subject: candidate.path, target: unit.project)])
+        }
+    }
+
+    /// Takes the works out of the units they are in, one or several, as one decision.
+    func remove(_ works: [Work]) async {
+        let works = works.filter { $0.unit != nil }
+        let units = Set(works.compactMap(\.unit))
+        guard let unit = units.first else { return }
+        let decisions = works.flatMap { work in work.files.map { (kind: Correction.Kind.outOfUnit, subject: $0.path, target: work.unit!) } }
+        let from = units.count == 1 ? organization.unitName(unit) : Wording.count(units.count, "collection")
+        await decide(decisions, as: "Remove from Collection", saying: "Removed \(names(works.map(\.name))) from \(from)")
+    }
+
+    /// Keeps the observed files, as one decision: each a work whose one revision is the file as its
+    /// latest session saw it.
+    func keep(_ candidates: [Candidate]) async {
+        guard let first = candidates.first else { return }
+        let text = candidates.count == 1
+            ? "Kept \(first.name), observed during \(Wording.session(first.latest.sessionTitle))"
+            : "Kept \(Wording.count(candidates.count, "file"))"
+        await decide(candidates.map { (.kept, $0.path, $0.latest.logPath) }, as: "Keep", saying: text)
+    }
+
+    /// Records decisions made as one, puts them on Edit › Undo as `name`, and says `text`.
+    private func decide(_ decisions: [(kind: Correction.Kind, subject: String, target: String)], as name: String, saying text: String) async {
+        guard !decisions.isEmpty else { return }
+        let made = Set(corrections.map(\.id))
+        await correcting { try $0.correct(decisions, at: Date()) }
+        undoable(name, since: made)
+        said(text)
+    }
+
+    private func names(_ names: [String], _ noun: String = "work") -> String {
+        names.count == 1 ? names[0] : Wording.count(names.count, noun)
+    }
+
+    /// Makes a verdict or a published mark on each work's current file, on the bytes there now,
+    /// read then. `shown` holds each file as the person was shown it, by path: a file no longer so
+    /// is left, since they may not have judged those bytes. With `save`, the bytes each was made on
+    /// are then kept as Save a Copy keeps them, checked by hash; a copy that couldn't be saved is
+    /// said with the result, and its Not kept label says why (`unsaved`). Edit › Undo takes back
+    /// all of them. Those refused are said `from` where the person asked: a collection's key, or a
+    /// work's id.
+    @discardableResult
+    func review(_ works: [Work], as kind: Review.Kind, note: String? = nil, shown: [String: FileStat] = [:], save: Bool = false,
+                from place: String? = nil) async -> [Review] {
+        let indexer = indexer, paths = works.map(\.latest.path), date = Date()
+        let (outcomes, held, failed) = await Task.detached(priority: .userInitiated) {
+            var failed: [(Review, any Error)] = []
+            let outcomes = paths.map { path in
+                let outcome = Result { try indexer.review(path, as: kind, note: note, shown: shown[path], at: date) }
+                if save, case .success(let review) = outcome, !indexer.store.has(review.sha256) {
+                    do { try indexer.saveCopy(of: review) } catch { failed.append((review, error)) }
+                }
+                return (path, outcome)
+            }
+            return (outcomes, Set(outcomes.compactMap { try? $0.1.get().sha256 }.filter(indexer.store.has)), failed)
+        }.value
+        saved.formUnion(held)
+        for (review, error) in failed { unsaved[review.sha256] = error }
+        let made = outcomes.compactMap { try? $0.1.get() }
+        let refused = outcomes.compactMap { path, outcome -> ReviewRefusal.Refused? in
+            guard case .failure(let error) = outcome else { return nil }
+            return .init(path: path, reason: Wording.reviewFailed(error, name: (path as NSString).lastPathComponent))
+        }
+        reviewRefusal = refused.isEmpty ? nil : ReviewRefusal(place: place, kind: kind, made: made.count, refused: refused)
+        for review in made { noteRead(review.path, sha256: review.sha256, file: review.file, judged: true) }
+        reviews = Reviews((try? indexer.registry.reviews()) ?? [])
+        // The read may have completed a listed capture: its file's revisions are read again.
+        for path in Set(made.map(\.path)) { await reread(path) }
+        if !made.isEmpty, let undoManager {
+            undoManager.registerUndo(withTarget: self) { model in Task { await model.undo(made) } }
+            undoManager.setActionName(Wording.reviewAction(kind))
+        }
+        // What was recorded and what wasn't, both, and any copy asked for that couldn't be saved.
+        let result = reviewRefusal.map { Wording.refusal($0).title + ". " + Wording.refusal($0).detail } ?? Wording.reviewed(kind, count: made.count)
+        let failures = failed.map { Wording.copyFailed($1, name: ($0.path as NSString).lastPathComponent) }
+        announce(failures.isEmpty ? result : ([result.hasSuffix(".") ? result : result + "."] + failures).joined(separator: " "))
+        return made
+    }
+
+    /// Clears what was refused, once the person looks again.
+    func lookAgain() {
+        reviewRefusal = nil
+    }
+
+    /// Takes back verdicts and marks; those made before or after them stay.
+    func undo(_ reviews: [Review]) async {
+        let ids = reviews.map(\.id), indexer = indexer
+        let outcome = await Task.detached { Result { try indexer.registry.undoReviews(ids); return try indexer.registry.reviews() } }.value
+        switch outcome {
+        case .success(let all):
+            self.reviews = Reviews(all)
+            reviewRefusal = nil
+            announce("Undone")
+        case .failure(let error):
+            correctionFailure = "Couldn’t undo that: \(error.localizedDescription)"
+        }
+    }
+
+    /// What is at the work's current file now, from this session's read of it while the file is
+    /// still as read, else its size and dates when the library was organized. Reads nothing.
+    func present(_ work: Work) -> Present {
+        let path = work.latest.path
+        guard let entry = listed[path], let file = entry else { return absent(work) }
+        if let read = reads[path], read.file == file { return .read(read.sha256) }
+        return .listed(file)
+    }
+
+    /// No regular file Gleaner can read is at the work's current file: what Gleaner last saw of it
+    /// this session decides as a delivery's recorded bytes do (`seen`), unless Gleaner recorded the
+    /// work's newest delivery since. Bytes read decide by their hash; a size and dates by the bytes
+    /// recorded of the file so (`recordedBytes`), and otherwise they may have been other bytes.
+    private func absent(_ work: Work) -> Present {
+        let newest = work.deliveries[0], recorded = newest.capture?.observedAt ?? newest.deliveredAt ?? .distantPast
+        guard let (last, at) = seen[work.latest.path], at > recorded else { return .absent(work) }
+        switch last {
+        case .read(let sha): return .absent(sha256: sha, deliveredAt: at)
+        case .listed(let file): return .absent(sha256: recordedBytes(of: work, as: file), deliveredAt: at)
+        case .absent: return .absent(work)
+        }
+    }
+
+    /// The bytes recorded of the work's current file while it was as `file`, as far as Gleaner
+    /// knows without reading it: those a verdict or mark was made on with that size, those dates
+    /// and that inode, else those a revision recorded with that size and modification date, as a
+    /// listed file is matched (SPEC §5.4). Nil when none was.
+    private func recordedBytes(of work: Work, as file: FileStat) -> String? {
+        if let review = reviews.history(of: work).first(where: { $0.file == file }) { return review.sha256 }
+        return work.latest.deliveries.first { delivery in
+            guard delivery.sha256 != nil, let capture = delivery.capture else { return false }
+            return capture.size == file.size && capture.modifiedAt?.timeIntervalSince1970 == file.modifiedAt.timeIntervalSince1970
+        }?.sha256
+    }
+
+    /// Records what Gleaner saw of the file at `path` now, a regular file: its bytes, when this
+    /// session read it as it is, else its size, dates and inode.
+    private func see(_ path: String, _ file: FileStat) {
+        let read = reads[path].flatMap { $0.file == file ? $0.sha256 : nil }
+        seen[path] = (read.map(Present.read) ?? .listed(file), Date())
+    }
+
+    /// The Reviewed state of the work's current file.
+    func verdict(of work: Work) -> Standing {
+        Review.standing(reviews.verdicts(of: work), now: present(work))
+    }
+
+    /// The Published state of the work's current file.
+    func published(of work: Work) -> Standing {
+        Review.standing(reviews.published(of: work), now: present(work))
+    }
+
+    /// What waits on the person's review, grouped by unit (`Organization.toReview`). Worked out
+    /// again only when the organization, the verdicts or what is known of a file changed: the
+    /// sidebar asks for it on every collection's row.
+    var toReview: [Organization.ReviewGroup] {
+        // Read for the views that ask, so they follow every change the queue follows: a read that
+        // moves it also writes `listed` (`noteRead`).
+        _ = (organization.works.count, reviews, listed.count)
+        let key = [organizationVersion, reviewsVersion]
+        if let cached = queueCache, cached.key == key { return cached.groups }
+        let groups = organization.toReview(reviews, present: present)
+        queueCache = (key, groups)
+        return groups
+    }
+    @ObservationIgnored private var queueCache: (key: [Int], groups: [Organization.ReviewGroup])?
+
+    /// How many works wait on the person's review.
+    var toReviewCount: Int { toReview.reduce(0) { $0 + $1.works.count } }
+
+    /// How many works in the collection, and in the collections inside it, wait on the person.
+    func waiting(in key: String) -> Int {
+        toReview.lazy.filter { group in group.unit.map { $0 == key || self.organization.unit($0)?.parent == key } ?? false }
+            .reduce(0) { $0 + $1.works.count }
+    }
+
+    /// What waits on the person about the work, on its row: none in a collection yet, or a verdict
+    /// on other bytes. A folder has no bytes to judge, so nothing waits on one.
+    func waits(_ work: Work) -> (Mark, String)? {
+        guard work.kind != .folder else { return nil }
+        return Wording.waiting(verdict(of: work), inUnit: work.unit != nil, noFile: hasNoFile(work))
+    }
+
+    /// Whether no regular file Gleaner can read was found at the current file of a work a review
+    /// state is shown for, when its size and dates were last taken: there are no bytes there to
+    /// judge.
+    func hasNoFile(_ work: Work) -> Bool {
+        if case .some(.none) = listed[work.latest.path] { true } else { false }
+    }
+
+    /// The On this Mac state of the work's current file, as the library knows it without reading
+    /// it: a regular file there when its size and dates were taken, else this session's check or
+    /// what the library found gone.
+    func onThisMac(_ work: Work) -> Statement {
+        let file = work.latest, now = rowNow(file)
+        // A file a review state is shown for: as its size and dates were last taken, when the
+        // library was organized, the file selected or its review page drawn.
+        if let entry = listed[file.path] {
+            guard entry != nil else { return Wording.onThisMac(absent[file.path] ?? .missing, changed: false) }
+            return Wording.onThisMac(.file, changed: now.kind == .file && now.changed)
+        }
+        if let kind = now.kind { return Wording.onThisMac(kind, changed: now.changed) }
+        return Wording.onThisMac(file.kind == .folder ? .directory : .file, changed: false)
+    }
+
+    /// The file as the person was last shown it in the detail, while it is still as read: what a
+    /// verdict made there binds to (A17). Nil when the detail shows other bytes than the file's.
+    func shownFile(_ work: Work, sha: String?) -> FileStat? {
+        guard let sha, let read = reads[work.latest.path], read.sha256 == sha else { return nil }
+        return read.file
+    }
+
+    /// What Git said of each file a Not kept label names, with the file as it was when Git was
+    /// asked: asked when the label is shown, and again whenever the file is selected.
+    private var gitStates: [String: (file: FileStat, state: GitState)] = [:]
+
+    /// What Git said of the file at `path` while it was `file`: nil once its size, dates or identity
+    /// differ, so Git's word about other bytes is never repeated about these.
+    func gitState(of path: String, as file: FileStat) -> GitState? {
+        gitStates[path].flatMap { $0.file == file ? $0.state : nil }
+    }
+
+    /// Asks Git, off the main thread, about the files at `paths` it wasn't asked about as they are now.
+    func lookUpGit(_ paths: [String]) async {
+        let known = gitStates
+        let found = await Task.detached(priority: .utility) {
+            Set(paths).compactMap { path -> (String, FileStat, GitState)? in
+                guard let file = FileStat(path), known[path]?.file != file else { return nil }
+                let state = Locator.gitState(of: path)
+                return FileStat(path) == file ? (path, file, state) : nil
+            }
+        }.value
+        for (path, file, state) in found { gitStates[path] = (file, state) }
+    }
+
+    /// Whether the file at `path` is in a worktree of its own, where its folder may be removed.
+    private func inWorktree(_ path: String) -> Bool {
+        organization.work(containing: path)?.files.first { $0.path == path }?.inWorktree ?? false
+    }
+
+    /// That Gleaner keeps no copy of the bytes `review` was made on (docs/design/review.md, Keeping
+    /// what was judged): over the save limit and not saved, a copy the person asked for that
+    /// couldn't be saved (`unsaved`), or a first read's save that failed. What Git holds of the file
+    /// is said only while the file may still hold those bytes: then it speaks of them, and once the
+    /// file holds others, of those. Nil while Gleaner holds them.
+    func notKept(_ review: Review) -> Statement? {
+        guard !hasSaved(review.sha256) else { return nil }
+        let held = mayStillHold(review)
+        return Wording.notKept(review.kind, size: review.file.size, overLimit: review.file.size > indexer.saveLimit,
+                               failed: unsaved[review.sha256], git: held ? gitState(of: review.path, as: review.file) : nil,
+                               worktree: held && inWorktree(review.path))
+    }
+
+    /// Copies the person asked for, by the hash of the bytes, that couldn't be saved this session,
+    /// with why.
+    private var unsaved: [String: any Error] = [:]
+
+    /// Of `works` about to be judged, those whose bytes the verdict won't keep unless the person
+    /// asks, with their size: over the save limit, as shown, and not bytes Gleaner holds, as far as
+    /// it knows without reading them: read this session, or with the size and dates recorded of a
+    /// revision or verdict whose bytes it saved.
+    func wouldNotKeep(_ works: [Work], shown: [String: FileStat]) -> [(work: Work, size: Int64, file: FileStat)] {
+        works.compactMap { work in
+            let path = work.latest.path
+            guard let file = shown[path] ?? (listed[path] ?? nil), file.size > indexer.saveLimit else { return nil }
+            let bytes = reads[path].flatMap { $0.file == file ? $0.sha256 : nil } ?? recordedBytes(of: work, as: file)
+            return bytes.map(hasSaved) == true ? nil : (work, file.size, file)
+        }
+    }
+
+    /// Whether the file a verdict or mark was made on may still hold its bytes, as far as Gleaner
+    /// knows without reading it: read since as those bytes, or as it was when they were judged.
+    func mayStillHold(_ review: Review) -> Bool {
+        guard let work = organization.work(containing: review.path), work.latest.path == review.path else { return false }
+        return switch present(work) {
+        case .read(let sha): sha == review.sha256
+        case .listed(let file): file == review.file
+        case .absent: false
+        }
+    }
+
+    /// Saves a copy of the bytes `review` was made on while the file still holds them, as a
+    /// delivery's Save a Copy does; nil when it did, otherwise why not.
+    func saveCopy(of review: Review) async -> String? {
+        let indexer = indexer
+        let result = await Task.detached(priority: .userInitiated) { Result { try indexer.saveCopy(of: review) } }.value
+        switch result {
+        case .success:
+            saved.insert(review.sha256)
+            unsaved[review.sha256] = nil
+            announce("Saved a copy of \((review.path as NSString).lastPathComponent)")
+            return nil
+        case .failure(let error):
+            unsaved[review.sha256] = error
+            return Wording.saveFailed(error)
+        }
+    }
+
+    /// The bytes a verdict or mark was made on, as one end of a comparison, from Gleaner's saved
+    /// copy; nil while it holds none.
+    func reviewEnd(_ review: Review) -> Comparison.End? {
+        guard hasSaved(review.sha256) else { return nil }
+        return Comparison.End(title: "\(Wording.reviewName(review.kind)) \(Wording.shortDate(review.madeAt))", source: "saved copy",
+                              sha: review.sha256, url: indexer.store.objectURL(review.sha256))
+    }
+
+    /// The bytes a verdict or mark was made on beside the file on disk, as checked, when Gleaner
+    /// keeps them and the file holds others now: what was judged beside what is there, whether or
+    /// not a delivery also recorded those bytes.
+    func reviewComparison(_ review: Review) -> (from: Comparison.End, to: Comparison.End)? {
+        guard let judged = reviewEnd(review), let work = organization.work(containing: review.path),
+              let artifact = work.files.first(where: { $0.path == review.path }),
+              let now = currentEnd(artifact), now.sha != review.sha256 else { return nil }
+        return (judged, now)
+    }
+
+    /// The bytes a verdict or mark was made on, for another app, while Gleaner keeps them: staged
+    /// and hashed when the receiver asks, as any version is.
+    func reviewItem(_ review: Review) -> NSItemProvider? {
+        guard hasSaved(review.sha256), let artifact = organization.work(containing: review.path)?.files.first(where: { $0.path == review.path })
+        else { return nil }
+        return handoffItem(sha: review.sha256, artifact: artifact)
+    }
+
+    /// The collection holding the work, as a list names it ("Launch › Assets"); nil in none.
+    func collectionPath(_ work: Work) -> String? {
+        organization.unit(of: work).map { Wording.unitPath($0.unit, in: organization) }
+    }
+
+    /// The collection to make a new one in from the File menu, or to rename or delete: the one
+    /// shown, else the one whose page is shown.
+    var currentUnit: WorkUnit? {
+        if let key = shownUnit, let unit = organization.unit(key) { return unit }
+        if case .unit(let key) = place { return organization.unit(key) }
+        return nil
+    }
+
+    /// Where New Collection makes one: inside the collection shown (beside it, when it is itself
+    /// inside another, since collections nest one level deep), else in the project shown, else in
+    /// the selected work's project.
+    var newUnitPlace: (project: String, parent: String?)? {
+        if case .unit(let key) = place, let unit = organization.unit(key) { return (unit.project, unit.parent ?? unit.key) }
+        if let project = currentProject { return (project.key, nil) }
+        return selectedWorks.first.map { ($0.project, nil) }
+    }
+
+    /// Starts naming a new collection in place in the sidebar; once named, `adding` (works' or
+    /// observed files' paths) go in it, as one step on Edit › Undo named `command`.
+    func startNewUnit(in project: String, inside parent: String? = nil, adding: [String] = [], as command: String = "New Collection") {
+        sidebarClosed.remove(project)
+        if let parent { sidebarClosed.remove(parent) }
+        naming = .new(project: project, parent: parent, adding: adding, command: command)
+    }
+
+    /// Starts naming the collection in place in the sidebar, with its project and the collection
+    /// it is inside opened to show it.
+    func startRenaming(_ unit: WorkUnit) {
+        sidebarClosed.remove(unit.project)
+        if let parent = unit.parent { sidebarClosed.remove(parent) }
+        naming = .rename(unit.key)
+    }
+
+    /// How many collections deleting the person's project `key` deletes with it: those made in it,
+    /// and those inside them, while they are shown.
+    func unitsDeleted(with key: String) -> Int {
+        let made = Set(units.filter { $0.project == key }.map(\.key))
+        return organization.units.filter { made.contains($0.key) || $0.parent.map(made.contains) == true }.count
+    }
+
+    /// Ends naming in place with `name`: makes the collection, or renames it. An empty name makes
+    /// nothing. A new one is shown, unless it was made to hold what the person was adding.
+    func commitNaming(_ name: String) async {
+        guard let naming else { return }
+        self.naming = nil
+        await commit(naming, name: name)
+    }
+
+    func commit(_ naming: Naming, name: String) async {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return }
+        switch naming {
+        case .new(let project, let parent, let adding, let command):
+            let works = adding.compactMap { organization.work(containing: $0) }
+            let candidates = adding.compactMap { organization.candidate($0) }
+            if works.isEmpty && candidates.isEmpty {
+                if let made = await newUnit(named: name, in: project, inside: parent) { place = .unit(made.key) }
+            } else {
+                await newUnit(named: name, in: project, inside: parent, holding: works, candidates, as: command)
+            }
+        case .rename(let key):
+            if let unit = organization.unit(key) { await rename(unit, to: name) }
+        }
+    }
+
+    /// The projects and collections closed in the sidebar this session; the rest are open.
+    var sidebarClosed: Set<String> = []
+
+    /// A project's observed files, by the session each was last observed during, newest first,
+    /// of the kind chosen (docs/design/review.md, Keeping an observed file).
+    /// Made again only when the organization or the kind changes, not each time the outline is drawn.
+    func observedSessions(in project: Organization.Project) -> [ObservedSession] {
+        let key = ObservedKey(project: project.key, kind: kind, organization: organizationVersion)
+        if let cached = observedCache, cached.key == key { return cached.sessions }
+        var order: [String] = [], groups: [String: [Candidate]] = [:]
+        for candidate in organization.candidates(in: project.key) where kind == nil || candidate.kind == kind {
+            let log = candidate.latest.logPath
+            if groups[log] == nil { order.append(log) }
+            groups[log, default: []].append(candidate)
+        }
+        let sessions = order.map { ObservedSession(logPath: $0, candidates: groups[$0]!) }
+        observedCache = (key, sessions)
+        return sessions
+    }
+
+    private struct ObservedKey: Equatable {
+        var project: String, kind: Artifact.Kind?, organization: Int
+    }
+    @ObservationIgnored private var observedCache: (key: ObservedKey, sessions: [ObservedSession])?
+
+    /// Whether a session's observed files are shown: as the person left it, else open where a
+    /// project's works open (`opensByDefault`).
+    func isOpen(_ session: ObservedSession) -> Bool {
+        unfolded["observed\n" + session.logPath] ?? opensByDefault
+    }
+
+    /// The decisions about a selection of rows dropped on a collection: the works the rows name,
+    /// or, when a row of a multiple selection was dragged, every work chosen.
+    func dropped(_ paths: [String]) -> [Work] {
+        let works = paths.compactMap { organization.work(containing: $0) }
+        let chosen = selectedWorks
+        return works.contains(where: { work in chosen.contains { $0.id == work.id } }) ? chosen : works
+    }
+
+    /// Takes the size and dates of each file a review state is shown for: the current file of each
+    /// work in a unit or with a verdict or mark. Metadata only.
+    private func statReviewed() {
+        var listed: [String: FileStat?] = [:], absent: [String: LocatorState.Kind] = [:]
+        for work in organization.works where work.unit != nil || reviews.any(work) {
+            let path = work.latest.path, file = FileStat(path)
+            listed[path] = .some(file)
+            if let file { see(path, file) } else { absent[path] = Self.absence(path) }
+        }
+        self.listed = listed
+        self.absent = absent
+    }
+
+    /// What is at `path` when no regular file Gleaner can read is: a regular file it may not read
+    /// is unreadable, never gone (A20).
+    private static func absence(_ path: String) -> LocatorState.Kind {
+        let kind = Locator.stat(path).kind
+        return kind == .file ? .unreadable : kind
+    }
+
+    /// Records a read of the file at `path` this session: its bytes stand for the file while it is
+    /// still as `file`. Without bytes or a file, the read stands for nothing. The review states and
+    /// the queue follow it for a file they are shown for, or one a verdict or mark was just made on
+    /// (`judged`); a read of any other file leaves them as they were.
+    private func noteRead(_ path: String, sha256: String?, file: FileStat?, judged: Bool = false) {
+        let read = sha256.flatMap { sha in file.map { (sha256: sha, file: $0) } }
+        reads[path] = read
+        guard judged || listed[path] != nil else { return }
+        let now = read?.file ?? FileStat(path)
+        if let now { see(path, now) }
+        listed[path] = .some(now)
+        absent[path] = now == nil ? Self.absence(path) : nil
+        reviewsVersion += 1
+    }
+
+    /// Takes what a review page found at `path` as it drew the file: its size, dates and inode, or
+    /// nil when no regular file Gleaner can read is there. The marks, To Review and Review All then
+    /// say what the page drew, even of a file rewritten outside any session. Metadata only.
+    func noteShown(_ path: String, _ file: FileStat?) {
+        guard let entry = listed[path], entry != file else { return }
+        if let file { see(path, file) }
+        listed[path] = .some(file)
+        absent[path] = file == nil ? Self.absence(path) : nil
     }
 
     /// How to go back to the conversation that made `delivery`, checked now.
@@ -819,6 +1889,9 @@ final class LibraryModel {
         case bytes(sha: String)
         /// A delivered folder, as it is now.
         case folder
+        /// A file listed with its folder and not read yet: read at the drop, which completes its
+        /// listing while the file is still as listed, and handed over only then (SPEC §5.4).
+        case unread
     }
 
     /// What dragging `result`'s row hands over; nil when the library already knows there is
@@ -840,6 +1913,7 @@ final class LibraryModel {
             }
         }
         if delivery.capture?.isDirectory == true { return missing.contains(artifact.path) ? nil : .folder }
+        if delivery.capture?.provenance == .listed { return missing.contains(artifact.path) ? nil : .unread }
         guard let sha = delivery.sha256, !missing.contains(artifact.path) || hasSaved(sha) else { return nil }
         return .bytes(sha: sha)
     }
@@ -899,7 +1973,45 @@ final class LibraryModel {
         case nil: nil
         case .folder: Self.folderItem(artifact.path)
         case .bytes(let sha): handoffItem(sha: sha, artifact: artifact)
+        case .unread: unreadItem(delivery, artifact: artifact)
         }
+    }
+
+    /// What dragging a row of `work` hands over: what `dragItem` hands another app, when there is
+    /// something, and the work itself, which only Gleaner reads, to drop on a collection.
+    func rowDragItem(_ work: Work, _ artifact: Artifact, _ delivery: Delivery) -> NSItemProvider {
+        let provider = dragItem(artifact, delivery) ?? NSItemProvider()
+        let id = work.id
+        provider.registerDataRepresentation(forTypeIdentifier: UTType.gleanerWork.identifier, visibility: .ownProcess) { done in
+            done(Data(id.utf8), nil)
+            return nil
+        }
+        return provider
+    }
+
+    /// A file listed with its folder, or kept from an observation, and not read yet, for another app:
+    /// read when the receiver asks for it, which completes its listing while the file is still as
+    /// listed, then staged and hashed as any version is. A file changed since it was listed isn't
+    /// this revision, and the drop fails.
+    func unreadItem(_ delivery: Delivery, artifact: Artifact) -> NSItemProvider {
+        let indexer = indexer, store = indexer.store, name = artifact.name, source = artifact.path
+        let provider = NSItemProvider()
+        provider.suggestedName = name
+        let type = UTType(filenameExtension: (name as NSString).pathExtension) ?? .data
+        provider.registerFileRepresentation(forTypeIdentifier: type.identifier, fileOptions: [], visibility: .all) { done in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    _ = try indexer.completeCaptures(of: source, now: Date())
+                    guard let sha = try indexer.registry.sha256(ofListed: delivery) else { throw ContentStore.Failure.unavailable }
+                    done(try store.stage(sha: sha, name: name, source: source), false, nil)
+                } catch {
+                    done(nil, false, error)
+                }
+                Task { @MainActor [weak self] in await self?.reread(source) }
+            }
+            return nil
+        }
+        return provider
     }
 
     /// The version `sha` of `artifact`'s file for another app, under the file's own name: a
@@ -1047,19 +2159,23 @@ final class LibraryModel {
     }
 
     /// Checks the file now (hash and git), and which of its versions the store holds, off the main
-    /// thread. When it is Gleaner's first read of a file whose bytes a delivery never had, the
-    /// library is read again with them.
+    /// thread. When it is Gleaner's first read of a file whose bytes a delivery never had, that
+    /// file's deliveries are read again with them.
     func observe(_ artifact: Artifact) async {
         let path = artifact.path, checkout = artifact.checkout, versions = Set(artifact.deliveries.compactMap(\.sha256))
         let indexer = indexer
-        let (state, held, completed) = await Task.detached(priority: .userInitiated) {
-            (Locator.observe(path, checkout: checkout), versions.filter(indexer.store.has),
-             (try? indexer.completeCaptures(of: path, now: Date())) == true)
+        let (state, held, completed, file) = await Task.detached(priority: .userInitiated) {
+            let before = FileStat(path), state = Locator.observe(path, checkout: checkout), held = versions.filter(indexer.store.has)
+            let file = FileStat(path)
+            let completed = (try? indexer.completeCaptures(of: path, now: Date())) == true
+            return (state, held, completed ? try? indexer.registry.artifact(at: path) : nil, before == file ? file : nil)
         }.value
         observations[path] = FileObservation(state: state, checkedAt: Date())
+        if state.kind == .file, let file { gitStates[path] = (file, state.git) }
+        noteRead(path, sha256: state.kind == .file ? state.sha256 : nil, file: file)
         saved.subtract(versions)
         saved.formUnion(held)
-        if completed { library = (try? indexer.registry.artifacts()) ?? library }
+        if let completed { replace(completed) }
         // Whether a file is gone decides which joins Gleaner suggests.
         let goneChanged = (state.kind == .missing) != missing.contains(path)
         if state.kind == .missing {
@@ -1070,6 +2186,17 @@ final class LibraryModel {
             if let failure = actionFailure, failure.artifact == artifact.id, failure.delivery == nil { actionFailure = nil }
         }
         if goneChanged { reorganize() }
+    }
+
+    /// Prepares the bytes the detail shows for `plan`: the version's, or, when its bytes are gone,
+    /// the file on disk now, while Gleaner can read it. The file can still be read and judged; only
+    /// that version can't be shown. Nothing, for a plan with no bytes to show.
+    func show(_ plan: Handoff?, artifact: Artifact) async {
+        if let sha = plan?.sha {
+            await stage(sha: sha, artifact: artifact)
+        } else {
+            clearStaging()
+        }
     }
 
     /// Prepares a verified, immutable copy of `sha` to drag. A copy already prepared for these
@@ -1110,9 +2237,14 @@ final class LibraryModel {
         let indexer = indexer
         let result = await Task.detached { Result { try indexer.saveCopy(of: delivery, at: Date()) } }.value
         switch result {
-        case .success: library = (try? indexer.registry.artifacts()) ?? library
+        case .success: await reread(artifact.path)
         case .failure(let error): actionFailure = (artifact.id, delivery.id, Wording.saveFailed(error, delivery: delivery))
         }
         await observe(artifact)
     }
+}
+
+extension UTType {
+    /// A work dragged from a list to a collection in the sidebar: its id, read only by Gleaner.
+    static let gleanerWork = UTType(exportedAs: "app.gleaner.work")
 }

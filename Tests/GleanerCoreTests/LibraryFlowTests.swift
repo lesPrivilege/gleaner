@@ -170,6 +170,8 @@ import Testing
         try write("big build b2, rebuilt in place after delivery", to: "out/build.dmg", modified: Date())
         #expect(throws: ContentStore.Failure.self) { try indexer.saveCopy(of: build.latest, at: Date()) }
         #expect(try artifact("build.dmg").latest.capture?.savedAt == nil)
+        // Nor are the bytes found instead left in the store, where nothing would ever refer to them.
+        #expect(!saved(try #require(Locator.sha256(build.path))))
 
         // The delivered bytes are back: the copy is kept.
         try write("big build b1, larger than the save limit", to: "out/build.dmg", modified: Date())
@@ -880,6 +882,23 @@ import Testing
         #expect(report.sources[.codex]?.hasProblems == false)
     }
 
+    @Test func whatAnInterruptedReplyNamedIsNotDelivered() throws {
+        // Read while it writes, the text is the turn's reply, and what it names is delivered (R3).
+        let log = root.appendingPathComponent("claude/-Praxis/session-2.jsonl")
+        try append([user("Summarize the release", at: delivered.addingTimeInterval(100), session: "s2"),
+                    assistant("So far, [the draft](out/summary-draft.md) covers", at: delivered.addingTimeInterval(105),
+                              cwd: project.path, session: "s2")], to: log)
+        #expect(alarms(try indexer.run(now: { delivered.addingTimeInterval(106) })) == ([], []))
+        #expect(try artifact("summary-draft.md").deliveries.count == 1)
+
+        // The person stops it: cut off, the text is no final reply, and its link delivers nothing.
+        try append([user("[Request interrupted by user]", at: delivered.addingTimeInterval(107), session: "s2")], to: log)
+        let stopped = try indexer.run(now: { delivered.addingTimeInterval(108) })
+        #expect(alarms(stopped) == ([], []))
+        #expect(stopped.sources[.claudeCode]?.hasProblems == false)
+        #expect(try indexer.registry.artifacts().allSatisfy { $0.name != "summary-draft.md" || $0.deliveries.isEmpty })
+    }
+
     @Test func aReadWhileATurnRunsFindsNoFewerReplies() throws {
         // The log is read as the agent writes it, between its text and the tool call after it: the
         // text reads as the turn's reply, and what it names is delivered, until the tool call is
@@ -940,19 +959,61 @@ import Testing
         #expect(report.sources[.codex]?.hasProblems == false)
     }
 
-    @Test func anUpgradeComparesNoRepliesCountedTheOldWay() throws {
+    func reopened() throws -> Indexer {
+        Indexer(registry: try Registry(path: root.appendingPathComponent("support/registry.sqlite").path),
+                store: indexer.store, sources: indexer.sources)
+    }
+
+    @Test func aLibraryFromBeforeTheCountsCountsEachLogOnItsFirstRead() throws {
         _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
-        // Before 19 a library kept only a log's final replies, its open last turn's too: the log's
-        // one reply is in it.
-        try indexer.registry.db.execute("ALTER TABLE log_files DROP COLUMN closed_replies; PRAGMA user_version = 18")
-        let upgraded = Indexer(
-            registry: try Registry(path: root.appendingPathComponent("support/registry.sqlite").path),
-            store: indexer.store, sources: indexer.sources)
+        // A library from before 16 kept no counts: nothing is compared until each log is read again.
+        try indexer.registry.db.execute("""
+            ALTER TABLE log_files DROP COLUMN unknown_fields; ALTER TABLE log_files DROP COLUMN records;
+            ALTER TABLE log_files DROP COLUMN known_records; ALTER TABLE log_files DROP COLUMN turns;
+            ALTER TABLE log_files DROP COLUMN final_replies; ALTER TABLE log_files DROP COLUMN closed_replies;
+            ALTER TABLE log_files DROP COLUMN candidates; ALTER TABLE log_files DROP COLUMN fewer_replies;
+            PRAGMA user_version = 15;
+            """)
+        let upgraded = try reopened()
         let report = try upgraded.run(now: { delivered.addingTimeInterval(40) })
         #expect(report.logsRead == 1)
         #expect(alarms(report) == ([], []))
+        // The log's one reply is in its open last turn.
         let row = try #require(try upgraded.registry.db.rows("SELECT final_replies, closed_replies FROM log_files").first)
         #expect([row["final_replies"] as? Int64, row["closed_replies"] as? Int64] == [1, 0])
+    }
+
+    @Test func aLibraryWithSomeOfTheCountsGetsTheRest() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        // A build between the counts kept all but the closed replies, and its version is this one's.
+        try indexer.registry.db.execute("ALTER TABLE log_files DROP COLUMN closed_replies")
+        let upgraded = try reopened()
+        #expect(try upgraded.run(now: { delivered.addingTimeInterval(40) }).logsRead == 0)
+        #expect(try upgraded.registry.db.rows("SELECT closed_replies FROM log_files").count == 1)
+    }
+
+    @Test func aReadingThatCountsFewerRepliesIsNoAlarmOnItsFirstRead() throws {
+        // Read by 16, an interrupted turn's text was counted as a closed reply; 17 counts none (R3).
+        _ = try place("claude-interrupted-reply", at: "claude/-Praxis/session-2.jsonl")
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        try indexer.registry.db.execute("UPDATE log_files SET closed_replies = 1 WHERE path LIKE '%session-2.jsonl'; PRAGMA user_version = 16")
+        let report = try reopened().run(now: { delivered.addingTimeInterval(40) })
+        #expect(report.logsRead == 2)
+        #expect(alarms(report) == ([], []))
+    }
+
+    @Test func aLogsReplyCountOutlivesARelaunch() throws {
+        try appendLog([user("Anything else?", at: delivered.addingTimeInterval(30)),
+                       assistant("Nothing else.", at: delivered.addingTimeInterval(40), cwd: project.path),
+                       user("Thanks", at: delivered.addingTimeInterval(45))])
+        _ = try indexer.run(now: { delivered.addingTimeInterval(50) })
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        try String(contentsOf: log, encoding: .utf8)
+            .replacingOccurrences(of: #"{"type":"text","text":"Nothing else."}"#,
+                                  with: #"{"type":"tool_use","id":"t1","name":"Bash","input":{}}"#)
+            .write(to: log, atomically: true, encoding: .utf8)
+        // The app quit and opened again: the count the last read kept is still the one compared.
+        #expect(alarms(try reopened().run(now: { delivered.addingTimeInterval(60) })) == ([], ["session-1.jsonl"]))
     }
 }
 

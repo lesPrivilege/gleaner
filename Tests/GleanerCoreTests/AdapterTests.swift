@@ -43,6 +43,12 @@ func fixture(_ name: String, then records: String...) throws -> URL {
         #expect(log.turns[1].reply == "The subtitle pass is in `output/subs.srt`.")
     }
 
+    /// The time of the human request's record, kept by the reply to a task notification with it.
+    @Test func eachTurnKeepsWhenItsRequestWasMade() {
+        let asked = Timestamp.parse("2026-07-12T10:17:04.524Z")
+        #expect(asked != nil && log.turns.map(\.requestAt) == [asked, asked])
+    }
+
     /// The model the provider answered with, from the reply's own records.
     @Test func theModelBehindAReply() {
         #expect(log.turns.map(\.model) == ["claude-fable-5", "claude-fable-5"])
@@ -146,19 +152,18 @@ func fixture(_ name: String, then records: String...) throws -> URL {
         #expect(closed.answeredTurns == 1 && closed.closedReplies == 1)
     }
 
-    @Test func textBeforeAnInterruptionIsStillRead() throws {
-        // Stopped while it wrote: what it wrote is read as before, and counted as a closed turn's
-        // reply, but the turn was not answered.
+    @Test func textCutOffByAnInterruptionIsNoReply() throws {
+        // Stopped while it wrote: what it wrote is no final reply, so nothing it names is
+        // delivered, and the turn was not answered (R3).
         let log = try ClaudeCodeAdapter.parse(try fixture("claude-interrupted-reply"))
-        #expect(log.turns.map(\.reply) == ["So far, [the release notes](docs/release-notes.md) cover the import screen and"])
-        #expect(log.turns[0].request == "Summarize what changed in the release")
-        #expect(log.answeredTurns == 0 && log.closedReplies == 1)
+        #expect(log.turns.isEmpty)
+        #expect(log.answeredTurns == 0 && log.closedReplies == 0)
         #expect(log.unknownRecordTypes.isEmpty && log.unknownFields.isEmpty)
         // The interruption is not a request.
         let next = #"{"type":"user","isSidechain":false,"message":{"role":"user","content":"Keep going"},"origin":{"kind":"human"},"timestamp":"2026-07-12T13:01:00.000Z","cwd":"/work/Praxis","sessionId":"s-interrupted-reply"}"#
         let reply = #"{"type":"assistant","isSidechain":false,"message":{"model":"claude-fable-5","role":"assistant","content":[{"type":"text","text":"Done."}]},"timestamp":"2026-07-12T13:01:30.000Z","cwd":"/work/Praxis","sessionId":"s-interrupted-reply"}"#
         let resumed = try ClaudeCodeAdapter.parse(try fixture("claude-interrupted-reply", then: next, reply))
-        #expect(resumed.turns.map(\.request) == ["Summarize what changed in the release", "Keep going"])
+        #expect(resumed.turns.map(\.request) == ["Keep going"])
     }
 }
 
@@ -177,8 +182,17 @@ func fixture(_ name: String, then records: String...) throws -> URL {
         #expect(log.turns.count == 1)
         #expect(log.turns[0].reply == "Report: [review](/work/Sealwright/docs/reviews/review.md)")
         #expect(log.turns[0].request == "Review the seal codebase")
+        // The typed request's own record, not the injected context before it.
+        #expect(log.turns[0].requestAt != nil && log.turns[0].requestAt == Timestamp.parse("2026-10-05T05:13:14.000Z"))
         #expect(log.turns[0].cwd == "/work/Sealwright")
         #expect(log.unknownRecordTypes == ["mystery": 1])
+    }
+
+    /// The provider is the session's, from its meta; the model the turn's, from its context.
+    @Test func theProviderAndModelBehindAReply() throws {
+        let log = try #require(try adapter.parse(try fixture("codex-rollout")))
+        #expect(log.session.modelProvider == "openai")
+        #expect(log.turns[0].model == "gpt-5-codex")
     }
 
     @Test func unknownFieldsInKnownRecordTypesAreReported() throws {
@@ -265,11 +279,26 @@ func fixture(_ name: String, then records: String...) throws -> URL {
         #expect(early.answeredTurns == 0)
     }
 
-    /// The provider is the session's, from its meta; the model the turn's, from its context.
-    @Test func theProviderAndModelBehindAReply() throws {
-        let log = try #require(try adapter.parse(try fixture("codex-rollout")))
-        #expect(log.session.modelProvider == "openai")
-        #expect(log.turns[0].model == "gpt-5-codex")
+    @Test func anyAbortEndsATurnUnansweredAndKeepsItsFinalAnswer() throws {
+        // Another turn replaced it: it was not answered either, whatever the reason.
+        let replacedBy = #"{"timestamp":"2026-10-05T06:00:09.000Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"t1","reason":"replaced"}}"#
+        #expect(try #require(try adapter.parse(try fixture("codex-open-turn", then: Self.redirectContext))).answeredTurns == 1)
+        let replaced = try #require(try adapter.parse(try fixture("codex-open-turn", then: replacedBy, Self.redirectContext)))
+        #expect(replaced.answeredTurns == 0)
+        // A final answer written before the abort stays a reply.
+        let abort = #"{"timestamp":"2026-10-05T07:03:30.000Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"t2","reason":"budget_limited"}}"#
+        let kept = try #require(try adapter.parse(try fixture(
+            "codex-interrupted", then: Self.redirectContext, Self.redirect, Self.redirectAnswer, abort, Self.nextContext)))
+        #expect(kept.turns.map(\.reply) == ["Fixed: [review](docs/reviews/review.md)"])
+        #expect(kept.answeredTurns == 0 && kept.closedReplies == 1)
+    }
+
+    @Test func anAbortNamingATurnTheLogDoesntHaveMarksNone() throws {
+        // An id no turn here has is not the open turn's: that one is still answered.
+        let stray = #"{"timestamp":"2026-10-05T07:03:30.000Z","type":"event_msg","payload":{"type":"turn_aborted","turn_id":"t9","reason":"interrupted"}}"#
+        let log = try #require(try adapter.parse(try fixture(
+            "codex-interrupted", then: Self.redirectContext, Self.redirect, Self.redirectAnswer, stray, Self.nextContext)))
+        #expect(log.answeredTurns == 1 && log.closedReplies == 1)
     }
 
     @Test func structuredAnswersAreNotRequests() {

@@ -148,9 +148,9 @@ import Testing
         try registry.correct(.notSameWork, subject: "/w/b.md", target: "/w/a.md", at: start)
         try registry.correct(.sameWork, subject: "/w/a.md", target: "/w/b.md", at: start.addingTimeInterval(2))
         let reopened = try Registry(path: path)
-        // One place per file, and one answer per pair: the latest.
-        #expect(try reopened.corrections().map(\.kind) == [.project, .sameWork])
-        #expect(try reopened.corrections().first?.target == "/w/other")
+        // Moves are appended, so undoing one returns to the one before it; one answer per pair: the latest.
+        #expect(try reopened.corrections().map(\.kind) == [.project, .project, .sameWork])
+        #expect(try reopened.corrections().last { $0.kind == .project }?.target == "/w/other")
         #expect(try reopened.userProjects().map(\.name) == ["Board"])
         try reopened.correct(.project, subject: "/w/c.md", target: project.key, at: start)
         try reopened.removeProject(project.key)

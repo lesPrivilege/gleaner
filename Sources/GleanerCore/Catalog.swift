@@ -301,8 +301,11 @@ extension Catalog {
         case noLibrary(String)
         /// A library is at this path, but it can't be opened to read as it is.
         case unreadableLibrary(String, reason: String)
-        /// The library at this path is of another version of Gleaner. There is no compatibility mode.
+        /// The library at this path is of an earlier version of Gleaner. There is no compatibility mode.
         case wrongVersion(String, found: Int)
+        /// A later Gleaner last opened the library at this path; this one doesn't know its tables or
+        /// readings, as the app refuses it (`Registry.Failure.newer`).
+        case newerLibrary(String, found: Int)
         /// No delivery has this id in this library.
         case notFound(String)
         /// The delivery is in this library, from an agent the person turned off in Gleaner's
@@ -328,7 +331,7 @@ extension Catalog {
             switch self {
             case .notFound, .sourceOff, .otherLibrary, .unavailable, .notText, .changed, .failed: 1
             case .usage: 2
-            case .noLibrary, .unreadableLibrary, .wrongVersion: 3
+            case .noLibrary, .unreadableLibrary, .wrongVersion, .newerLibrary: 3
             }
         }
 
@@ -340,6 +343,9 @@ extension Catalog {
                 "The Gleaner library at \(path) can’t be opened to read (\(reason)). Open Gleaner, then try again."
             case .wrongVersion(let path, let found):
                 "The Gleaner library at \(path) is version \(found); this reads version \(Registry.extractorVersion). Open Gleaner to update it."
+            case .newerLibrary(let path, let found):
+                "A newer Gleaner last opened the library at \(path) (library version \(found); this reads version \(Registry.extractorVersion)). "
+                    + "Nothing in it was changed. Use the gleaner command of that newer Gleaner."
             case .notFound(let id):
                 "No delivery \(id) in this library."
             case .sourceOff(let id, let provider):
@@ -365,6 +371,7 @@ extension Catalog {
             case .noLibrary: "no_library"
             case .unreadableLibrary: "unreadable_library"
             case .wrongVersion: "wrong_version"
+            case .newerLibrary: "newer_library"
             case .notFound: "not_found"
             case .sourceOff: "source_off"
             case .otherLibrary: "other_library"

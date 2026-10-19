@@ -130,6 +130,20 @@ import Testing
         #expect(try bytes(library) == before)
     }
 
+    @Test func aLibraryALaterGleanerOpenedIsRefusedAsTheAppRefusesIt() throws {
+        try index(at: delivered.addingTimeInterval(20))
+        try Database(path: library).execute("PRAGMA user_version = \(Registry.extractorVersion + 1)")
+        let before = try bytes(library)
+
+        let refusal = Catalog.Failure.newerLibrary(library, found: Registry.extractorVersion + 1)
+        #expect(throws: refusal) { try Catalog(home: home) }
+        #expect(refusal.exitCode == 3 && refusal.kind == "newer_library")
+        // Opening Gleaner wouldn't help: this one refuses it too (`Registry.Failure.newer`).
+        #expect(!refusal.description.contains("Open Gleaner"))
+        #expect(throws: Registry.Failure.newer(version: Registry.extractorVersion + 1)) { try Registry(path: library) }
+        #expect(try bytes(library) == before)
+    }
+
     @Test func aLibraryThatCantBeOpenedToReadSaysToOpenGleaner() throws {
         try index(at: delivered.addingTimeInterval(20))
         // Another SQLite client, closing it last, folded the write-ahead log into the library and

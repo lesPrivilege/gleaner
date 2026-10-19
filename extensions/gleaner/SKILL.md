@@ -96,7 +96,7 @@ A failure is `{"error": {"kind", "message"}, "index"}`, with `index` once the li
   - `failed`: something else, which the message names. In a shell sandbox that keeps writes inside the workspace, `handoff` fails this way, since its copy goes in Gleaner's caches; ask for it to run outside the sandbox, or give the reference instead.
   - `verify` also exits 1 when neither the original nor the saved copy holds the bytes, with its full answer beside the `error`.
 - **Exit 2**, a wrong command: check it against the command's `--help` and run it again, corrected.
-- **Exit 3**, no library to read (`no_library`, `unreadable_library`, `wrong_version`): ask the person to open Gleaner, which makes or updates its library, and try again once it has. In a sandboxed shell, `unreadable_library` can also mean the sandbox kept the command from opening the library; then ask for the command to run outside the sandbox.
+- **Exit 3**, no library to read (`no_library`, `unreadable_library`, `wrong_version`, `newer_library`): ask the person to open Gleaner, which makes or updates its library, and try again once it has; for `newer_library`, a later Gleaner last opened the library, so ask them to put that Gleaner's `gleaner` on PATH instead. In a sandboxed shell, `unreadable_library` can also mean the sandbox kept the command from opening the library; then ask for the command to run outside the sandbox.
 
 ## Never
 

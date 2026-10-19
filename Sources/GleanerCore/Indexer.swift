@@ -139,11 +139,32 @@ public final class Indexer: @unchecked Sendable {
             /// Folders in it that could not be listed, with the reason. Their logs went unread; what
             /// they delivered stays as it was.
             public var unlistedFolders: [String] = []
+            /// What the walks of its sessions' workspaces couldn't see, each with why: a walk stopped
+            /// at its bound, a folder in it couldn't be listed, or what it found couldn't be recorded.
+            /// Files there may be missing from what was observed; no delivery is affected.
+            public var workspaceProblems: [String] = []
+            /// Folders its sessions worked in that aren't walked, each with why: skipped (the home
+            /// folder, a system or hidden folder, the agents' logs) or no longer there. Not a problem:
+            /// it says why nothing was observed there.
+            public var unwalkedWorkspaces: [String] = []
+            /// What the listings of folders its replies delivered couldn't see, each with why: a
+            /// listing stopped at its bound, a folder in it couldn't be read, or its files couldn't
+            /// be recorded. Files there may be missing from what was handed over (SPEC §5.4).
+            public var folderProblems: [String] = []
+            /// Folders its replies delivered whose files aren't listed, each with why: the home, a
+            /// folder directly in it, a project's own folder or one holding it. Not a problem: it
+            /// says why the folder stands alone.
+            public var foldersNotUnpacked: [String] = []
+            /// Folders its replies delivered that are gone, or no longer folders, each with why: their
+            /// files wait to be listed, and every run tries again, since a volume may come back. Not
+            /// a problem, and shown folded into one row with their count.
+            public var foldersGone: [String] = []
 
             /// Listed, but not everything in it could be read or understood.
             public var hasProblems: Bool {
                 !unknownRecordTypes.isEmpty || !unknownFields.isEmpty || !shortenedLogs.isEmpty
-                    || !logsWithoutFinalReply.isEmpty || !logsWithFewerReplies.isEmpty || isIncomplete
+                    || !logsWithoutFinalReply.isEmpty || !logsWithFewerReplies.isEmpty
+                    || !workspaceProblems.isEmpty || !folderProblems.isEmpty || isIncomplete
             }
 
             /// Something reading again may fix: the folder, a folder in it, or a log couldn't be read
@@ -166,6 +187,8 @@ public final class Indexer: @unchecked Sendable {
 
         public var logsRead = 0
         public var newDeliveries = 0
+        /// Files recorded as observed during a session for the first time.
+        public var newObservations = 0
         /// Every provider the run read, whether or not its folder is there; one turned off isn't read.
         public var sources: [Provider: Source] = [:]
     }
@@ -180,6 +203,14 @@ public final class Indexer: @unchecked Sendable {
     public var liveWindow: TimeInterval = 600
     /// Log and file timestamps come from different writers; this absorbs their granularity only.
     public var clockTolerance: TimeInterval = 2
+    /// The folder taken for the person's home. A session working in it, or in a system folder, has
+    /// no workspace walked; the real home never is, whatever this says (docs/design/capture.md).
+    public var home = NSHomeDirectory()
+    /// How far each stretch of a session's span reaches before its request and after its last
+    /// reply, for the clocks of the log's writer and the disk's.
+    public var spanGrace: TimeInterval = 60
+    /// Entries one workspace walk looks at before it stops (`Workspace.limit`).
+    public var walkLimit = Workspace.limit
 
     public init(registry: Registry, store: ContentStore, sources: LogSources) {
         self.registry = registry
@@ -225,6 +256,7 @@ public final class Indexer: @unchecked Sendable {
             }
         }
 
+        var reads: [(Read, Provider)] = []
         for (index, (provider, url, size, mtime, shortened, closedReplies)) in changed.enumerated() {
             progress(index, changed.count)
             switch parsed[index] {
@@ -235,14 +267,16 @@ public final class Indexer: @unchecked Sendable {
                 // A log shorter than when it was read lost records, so like a malformed one it can't
                 // show that a delivery is gone: not now, and not once it grows again.
                 let complete = log.map { $0.isComplete && !shortened } ?? true
+                let derived = log.flatMap(span(of:))
                 let found: LogFindings
                 do {
-                    let added: Int
-                    (added, found) = try registry.transaction {
-                        let (added, candidates) = try log.map { try ingest($0, isComplete: complete, now: now()) } ?? (0, 0)
+                    let ingested: (added: Int, reads: [Read], candidates: Int)?
+                    (ingested, found) = try registry.transaction {
+                        let ingested = try log.map { try ingest($0, isComplete: complete, now: now()) }
                         let counts = log.map {
                             LogCounts(records: $0.records, knownRecords: $0.knownRecords, turns: $0.answeredTurns,
-                                      finalReplies: $0.turns.count, closedReplies: $0.closedReplies, candidates: candidates)
+                                      finalReplies: $0.turns.count, closedReplies: $0.closedReplies,
+                                      candidates: ingested?.candidates ?? 0)
                         }
                         let findings = LogFindings(
                             unknownRecordTypes: log?.unknownRecordTypes ?? [:], unknownFields: log?.unknownFields ?? [:],
@@ -250,12 +284,18 @@ public final class Indexer: @unchecked Sendable {
                             // Only a whole read shows that replies are gone, as it does deliveries.
                             fewerReplies: complete && (counts?.closedReplies ?? 0) < (closedReplies ?? 0),
                             shortened: shortened)
+                        // With the log's reading, so a session whose walk a quit cut off is walked next run.
+                        if let log, let derived {
+                            try registry.recordSpan(of: log.session, provider: provider, span: derived.span,
+                                                    workspaces: derived.workspaces, unwalked: derived.unwalked)
+                        }
                         if shortened { try registry.markShortened(logFile: url.path) }
                         // A log with malformed lines stays unread, so it is read and reported again next run.
                         if log?.isComplete ?? true { try registry.markRead(logFile: url.path, size: size, mtime: mtime, findings: findings) }
-                        return (added, findings)
+                        return (ingested, findings)
                     }
-                    report.newDeliveries += added
+                    report.newDeliveries += ingested?.added ?? 0
+                    reads += (ingested?.reads ?? []).map { ($0, provider) }
                 } catch {
                     // A log the registry refuses fails alone; the run goes on.
                     report.sources[provider]?.failures.append("\(url.path): \(error)")
@@ -266,6 +306,29 @@ public final class Indexer: @unchecked Sendable {
                 report.logsRead += 1
             }
         }
+
+        // Every log is in: each delivered folder not listed yet is listed, the files read in this run
+        // complete the listings they still match, whichever was made first, and each workspace
+        // waiting to be walked is walked once, for every session in it.
+        var unpacked = unpack(at: now(), providers: providers)
+        for (read, provider) in reads {
+            do {
+                try registry.transaction { try completeMembers(of: read.path, with: read.capture, file: read.file) }
+            } catch {
+                unpacked.problems[provider, default: []].append("\(read.path): its listing not completed: \(error)")
+            }
+        }
+        let observed = observe(at: now(), providers: providers)
+        report.newObservations = observed.recorded
+        let problems = try registry.workspaceProblems(), unwalked = try registry.unwalkedWorkspaces()
+        let folders = try registry.unpackings()
+        for provider in report.sources.keys {
+            report.sources[provider]?.workspaceProblems = (problems[provider] ?? []) + (observed.failures[provider] ?? [])
+            report.sources[provider]?.unwalkedWorkspaces = unwalked[provider] ?? []
+            report.sources[provider]?.folderProblems = (folders.problems[provider] ?? []) + (unpacked.problems[provider] ?? [])
+            report.sources[provider]?.foldersNotUnpacked = folders.notUnpacked[provider] ?? []
+            report.sources[provider]?.foldersGone = unpacked.gone[provider] ?? []
+        }
         progress(changed.count, changed.count)
         // A result read from the library is evidence only within this run (query-core "Freshness"),
         // which names the agents it didn't read.
@@ -274,12 +337,11 @@ public final class Indexer: @unchecked Sendable {
     }
 
     /// `isComplete` says the whole log was read: only then does it show that a delivery it no
-    /// longer admits is gone. Returns the deliveries it added, and the candidates the log's final
-    /// replies name, admitted or not.
-    func ingest(_ log: SessionLog, isComplete: Bool, now: Date) throws -> (added: Int, candidates: Int) {
+    /// longer admits is gone. Returns how many deliveries are new, the files read for them, and the
+    /// candidates the log's final replies name, admitted or not.
+    func ingest(_ log: SessionLog, isComplete: Bool, now: Date) throws -> (added: Int, reads: [Read], candidates: Int) {
         try registry.upsert(log.session)
-        var added = 0
-        var candidates = 0
+        var added = 0, reads: [Read] = [], candidates = 0
         var admitted = Set<String>()
         let turns = log.turns.map { turn in
             let found = MentionExtractor.candidates(in: turn)
@@ -312,11 +374,16 @@ public final class Indexer: @unchecked Sendable {
                     },
                     model: turn.model)
                 if isNew {
+                    let file = Workspace.file(at: candidate.path)
                     let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
                     try registry.addCapture(captured, for: id, logPath: log.session.logPath, path: candidate.path,
                                             replyTimes: Turn.times(turn))
-                    // Gleaner's first read of the file for an earlier delivery whose bytes it never had.
-                    if captured.sha256 != nil { try registry.complete(capturesOf: candidate.path, with: captured) }
+                    // Gleaner's first read of the file for an earlier delivery whose bytes it never had;
+                    // and, once the run has listed the folders, for one in a folder the file still matches.
+                    if captured.sha256 != nil {
+                        try registry.complete(capturesOf: candidate.path, with: captured)
+                        reads.append(Read(path: candidate.path, capture: captured, file: file))
+                    }
                     added += 1
                 }
                 // Where the file is, only while its folder is there to show it: once a worktree is
@@ -328,7 +395,7 @@ public final class Indexer: @unchecked Sendable {
             }
         }
         if isComplete { try registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
-        return (added, candidates)
+        return (added, reads, candidates)
     }
 
     /// A delivery keeps the id, and the capture, it was first given: a new capture would record the
@@ -384,9 +451,16 @@ public final class Indexer: @unchecked Sendable {
     /// recording the copy, so the person learns why nothing was kept.
     public func saveCopy(of delivery: Delivery, at date: Date) throws {
         guard let sha = delivery.sha256 else { throw ContentStore.Failure.unavailable }
-        let saved = try store.save(delivery.path)
-        guard saved.sha == sha else { throw ContentStore.Failure.changed(expected: sha, found: saved.sha) }
-        try registry.markSaved(deliveryID: delivery.id, at: date)
+        // Other bytes are never left in the store in the delivery's place.
+        try store.save(delivery.path, expecting: sha)
+        try registry.markSaved(delivery, at: date)
+    }
+
+    /// Saves a copy of the bytes a verdict or a published mark was made on, while the file still
+    /// holds them (SPEC §6): the same saved copy a delivery's Save a Copy keeps. Throws
+    /// `ContentStore.Failure.changed`, keeping nothing, when it no longer does.
+    public func saveCopy(of review: Review) throws {
+        try store.save(review.path, expecting: review.sha256)
     }
 
     /// Reads the delivery's bytes once, saves small files, and records when that happened relative
@@ -419,15 +493,24 @@ public final class Indexer: @unchecked Sendable {
         }
     }
 
-    /// Reads the file at `path` for deliveries of it whose bytes Gleaner never had, because the
-    /// path was missing, unreadable or not a regular file when it first looked. This first read
-    /// completes their captures, once, as first seen after delivery (SPEC §5.1), and saves a small
-    /// file as a capture does. Returns whether it completed any.
+    /// Reads the file at `path` for deliveries of it whose bytes Gleaner never had: because the path
+    /// was missing, unreadable or not a regular file when it first looked, or because the file was
+    /// listed with a delivered folder, or kept from an observation, and not read (SPEC §5.4). This
+    /// first read completes their captures, once: the first as first seen after delivery (SPEC
+    /// §5.1), the listed ones only while the file is still as listed (`completeMembers`). It saves a
+    /// small file as a capture does. Returns whether it completed any.
     public func completeCaptures(of path: String, now: Date) throws -> Bool {
-        guard try registry.hasIncompleteCapture(path: path) else { return false }
+        let file = Workspace.file(at: path)
+        let listed = try file.map {
+            try !registry.listedMembers(of: path, as: $0).isEmpty || !registry.listedKept(of: path, as: $0).isEmpty
+        } ?? false
+        guard try listed || registry.hasIncompleteCapture(path: path) else { return false }
         let read = capture(path, deliveredAt: nil, now: now)
         guard read.sha256 != nil else { return false }
-        try registry.complete(capturesOf: path, with: read)
+        try registry.transaction {
+            try registry.complete(capturesOf: path, with: read)
+            try completeMembers(of: path, with: read, file: file)
+        }
         return true
     }
 }

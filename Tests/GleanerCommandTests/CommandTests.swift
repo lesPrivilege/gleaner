@@ -323,6 +323,14 @@ import Testing
             "error": ["kind": "wrong_version", "message": Catalog.Failure.wrongVersion(library, found: Registry.extractorVersion - 1).description],
         ])
         #expect(try bytes(library) == before)
+
+        try Database(path: library).execute("PRAGMA user_version = \(Registry.extractorVersion + 1)")
+        let newer = try bytes(library)
+        let later = try refusal(["show", "0123456789"], status: 3)
+        #expect(later as? [String: [String: String]] == [
+            "error": ["kind": "newer_library", "message": Catalog.Failure.newerLibrary(library, found: Registry.extractorVersion + 1).description],
+        ])
+        #expect(try bytes(library) == newer)
     }
 
     // MARK: read only

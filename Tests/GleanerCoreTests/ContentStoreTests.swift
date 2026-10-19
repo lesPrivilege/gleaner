@@ -119,4 +119,30 @@ import Testing
         #expect(permissions(again.url) == 0o444)
         #expect(store.isIntact(again))
     }
+
+    /// A saved copy damaged on disk: saving the same bytes again replaces it, and until then a hand-off
+    /// is made from the file itself while it still holds them, never from the damaged copy.
+    @Test func aDamagedSavedCopyIsRepairedBySavingAgain() throws {
+        let fm = FileManager.default
+        try fm.createDirectory(at: root, withIntermediateDirectories: true)
+        let file = root.appendingPathComponent("brief.md")
+        try "the brief".write(to: file, atomically: true, encoding: .utf8)
+        let store = ContentStore(objects: root.appendingPathComponent("objects"), staging: root.appendingPathComponent("handoff"))
+        let saved = try store.save(file.path)
+        let object = store.objectURL(saved.sha)
+        try fm.setAttributes([.posixPermissions: 0o644], ofItemAtPath: object.path)
+        try "damaged".write(to: object, atomically: false, encoding: .utf8)
+
+        let staged = try store.prepare(sha: saved.sha, name: "brief.md", source: file.path)
+        #expect(Locator.sha256(staged.url.path) == saved.sha)
+        // With no other place holding the bytes, the damaged copy is refused, not handed over.
+        try fm.removeItem(at: staged.url.deletingLastPathComponent())
+        #expect(throws: ContentStore.Failure.self) { try store.prepare(sha: saved.sha, name: "brief.md", source: nil) }
+
+        #expect(try store.save(file.path, expecting: saved.sha).sha == saved.sha)
+        #expect(Locator.sha256(object.path) == saved.sha)
+        #expect(ContentStore.isRegularFile(object))
+        #expect(permissions(object) == 0o444)
+        #expect(try store.prepare(sha: saved.sha, name: "copy.md", source: nil).sha == saved.sha)
+    }
 }

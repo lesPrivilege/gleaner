@@ -99,21 +99,24 @@ public enum ClaudeCodeAdapter {
         var closedReplies = 0
 
         var request: String?
+        var requestAt: Date?
         var turnCwd: String?
         var reply: [ReplyPart] = []
         var replyModel: String?
         var answered = false
 
-        /// Ends the turn. One the next user record closes is counted: answered, unless that record
-        /// is the person interrupting it, and its final reply. The log's last turn is still open and
-        /// isn't counted: the session may be running, its text may yet be followed by a tool call,
-        /// or it ended on one.
+        /// Ends the turn. One the next user record closes is counted: answered, and its final reply.
+        /// One that record says the person interrupted has neither: text cut off as it was written
+        /// is no final reply, so nothing it names is delivered. The log's last turn is still open
+        /// and isn't counted: the session may be running, its text may yet be followed by a tool
+        /// call, or it ended on one.
         func endTurn(closed: Bool, interrupted: Bool = false) {
+            if interrupted { reply = [] }
             if closed {
                 if answered, !interrupted { answeredTurns += 1 }
                 if !reply.isEmpty { closedReplies += 1 }
             }
-            if !reply.isEmpty { turns.append(Turn(request: request, parts: reply, model: replyModel)) }
+            if !reply.isEmpty { turns.append(Turn(request: request, requestAt: requestAt, parts: reply, model: replyModel)) }
             reply = []
             replyModel = nil
             answered = false
@@ -145,7 +148,10 @@ public enum ClaudeCodeAdapter {
                     sessionCwd = sessionCwd ?? cwd
                     turnCwd = cwd
                 }
-                if isHumanRequest(record, text: text) { request = RequestText.clean(text) }
+                if isHumanRequest(record, text: text) {
+                    request = RequestText.clean(text)
+                    requestAt = Timestamp.parse(record["timestamp"])
+                }
             case "assistant":
                 let message = record["message"] as? [String: Any]
                 guard record["isSidechain"] as? Bool != true, message?["model"] as? String != "<synthetic>" else { continue }

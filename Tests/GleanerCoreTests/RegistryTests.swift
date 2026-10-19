@@ -24,6 +24,15 @@ import Testing
         #expect(row?["cwd"] as? String == "/p")
     }
 
+    @Test func aFilesDecisionsAreFoundByItsPathNotByReadingEveryOne() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString).sqlite").path
+        let registry = try Registry(path: path)
+        // Every read of a file asks whether it was kept; every decision appended grows the table.
+        let plans = try registry.db.rows("EXPLAIN QUERY PLAN SELECT target, made_at FROM corrections WHERE kind = 'kept' AND subject = ?",
+                                         ["/p/a.png"]).compactMap { $0["detail"] as? String }
+        #expect(plans.contains { $0.hasPrefix("SEARCH") && $0.contains("INDEX corrections_subject") }, "\(plans)")
+    }
+
     @Test func pruningOneLogNeverTouchesAnotherLogOfTheSameSession() throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString).sqlite").path
         let registry = try Registry(path: path)
@@ -135,5 +144,48 @@ import Testing
         #expect(row["path"] as? String == "/tmp/p/report.md")
         #expect(row["repository"] as? String == "/var/x/app")
         #expect(try reopened.captures(logPath: "/l.jsonl", path: "/tmp/p/report.md").map(\.id) == ["d"])
+    }
+
+    /// A library a later Gleaner opened is left as it is: its version isn't set back, so that Gleaner
+    /// finds it as it left it, and no table is made or changed.
+    @Test func aLibraryOfALaterGleanerIsRefusedUnchanged() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString).sqlite").path
+        let later = Registry.extractorVersion + 1
+        do {
+            let db = try Database(path: path)
+            try db.execute("CREATE TABLE later (x INTEGER); PRAGMA user_version = \(later);")
+        }
+        #expect(throws: Registry.Failure.newer(version: later)) { try Registry(path: path) }
+        let db = try Database(path: path)
+        #expect(try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 == Int64(later))
+        #expect(try db.rows("SELECT name FROM sqlite_master").compactMap { $0["name"] as? String } == ["later"])
+    }
+
+    /// An earlier Gleaner's library is copied whole, as it was, before this one updates it; a new
+    /// library, or one already this version's, isn't.
+    @Test func anEarlierLibraryIsBackedUpBeforeItIsUpdated() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let path = folder.appendingPathComponent("registry.sqlite").path, backups = Registry.backups(of: path)
+        func copies() -> [String] { ((try? FileManager.default.contentsOfDirectory(atPath: backups.path)) ?? []).sorted() }
+        do {
+            let registry = try Registry(path: path)
+            try registry.db.execute("CREATE TABLE marker (x TEXT); INSERT INTO marker VALUES ('before');")
+        }
+        #expect(copies().isEmpty)
+        _ = try Registry(path: path)
+        #expect(copies().isEmpty)
+
+        let earlier = Registry.extractorVersion - 1
+        try Database(path: path).execute("PRAGMA user_version = \(earlier)")
+        let updated = try Registry(path: path)
+        #expect(try updated.db.rows("PRAGMA user_version").first?["user_version"] as? Int64 == Int64(Registry.extractorVersion))
+        let names = copies()
+        try #require(names.count == 1)
+        #expect(names[0].hasPrefix("registry-v\(earlier)-"))
+        let copy = try Database(path: backups.appendingPathComponent(names[0]).path)
+        #expect(try copy.rows("PRAGMA user_version").first?["user_version"] as? Int64 == Int64(earlier))
+        #expect(try copy.rows("SELECT x FROM marker").first?["x"] as? String == "before")
+        #expect(try copy.rows("SELECT mtime FROM log_files").isEmpty)
     }
 }

@@ -79,6 +79,7 @@ public final class Registry: @unchecked Sendable {
     }
 
     /// Runs `body` holding the library's write gate.
+    @discardableResult
     func writing<T>(_ body: () throws -> T) throws -> T {
         gate.wait()
         defer { gate.signal() }
@@ -86,16 +87,45 @@ public final class Registry: @unchecked Sendable {
     }
 
     /// Bump when extraction changes what is derived from logs (requests, evidence, admission, the
-    /// record types and fields a log holds that Gleaner doesn't know, what a read counts), or when
-    /// the library gains something its readers need: `init(readingAt:)` reads no other version.
+    /// record types and fields a log holds that Gleaner doesn't know, what a read counts, each
+    /// session's span and workspaces; a session whose span or workspaces moved is walked again).
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
-    /// at a moment in time, are never rewritten.
-    public static let extractorVersion = 19
+    /// at a moment in time, are never rewritten. Bump it too when the tables change, or when the
+    /// library gains something its readers need: it is the library's version, an older Gleaner
+    /// opens no library of a later one (`Failure.newer`), and `init(readingAt:)` reads no other.
+    public static let extractorVersion = 20
+
+    public enum Failure: Error, Equatable, CustomStringConvertible {
+        /// The library was last opened by a later Gleaner, whose tables and readings this one
+        /// doesn't know. Nothing is written to it.
+        case newer(version: Int)
+        /// The library is an earlier Gleaner's, and couldn't be copied before this one updates it.
+        /// Nothing is written to it.
+        case backup(String)
+
+        public var description: String {
+            switch self {
+            case .newer(let version):
+                "A newer Gleaner last opened this library (library version \(version); this Gleaner opens up to \(Registry.extractorVersion)). "
+                    + "Nothing in it was changed. Open it with that newer Gleaner."
+            case .backup(let reason):
+                "Gleaner couldn’t back up the library before updating it (\(reason)). Nothing in it was changed."
+            }
+        }
+    }
 
     public init(path: String) throws {
         self.path = path
         gate = Self.gates.gate(URL(fileURLWithPath: path).standardizedFileURL.path)
         db = try Database(path: path)
+        // Before anything is written: setting the version back would have this Gleaner reread a
+        // later one's library with its own, older reading, over tables it may not know.
+        let found = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
+        if found > Self.extractorVersion { throw Failure.newer(version: Int(found)) }
+        // An earlier Gleaner's library is copied whole before this one changes it, so going back to
+        // that Gleaner can start from the copy. The saved bytes aren't copied: they are kept by
+        // hash and never rewritten.
+        if found > 0, found < Self.extractorVersion { try backUp(version: Int(found)) }
         try db.execute("""
             CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value);
             CREATE TABLE IF NOT EXISTS log_files (
@@ -115,7 +145,32 @@ public final class Registry: @unchecked Sendable {
             CREATE TABLE IF NOT EXISTS projects (key TEXT PRIMARY KEY, name TEXT NOT NULL, created_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS corrections (
                 id INTEGER PRIMARY KEY, kind TEXT NOT NULL, subject TEXT NOT NULL, target TEXT NOT NULL, made_at REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS corrections_subject ON corrections(subject, kind);
             CREATE TABLE IF NOT EXISTS sources_off (provider TEXT PRIMARY KEY, since REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS spans (
+                log_path TEXT PRIMARY KEY, session_id TEXT NOT NULL, provider TEXT NOT NULL, stretches TEXT NOT NULL,
+                end_at REAL NOT NULL, workspaces TEXT NOT NULL, unwalked TEXT, problems TEXT, walked_at REAL);
+            CREATE TABLE IF NOT EXISTS observations (
+                path TEXT NOT NULL, log_path TEXT NOT NULL, kind TEXT NOT NULL, workspace TEXT NOT NULL,
+                size INTEGER NOT NULL, created_at REAL, modified_at REAL NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL,
+                repository TEXT, checkout TEXT, observed_at REAL NOT NULL, PRIMARY KEY (path, log_path)) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS listings (
+                delivery_id TEXT PRIMARY KEY, listed_at REAL NOT NULL, members INTEGER NOT NULL, not_unpacked TEXT,
+                problems TEXT, repositories TEXT) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS members (
+                delivery_id TEXT NOT NULL, path TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL, created_at REAL,
+                modified_at REAL NOT NULL, changed_at REAL NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL,
+                listed_at REAL NOT NULL, sha256 TEXT, observed_at REAL, saved_at REAL, provenance TEXT NOT NULL,
+                PRIMARY KEY (path, delivery_id)) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS units (
+                key TEXT PRIMARY KEY, project TEXT NOT NULL, parent TEXT, name TEXT NOT NULL, created_at REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS kept (
+                path TEXT NOT NULL, log_path TEXT NOT NULL, sha256 TEXT NOT NULL, observed_at REAL NOT NULL, saved_at REAL,
+                provenance TEXT NOT NULL, PRIMARY KEY (path, log_path)) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS reviews (
+                id INTEGER PRIMARY KEY, path TEXT NOT NULL, kind TEXT NOT NULL, note TEXT, sha256 TEXT NOT NULL,
+                size INTEGER NOT NULL, created_at REAL, modified_at REAL NOT NULL, inode INTEGER NOT NULL, made_at REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS reviews_path ON reviews(path);
             """)
         // The library's namespace, made once with it: every delivery id is unique only within it.
         // Written only when missing, and through the gate: a library already made is opened without
@@ -155,25 +210,15 @@ public final class Registry: @unchecked Sendable {
         }
         // And the keys it held that Gleaner doesn't know, what its read counted, and whether that read
         // found fewer final replies than the one before: an adapter that stops understanding a format
-        // shows in its counts.
-        if try !has("log_files", "records") {
+        // shows in its counts. Each column is added on its own: a library from a build between two of
+        // them has some and not the others. A library that has them all is opened without a write.
+        let counts = try [("unknown_fields", "TEXT"), ("records", "INTEGER"), ("known_records", "INTEGER"),
+                          ("turns", "INTEGER"), ("final_replies", "INTEGER"), ("closed_replies", "INTEGER"),
+                          ("candidates", "INTEGER"), ("fewer_replies", "INTEGER")].filter { try !has("log_files", $0.0) }
+        if !counts.isEmpty {
             try db.transaction {
-                try db.execute("""
-                    ALTER TABLE log_files ADD COLUMN unknown_fields TEXT;
-                    ALTER TABLE log_files ADD COLUMN records INTEGER;
-                    ALTER TABLE log_files ADD COLUMN known_records INTEGER;
-                    ALTER TABLE log_files ADD COLUMN turns INTEGER;
-                    ALTER TABLE log_files ADD COLUMN final_replies INTEGER;
-                    ALTER TABLE log_files ADD COLUMN candidates INTEGER;
-                    ALTER TABLE log_files ADD COLUMN fewer_replies INTEGER;
-                    """)
+                for (column, type) in counts { try db.execute("ALTER TABLE log_files ADD COLUMN \(column) \(type);") }
             }
-        }
-        // And the final replies of its closed turns, which the next read's are compared with: the
-        // open last turn's may yet be followed by a tool call. Empty until the log is read again, so
-        // its first read compares nothing.
-        if try !has("log_files", "closed_replies") {
-            try db.execute("ALTER TABLE log_files ADD COLUMN closed_replies INTEGER;")
         }
         // Each capture keeps what was at the path, so one without a hash says why. Before, it kept
         // only whether that was a folder, and a file it couldn't read was recorded as seen.
@@ -248,20 +293,46 @@ public final class Registry: @unchecked Sendable {
         if version != Int64(Self.extractorVersion) {
             // No log has this modification time, so every log is read again; each keeps the size
             // it was read at, and whether it lost records, so one that did still removes nothing.
-            // The last run's status was another version's reading, kept in that version's shape:
-            // none is given until this version's first run ends (`recordRun`).
+            // Its replies were counted by the older reading, so fewer by this one is no alarm. The
+            // last run's status was another version's reading, kept in that version's shape: none
+            // is given until this version's first run ends (`recordRun`).
             try db.execute("""
-                UPDATE log_files SET mtime = -1; DELETE FROM meta WHERE key = 'sources';
+                UPDATE log_files SET mtime = -1, closed_replies = NULL; DELETE FROM meta WHERE key = 'sources';
                 PRAGMA user_version = \(Self.extractorVersion);
                 """)
+        }
+    }
+
+    /// Where an earlier Gleaner's library is copied before this one updates it: `Backups` beside
+    /// it. Copies are never removed by Gleaner.
+    public static func backups(of path: String) -> URL {
+        URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent("Backups", isDirectory: true)
+    }
+
+    /// Copies the library, as it is, to `Backups`, named for its version and the time: one
+    /// consistent file, the write-ahead log's pages included (`VACUUM INTO`).
+    private func backUp(version: Int) throws {
+        let folder = Self.backups(of: path), stem = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+        let stamp = Date().formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day().time(includingFractionalSeconds: false)
+            .dateSeparator(.dash).timeSeparator(.omitted).dateTimeSeparator(.standard))
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            var copy = folder.appendingPathComponent("\(stem)-v\(version)-\(stamp).sqlite"), next = 2
+            while FileManager.default.fileExists(atPath: copy.path) {
+                copy = folder.appendingPathComponent("\(stem)-v\(version)-\(stamp)-\(next).sqlite")
+                next += 1
+            }
+            try db.run("VACUUM INTO ?", [copy.path])
+        } catch {
+            throw Failure.backup("\(error)")
         }
     }
 
     /// Opens the library at `path` to read only, as the query core does: no schema change, and no
     /// reread scheduled. A library that isn't there, that can't be read as it is, or that another
     /// version of Gleaner wrote, is refused (`Catalog.Failure`); opening Gleaner makes, restores or
-    /// updates it. One that lost its write-ahead log, say to another SQLite client that removed it
-    /// on closing, can't be read until Gleaner opens it to write and makes the log again.
+    /// updates it, unless a later Gleaner wrote it (`newerLibrary`), which this one never opens. One
+    /// that lost its write-ahead log, say to another SQLite client that removed it on closing, can't be read until Gleaner opens it to write and makes the log again.
     public init(readingAt path: String) throws {
         self.path = path
         gate = Self.gates.gate(URL(fileURLWithPath: path).standardizedFileURL.path)
@@ -273,6 +344,7 @@ public final class Registry: @unchecked Sendable {
         } catch {
             throw Catalog.Failure.unreadableLibrary(path, reason: "\(error)")
         }
+        if version > Int64(Self.extractorVersion) { throw Catalog.Failure.newerLibrary(path, found: Int(version)) }
         guard version == Int64(Self.extractorVersion) else { throw Catalog.Failure.wrongVersion(path, found: Int(version)) }
     }
 
@@ -280,6 +352,7 @@ public final class Registry: @unchecked Sendable {
         try db.rows("PRAGMA table_info(\(table))").contains { $0["name"] as? String == column }
     }
 
+    @discardableResult
     public func transaction<T>(_ body: () throws -> T) throws -> T { try writing { try db.transaction(body) } }
 
     /// Records a completed run of the indexer: one more generation, when it finished, how the logs
@@ -479,33 +552,97 @@ public final class Registry: @unchecked Sendable {
                    [repository, checkout, id])
     }
 
-    public func markSaved(deliveryID: String, at date: Date) throws {
-        try db.run("UPDATE captures SET saved_at = ? WHERE delivery_id = ?", [date, deliveryID])
+    /// Records that `delivery`'s bytes were saved at `date`: in its capture, or, for one of a
+    /// delivered folder's files or a kept file, in its row.
+    public func markSaved(_ delivery: Delivery, at date: Date) throws {
+        if let member = delivery.member {
+            try db.run("UPDATE members SET saved_at = ? WHERE delivery_id = ? AND path = ?", [date, member.folderDelivery, delivery.path])
+        } else if delivery.kept != nil {
+            try db.run("UPDATE kept SET saved_at = ? WHERE path = ? AND log_path = ?", [date, delivery.path, delivery.logPath])
+        } else {
+            try db.run("UPDATE captures SET saved_at = ? WHERE delivery_id = ?", [date, delivery.id])
+        }
     }
 
-    /// Every artifact with its deliveries, newest delivery first, artifacts by latest delivery.
+    /// Every artifact with its deliveries, newest delivery first, artifacts by latest delivery: the
+    /// files replies named, the files handed over in the folders they named (SPEC §5.4), whose
+    /// deliveries of one file number together by time, and the files the person kept, each a
+    /// revision of its own (`Keeping`).
     public func artifacts() throws -> [Artifact] {
-        let rows = try db.rows("""
-            SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.request, d.evidence, d.model,
-                   s.provider, s.title, d.log_path, d.session_id, s.cwd AS session_cwd, s.model_provider,
-                   c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind, c.repository, c.checkout
-            FROM deliveries d JOIN sessions s ON s.id = d.session_id
-            LEFT JOIN captures c ON c.delivery_id = d.id
-            ORDER BY d.path, d.delivered_at
-            """)
-        var byPath: [String: [Delivery]] = [:]
-        var repositories: [String: String] = [:]
-        var checkouts: [String: Checkout] = [:]
-        for row in rows {
-            let path = row["path"] as! String
-            // Rows run oldest first: the earliest recorded repository and checkout win, the likeliest
-            // to have been found while a worktree that held the file was there.
-            if let repository = row["repository"] as? String {
-                if repositories[path] == nil { repositories[path] = repository }
-                if checkouts[path] == nil, let folder = row["checkout"] as? String {
-                    checkouts[path] = Checkout(folder: folder, repository: repository)
+        try artifacts(at: nil)
+    }
+
+    /// The artifact at `path` alone, as `artifacts` reads it, without reading the others: what a
+    /// first read of a file or a saved copy changed. Nil when no delivery names it.
+    public func artifact(at path: String) throws -> Artifact? {
+        try artifacts(at: path).first
+    }
+
+    private func artifacts(at path: String?) throws -> [Artifact] {
+        var found = try deliveries(path.map { ("d.path = ?", [$0]) })
+        // The files handed over in folders, each a copy of its folder's delivery, which is read
+        // here when only one path is.
+        var folders: [String: Found] = [:]
+        for item in found where item.delivery.unpacking != nil { folders[item.delivery.id] = item }
+        if let path {
+            let ids = Set(try db.rows("SELECT delivery_id FROM members WHERE path = ?", [path]).compactMap { $0["delivery_id"] as? String })
+                .subtracting(folders.keys).sorted()
+            if !ids.isEmpty {
+                for item in try deliveries(("d.id IN (\(Array(repeating: "?", count: ids.count).joined(separator: ", ")))", ids)) {
+                    folders[item.delivery.id] = item
                 }
             }
+        }
+        // A folder's files are where it is: one that holds a repository isn't unpacked.
+        for (id, folder) in folders {
+            let artifact = Artifact(path: folder.delivery.path, deliveries: [folder.delivery], repository: folder.repository,
+                                    checkout: folder.repository.flatMap { r in folder.checkout.map { Checkout(folder: $0, repository: r) } })
+            folders[id]?.location = artifact.location
+        }
+        found += try members(at: path, folders: folders, after: found.count)
+        found += try kept(at: path, after: found.count)
+
+        let artifacts = Dictionary(grouping: found, by: \.delivery.path).map { path, found in
+            // Oldest first, deliveries of one time in the order they were read. The earliest recorded
+            // repository and checkout win, the likeliest to have been found while a worktree that held
+            // the file was there. A file only ever handed over in folders is where its latest folder is.
+            let found = Self.onePerReply(found).sorted {
+                let (a, b) = ($0.delivery.deliveredAt ?? .distantPast, $1.delivery.deliveredAt ?? .distantPast)
+                return a != b ? a < b : $0.order < $1.order
+            }
+            let deliveries = found.enumerated().map { n, found in
+                var delivery = found.delivery
+                delivery.number = n + 1
+                return delivery
+            }
+            if let location = found.last?.location, found.allSatisfy({ $0.delivery.member != nil }) {
+                return Artifact(path: path, deliveries: deliveries.reversed(), location: location)
+            }
+            let recorded = found.first { $0.repository != nil }
+            let checkout = found.first { $0.repository != nil && $0.checkout != nil }
+            return Artifact(path: path, deliveries: deliveries.reversed(), repository: recorded?.repository,
+                            checkout: checkout.map { Checkout(folder: $0.checkout!, repository: $0.repository!) })
+        }
+        return artifacts.sorted {
+            let (a, b) = ($0.latest.deliveredAt ?? .distantPast, $1.latest.deliveredAt ?? .distantPast)
+            return a != b ? a > b : $0.path < $1.path
+        }
+    }
+
+    /// The deliveries `filter` picks, as `artifacts` reads them: each with its capture, and a
+    /// folder's with its listing.
+    private func deliveries(_ filter: (sql: String, arguments: [Any?])?) throws -> [Found] {
+        try db.rows("""
+            SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.request, d.evidence, d.model,
+                   s.provider, s.title, d.log_path, d.session_id, s.cwd AS session_cwd, s.model_provider,
+                   c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind, c.repository, c.checkout,
+                   l.listed_at, l.members, l.not_unpacked, l.problems, l.repositories
+            FROM deliveries d JOIN sessions s ON s.id = d.session_id
+            LEFT JOIN captures c ON c.delivery_id = d.id
+            LEFT JOIN listings l ON l.delivery_id = d.id
+            """ + (filter.map { " WHERE " + $0.sql } ?? "") + " ORDER BY d.path, d.delivered_at", filter?.arguments ?? [])
+        .enumerated().map { index, row in
+            let id = row["id"] as! String, path = row["path"] as! String
             let capture = (row["observed_at"] as? Double).map { observed in
                 Capture(
                     sha256: row["sha256"] as? String, size: row["size"] as? Int64,
@@ -515,26 +652,49 @@ public final class Registry: @unchecked Sendable {
                     provenance: Provenance(rawValue: row["provenance"] as? String ?? "") ?? .firstSeenAfterDelivery,
                     kind: LocatorState.Kind(rawValue: row["kind"] as? String ?? "") ?? .missing)
             }
-            let evidence = (row["evidence"] as? String).flatMap {
-                try? JSONDecoder().decode([Evidence].self, from: Data($0.utf8))
-            } ?? []
-            var list = byPath[path, default: []]
-            list.append(Delivery(
-                id: row["id"] as! String, number: list.count + 1, path: path,
-                deliveredAt: (row["delivered_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
-                replyLine: (row["reply_line"] as? Int64).map(Int.init),
-                replyRank: (row["reply_rank"] as? Int64).map(Int.init) ?? 0,
-                provider: Provider(rawValue: row["provider"] as? String ?? "") ?? .claudeCode,
-                sessionID: row["session_id"] as? String ?? "", sessionCwd: row["session_cwd"] as? String,
-                sessionTitle: row["title"] as? String, request: row["request"] as? String,
-                cwd: row["cwd"] as? String, evidence: evidence,
-                logPath: row["log_path"] as? String ?? "", capture: capture,
-                model: row["model"] as? String, modelProvider: row["model_provider"] as? String))
-            byPath[path] = list
+            var delivery = Self.delivery(row, id: id, path: path, capture: capture, evidence: Self.evidence(row["evidence"] as? String))
+            delivery.unpacking = (row["listed_at"] as? Double).map { listed in
+                Unpacking(listedAt: Date(timeIntervalSince1970: listed), members: Int(row["members"] as? Int64 ?? 0),
+                          notUnpacked: row["not_unpacked"] as? String, problems: Self.list(row["problems"] as? String),
+                          repositories: Self.list(row["repositories"] as? String))
+            }
+            return Found(delivery: delivery, repository: row["repository"] as? String, checkout: row["checkout"] as? String,
+                         order: index)
         }
-        let artifacts = byPath.map { path, deliveries in
-            Artifact(path: path, deliveries: deliveries.reversed(), repository: repositories[path], checkout: checkouts[path])
-        }
-        return artifacts.sorted(by: Artifact.newerFirst)
+    }
+
+    /// A delivery as `artifacts` reads it, with where the file was found, and its place among the
+    /// rows read. A folder's delivery has where its files are shown.
+    struct Found {
+        var delivery: Delivery
+        var repository: String?
+        var checkout: String?
+        var order: Int
+        var location: Artifact.Location?
+    }
+
+    /// A delivery from a row of `deliveries` joined with its session: the reply's own fields, and
+    /// those given.
+    static func delivery(_ row: Database.Row, id: String, path: String, capture: Capture?, evidence: [Evidence]) -> Delivery {
+        Delivery(
+            id: id, number: 0, path: path,
+            deliveredAt: (row["delivered_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
+            replyLine: (row["reply_line"] as? Int64).map(Int.init),
+            replyRank: (row["reply_rank"] as? Int64).map(Int.init) ?? 0,
+            provider: Provider(rawValue: row["provider"] as? String ?? "") ?? .claudeCode,
+            sessionID: row["session_id"] as? String ?? "", sessionCwd: row["session_cwd"] as? String,
+            sessionTitle: row["title"] as? String, request: row["request"] as? String,
+            cwd: row["cwd"] as? String, evidence: evidence,
+            logPath: row["log_path"] as? String ?? "", capture: capture,
+            model: row["model"] as? String, modelProvider: row["model_provider"] as? String)
+    }
+
+    static func evidence(_ json: String?) -> [Evidence] {
+        json.flatMap { try? JSONDecoder().decode([Evidence].self, from: Data($0.utf8)) } ?? []
+    }
+
+    /// A list kept as JSON; empty when there is none.
+    static func list(_ json: String?) -> [String] {
+        json.flatMap { try? JSONDecoder().decode([String].self, from: Data($0.utf8)) } ?? []
     }
 }

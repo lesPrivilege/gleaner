@@ -36,6 +36,11 @@ struct DetailView: View {
                 } else {
                     PreviewPane(artifact: artifact, plan: plan, staging: staging)
                 }
+                // What to decide comes next to the bytes it is decided on: the verdicts and their notes,
+                // then where the file came from.
+                // A verdict binds to the bytes shown: here, only once they are the file's current bytes.
+                ReviewSection(work: work, shown: artifact.path == work.latest.path ? model.shownFile(work, sha: staging.ready) : nil)
+                    .id(work.id)
                 InformationSection(artifact: artifact, delivery: delivery, plan: plan, onDisk: onDisk, observation: observation)
                 if work.deliveries.count > 1 {
                     VersionsSection(work: work, selected: delivery)
@@ -53,11 +58,7 @@ struct DetailView: View {
         // A ready copy another app changed is prepared again, whenever the view looks at it.
         .task(id: model.isPreparedIntact) { model.prepareAgain() }
         .task(id: "\(artifact.id)|\(delivery.id)|\(observation?.checkedAt.timeIntervalSince1970 ?? 0)|\(model.stagingGeneration)") {
-            if case .ready(let sha, _, _) = plan {
-                await model.stage(sha: sha, artifact: artifact)
-            } else {
-                model.clearStaging()
-            }
+            await model.show(plan, artifact: artifact)
         }
     }
 }
@@ -125,7 +126,7 @@ struct DetailHeader: View {
                     .textSelection(.enabled)
                 HStack(spacing: Space.s) {
                     StatusLabel(mark: status.mark, text: status.text)
-                    Text(Wording.bytesCaption(plan, staged: staged, delivery: delivery)).foregroundStyle(.secondary)
+                    Text(Wording.bytesCaption(plan, staged: staged, delivery: delivery, in: artifact)).foregroundStyle(.secondary)
                     if let staged { Text(staged.prefix(8)).font(.system(.caption, design: .monospaced)).foregroundStyle(.tertiary) }
                 }
                 .font(.callout)
@@ -159,7 +160,8 @@ struct DetailHeader: View {
         case (_, .failed): (.attention, "Not prepared")
         case (.folder?, _): (.na, "Folder")
         case (.ready?, _): (statement!.mark, statement!.title)
-        case (.unavailable(_, let current?)?, .ready(_, let sha)) where sha == current: (.attention, "Not a found delivery")
+        case (.unavailable(nil, let current?)?, .ready(_, let sha)) where sha == current: (.attention, "Not a found delivery")
+        case (.unavailable(_, let current?)?, .ready(_, let sha)) where sha == current: (.attention, "\(Wording.revision(delivery)) is gone")
         case (.lost?, _): (.cross, "Lost")
         case (.restoreFromGit?, _): (.dashed, "In git only")
         case (.unavailable?, _): (.attention, "Unavailable")
@@ -178,10 +180,8 @@ struct DetailHeader: View {
         switch plan {
         case .unavailable(let k?, _):
             if let other = artifact.deliveries.first(where: { $0.number == k }) {
-                Button("Hand Off Delivery \(Wording.number(other)) Instead") { model.chosenDelivery = other.id }
+                Button("Show \(Wording.revision(other))") { model.chosenDelivery = other.id }
             }
-        case .unavailable(nil, let current?):
-            Button("Hand Off the Current File") { Task { await model.stage(sha: current, artifact: artifact) } }
         case .restoreFromGit:
             if let command = observation?.state.restoreCommand {
                 HStack {
@@ -234,6 +234,8 @@ struct DetailHeader: View {
 
 extension Staging {
     var isPreparing: Bool { if case .preparing = self { true } else { false } }
+    /// The bytes prepared and shown, when they are.
+    var ready: String? { if case .ready(_, let sha) = self { sha } else { nil } }
 }
 
 /// The selected version's bytes, drawn as a page: as tall as the text, up to a limit past which it
@@ -362,6 +364,27 @@ struct InformationSection: View {
                         }
                     }
                 }
+                if let member = delivery.member {
+                    // The reply named the folder; the file came with it.
+                    InfoRow(label: "Handed Over In") {
+                        if let folder = model.folderDelivery(member) {
+                            LinkButton(title: Wording.folderName(member)) { model.select(folder) }
+                                .help("Show the folder the reply named, \(Wording.tilde(member.folder))")
+                        } else {
+                            Text(Wording.folderName(member)).help(Wording.tilde(member.folder))
+                        }
+                    }
+                }
+                if delivery.capture?.isDirectory == true {
+                    let files = Wording.unpacking(delivery.unpacking)
+                    InfoRow(label: "Files") {
+                        HStack(spacing: Space.s) {
+                            // As it should be, the count alone; otherwise the state, which needs a look.
+                            if files.mark == .done { Text(files.title) } else { StatusLabel(mark: files.mark, text: files.title) }
+                            InfoButton(text: files.detail)
+                        }
+                    }
+                }
                 InfoRow(label: "Agent") {
                     HStack(spacing: Space.s) {
                         AgentMark(provider: delivery.provider, size: 16, color: true)
@@ -380,7 +403,19 @@ struct InformationSection: View {
                         }
                     }
                 }
-                InfoRow("Delivered", Wording.date(delivery.deliveredAt))
+                if delivery.kept != nil {
+                    // No reply handed it over: the person kept it, as a session left it.
+                    let generated = Wording.generated(delivery)
+                    InfoRow(label: "Kept") {
+                        HStack(spacing: Space.s) {
+                            StatusLabel(mark: .observed, text: generated.title)
+                            InfoButton(text: generated.detail)
+                        }
+                    }
+                    InfoRow("Last Written", Wording.date(delivery.deliveredAt))
+                } else {
+                    InfoRow("Delivered", Wording.date(delivery.deliveredAt))
+                }
                 if let onDisk, let observation {
                     let disk = Wording.onDisk(onDisk, in: artifact, now: observation)
                     InfoRow(label: "On Disk") {
@@ -390,7 +425,7 @@ struct InformationSection: View {
                             if let ends = diskComparison {
                                 Button("Compare") { model.comparison = ends }
                                     .controlRole(.inline)
-                                    .help("Compare delivery \(Wording.number(delivery)) with the file on disk")
+                                    .help("Compare \(Wording.revisionInText(delivery)) with the file on disk")
                             }
                         }
                     }
@@ -407,6 +442,8 @@ struct InformationSection: View {
                 }
                 if !others.isEmpty {
                     InfoRow(label: "Delivered With") {
+                        // What the reply handed over together, this file among them.
+                        let together = works(([artifact.path] + others.map(\.path)))
                         FlowLayout(spacing: Space.m) {
                             ForEach(showsAll ? others : Array(others.prefix(Self.shown))) { other in
                                 LinkButton(title: (other.path as NSString).lastPathComponent) { model.select(other) }
@@ -417,6 +454,7 @@ struct InformationSection: View {
                                 MoreButton(hidden: others.count - Self.shown, expanded: $showsAll)
                             }
                         }
+                        .contextMenu { NewCollectionFromThese(works: together) }
                     }
                 }
             }
@@ -437,6 +475,12 @@ struct InformationSection: View {
         case let other:
             Text(Wording.resume(other)).foregroundStyle(.secondary)
         }
+    }
+
+    /// The works holding the files at `paths`, each once, in their order.
+    func works(_ paths: [String]) -> [Work] {
+        var seen = Set<Work.ID>()
+        return paths.compactMap { model.organization.work(containing: $0) }.filter { seen.insert($0.id).inserted }
     }
 
     /// Offered when the file on disk is no longer this delivery and both versions can be read.
@@ -486,12 +530,12 @@ struct VersionsSection: View {
 
     func row(_ delivery: Delivery) -> some View {
         let isSelected = delivery.id == selected.id
-        let provenance = Wording.provenanceShort(delivery.capture)
+        let provenance = Wording.provenanceShort(delivery.capture, kept: delivery.kept != nil)
         let earlier = sameAs(delivery)
         return HStack(spacing: compact ? Space.s : Space.m) {
             StatusMark(mark: provenance.0, word: provenance.1)
                 .frame(width: 16)
-            Text("Delivery \(delivery.number)").fontWeight(isSelected ? .semibold : .regular)
+            Text(delivery.kept != nil ? "Kept file" : "Delivery \(delivery.number)").fontWeight(isSelected ? .semibold : .regular)
                 .frame(width: 84, alignment: .leading)
             if work.files.count > 1 {
                 Text((delivery.path as NSString).lastPathComponent).lineLimit(1).truncationMode(.middle)
@@ -509,6 +553,9 @@ struct VersionsSection: View {
                 Text(earlier.path == delivery.path ? "Same as \(Wording.number(earlier))"
                      : "Same as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))")
                     .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).layoutPriority(1)
+            } else if let alike = sameSizeAndDates(delivery) {
+                Text(Wording.sameSizeAndDates(alike, as: delivery, named: alike.path != delivery.path))
+                    .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).layoutPriority(1)
             }
             Spacer(minLength: Space.s)
             // Every row keeps the column, so the right edge holds.
@@ -517,7 +564,7 @@ struct VersionsSection: View {
                 if let ends = ends(delivery) {
                     Button("Compare") { model.comparison = ends }
                         .controlRole(.inline)
-                        .help("Compare with delivery \(Wording.number(selected))")
+                        .help("Compare with \(Wording.revisionInText(selected))")
                 }
             }
         }
@@ -556,11 +603,29 @@ struct VersionsSection: View {
             ?? earlier.first { $0.sha256 != nil && $0.sha256 == delivery.sha256 }
     }
 
+    /// For a delivery Gleaner hasn't read: an earlier one of the same file, else of another, with the
+    /// same size, modification date and creation date where both recorded one, recorded as the file
+    /// was at that delivery: listed with its folder, which counts only a file unchanged since the
+    /// reply (SPEC §5.4), or read at delivery. One read later records the file as it was then. Only
+    /// that is said, never "same as".
+    func sameSizeAndDates(_ delivery: Delivery) -> Delivery? {
+        guard delivery.sha256 == nil, let size = delivery.capture?.size, let modified = delivery.capture?.modifiedAt else { return nil }
+        let created = delivery.capture?.createdAt
+        let earlier = work.deliveries.drop { $0.id != delivery.id }.dropFirst()
+        let alike = { (d: Delivery) in
+            (d.member != nil || d.capture?.provenance == .atDelivery) && d.capture?.size == size && d.capture?.modifiedAt == modified
+                && (created == nil || d.capture?.createdAt == nil || d.capture?.createdAt == created)
+        }
+        return earlier.first { $0.path == delivery.path && alike($0) } ?? earlier.first(where: alike)
+    }
+
     func spoken(_ delivery: Delivery) -> String {
         let earlier = sameAs(delivery)
         var line = Wording.deliveryLine(delivery, sameAs: earlier?.path == delivery.path ? earlier : nil)
         if let earlier, earlier.path != delivery.path {
             line += ", same bytes as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))"
+        } else if earlier == nil, let alike = sameSizeAndDates(delivery) {
+            line += ", " + Wording.sameSizeAndDates(alike, as: delivery, named: alike.path != delivery.path).lowercased()
         }
         if delivery.id == selected.id { line += ", shown" }
         return work.files.count > 1 ? (delivery.path as NSString).lastPathComponent + ", " + line : line
@@ -577,12 +642,12 @@ struct MoreInfoSection: View {
     var body: some View {
         DisclosureGroup("More Info") {
             let capture = delivery.capture
-            let provenance = Wording.provenance(capture)
+            let provenance = Wording.provenance(capture, kept: delivery.kept != nil)
             let storage = Wording.storage(delivery, hasSaved: delivery.sha256.map(model.hasSaved) ?? false,
                                           large: model.isLarge(delivery), now: observation?.state)
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: Space.m, verticalSpacing: Space.s) {
                 InfoRow(label: "Path") { mono(artifact.path) }
-                InfoRow(label: "Delivery \(delivery.number)") { StatusLabel(mark: provenance.0, text: provenance.1) }
+                InfoRow(label: delivery.kept != nil ? "Kept File" : "Delivery \(delivery.number)") { StatusLabel(mark: provenance.0, text: provenance.1) }
                 InfoRow(label: "Copy") { StatusLabel(mark: storage.0, text: storage.1) }
                 InfoRow(label: "SHA-256") { mono(delivery.sha256 ?? "Not recorded") }
                 if let capture { InfoRow("First Looked", Wording.date(capture.observedAt)) }

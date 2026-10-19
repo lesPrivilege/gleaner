@@ -115,6 +115,14 @@ struct AgentSourcePage: View {
                 ProblemSection(title: "Fewer Replies Than Before", footer: "What only the missing replies named was removed. The log or the format changed.", paths: source.logsWithFewerReplies)
                 ProblemSection(title: "Unreadable Logs", footer: "What they delivered stays as it was.", paths: source.failures)
                 ProblemSection(title: "Unlisted Folders", footer: "Their logs went unread; what they delivered stays.", paths: source.unlistedFolders)
+                ProblemSection(title: "Workspaces Walked in Part", footer: "Files there may be missing from what Gleaner observed during sessions. Deliveries aren’t affected.",
+                               paths: source.workspaceProblems)
+                ProblemSection(title: "Workspaces Not Walked", footer: "Nothing is observed in these. Gleaner doesn’t walk the home folder, its Library, system or hidden folders, or the agents’ logs, and can’t walk a folder that’s gone.",
+                               paths: source.unwalkedWorkspaces, isProblem: false)
+                ProblemSection(title: "Delivered Folders Listed in Part", footer: "Files in them may be missing from what was handed over with them. A folder Gleaner couldn’t read is listed once it can. The folders stay delivered.",
+                               paths: source.folderProblems)
+                ProblemSection(title: "Delivered Folders Not Unpacked", footer: "Their files aren’t listed one by one. Gleaner doesn’t unpack the home folder, a volume or a cloud drive, or a folder directly in one; a link; a cache, or a folder inside a cache or a hidden folder; a package, which Finder shows as one file; a project’s own folder or one holding it, whose changes are observed instead; or what it doesn’t walk. A folder that’s gone is listed if it comes back.",
+                               paths: source.foldersNotUnpacked, isProblem: false, gone: source.foldersGone)
                 UnknownSection(title: "Unknown Record Types", footer: "The log format moved. These records may hold deliveries Gleaner doesn’t list.",
                                counts: source.unknownRecordTypes)
                 UnknownSection(title: "Unknown Fields", footer: "The log format moved. Records Gleaner knows carry keys it doesn’t.",
@@ -157,40 +165,7 @@ struct AgentSourcePage: View {
     }
 }
 
-/// Paths behind one kind of read problem, each to look at in Finder.
-struct ProblemSection: View {
-    var title: String
-    var footer: String
-    var paths: [String]
-
-    var body: some View {
-        if !paths.isEmpty {
-            Section {
-                ForEach(paths, id: \.self) { entry in
-                    // A failure reads "path: reason"; the path is what Finder can show.
-                    let path = String(entry.split(separator: ":", maxSplits: 1).first ?? Substring(entry))
-                    HStack(spacing: Space.s) {
-                        Text(Wording.tilde(entry)).font(.system(.callout, design: .monospaced))
-                            .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
-                        Spacer(minLength: Space.s)
-                        Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
-                            .controlRole(.inline)
-                            .disabled(Locator.stat(path).kind == .missing)
-                    }
-                }
-            } header: {
-                HStack(spacing: Space.xs + 2) {
-                    GlyphView(glyph: .warning, size: 12).foregroundStyle(Palette.attention)
-                    Text("\(title) (\(paths.count))")
-                }
-            } footer: {
-                Text(footer)
-            }
-        }
-    }
-}
-
-/// Names in a log Gleaner doesn't know, record types or a record's keys, each with how often it came up.
+/// Names the log format doesn't hold as Gleaner knows it, each with how often it was found.
 struct UnknownSection: View {
     var title: String
     var footer: String
@@ -213,6 +188,51 @@ struct UnknownSection: View {
     }
 }
 
+/// Paths behind one kind of read problem, each to look at in Finder.
+struct ProblemSection: View {
+    var title: String
+    var footer: String
+    var paths: [String]
+    /// False for a list that explains rather than warns.
+    var isProblem = true
+    /// Folders that are gone, folded into one row with their count and opened on demand: each says
+    /// the same, and a line each would bury the rest.
+    var gone: [String] = []
+
+    var body: some View {
+        if !paths.isEmpty || !gone.isEmpty {
+            Section {
+                ForEach(paths, id: \.self, content: row)
+                if !gone.isEmpty {
+                    DisclosureGroup(Wording.foldersGone(gone.count)) {
+                        ForEach(gone, id: \.self, content: row)
+                    }
+                }
+            } header: {
+                HStack(spacing: Space.xs + 2) {
+                    if isProblem { GlyphView(glyph: .warning, size: 12).foregroundStyle(Palette.attention) }
+                    Text("\(title) (\(paths.count + gone.count))")
+                }
+            } footer: {
+                Text(footer)
+            }
+        }
+    }
+
+    func row(_ entry: String) -> some View {
+        // A failure reads "path: reason"; the path is what Finder can show.
+        let path = String(entry.split(separator: ":", maxSplits: 1).first ?? Substring(entry))
+        return HStack(spacing: Space.s) {
+            Text(Wording.tilde(entry)).font(.system(.callout, design: .monospaced))
+                .lineLimit(2).truncationMode(.middle).textSelection(.enabled)
+            Spacer(minLength: Space.s)
+            Button("Show") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+                .controlRole(.inline)
+                .disabled(Locator.stat(path).kind == .missing)
+        }
+    }
+}
+
 /// Every decision the person made about how the library is organized, newest first, each to undo,
 /// and the projects they made.
 struct CorrectionsPage: View {
@@ -228,7 +248,9 @@ struct CorrectionsPage: View {
                 }
                 ForEach(model.correctionGroups, id: \.first!.id) { group in
                     HStack(spacing: Space.s + 2) {
-                        GlyphView(glyph: glyph(group[0].kind), size: 16).foregroundStyle(Palette.mark).frame(width: 20)
+                        // A file kept to go in a collection is listed by the collection.
+                        let kind = group.contains { $0.kind == .unit } ? .unit : group[0].kind
+                        GlyphView(glyph: glyph(kind), size: 16).foregroundStyle(Palette.mark).frame(width: 20)
                         VStack(alignment: .leading, spacing: 1) {
                             Text(model.describe(group)).lineLimit(2).truncationMode(.middle)
                             Text(Wording.date(group[0].madeAt)).font(.caption).foregroundStyle(.secondary)
@@ -276,12 +298,12 @@ struct CorrectionsPage: View {
         .confirmationDialog("Delete “\(removing?.name ?? "")”?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Delete Project", role: .destructive) { if let removing { Task { await model.remove(removing) } } }
         } message: {
-            Text("Its work goes back where Gleaner found it. No file changes.")
+            Text(Wording.deletingProject(units: removing.map { model.unitsDeleted(with: $0.key) } ?? 0))
         }
         .confirmationDialog("Undo every correction?", isPresented: $confirming) {
             Button("Undo All", role: .destructive) { Task { await model.undoAllCorrections() } }
         } message: {
-            Text("The library returns to how Gleaner found it, and your projects are removed. Files and saved copies stay.")
+            Text("The library returns to how Gleaner found it: your projects, collections and kept files are removed. Files, saved copies, verdicts and published marks stay.")
         }
     }
 
@@ -291,6 +313,13 @@ struct CorrectionsPage: View {
         case .combine: .branch
         case .sameWork: .merge
         case .notSameWork: .rejected
+        case .notFromSession: .outside
+        case .related: .work
+        case .kept: .unverified
+        case .unit: .collection
+        case .outOfUnit: .outside
+        case .unitName: .collection
+        case .unitDeleted: .na
         }
     }
 }

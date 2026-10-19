@@ -54,7 +54,7 @@ Output is one JSON object on stdout, for an answer and for a failure alike. Exit
 - 0: success;
 - 1: not found, no bytes for that version, or another failure;
 - 2: usage;
-- 3: no library, or the wrong version.
+- 3: no library, or the wrong version: an earlier one, or one a later Gleaner last opened.
 
 Arguments are parsed with `swift-argument-parser`.
 
@@ -76,7 +76,7 @@ Arguments are parsed with `swift-argument-parser`.
 - **Failures.** Exits 1, 2 and 3 write `{"error": {"kind", "message"}, "index"}`, with `index` only when a library was open, so a not-found carries the index it is evidence of. The message is written to stderr too. The kinds are:
   - exit 1: `not_found`, `source_off`, `other_library`, `unavailable` (with `reason`), `not_text`, `changed`, and `failed` for anything else that stopped the answer, with what it was;
   - exit 2: `usage`;
-  - exit 3: `no_library`, `unreadable_library` and `wrong_version`.
+  - exit 3: `no_library`, `unreadable_library`, `wrong_version` and `newer_library`.
 - **verify.** It answers in full either way. When neither the original nor the saved copy holds the bytes, the answer also carries `error` (`unavailable`, with `reason`), and the command exits 1.
 
 Not now: `outline`, content search, pagination cursors, a daemon.
