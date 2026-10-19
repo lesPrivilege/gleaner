@@ -377,8 +377,11 @@ enum Wording {
     static func problems(_ source: Indexer.Report.Source) -> String? {
         let parts = [
             source.unknownRecordTypes.isEmpty ? nil : count(source.unknownRecordTypes.count, "unknown record type"),
+            source.unknownFields.isEmpty ? nil : count(source.unknownFields.count, "unknown field"),
             source.partialLogs.isEmpty ? nil : count(source.partialLogs.count, "log") + " with malformed lines",
             source.shortenedLogs.isEmpty ? nil : count(source.shortenedLogs.count, "log") + " shorter than before",
+            source.logsWithoutFinalReply.isEmpty ? nil : count(source.logsWithoutFinalReply.count, "log") + " without a final reply",
+            source.logsWithFewerReplies.isEmpty ? nil : count(source.logsWithFewerReplies.count, "log") + " with fewer replies than before",
             source.failures.isEmpty ? nil : count(source.failures.count, "log") + " unreadable",
             source.unlistedFolders.isEmpty ? nil : count(source.unlistedFolders.count, "folder") + " unlisted",
             source.workspaceProblems.isEmpty ? nil : count(source.workspaceProblems.count, "workspace problem"),

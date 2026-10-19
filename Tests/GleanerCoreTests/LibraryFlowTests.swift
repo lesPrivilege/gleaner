@@ -60,12 +60,41 @@ import Testing
 
     func stamp(_ date: Date) -> String { date.formatted(Date.ISO8601FormatStyle(includingFractionalSeconds: true)) }
 
-    func user(_ text: String, at date: Date) -> String {
-        #"{"type":"user","message":{"role":"user","content":"\#(text)"},"origin":{"kind":"human"},"timestamp":"\#(stamp(date))","cwd":"\#(project.path)","sessionId":"s1"}"#
+    func user(_ text: String, at date: Date, session: String = "s1") -> String {
+        #"{"type":"user","message":{"role":"user","content":"\#(text)"},"origin":{"kind":"human"},"timestamp":"\#(stamp(date))","cwd":"\#(project.path)","sessionId":"\#(session)"}"#
     }
 
-    func assistant(_ text: String, at date: Date, cwd: String) -> String {
-        #"{"type":"assistant","message":{"model":"m","role":"assistant","content":[{"type":"text","text":"\#(text)"}]},"timestamp":"\#(stamp(date))","cwd":"\#(cwd)","sessionId":"s1"}"#
+    func assistant(_ text: String, at date: Date, cwd: String, session: String = "s1") -> String {
+        #"{"type":"assistant","message":{"model":"m","role":"assistant","content":[{"type":"text","text":"\#(text)"}]},"timestamp":"\#(stamp(date))","cwd":"\#(cwd)","sessionId":"\#(session)"}"#
+    }
+
+    func toolCall(_ id: String, at date: Date, session: String) -> String {
+        #"{"type":"assistant","message":{"model":"m","role":"assistant","content":[{"type":"tool_use","id":"\#(id)","name":"Bash","input":{"command":"make"}}]},"timestamp":"\#(stamp(date))","cwd":"\#(project.path)","sessionId":"\#(session)"}"#
+    }
+
+    func toolResult(_ id: String, at date: Date, session: String) -> String {
+        #"{"type":"user","message":{"role":"user","content":[{"tool_use_id":"\#(id)","type":"tool_result","content":"ok"}]},"timestamp":"\#(stamp(date))","cwd":"\#(project.path)","sessionId":"\#(session)"}"#
+    }
+
+    /// The fixture `name`, as the log at `relative` under the synthetic home.
+    func place(_ name: String, at relative: String) throws -> URL {
+        let log = root.appendingPathComponent(relative)
+        try FileManager.default.createDirectory(at: log.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: try fixture(name), to: log)
+        return log
+    }
+
+    /// Writes `lines` after what the log at `url` holds.
+    func append(_ lines: [String], to url: URL) throws {
+        let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        try (existing + lines.map { $0 + "\n" }.joined()).write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    /// The names of the logs a run reported for `provider` without a final reply, and with fewer replies than before.
+    func alarms(_ report: Indexer.Report, _ provider: Provider = .claudeCode) -> (noReply: [String], fewer: [String]) {
+        let source = report.sources[provider]
+        func names(_ paths: [String]?) -> [String] { (paths ?? []).map { ($0 as NSString).lastPathComponent }.sorted() }
+        return (names(source?.logsWithoutFinalReply), names(source?.logsWithFewerReplies))
     }
 
     func artifact(_ name: String) throws -> Artifact {
@@ -413,7 +442,7 @@ import Testing
                 ReplyPart(text: "Check it with: cat \(notes.path)", line: 4, at: delivered, cwd: project.path),
                 ReplyPart(text: "Done: [notes](out/notes.md)", line: 5, at: delivered.addingTimeInterval(1), cwd: project.path),
             ])],
-            unknownRecordTypes: [:], malformedLines: 0)
+            records: 5, answeredTurns: 1, closedReplies: 1, unknownRecordTypes: [:], unknownFields: [:], malformedLines: 0)
         _ = try indexer.ingest(older, isComplete: true, now: delivered.addingTimeInterval(20))
         let before = try artifact("notes.md").latest
         #expect(before.capture?.provenance == .atDelivery)
@@ -677,6 +706,278 @@ import Testing
             registry: try Registry(path: root.appendingPathComponent("support/registry.sqlite").path),
             store: indexer.store, sources: indexer.sources)
         #expect(try relaunched.run().sources[.claudeCode]?.unknownRecordTypes == ["brand-new-record": 1])
+    }
+
+    // MARK: adapter maintenance
+
+    @Test func eachLogRecordsWhatItsReadCounted() throws {
+        func counts() throws -> [Int64?] {
+            let row = try #require(try indexer.registry.db.rows(
+                "SELECT records, known_records, turns, final_replies, closed_replies, candidates FROM log_files").first)
+            return ["records", "known_records", "turns", "final_replies", "closed_replies", "candidates"].map { row[$0] as? Int64 }
+        }
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        // One request, and one reply naming three files. Its turn is the log's last, still open: the
+        // reply and what it names are counted, but not as a closed turn's.
+        #expect(try counts() == [2, 2, 0, 1, 0, 3])
+        // The next request closes it.
+        try appendLog([user("Thanks", at: delivered.addingTimeInterval(30))])
+        _ = try indexer.run(now: { delivered.addingTimeInterval(40) })
+        #expect(try counts() == [3, 3, 1, 1, 1, 3])
+    }
+
+    @Test func unknownFieldsAreReportedOnEveryRunForTheirOwnSource() throws {
+        try appendLog([#"{"type":"mode","mode":"plan","sessionId":"s1","brandNewField":true}"#])
+        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(report.sources[.claudeCode]?.unknownFields == ["mode.brandNewField": 1])
+        #expect(report.sources[.claudeCode]?.hasProblems == true)
+        // Reading again can't change which fields Gleaner knows.
+        #expect(report.sources[.claudeCode]?.isIncomplete == false)
+        #expect(report.sources[.codex]?.hasProblems == false)
+        // The log is unchanged, so it isn't read again; the new field is still reported, after a relaunch too.
+        #expect(try indexer.run().sources[.claudeCode]?.unknownFields == ["mode.brandNewField": 1])
+        let relaunched = Indexer(
+            registry: try Registry(path: root.appendingPathComponent("support/registry.sqlite").path),
+            store: indexer.store, sources: indexer.sources)
+        #expect(try relaunched.run().sources[.claudeCode]?.unknownFields == ["mode.brandNewField": 1])
+    }
+
+    @Test func aLogWithAssistantRecordsButNoFinalReplyIsReported() throws {
+        // A session whose only turn ends on a tool call: it may still be running, so its log is no
+        // problem yet.
+        let log = root.appendingPathComponent("claude/-Praxis/session-2.jsonl")
+        try String(contentsOf: try fixture("claude-open-turn"), encoding: .utf8).write(to: log, atomically: true, encoding: .utf8)
+        func withoutFinalReply(_ report: Indexer.Report) -> [String]? {
+            report.sources[.claudeCode]?.logsWithoutFinalReply.map { ($0 as NSString).lastPathComponent }
+        }
+        let open = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(withoutFinalReply(open) == [])
+        #expect(open.sources[.claudeCode]?.hasProblems == false)
+
+        // The next request closes that turn without a final reply: as if the adapter no longer
+        // recognized the reply.
+        try (String(contentsOf: log, encoding: .utf8) + user("Is it uploaded?", at: delivered.addingTimeInterval(60), session: "s-open") + "\n")
+            .write(to: log, atomically: true, encoding: .utf8)
+        let report = try indexer.run(now: { delivered.addingTimeInterval(80) })
+        #expect(withoutFinalReply(report) == ["session-2.jsonl"])
+        #expect(report.sources[.claudeCode]?.hasProblems == true)
+        #expect(withoutFinalReply(try indexer.run()) == ["session-2.jsonl"])
+    }
+
+    @Test func aReplyWhoseTextTheAdapterCantFindIsReportedAsNoFinalReply() throws {
+        // The format moved: the reply's text is a plain string, or under a key the adapter doesn't
+        // read. The next request closes the turn.
+        let messages = [
+            #"{"model":"m","role":"assistant","content":"Built: [app](out/app.dmg)"}"#,
+            #"{"model":"m","role":"assistant","blocks":[{"type":"text","text":"Built: [app](out/app.dmg)"}]}"#,
+        ]
+        for (n, message) in messages.enumerated() {
+            let reply = #"{"type":"assistant","message":\#(message),"timestamp":"\#(stamp(delivered))","cwd":"\#(project.path)","sessionId":"s\#(n + 2)"}"#
+            let (request, next) = (user("Build it", at: delivered.addingTimeInterval(-60), session: "s\(n + 2)"),
+                                   user("Now sign it", at: delivered.addingTimeInterval(10), session: "s\(n + 2)"))
+            try ([request, reply, next].joined(separator: "\n") + "\n")
+                .write(to: root.appendingPathComponent("claude/-Praxis/session-\(n + 2).jsonl"), atomically: true, encoding: .utf8)
+        }
+        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(report.sources[.claudeCode]?.logsWithoutFinalReply.map { ($0 as NSString).lastPathComponent }.sorted()
+                == ["session-2.jsonl", "session-3.jsonl"])
+        #expect(report.sources[.claudeCode]?.hasProblems == true)
+    }
+
+    @Test func aLogWhoseCompleteRereadFindsFewerFinalRepliesIsReported() throws {
+        try appendLog([user("Anything else?", at: delivered.addingTimeInterval(30)),
+                       assistant("Nothing else.", at: delivered.addingTimeInterval(40), cwd: project.path),
+                       user("Thanks", at: delivered.addingTimeInterval(45))])
+        _ = try indexer.run(now: { delivered.addingTimeInterval(50) })
+        // The second reply now reads as a tool call: the log is no shorter, but its closed turns
+        // hold one final reply fewer.
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        try String(contentsOf: log, encoding: .utf8)
+            .replacingOccurrences(of: #"{"type":"text","text":"Nothing else."}"#,
+                                  with: #"{"type":"tool_use","id":"t1","name":"Bash","input":{}}"#)
+            .write(to: log, atomically: true, encoding: .utf8)
+
+        func fewerReplies(_ report: Indexer.Report) -> [String]? {
+            report.sources[.claudeCode]?.logsWithFewerReplies.map { ($0 as NSString).lastPathComponent }
+        }
+        let report = try indexer.run(now: { delivered.addingTimeInterval(60) })
+        #expect(fewerReplies(report) == ["session-1.jsonl"])
+        #expect(report.sources[.claudeCode]?.shortenedLogs == [])
+        #expect(report.sources[.claudeCode]?.logsWithoutFinalReply == [])
+        #expect(report.sources[.claudeCode]?.hasProblems == true)
+        #expect(fewerReplies(try indexer.run()) == ["session-1.jsonl"])
+    }
+
+    @Test func closedTurnsWhoseRepliesStopBeingReadableAreStillReported() throws {
+        // Three requests: the first two answered, each turn closed by the next request.
+        try appendLog([user("Anything else?", at: delivered.addingTimeInterval(30)),
+                       assistant("Nothing else.", at: delivered.addingTimeInterval(40), cwd: project.path),
+                       user("Thanks", at: delivered.addingTimeInterval(45))])
+        #expect(alarms(try indexer.run(now: { delivered.addingTimeInterval(50) })) == ([], []))
+        // The format moves: the reply's text blocks get a type the adapter doesn't read. The log is
+        // no shorter, and its closed turns hold no final reply.
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        try String(contentsOf: log, encoding: .utf8)
+            .replacingOccurrences(of: #"{"type":"text","text":"#, with: #"{"type":"output_text","text":"#)
+            .write(to: log, atomically: true, encoding: .utf8)
+        let report = try indexer.run(now: { delivered.addingTimeInterval(60) })
+        #expect(alarms(report) == (["session-1.jsonl"], ["session-1.jsonl"]))
+        #expect(report.sources[.claudeCode]?.shortenedLogs == [])
+        #expect(report.sources[.claudeCode]?.hasProblems == true)
+
+        // A new log in that format reads as no final reply once a turn in it is closed.
+        let moved = root.appendingPathComponent("claude/-Praxis/session-2.jsonl")
+        try append([user("Build it", at: delivered, session: "s2"),
+                    assistant("Built: [app](out/build.dmg)", at: delivered.addingTimeInterval(5), cwd: project.path, session: "s2")
+                        .replacingOccurrences(of: #""type":"text""#, with: #""type":"output_text""#)],
+                   to: moved)
+        #expect(alarms(try indexer.run(now: { delivered.addingTimeInterval(70) })).noReply == ["session-1.jsonl"])
+        try append([user("Sign it", at: delivered.addingTimeInterval(80), session: "s2")], to: moved)
+        #expect(alarms(try indexer.run(now: { delivered.addingTimeInterval(90) })).noReply == ["session-1.jsonl", "session-2.jsonl"])
+    }
+
+    // MARK: interrupted turns and live reads
+
+    @Test func aTurnThePersonInterruptedIsNoMissingFinalReply() throws {
+        // Interrupted on the first request, then left.
+        let log = try place("claude-interrupted", at: "claude/-Praxis/session-2.jsonl")
+        var report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(alarms(report) == ([], []))
+        #expect(report.sources[.claudeCode]?.hasProblems == false)
+
+        // Then asked for something else, which is still running.
+        try append([ClaudeCodeAdapterTests.redirect, ClaudeCodeAdapterTests.redirectToolCall], to: log)
+        report = try indexer.run(now: { delivered.addingTimeInterval(30) })
+        #expect(alarms(report) == ([], []))
+        #expect(report.sources[.claudeCode]?.hasProblems == false)
+
+        // Answered, then closed by the next request.
+        try append([ClaudeCodeAdapterTests.redirectReply], to: log)
+        #expect(alarms(try indexer.run(now: { delivered.addingTimeInterval(40) })) == ([], []))
+        try append([ClaudeCodeAdapterTests.thanks], to: log)
+        report = try indexer.run(now: { delivered.addingTimeInterval(50) })
+        #expect(alarms(report) == ([], []))
+        #expect(report.sources[.claudeCode]?.hasProblems == false)
+    }
+
+    @Test func anAbortedCodexTurnIsNoMissingFinalReply() throws {
+        // Interrupted on the first request, then left.
+        let log = try place("codex-interrupted", at: "codex/sessions/2026/10/05/rollout-interrupted.jsonl")
+        var report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(alarms(report, .codex) == ([], []))
+        #expect(report.sources[.codex]?.hasProblems == false)
+
+        // Then asked for something else, which is still running.
+        try append([CodexAdapterTests.redirectContext, CodexAdapterTests.redirect, CodexAdapterTests.redirectToolCall], to: log)
+        report = try indexer.run(now: { delivered.addingTimeInterval(30) })
+        #expect(alarms(report, .codex) == ([], []))
+        #expect(report.sources[.codex]?.hasProblems == false)
+
+        // Answered, then closed by the next turn.
+        try append([CodexAdapterTests.redirectAnswer], to: log)
+        #expect(alarms(try indexer.run(now: { delivered.addingTimeInterval(40) }), .codex) == ([], []))
+        try append([CodexAdapterTests.nextContext], to: log)
+        report = try indexer.run(now: { delivered.addingTimeInterval(50) })
+        #expect(alarms(report, .codex) == ([], []))
+        #expect(report.sources[.codex]?.hasProblems == false)
+    }
+
+    @Test func aReadWhileATurnRunsFindsNoFewerReplies() throws {
+        // The log is read as the agent writes it, between its text and the tool call after it: the
+        // text reads as the turn's reply, and what it names is delivered, until the tool call is
+        // written. Only the replies of closed turns are counted, so the next read finds none fewer.
+        let log = root.appendingPathComponent("claude/-Praxis/session-2.jsonl")
+        try append([user("Rebuild the installer", at: delivered.addingTimeInterval(100), session: "s2"),
+                    assistant("Rebuilding [the build](out/build.dmg) first.", at: delivered.addingTimeInterval(105),
+                              cwd: project.path, session: "s2")], to: log)
+        let live = try indexer.run(now: { delivered.addingTimeInterval(106) })
+        #expect(alarms(live) == ([], []))
+        #expect(try artifact("build.dmg").deliveries.count == 2)
+
+        try append([toolCall("t1", at: delivered.addingTimeInterval(107), session: "s2")], to: log)
+        let next = try indexer.run(now: { delivered.addingTimeInterval(108) })
+        #expect(alarms(next) == ([], []))
+        #expect(next.sources[.claudeCode]?.hasProblems == false)
+        #expect(try artifact("build.dmg").deliveries.count == 1)
+
+        // The turn's reply, then the next request, which closes it.
+        try append([toolResult("t1", at: delivered.addingTimeInterval(110), session: "s2"),
+                    assistant("Rebuilt [the build](out/build.dmg).", at: delivered.addingTimeInterval(115),
+                              cwd: project.path, session: "s2"),
+                    user("Thanks", at: delivered.addingTimeInterval(120), session: "s2")], to: log)
+        let closed = try indexer.run(now: { delivered.addingTimeInterval(121) })
+        #expect(alarms(closed) == ([], []))
+        #expect(try artifact("build.dmg").deliveries.count == 2)
+    }
+
+    @Test func aReplyInTheOpenLastTurnIsAFinalReply() throws {
+        // The request's turn ends on a failed API call, which Claude Code writes as a synthetic
+        // assistant record, so "continue" closes it without a reply. That is answered, and the
+        // session left: its one final reply is in its open last turn, for good.
+        let log = root.appendingPathComponent("claude/-Praxis/session-2.jsonl")
+        let apiError = #"{"type":"assistant","isApiErrorMessage":true,"message":{"model":"<synthetic>","role":"assistant","content":[{"type":"text","text":"API Error: 529 Overloaded"}]},"timestamp":"\#(stamp(delivered.addingTimeInterval(111)))","cwd":"\#(project.path)","sessionId":"s2"}"#
+        try append([user("Rebuild the installer", at: delivered.addingTimeInterval(100), session: "s2"),
+                    toolCall("t1", at: delivered.addingTimeInterval(105), session: "s2"),
+                    toolResult("t1", at: delivered.addingTimeInterval(110), session: "s2"),
+                    apiError,
+                    user("continue", at: delivered.addingTimeInterval(120), session: "s2"),
+                    toolCall("t2", at: delivered.addingTimeInterval(125), session: "s2"),
+                    toolResult("t2", at: delivered.addingTimeInterval(130), session: "s2"),
+                    assistant("Rebuilt [the build](out/build.dmg).", at: delivered.addingTimeInterval(135),
+                              cwd: project.path, session: "s2")], to: log)
+        #expect(alarms(try indexer.run(now: { delivered.addingTimeInterval(140) })) == ([], []))
+        let later = try indexer.run(now: { delivered.addingTimeInterval(3600) })
+        #expect(alarms(later) == ([], []))
+        #expect(later.sources[.claudeCode]?.hasProblems == false)
+    }
+
+    @Test func aCodexAnswerInTheOpenLastTurnIsAFinalReply() throws {
+        // The first turn ends on a tool call without a final answer; the next is answered, and the
+        // thread left.
+        let log = try place("codex-open-turn", at: "codex/sessions/2026/10/05/rollout-continued.jsonl")
+        try append([CodexAdapterTests.redirectContext, CodexAdapterTests.redirect, CodexAdapterTests.redirectToolCall,
+                    CodexAdapterTests.redirectAnswer], to: log)
+        let report = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        #expect(alarms(report, .codex) == ([], []))
+        #expect(report.sources[.codex]?.hasProblems == false)
+    }
+
+    func reopened() throws -> Indexer {
+        Indexer(registry: try Registry(path: root.appendingPathComponent("support/registry.sqlite").path),
+                store: indexer.store, sources: indexer.sources)
+    }
+
+    @Test func aLibraryFromBeforeTheCountsCountsEachLogOnItsFirstRead() throws {
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        // A library from before 16 kept no counts: nothing is compared until each log is read again.
+        try indexer.registry.db.execute("""
+            ALTER TABLE log_files DROP COLUMN unknown_fields; ALTER TABLE log_files DROP COLUMN records;
+            ALTER TABLE log_files DROP COLUMN known_records; ALTER TABLE log_files DROP COLUMN turns;
+            ALTER TABLE log_files DROP COLUMN final_replies; ALTER TABLE log_files DROP COLUMN closed_replies;
+            ALTER TABLE log_files DROP COLUMN candidates; ALTER TABLE log_files DROP COLUMN fewer_replies;
+            PRAGMA user_version = 15;
+            """)
+        let upgraded = try reopened()
+        let report = try upgraded.run(now: { delivered.addingTimeInterval(40) })
+        #expect(report.logsRead == 1)
+        #expect(alarms(report) == ([], []))
+        // The log's one reply is in its open last turn.
+        let row = try #require(try upgraded.registry.db.rows("SELECT final_replies, closed_replies FROM log_files").first)
+        #expect([row["final_replies"] as? Int64, row["closed_replies"] as? Int64] == [1, 0])
+    }
+
+    @Test func aLogsReplyCountOutlivesARelaunch() throws {
+        try appendLog([user("Anything else?", at: delivered.addingTimeInterval(30)),
+                       assistant("Nothing else.", at: delivered.addingTimeInterval(40), cwd: project.path),
+                       user("Thanks", at: delivered.addingTimeInterval(45))])
+        _ = try indexer.run(now: { delivered.addingTimeInterval(50) })
+        let log = root.appendingPathComponent("claude/-Praxis/session-1.jsonl")
+        try String(contentsOf: log, encoding: .utf8)
+            .replacingOccurrences(of: #"{"type":"text","text":"Nothing else."}"#,
+                                  with: #"{"type":"tool_use","id":"t1","name":"Bash","input":{}}"#)
+            .write(to: log, atomically: true, encoding: .utf8)
+        // The app quit and opened again: the count the last read kept is still the one compared.
+        #expect(alarms(try reopened().run(now: { delivered.addingTimeInterval(60) })) == ([], ["session-1.jsonl"]))
     }
 }
 

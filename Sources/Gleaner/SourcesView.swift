@@ -111,6 +111,8 @@ struct AgentSourcePage: View {
             if let source {
                 ProblemSection(title: "Malformed Lines", footer: "What they name was added; they’re read again next time.", paths: source.partialLogs)
                 ProblemSection(title: "Shorter Than Before", footer: "They lost records, so nothing they stopped naming is removed.", paths: source.shortenedLogs)
+                ProblemSection(title: "Without a Final Reply", footer: "The agent answered, but Gleaner found no final reply. The log format may have moved.", paths: source.logsWithoutFinalReply)
+                ProblemSection(title: "Fewer Replies Than Before", footer: "What only the missing replies named was removed. The log or the format changed.", paths: source.logsWithFewerReplies)
                 ProblemSection(title: "Unreadable Logs", footer: "What they delivered stays as it was.", paths: source.failures)
                 ProblemSection(title: "Unlisted Folders", footer: "Their logs went unread; what they delivered stays.", paths: source.unlistedFolders)
                 ProblemSection(title: "Workspaces Walked in Part", footer: "Files there may be missing from what Gleaner observed during sessions. Deliveries aren’t affected.",
@@ -121,19 +123,10 @@ struct AgentSourcePage: View {
                                paths: source.folderProblems)
                 ProblemSection(title: "Delivered Folders Not Unpacked", footer: "Their files aren’t listed one by one. Gleaner doesn’t unpack the home folder, a volume or a cloud drive, or a folder directly in one; a link; a cache, or a folder inside a cache or a hidden folder; a package, which Finder shows as one file; a project’s own folder or one holding it, whose changes are observed instead; or what it doesn’t walk. A folder that’s gone is listed if it comes back.",
                                paths: source.foldersNotUnpacked, isProblem: false, gone: source.foldersGone)
-                if !source.unknownRecordTypes.isEmpty {
-                    Section {
-                        ForEach(source.unknownRecordTypes.sorted { $0.key < $1.key }, id: \.key) { type, count in
-                            LabeledContent { Text("\(count)").monospacedDigit() } label: {
-                                Text(type).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                            }
-                        }
-                    } header: {
-                        Text("Unknown Record Types")
-                    } footer: {
-                        Text("The log format moved. These records may hold deliveries Gleaner doesn’t list.")
-                    }
-                }
+                UnknownSection(title: "Unknown Record Types", footer: "The log format moved. These records may hold deliveries Gleaner doesn’t list.",
+                               counts: source.unknownRecordTypes)
+                UnknownSection(title: "Unknown Fields", footer: "The log format moved. Records Gleaner knows carry keys it doesn’t.",
+                               counts: source.unknownFields)
             }
             if !models.isEmpty {
                 Section {
@@ -167,6 +160,29 @@ struct AgentSourcePage: View {
             }
             Section("Skips") {
                 ForEach(Wording.skips(provider), id: \.self) { Text($0) }
+            }
+        }
+    }
+}
+
+/// Names the log format doesn't hold as Gleaner knows it, each with how often it was found.
+struct UnknownSection: View {
+    var title: String
+    var footer: String
+    var counts: [String: Int]
+
+    var body: some View {
+        if !counts.isEmpty {
+            Section {
+                ForEach(counts.sorted { $0.key < $1.key }, id: \.key) { name, count in
+                    LabeledContent { Text("\(count)").monospacedDigit() } label: {
+                        Text(name).font(.system(.body, design: .monospaced)).textSelection(.enabled)
+                    }
+                }
+            } header: {
+                Text(title)
+            } footer: {
+                Text(footer)
             }
         }
     }

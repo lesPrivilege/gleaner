@@ -125,6 +125,19 @@ import Testing
         #expect(Wording.sourcesLine([.claudeCode: source]) == "Claude Code: read with problems (1 log shorter than before)")
     }
 
+    @Test func aFormatThatMovedIsNamedAsSuch() {
+        let source = Indexer.Report.Source(
+            folder: .listed, unknownFields: ["assistant.newKey": 3, "user.otherKey": 1],
+            logsWithoutFinalReply: ["/logs/a.jsonl"], logsWithFewerReplies: ["/logs/b.jsonl", "/logs/c.jsonl"])
+        #expect(Wording.source(source) == (.attention, "Read with problems"))
+        #expect(Wording.sourcesLine([.codex: source]) == "Codex: read with problems (2 unknown fields, "
+                + "1 log without a final reply, 2 logs with fewer replies than before)")
+        // The sentence behind the status's ⓘ on the agent's page, which lists each field by name below it.
+        let statement = Wording.sourceStatement(source, indexed: true)
+        #expect(statement.mark == .attention && statement.title == "Read with problems")
+        #expect(statement.detail == "2 unknown fields, 1 log without a final reply, 2 logs with fewer replies than before.")
+    }
+
     // MARK: "First seen later" (A9)
 
     @Test func statementsNamingADeliveryKeepFirstSeenLater() {

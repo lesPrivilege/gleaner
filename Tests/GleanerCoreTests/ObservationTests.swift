@@ -493,7 +493,8 @@ import Testing
                            Turn(request: nil, requestAt: turn.asked,
                                 parts: [ReplyPart(text: "r", line: i + 1, at: turn.replied, cwd: i < cwds.count ? cwds[i] : nil)])
                        },
-                       unknownRecordTypes: [:], malformedLines: 0)
+                       records: turns.count, answeredTurns: turns.count, closedReplies: turns.count,
+                       unknownRecordTypes: [:], unknownFields: [:], malformedLines: 0)
         }
         let day = 24 * 60.0
         // Resumed a week later: the days between aren't in it.

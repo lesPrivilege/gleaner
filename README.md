@@ -106,7 +106,7 @@ The three without a saved copy go on with what the latest check found: the file 
 
 **Each agent** has a switch, in Sources (⌘,) and in the toolbar's Sources popover. Off, Gleaner neither reads nor watches its logs and hides its deliveries; nothing is removed, and on again shows everything. An agent's page draws its line to the provider and the models behind its replies, each with its vendor's mark, and a delivery's Information names its model.
 
-**The agents' logs**, in Sources (⌘,), as a triangle at the end of the Sources row, and in a line under the list when one needs a look: *Read*; *Read with problems* (unknown record types, logs with malformed lines or shorter than before, logs or folders that couldn't be read, workspaces Gleaner couldn't walk whole); *Can't read*; *Not on this Mac*. Try Again appears when reading again can help, and what Gleaner already found stays shown.
+**The agents' logs**, in Sources (⌘,), as a triangle at the end of the Sources row, and in a line under the list when one needs a look: *Read*; *Read with problems* (unknown record types or fields; logs with malformed lines or shorter than before; logs without a final reply, where a last turn still under way or a turn you interrupted doesn't count; logs with fewer replies than before in turns that are over; logs or folders that couldn't be read; workspaces Gleaner couldn't walk whole); *Can't read*; *Not on this Mac*. An agent's page lists each log and each unknown name behind a problem. Try Again appears when reading again can help, and what Gleaner already found stays shown.
 
 ## Hand-off
 

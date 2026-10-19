@@ -47,14 +47,30 @@ public struct Turn: Sendable {
 
 public struct SessionLog: Sendable {
     public var session: SessionInfo
+    /// The turns that ended in a final reply, the log's last turn included.
     public var turns: [Turn]
+    /// Records read, of any type.
+    public var records: Int
+    /// Closed turns the assistant answered in, whether or not the answer ended in a final reply. A
+    /// turn is closed once the log holds the next one; the last is still open: the session may be
+    /// running, the text it ends on may yet be followed by a tool call, or it ended on one. A turn
+    /// the person interrupted was not answered.
+    public var answeredTurns: Int
+    /// The final replies of closed turns, interrupted ones included: those of `turns` but the open
+    /// last turn's. Unlike that one, they stay as they are while the log grows.
+    public var closedReplies: Int
     /// Record types the adapter does not recognize, with counts. Non-empty means the format moved.
     public var unknownRecordTypes: [String: Int]
+    /// Keys the adapter does not know inside the record types it does, as "type.key", with counts.
+    /// Non-empty means the format moved.
+    public var unknownFields: [String: Int]
     /// Lines that are not JSON records. A log with any was not read completely: what was read
     /// stands, but it cannot show that a delivery is gone.
     public var malformedLines: Int
 
     public var isComplete: Bool { malformedLines == 0 }
+    /// Records of a type the adapter knows.
+    public var knownRecords: Int { records - unknownRecordTypes.values.reduce(0, +) }
 }
 
 enum JSONLines {
@@ -78,6 +94,11 @@ enum JSONLines {
             }
         }
         return File(records: records, malformed: malformed)
+    }
+
+    /// Counts the keys of `object` that `known` doesn't list, as "`name`.key".
+    static func countUnknownKeys(of object: [String: Any], known: Set<String>, as name: String, into counts: inout [String: Int]) {
+        for key in object.keys where !known.contains(key) { counts[name + "." + key, default: 0] += 1 }
     }
 }
 
