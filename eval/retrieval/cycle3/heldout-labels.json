@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "authorship": "Independent evaluator; sealed before policy implementation inspection",
+  "limitations": [
+    "Synthetic data; no human or Finder comparison",
+    "An underspecified task has a set of admissible objects, not one forced winner",
+    "Directory comparators know authorized immediate parent paths; direct-query comparators know a discriminative basename",
+    "Work reachability and selected representation usefulness are measured separately",
+    "Clarification is a scripted additional turn, not measured human effort"
+  ],
+  "corpora": [
+    {
+      "id": "community-orchard",
+      "project": "Orchard cooperative",
+      "deliveries": [
+        {"session": "walkthrough", "step": 1, "request": "Orchard planning: record the site mapping findings", "files": [{"path": "planning/site-map.svg", "text": "<svg><title>Tree positions and access route</title></svg>"}]},
+        {"session": "accounts", "step": 2, "request": "Orchard planning: prepare the maintenance funding options", "files": [{"path": "planning/cost-options.csv", "text": "option,annual_cost\nvolunteers,320\ncontract,2100\n"}]},
+        {"session": "minutes", "step": 3, "request": "Orchard planning: summarize the committee decisions", "files": [{"path": "planning/meeting-brief.md", "text": "# Committee brief\nThe irrigation vote is deferred.\n"}]},
+        {"session": "illustration", "step": 4, "request": "Orchard planning: retain the discarded poster samples", "files": [{"path": "construction/palette.txt", "text": "Discarded palette experiment: ochre and green.\n"}]}
+      ],
+      "tasks": [
+        {"id": "ambiguous-orchard-overview", "query": "Orchard planning", "intent": "See what is available for the orchard; no next action specified", "ambiguity": "Budget, map and decisions are independently admissible. No single correct first object is declared.", "relevance_mode": "admissible_set", "useful_paths": ["planning/site-map.svg", "planning/cost-options.csv", "planning/meeting-brief.md"], "limit": 3, "clarification_turns": 0, "known_direct_queries": ["site-map.svg", "cost-options.csv", "meeting-brief.md"], "known_directories": ["planning"]},
+        {"id": "clarified-orchard-mapping", "query": "Orchard planning", "intent": "Inspect the tree positions and access route", "scope": {"additional_terms": ["mapping"], "byte_state": "any"}, "relevance_mode": "required_set", "useful_paths": ["planning/site-map.svg"], "limit": 3, "clarification_turns": 1, "known_direct_queries": ["site-map.svg"], "known_directories": ["planning"]}
+      ]
+    },
+    {
+      "id": "travelling-theatre",
+      "project": "Touring wardrobe",
+      "deliveries": [
+        {"session": "backstage-package", "step": 1, "request": "Prepare the stage package for dress rehearsal", "files": [{"path": "rehearsal/cut-list.csv", "text": "costume,pieces\ncoat,7\ncape,3\n"}, {"path": "rehearsal/quick-change.md", "text": "# Quick changes\nScene 2 requires two dressers.\n"}]},
+        {"session": "freight", "step": 2, "request": "Stage package: archive the freight quotation", "files": [{"path": "administration/freight-quote.txt", "text": "Expired transport quote for the previous venue.\n"}]},
+        {"session": "moodboard", "step": 3, "request": "Stage package: retain rejected visual references", "files": [{"path": "references/moodboard.svg", "text": "<svg><title>Rejected moodboard</title></svg>"}]},
+        {"session": "draft-email", "step": 4, "request": "Stage package: draft an internal venue question", "files": [{"path": "administration/venue-question.md", "text": "Unsent question about loading hours.\n"}]}
+      ],
+      "tasks": [
+        {"id": "two-useful-objects-one-context", "query": "stage package", "intent": "Prepare dress rehearsal with both the cut list and quick-change instructions", "ambiguity": "Both outputs in one native reply are needed; diversity across sessions is not task diversity.", "scope": {"additional_terms": [], "byte_state": "any"}, "relevance_mode": "required_set", "useful_paths": ["rehearsal/cut-list.csv", "rehearsal/quick-change.md"], "limit": 2, "clarification_turns": 0, "known_direct_queries": ["cut-list.csv", "quick-change.md"], "known_directories": ["rehearsal"]},
+        {"id": "clarified-rehearsal-package", "query": "stage package", "intent": "Use the dress rehearsal package", "scope": {"additional_terms": ["dress", "rehearsal"], "byte_state": "any"}, "relevance_mode": "required_set", "useful_paths": ["rehearsal/cut-list.csv", "rehearsal/quick-change.md"], "limit": 2, "clarification_turns": 1, "known_direct_queries": ["cut-list.csv", "quick-change.md"], "known_directories": ["rehearsal"]}
+      ]
+    },
+    {
+      "id": "archaeological-atlas",
+      "project": "Terrace survey",
+      "deliveries": [
+        {"session": "atlas-source", "step": 1, "request": "Terrace atlas editable source for extending the boundary tracing", "files": [{"path": "atlas/tracing.svg", "text": "<svg><title>Editable terrace boundary tracing</title></svg>"}]},
+        {"session": "atlas-export", "step": 2, "request": "Terrace atlas viewing copy for the field team", "files": [{"path": "atlas/field-copy.md", "text": "# Terrace field atlas\nNorth boundary follows the dry wall.\n"}]},
+        {"session": "atlas-accessibility", "step": 3, "request": "Terrace atlas accessible text rendition", "files": [{"path": "atlas/description.txt", "text": "Text rendition: the terrace rises in three steps.\n"}]},
+        {"session": "atlas-stats", "step": 4, "request": "Terrace atlas diagnostic statistics retained for reproducibility", "files": [{"path": "diagnostics/vertices.csv", "text": "layer,vertices\nboundary,67\n"}]}
+      ],
+      "joins": [["atlas/tracing.svg", "atlas/field-copy.md"], ["atlas/field-copy.md", "atlas/description.txt"]],
+      "reviews": [{"path": "atlas/field-copy.md", "kind": "approved", "step": 5}],
+      "tasks": [
+        {"id": "joined-work-neutral-overview", "query": "Terrace atlas", "intent": "Find the atlas without choosing a representation", "ambiguity": "The human joined three representations into one Work; none establishes where active work happens.", "relevance_mode": "admissible_set", "useful_paths": ["atlas/tracing.svg", "atlas/field-copy.md", "atlas/description.txt"], "limit": 2, "clarification_turns": 0, "known_direct_queries": ["tracing.svg", "field-copy.md", "description.txt"], "known_directories": ["atlas"]},
+        {"id": "joined-work-editable-representation", "query": "Terrace atlas", "intent": "Extend the traced boundaries in the editable source", "scope": {"additional_terms": ["editable"], "byte_state": "any"}, "relevance_mode": "required_set", "useful_paths": ["atlas/tracing.svg"], "limit": 2, "clarification_turns": 1, "known_direct_queries": ["tracing.svg"], "known_directories": ["atlas"]},
+        {"id": "joined-work-approved-representation", "query": "Terrace atlas", "intent": "Inspect the approved field copy; its later text rendition was not reviewed", "scope": {"additional_terms": [], "byte_state": "approved"}, "relevance_mode": "required_set", "useful_paths": ["atlas/field-copy.md"], "limit": 2, "clarification_turns": 1, "known_direct_queries": ["field-copy.md"], "known_directories": ["atlas"]}
+      ]
+    },
+    {
+      "id": "durable-human-organization",
+      "project": "Export bench",
+      "deliveries": [
+        {"session": "sample-ledger", "step": 1, "request": "Prepare textile measurements", "files": [{"path": "materials/textile-ledger.csv", "text": "sample,width\nlinen,120\n"}]},
+        {"session": "public-card", "step": 2, "request": "Prepare the textile summary card", "files": [{"path": "materials/textile-card.md", "text": "# Linen sample\nMeasured width: 120 cm.\n"}]},
+        {"session": "separate-comparison", "step": 3, "request": "Keep unrelated textile purchase variants separate", "files": [{"path": "materials/textile-variants.csv", "text": "supplier,width\nother,90\n"}]}
+      ],
+      "joins": [["materials/textile-ledger.csv", "materials/textile-card.md"]],
+      "not_same": [["materials/textile-card.md", "materials/textile-variants.csv"]],
+      "user_project": {"initial_name": "Uncatalogued samples", "renamed_to": "Museum launch", "move_paths": ["materials/textile-ledger.csv"]},
+      "reviews": [{"path": "materials/textile-card.md", "kind": "approved", "step": 5}],
+      "rederive_all_logs": true,
+      "tasks": [
+        {"id": "human-corrections-after-rederivation", "query": "Museum launch textile", "intent": "Retrieve the human-organized textile work after every log is rederived", "scope": {"additional_terms": [], "byte_state": "any"}, "relevance_mode": "admissible_set", "useful_paths": ["materials/textile-ledger.csv", "materials/textile-card.md"], "limit": 2, "clarification_turns": 0, "known_direct_queries": ["textile-ledger.csv", "textile-card.md"], "known_directories": ["materials"]}
+      ]
+    }
+  ]
+}

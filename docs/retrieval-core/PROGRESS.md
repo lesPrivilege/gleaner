@@ -72,3 +72,15 @@ reported separately. No failures or expectations were removed.
 Resume with cycle2/DECISION-NOTE.md and HANDOFF.md. Preserve all prototypes as
 experiments. Review the bounded shared-core current-read / scoped report-ID proposal;
 do not adopt named focus as a default or count collapsed groups as relevance gains.
+
+## Third-cycle recovery checkpoint
+
+2026-10-19 15:26 UTC: cloud shell and retained `gleaner-swift` container are connected;
+HEAD remains the verified second-cycle checkpoint 24811b0, main unchanged. Parent
+reported environment disconnect notices, but no duplicate experiment was launched.
+Third-cycle protocol and primary-source methods are written; independent labels
+for nine tasks across four corpora are sealed (see cycle3 heldout-labels.json).
+Workers are implementing isolated selection/correction tests; no cycle3 execution
+result is claimed at this checkpoint. Package target wiring is a pending local edit
+until the independent harness exists. Rebuild scope must preserve native observations,
+not confuse their deletion with rebuilding a disposable search projection.
