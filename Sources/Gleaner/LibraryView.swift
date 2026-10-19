@@ -12,12 +12,13 @@ struct LibraryView: View {
     @SceneStorage("query") private var savedQuery = ""
     @SceneStorage("kind") private var savedKind = ""
     @SceneStorage("place") private var savedPlace = ""
+    @State private var columns = NavigationSplitViewVisibility.automatic
 
     var body: some View {
         @Bindable var model = model
         // Read here so the view follows every change to what the selection hands over.
         let quickLookURL = model.quickLookURL
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columns) {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 300)
         } content: {
@@ -36,6 +37,8 @@ struct LibraryView: View {
         .onChange(of: model.query) { savedQuery = model.query }
         .onChange(of: model.kind) { savedKind = model.kind?.rawValue ?? "" }
         .onChange(of: model.place) { savedPlace = Self.encode(model.place) }
+        // A collection is named in place in the sidebar, so the sidebar shows while it is.
+        .onChange(of: model.naming) { if model.naming != nil { columns = .all } }
         .navigationSubtitle(model.progress.map { "Reading logs… \($0.done) of \($0.total)" } ?? model.status)
         .toolbar {
             ToolbarItem {
@@ -55,6 +58,7 @@ struct LibraryView: View {
         model.query = savedQuery
         switch Self.decode(savedPlace) {
         case .project(let key) where model.organization.project(key) == nil: model.place = .all
+        case .unit(let key) where model.organization.unit(key) == nil: model.place = .all
         case let place: model.place = place
         }
         model.kind = kind
@@ -63,19 +67,25 @@ struct LibraryView: View {
     static func encode(_ place: Place) -> String {
         switch place {
         case .all: ""
+        case .toReview: "review"
         case .sources: "sources"
         case .project(let key): "project:" + key
+        case .unit(let key): key
         }
     }
 
     static func decode(_ text: String) -> Place {
         if text == "sources" { return .sources }
+        if text == "review" { return .toReview }
         if text.hasPrefix("project:") { return .project(String(text.dropFirst("project:".count))) }
+        // A collection's key names it: `unit:` and its id.
+        if text.hasPrefix("unit:") { return .unit(text) }
         return .all
     }
 }
 
-/// Every delivery, each project, and the sources Gleaner reads.
+/// Every delivery, what waits on the person's review, each project with its collections, and the
+/// sources Gleaner reads.
 struct Sidebar: View {
     @Environment(LibraryModel.self) private var model
     @State private var renaming: Organization.Project?
@@ -87,16 +97,39 @@ struct Sidebar: View {
         List(selection: place) {
             GlyphLabel(title: "All Deliveries", glyph: .artifact)
                 .tag(Place.all)
+            // What waits on the person, counted as Mail counts what is unread.
+            let waiting = model.toReviewCount
+            GlyphLabel(title: "To Review", glyph: .awaiting)
+                .badge(waiting)
+                .tag(Place.toReview)
+                .accessibilityLabel("To Review, \(Wording.toReview(waiting))")
+                .help(Wording.toReview(waiting))
             Section("Projects") {
                 ForEach(model.projects) { project in
-                    Label { Text(project.name).lineLimit(1).truncationMode(.middle) } icon: {
-                        RowGlyph(glyph: Wording.projectGlyph(project.origin))
+                    let units = model.organization.units(in: project.key)
+                    if units.isEmpty && !naming(project.key, inside: nil) {
+                        projectRow(project)
+                    } else {
+                        // A project's collections under it, as Mail lists a mailbox's.
+                        DisclosureGroup(isExpanded: open(project.key)) {
+                            ForEach(units) { unit in
+                                let inner = model.organization.units(inside: unit.key)
+                                if inner.isEmpty && !naming(project.key, inside: unit.key) {
+                                    UnitSidebarRow(unit: unit)
+                                } else {
+                                    DisclosureGroup(isExpanded: open(unit.key)) {
+                                        ForEach(inner) { UnitSidebarRow(unit: $0) }
+                                        if naming(project.key, inside: unit.key) { NamingField() }
+                                    } label: {
+                                        UnitSidebarRow(unit: unit)
+                                    }
+                                }
+                            }
+                            if naming(project.key, inside: nil) { NamingField() }
+                        } label: {
+                            projectRow(project)
+                        }
                     }
-                        .accessibilityLabel("\(project.name), \(Wording.projectOrigin(project.origin)), \(Wording.count(project.works.count, "work"))")
-                        .badge(project.works.count)
-                        .tag(Place.project(project.key))
-                        .help("\(Wording.projectOrigin(project.origin)) · \(Wording.projectCounts(project))")
-                        .contextMenu { menu(project) }
                 }
             }
             Section("Library") {
@@ -123,11 +156,36 @@ struct Sidebar: View {
         .confirmationDialog("Delete “\(removing?.name ?? "")”?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Delete Project", role: .destructive) { if let removing { Task { await model.remove(removing) } } }
         } message: {
-            Text("Its work goes back where Gleaner found it. No file changes.")
+            Text(Wording.deletingProject(units: removing.map { model.unitsDeleted(with: $0.key) } ?? 0))
         }
     }
 
+    func projectRow(_ project: Organization.Project) -> some View {
+        Label { Text(project.name).lineLimit(1).truncationMode(.middle) } icon: {
+            RowGlyph(glyph: Wording.projectGlyph(project.origin))
+        }
+        .accessibilityLabel("\(project.name), \(Wording.projectOrigin(project.origin)), \(Wording.count(project.works.count, "work"))")
+        .badge(project.works.count)
+        .tag(Place.project(project.key))
+        .help("\(Wording.projectOrigin(project.origin)) · \(Wording.projectCounts(project))")
+        .contextMenu { menu(project) }
+    }
+
+    /// Open unless the person closed it this session.
+    func open(_ key: String) -> Binding<Bool> {
+        Binding(get: { !model.sidebarClosed.contains(key) }, set: { open in
+            if open { model.sidebarClosed.remove(key) } else { model.sidebarClosed.insert(key) }
+        })
+    }
+
+    /// Whether a new collection is being named here.
+    func naming(_ project: String, inside parent: String?) -> Bool {
+        if case .new(project, parent, _, _)? = model.naming { true } else { false }
+    }
+
     @ViewBuilder func menu(_ project: Organization.Project) -> some View {
+        Button("New Collection") { model.startNewUnit(in: project.key) }
+        Divider()
         if let folder = project.folder {
             Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: folder)]) }
                 .disabled(Locator.stat(folder).kind != .directory)
@@ -145,7 +203,8 @@ struct Sidebar: View {
     }
 }
 
-/// What the place holds: search results, a project's outline, or the sources.
+/// What the place holds: search results, what waits on review, a project's outline, a
+/// collection's works, or the sources.
 struct ContentColumn: View {
     @Environment(LibraryModel.self) private var model
 
@@ -159,34 +218,49 @@ struct ContentColumn: View {
             } else {
                 ResultsList()
             }
+        case .unit(let key):
+            if model.query.isEmpty, let unit = model.organization.unit(key) {
+                UnitList(unit: unit)
+            } else {
+                ResultsList()
+            }
+        case .toReview:
+            if model.query.isEmpty { ToReviewList() } else { ResultsList() }
         case .all:
             ResultsList()
         }
     }
 }
 
+/// The selected work, a collection's review page, or the next step.
 struct DetailColumn: View {
     @Environment(LibraryModel.self) private var model
 
     var body: some View {
         if model.place == .sources {
             SourcePageView()
+        } else if model.selectedWorks.count > 1 {
+            SeveralSelected(works: model.selectedWorks)
         } else if let result = model.selected {
             DetailView(result: result)
+        } else if let unit = model.currentUnit {
+            ReviewPage(unit: unit).id(unit.key)
         } else if !model.artifacts.isEmpty {
             NoSelection()
         }
     }
 }
 
-/// Handing over and opening the selection from a list, shared by the results and the outline.
+/// Handing over and opening the selection from a list, shared by the results and the outline,
+/// and the selection's collection: added to one, or taken out.
 struct ListHandoff: ViewModifier {
     @Environment(LibraryModel.self) private var model
 
     func body(content: Content) -> some View {
         content
             .contextMenu(forSelectionType: OutlineRow.self) { rows in
-                if let row = rows.first, let work = model.organization.work(containing: row.work),
+                let works = rows.compactMap(\.work).compactMap { model.organization.work(containing: $0) }
+                if rows.count == 1, let row = rows.first, let id = row.work, let work = model.organization.work(containing: id),
                    let (artifact, _) = model.target(row) {
                     // The file the row names and drags: a revision's own, or the one its work's row shows.
                     if row == model.outlineSelection {
@@ -198,6 +272,17 @@ struct ListHandoff: ViewModifier {
                     Button("Copy Path") { model.copyPath(artifact) }
                     Divider()
                     Button("Go to \(model.projectName(work))") { model.place = .project(work.project); model.selection = work.id }
+                }
+                if !works.isEmpty {
+                    Divider()
+                    CollectionCommands(works: works)
+                }
+                if rows.count == 1, case .unit(let key)? = rows.first, let unit = model.organization.unit(key) {
+                    UnitCommands(unit: unit)
+                }
+                // The list itself, while it holds what a search found.
+                if rows.isEmpty, !model.query.isEmpty, !model.results.isEmpty {
+                    NewCollectionFromThese(works: model.results.map(\.work))
                 }
             }
             .onKeyPress(.space) {
@@ -219,11 +304,17 @@ struct ResultsList: View {
         // Filters sit above the list, not over it: rows never scroll under the glass controls.
         VStack(spacing: 0) {
             FilterBar()
-            List(selection: $model.outlineSelection) {
+            List(selection: $model.selectedRows) {
+                // What a search found, which the person may keep together: the list's first row, as a
+                // project's head is in its outline, so it begins below the band the filters sit in,
+                // where a header pinned to the list's top would sit under it.
+                if !model.query.isEmpty, !results.isEmpty {
+                    FoundLine(works: results.map(\.work)).listRowSeparator(.hidden)
+                }
                 ForEach(results) { result in
                     WorkEntry(result: result,
                               project: model.currentProject == nil ? model.organization.project(result.work.project) : nil,
-                              showFolder: repeated.contains(result.work.name))
+                              showFolder: repeated.contains(result.work.name), namesCollection: true)
                 }
             }
             .modifier(ListHandoff())
@@ -272,6 +363,24 @@ struct ResultsList: View {
                 if model.currentProject != nil { Button("Search All Deliveries") { model.place = .all } }
             }
         }
+    }
+}
+
+/// What a search found, as the header of its results: how many works, in how many projects when
+/// more than one, and New Collection from These, which a group spanning projects can't take.
+struct FoundLine: View {
+    var works: [Work]
+
+    var body: some View {
+        HStack(spacing: Space.s) {
+            Text(Wording.found(works.count, projects: Set(works.map(\.project)).count))
+                .foregroundStyle(.secondary).monospacedDigit()
+            Spacer(minLength: Space.s)
+            NewCollectionFromThese(works: works)
+                .controlRole(.inline)
+                .fixedSize()
+        }
+        .font(.callout)
     }
 }
 
@@ -349,6 +458,12 @@ struct ResultRow: View {
     var placement: Organization.Placement?
     /// Its revisions are listed under it.
     var open = false
+    /// What waits on the person's review (`LibraryModel.waits`).
+    var waiting: (Mark, String)? = nil
+    /// The collection holding the work, as a list names it: in its help tag, and on the row with
+    /// `namesCollection`.
+    var collection: String? = nil
+    var namesCollection = false
 
     var body: some View {
         let work = result.work
@@ -380,10 +495,22 @@ struct ResultRow: View {
                 }
                 if !open, let request = delivery.request {
                     Text(request).font(.callout).foregroundStyle(.secondary).lineLimit(2)
+                } else if !open, delivery.kept != nil {
+                    // No reply handed it over: the person kept it, as a session left it.
+                    Text(Wording.generated(delivery).title).font(.callout).foregroundStyle(.secondary).lineLimit(2)
                 }
-                if project != nil || !context.isEmpty || status.mark != nil || number != nil {
+                let named = namesCollection ? collection : nil
+                if project != nil || !context.isEmpty || status.mark != nil || number != nil || waiting != nil || named != nil {
                     HStack(spacing: Space.s) {
+                        if let waiting { StatusLabel(mark: waiting.0, text: waiting.1, size: 11) }
                         if let mark = status.mark { StatusLabel(mark: mark.0, text: mark.1, size: 11) }
+                        if let named {
+                            HStack(spacing: 3) {
+                                GlyphView(glyph: .collection, size: 11)
+                                Text(named).lineLimit(1)
+                            }
+                            .foregroundStyle(.secondary)
+                        }
                         // A project is named by its mark and name, wherever it is named.
                         if let project {
                             HStack(spacing: 3) {
@@ -404,6 +531,7 @@ struct ResultRow: View {
         }
         .padding(.vertical, Space.xs)
         .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+        .help(collection.map { "In \($0)" } ?? "")
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken(context: context))
     }
@@ -422,10 +550,16 @@ struct ResultRow: View {
         var parts = [work.name, Wording.kindLabel(work.latest.kind, path: work.latest.path) + " file"]
         if work.deliveries.count > 1 { parts.append(Wording.count(work.deliveries.count, "delivery", "deliveries")) }
         if let project { parts.append("\(project.name), \(Wording.projectOrigin(project.origin).lowercased())") }
+        if let collection { parts.append("in \(collection)") }
         parts += context
+        if let waiting { parts.append(waiting.1.lowercased()) }
         if let mark = status.mark { parts.append(mark.1.lowercased()) }
-        parts.append("delivered " + (delivery.deliveredAt?.formatted(date: .abbreviated, time: .shortened) ?? "at an unknown time"))
-        parts.append("by " + Wording.provider(delivery.provider))
+        if delivery.kept != nil {
+            parts.append(Wording.generated(delivery).title.lowercased())
+        } else {
+            parts.append("delivered " + (delivery.deliveredAt?.formatted(date: .abbreviated, time: .shortened) ?? "at an unknown time"))
+            parts.append("by " + Wording.provider(delivery.provider))
+        }
         if let number = status.number { parts.append("delivery " + number) }
         if let request = delivery.request { parts.append("you asked: \(request.prefix(160))") }
         return parts.joined(separator: ", ")

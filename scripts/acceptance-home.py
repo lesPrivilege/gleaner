@@ -32,6 +32,18 @@ over, as it does `assets/hero.png`, which came after the first reply; its hidden
 `.DS_Store` are never handed over; thirty renders crowd their folder and fold; and `app/`, a
 project's own folder, stands alone and says why.
 
+Phase review (on its own or after the others) adds `work/reading-list`, outside git, for reviewing
+(docs/design/review.md): a series of three episodes and a compilation. Each episode folder holds a
+video, its narration (a real WAV), a script, two covers at 4:3 and 16:9 with the 4:3 one's SVG
+beside it, and the inputs a renderer read; the compilation folder holds the compilation and its
+chapters, and a logo sits at the top. A session asked three hours ago answers once everything is
+written, naming episode 1's video and script, the folder `ep02/`, episode 3's video and the
+compilation; everything else is only observed, by it and, for the covers, by a second session. A
+video already at its path is kept (the tour writes real ones first); otherwise a placeholder
+stands in. Beside it, `work/masters`, a Git repository that ignores `*.mov`, holds a 65 MiB master
+a third session names: over the save limit, so a verdict on it keeps its bytes only when asked.
+Phase review-revise then recuts episode 1's video, and a new reply names it.
+
 Phase initial delivers:
 - Claude Code: CJK Markdown, a PNG, a symlink, a folder and an HTML page inside it, a
   65 MiB sparse file (tracked by hash only), a long text file and a FIFO;
@@ -131,6 +143,26 @@ def pdf(path, text):
     xref = len(body)
     body += b'xref\n0 %d\n0000000000 65535 f \n' % (len(objects) + 1) + b''.join(b'%010d 00000 n \n' % o for o in offsets)
     path.write_bytes(body + b'trailer\n<< /Size %d /Root 1 0 R >>\nstartxref\n%d\n%%%%EOF\n' % (len(objects) + 1, xref))
+
+
+def picture(path, width, height, top, bottom):
+    """A PNG of its own size, shaded from `top` to `bottom`, so it is seen at its own aspect."""
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+    rows = b''.join(b'\0' + bytes(int(a + (b - a) * y / max(height - 1, 1)) for a, b in zip(top, bottom)) * width
+                    for y in range(height))
+    path.write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+                     + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b''))
+
+
+def tone(path, seconds, pitch):
+    """A real WAV, mono, 16-bit: a tone that rises and falls, to play in place."""
+    import math
+    rate = 8000
+    samples = b''.join(struct.pack('<h', int(6000 * math.sin(2 * math.pi * pitch * (1 + 0.2 * math.sin(i / rate)) * i / rate)))
+                       for i in range(int(rate * seconds)))
+    path.write_bytes(b'RIFF' + struct.pack('<I', 36 + len(samples)) + b'WAVEfmt '
+                     + struct.pack('<IHHIIHH', 16, 1, 1, rate, rate * 2, 2, 16) + b'data' + struct.pack('<I', len(samples)) + samples)
 
 
 def sparse(path, header):
@@ -300,6 +332,67 @@ elif phase == 'bundle':
     answered = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0) + datetime.timedelta(seconds=1)
     claude_session(log, 'launch', launch, 'Launch site', 'Add the hero image and export the renders',
                    f'The [site]({site}/) has its hero image; the [renders]({renders}/) are exported.', at(90), answered)
+
+elif phase == 'review':
+    series = work / 'reading-list'
+    start = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0) - datetime.timedelta(hours=3)
+    at = lambda minutes: start + datetime.timedelta(minutes=minutes)
+
+    def made(relative, minutes, write):
+        path = series / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write(path)
+        dated(path, at(minutes), at(minutes))
+
+    def video(path):
+        # The tour writes real videos first; a person's own run gets a placeholder.
+        if not path.exists():
+            path.write_bytes(b'synthetic video, not a real movie\n')
+
+    colors = [((40, 70, 140), (120, 170, 230)), ((140, 60, 40), (240, 170, 120)), ((40, 110, 70), (150, 220, 160))]
+    for n, (top, bottom) in enumerate(colors, 1):
+        ep, base = f'ep{n:02}', 20 * n
+        made(f'{ep}/{ep}.inputs.json', base, lambda p: p.write_text(json.dumps({'episode': n, 'voice': 'narrator-a'}) + '\n'))
+        made(f'{ep}/script.md', base + 1, lambda p: p.write_text(
+            f'# Episode {n}\n\nThe reading list, part {n}.\n\n## Open\nA line to open on.\n\n## Close\nWhat to read next.\n'))
+        made(f'{ep}/{ep}.narration.wav', base + 2, lambda p: tone(p, 3, 220 + 60 * n))
+        made(f'{ep}/{ep}.mp4', base + 3, video)
+        made(f'{ep}/cover-4x3.svg', 70 + n, lambda p: p.write_text(
+            '<svg xmlns="http://www.w3.org/2000/svg" width="400" height="300"><rect width="400" height="300" fill="#%02x%02x%02x"/></svg>\n' % top))
+        made(f'{ep}/cover-4x3.png', 72 + n, lambda p: picture(p, 400, 300, top, bottom))
+        made(f'{ep}/cover-16x9.png', 74 + n, lambda p: picture(p, 640, 360, bottom, top))
+    made('compilation/chapters.md', 90, lambda p: p.write_text('# Chapters\n\n1. Episode 1\n2. Episode 2\n3. Episode 3\n'))
+    made('compilation/reading-list.mp4', 95, video)
+    made('logo.png', 96, lambda p: picture(p, 256, 256, (30, 30, 30), (90, 90, 90)))
+
+    # Both answer now, once every file above is written.
+    answered = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0) + datetime.timedelta(seconds=1)
+    names = [series / 'ep01' / 'ep01.mp4', series / 'ep01' / 'script.md', series / 'ep03' / 'ep03.mp4',
+             series / 'compilation' / 'reading-list.mp4']
+    claude_session(claude / 'reading-list' / 'reading-list.jsonl', 'reading-list', series, 'Reading list series',
+                   'Render the three episodes and the compilation',
+                   f'Episode 1 is [rendered]({names[0]}) with its [script]({names[1]}); [episode 2]({series / "ep02"}/) '
+                   f'is done; [episode 3]({names[2]}) and the [compilation]({names[3]}) too.', at(0), answered)
+    claude_session(claude / 'reading-list' / 'reading-list-covers.jsonl', 'reading-list-covers', series, 'Series covers',
+                   'Draw the covers at 4:3 and 16:9', 'The covers are ready.', at(60), answered)
+    masters = work / 'masters'
+    masters.mkdir(parents=True, exist_ok=True)
+    git(masters, 'init', '-q')
+    (masters / '.gitignore').write_text('*.mov\n')
+    sparse(masters / 'reading-list-master.mov', b'synthetic master, not a real movie\n')
+    claude_session(claude / 'masters' / 'masters.jsonl', 'masters', masters, 'Masters', 'Render the master',
+                   f'The [master]({masters / "reading-list-master.mov"}) is rendered.', at(100), answered)
+
+elif phase == 'review-revise':
+    series = work / 'reading-list'
+    recut = series / 'ep01' / 'ep01.mp4'
+    # Trailing bytes a player ignores: other bytes at the same path.
+    with recut.open('ab') as f:
+        f.write(b'\0' * 64)
+    asked = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0) - datetime.timedelta(minutes=1)
+    answered = asked + datetime.timedelta(minutes=1, seconds=1)
+    claude_session(claude / 'reading-list' / 'reading-list.jsonl', 'reading-list', series, 'Reading list series',
+                   'Recut episode 1 with a shorter open', f'Episode 1 is [recut]({recut}).', asked, answered)
 
 else:
     raise SystemExit(__doc__)

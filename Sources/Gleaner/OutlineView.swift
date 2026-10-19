@@ -16,6 +16,8 @@ struct WorkEntry: View {
     var project: Organization.Project?
     var showFolder = false
     var placement: Organization.Placement?
+    /// Names the work's collection on its row, as search results do; elsewhere its help tag does.
+    var namesCollection = false
 
     var body: some View {
         let work = result.work
@@ -24,7 +26,7 @@ struct WorkEntry: View {
             DisclosureGroup(isExpanded: Binding(get: { model.isOpen(work) }, set: { model.disclosed[work.id] = $0 })) {
                 ForEach(work.deliveries) { delivery in
                     let file = work.file(of: delivery)
-                    HandingOver(available: model.rowHandoff(file, delivery) != nil, item: { model.dragItem(file, delivery) }) {
+                    HandingOver(item: { model.rowDragItem(work, file, delivery) }) {
                         RevisionRow(work: work, delivery: delivery, status: model.revisionStatus(file, delivery))
                     }
                     .tag(OutlineRow.revision(work.id, delivery.id))
@@ -45,12 +47,14 @@ struct WorkEntry: View {
     /// chosen another of its revisions since the row was drawn.
     func row(open: Bool) -> some View {
         let delivery = model.workDelivery(result), file = result.work.file(of: delivery)
-        return HandingOver(available: model.rowHandoff(file, delivery) != nil, item: {
+        return HandingOver(item: {
             let delivery = model.workDelivery(result)
-            return model.dragItem(result.work.file(of: delivery), delivery)
+            return model.rowDragItem(result.work, result.work.file(of: delivery), delivery)
         }) {
             ResultRow(result: result, file: file, delivery: delivery, project: project, showFolder: showFolder,
-                      status: open ? (model.fileStatus(file), nil) : model.rowStatus(result), placement: placement, open: open)
+                      status: open ? (model.fileStatus(file), nil) : model.rowStatus(result), placement: placement, open: open,
+                      waiting: model.waits(result.work), collection: model.collectionPath(result.work),
+                      namesCollection: namesCollection)
         }
         .tag(OutlineRow.work(result.work.id))
         .id(OutlineRow.work(result.work.id))
@@ -72,19 +76,15 @@ struct FollowsSelection: ViewModifier {
     }
 }
 
-/// A row that can be dragged into another app when it has something to hand over. A row with
-/// nothing starts no drag, rather than one that fails at drop.
+/// A row dragged: into another app, when it has something to hand over, and onto a collection in
+/// the sidebar, always (`LibraryModel.rowDragItem`). A row with nothing to hand over offers another
+/// app nothing, so no drop there fails: only a collection takes it.
 struct HandingOver<Content: View>: View {
-    var available: Bool
-    var item: () -> NSItemProvider?
+    var item: () -> NSItemProvider
     @ViewBuilder var content: Content
 
     var body: some View {
-        if available {
-            content.onDrag { item() ?? NSItemProvider() }
-        } else {
-            content
-        }
+        content.onDrag(item)
     }
 }
 
@@ -106,14 +106,14 @@ struct RevisionRow: View {
     static let leading: CGFloat = 32 + Space.s + 2 - indent - 12 - Space.s
 
     var body: some View {
-        let provenance = Wording.provenanceShort(delivery.capture)
+        let provenance = Wording.provenanceShort(delivery.capture, kept: delivery.kept != nil)
         HStack(alignment: .firstTextBaseline, spacing: Space.s) {
             // The first tier: a state as it should be, by its mark alone, its word in the help tag.
             StatusMark(mark: provenance.0, word: provenance.1, size: 10)
                 .frame(width: 12)
             VStack(alignment: .leading, spacing: 1) {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-                    Text(([("Delivery " + Wording.number(delivery))]
+                    Text(([Wording.revision(delivery)]
                           + (work.files.count > 1 ? [(delivery.path as NSString).lastPathComponent] : [])).joined(separator: " · "))
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: Space.xs)
@@ -123,6 +123,8 @@ struct RevisionRow: View {
                 }
                 if let request = delivery.request {
                     Text(request).foregroundStyle(.secondary).lineLimit(2)
+                } else if delivery.kept != nil {
+                    Text("Observed during \(Wording.session(delivery.sessionTitle))").foregroundStyle(.secondary).lineLimit(2)
                 }
                 if let status {
                     StatusLabel(mark: status.label.0, text: status.label.1, size: 11).font(.caption)
@@ -238,14 +240,15 @@ struct MoveHereSheet: View {
 
     var body: some View {
         WorkPicker(title: "Move Work to “\(project.name)”", note: "Files stay where they are. Later deliveries of them follow.",
-                   action: "Move", works: model.organization.works.filter { $0.project != project.key }) { work in
-            Task { await model.move(work, to: project.key) }
+                   action: "Move", works: model.organization.works.filter { $0.project != project.key }) { works in
+            if let work = works.first { Task { await model.move(work, to: project.key) } }
         }
     }
 }
 
-/// A sheet that picks one work: its title, one line about what the action does, a filter by
-/// name, the works in the order given, and Cancel and the action.
+/// A sheet that picks one work, or with `several` any number of them: its title, one line about
+/// what the action does, a filter by name, the works in the order given, and Cancel and the
+/// action. With none to pick, it says so.
 struct WorkPicker: View {
     @Environment(LibraryModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -253,8 +256,12 @@ struct WorkPicker: View {
     var note: String
     var action: String
     var works: [Work]
-    var choose: (Work) -> Void
-    @State private var chosen: Work.ID?
+    /// Whether ⌘- and ⇧-clicks choose several, for one decision on all of them.
+    var several = false
+    /// What the sheet says when there is no work to pick.
+    var none = "No Works"
+    var choose: ([Work]) -> Void
+    @State private var chosen: Set<Work.ID> = []
     @State private var filter = ""
 
     var body: some View {
@@ -263,32 +270,43 @@ struct WorkPicker: View {
             Text(title).font(.headline)
             Text(note).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             TextField("Filter", text: $filter, prompt: Text("Filter by name"))
-            List(selection: $chosen) {
-                ForEach(shown) { work in
-                    HStack(spacing: Space.s) {
-                        FileIcon(path: work.latest.path, folder: work.latest.kind == .folder, size: 24)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(work.files.map(\.name).joined(separator: " → ")).lineLimit(1).truncationMode(.middle)
-                            caption(work)
-                        }
-                    }
-                    .tag(Optional(work.id))
+                .disabled(works.isEmpty)
+            Group {
+                if several {
+                    List(selection: $chosen) { rows(shown) }
+                } else {
+                    List(selection: Binding(get: { chosen.first }, set: { chosen = $0.map { [$0] } ?? [] })) { rows(shown) }
                 }
             }
             .frame(minHeight: 220)
+            .overlay { if works.isEmpty { EmptyState(title: none, glyph: .work) } }
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(action) {
-                    if let chosen, let work = works.first(where: { $0.id == chosen }) { choose(work) }
+                    let picked = works.filter { chosen.contains($0.id) }
+                    if !picked.isEmpty { choose(picked) }
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(chosen == nil)
+                .disabled(chosen.isEmpty)
             }
         }
         .padding(Space.xl)
         .frame(width: 460)
+    }
+
+    func rows(_ shown: [Work]) -> some View {
+        ForEach(shown) { work in
+            HStack(spacing: Space.s) {
+                FileIcon(path: work.latest.path, folder: work.latest.kind == .folder, size: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(work.files.map(\.name).joined(separator: " → ")).lineLimit(1).truncationMode(.middle)
+                    caption(work)
+                }
+            }
+            .tag(work.id)
+        }
     }
 
     /// Where the work is and when it last arrived: its project by mark and name, its folder, the date.

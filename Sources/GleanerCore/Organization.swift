@@ -11,6 +11,8 @@ public struct Work: Sendable, Identifiable {
     public var deliveries: [Delivery]
     /// The key of the project it is shown in.
     public var project: String
+    /// The key of the work unit it is in; nil in none. A work is in at most one.
+    public var unit: String? = nil
 
     /// The path of its first-delivered file.
     public var id: String { files[0].path }
@@ -26,11 +28,14 @@ public struct Work: Sendable, Identifiable {
     public func contains(_ path: String) -> Bool { files.contains { $0.path == path } }
 
     /// For a search (SPEC §10), across its files: the newest delivery whose own words matched, else
-    /// the newest delivery of a file whose name, folder or project did. Each delivery is matched
-    /// with its own file's name; words from different deliveries never combine.
-    public func match(_ tokens: [String], project: String) -> Delivery? {
+    /// the newest delivery of a file whose name, folder, project or collection did. `collections`
+    /// names the collection holding the work and the one that is inside, matched as the project is
+    /// (SPEC §5.5). Each delivery is matched with its own file's name; words from different
+    /// deliveries never combine.
+    public func match(_ tokens: [String], project: String, collections: [String] = []) -> Delivery? {
+        let shared = ([project] + collections).joined(separator: " ")
         let found = files.compactMap { file in
-            file.matches(tokens, project: project).map { (file.deliveries[$0.index], $0.ownWords) }
+            file.matches(tokens, project: shared).map { (file.deliveries[$0.index], $0.ownWords) }
         }
         func newest(_ list: [(Delivery, Bool)]) -> Delivery? {
             list.max { ($0.0.deliveredAt ?? .distantPast) < ($1.0.deliveredAt ?? .distantPast) }?.0
@@ -39,9 +44,9 @@ public struct Work: Sendable, Identifiable {
     }
 }
 
-/// The library as the person sees it: projects, the works in each, and the joins Gleaner suggests.
-/// Built from what Gleaner found (artifacts, with their repositories and folders) and the person's
-/// corrections, which win. Nothing here reads the disk.
+/// The library as the person sees it: projects, the work units and works in each, and the joins
+/// Gleaner suggests. Built from what Gleaner found (artifacts, with their repositories and folders)
+/// and the person's corrections, which win. Nothing here reads the disk.
 public struct Organization: Sendable {
     public struct Project: Sendable, Identifiable {
         public enum Origin: Sendable, Equatable {
@@ -106,6 +111,17 @@ public struct Organization: Sendable {
     public private(set) var candidates: [Candidate] = []
     public let corrections: [Correction]
     public let userProjects: [UserProject]
+    /// The work units the person made and hasn't deleted, as shown: by their latest name, in the
+    /// project their own is shown in. By project, then in natural order of names, each followed by
+    /// the units inside it.
+    public private(set) var units: [WorkUnit] = []
+    private var unitIndex: [String: Int] = [:]
+    /// Every unit made, deleted or not, by its latest name.
+    private var unitNames: [String: String] = [:]
+    /// Each unit's own works, as indices into `works`, in list order.
+    private var unitWorks: [String: [Int]] = [:]
+    /// The decision that put each work in its unit, by work.
+    private var unitDecisions: [String: Correction] = [:]
     private var workIndex: [String: Int] = [:]
     private var projectIndex: [String: Int] = [:]
     private var candidateIndex: [String: Int] = [:]
@@ -116,9 +132,10 @@ public struct Organization: Sendable {
 
     /// `observed` holds each file observed during sessions, newest first (`Candidate.files`), made
     /// once when the observations load rather than each time the person corrects something.
-    /// `missing` holds the paths last found gone from disk.
+    /// `units` holds the work units as made (`Registry.units`). `missing` holds the paths last
+    /// found gone from disk.
     public init(artifacts: [Artifact], observed: [Candidate] = [], corrections: [Correction] = [],
-                projects userProjects: [UserProject] = [], missing: Set<String> = []) {
+                projects userProjects: [UserProject] = [], units made: [WorkUnit] = [], missing: Set<String> = []) {
         self.corrections = corrections
         self.userProjects = userProjects
         let byPath = Dictionary(artifacts.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
@@ -182,14 +199,53 @@ public struct Organization: Sendable {
                 placements[work.id] = first.map { .combined(from: found, $0) } ?? .found
             }
         }
+
+        // Work units the person made and hasn't deleted, nor the unit they are inside, by their
+        // latest name, shown in the project their own is shown in.
+        func later(_ a: Correction, _ b: Correction) -> Bool { (a.madeAt, a.id) > (b.madeAt, b.id) }
+        let deleted = Set(corrections.filter { $0.kind == .unitDeleted }.map(\.subject))
+        var named: [String: Correction] = [:]
+        for c in corrections where c.kind == .unitName && named[c.subject].map({ later(c, $0) }) ?? true { named[c.subject] = c }
+        let stored = Dictionary(made.map { ($0.key, $0) }, uniquingKeysWith: { a, _ in a })
+        var live: [String: WorkUnit] = [:]
+        for unit in made {
+            unitNames[unit.key] = named[unit.key]?.target ?? unit.name
+            guard !deleted.contains(unit.key), isProject(unit.project) else { continue }
+            if let parent = unit.parent {
+                guard let above = stored[parent], above.parent == nil, !deleted.contains(parent) else { continue }
+            }
+            var shown = unit
+            shown.name = unitNames[unit.key]!
+            shown.project = resolve(unit.project).key
+            live[unit.key] = shown
+        }
+        // A work is in the unit the latest decision about any of its files put it in, while that
+        // unit is shown in the work's project: a work moved to another project leaves it, and comes
+        // back with the move undone. Taken out, or its unit deleted, it is in none.
+        var decided: [String: Correction] = [:]
+        for c in corrections where (c.kind == .unit || c.kind == .outOfUnit) && decided[c.subject].map({ later(c, $0) }) ?? true {
+            decided[c.subject] = c
+        }
+        for index in works.indices {
+            guard let decision = works[index].files.compactMap({ decided[$0.path] }).max(by: { later($1, $0) }),
+                  decision.kind == .unit, let unit = live[decision.target], unit.project == works[index].project else { continue }
+            works[index].unit = unit.key
+            unitDecisions[works[index].id] = decision
+        }
+
         works.sort { date($0.deliveries[0]) != date($1.deliveries[0]) ? date($0.deliveries[0]) > date($1.deliveries[0]) : $0.id < $1.id }
         self.works = works
         for (index, work) in works.enumerated() {
             for file in work.files { workIndex[file.path] = index }
         }
+        for (key, members) in Dictionary(grouping: works.indices.filter({ works[$0].unit != nil }), by: { works[$0].unit! }) {
+            let order = Dictionary(Self.listed(members.map { works[$0] }).enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
+            unitWorks[key] = members.sorted { order[works[$0].id]! < order[works[$1].id]! }
+        }
 
-        // Projects: each derived folder by its name, told apart from another of the same name.
-        let derived = Set(works.map(\.project).filter { !yours.contains($0) } + combine.keys.filter { !yours.contains($0) })
+        // Projects: each derived folder by its name, told apart from another of the same name. A
+        // project holding a unit is listed with it, works or not.
+        let derived = Set((works.map(\.project) + combine.keys + live.values.map(\.project)).filter { !yours.contains($0) })
         derivedNames = Projects.names(derived)
         let inRepository = Set(artifacts.filter(\.inRepository).map(\.projectFolder))
         var projects: [Project] = []
@@ -203,11 +259,19 @@ public struct Organization: Sendable {
         for user in userProjects where !projects.contains(where: { $0.key == user.key }) {
             projects.append(Project(key: user.key, name: user.name, origin: .yours, works: [], combined: []))
         }
+        for key in Set(live.values.map(\.project)) where !projects.contains(where: { $0.key == key }) {
+            projects.append(Project(key: key, name: derivedNames[key] ?? Projects.name(key),
+                                    origin: inRepository.contains(key) ? .repository : .folder, works: [], combined: []))
+        }
         projects.sort {
             let (a, b) = ($0.latest ?? .distantPast, $1.latest ?? .distantPast)
             return a != b ? a > b : $0.name.localizedStandardCompare($1.name) == .orderedAscending
         }
         for (index, project) in projects.enumerated() { projectIndex[project.key] = index }
+        let tops = live.values.filter { $0.parent == nil }.sorted(by: WorkUnit.ordered)
+        let inner = Dictionary(grouping: live.values.filter { $0.parent != nil }, by: { $0.parent! }).mapValues { $0.sorted(by: WorkUnit.ordered) }
+        units = projects.flatMap { project in tops.filter { $0.project == project.key }.flatMap { [$0] + (inner[$0.key] ?? []) } }
+        for (index, unit) in units.enumerated() { unitIndex[unit.key] = index }
         for (folder, c) in combine {
             let into = resolve(folder).key
             guard into != folder, let index = projectIndex[into] else { continue }
@@ -262,6 +326,53 @@ public struct Organization: Sendable {
     }
 
     public func work(containing path: String) -> Work? { workIndex[path].map { works[$0] } }
+
+    /// The unit `key`, while it is shown.
+    public func unit(_ key: String) -> WorkUnit? { unitIndex[key].map { units[$0] } }
+
+    /// The unit's latest name, shown or deleted.
+    public func unitName(_ key: String) -> String { unitNames[key] ?? "" }
+
+    /// The units at the top of the project `key`, in natural order of names.
+    public func units(in project: String) -> [WorkUnit] {
+        units.filter { $0.project == project && $0.parent == nil }
+    }
+
+    /// The units inside the unit `key`, in natural order of names.
+    public func units(inside key: String) -> [WorkUnit] {
+        units.filter { $0.parent == key }
+    }
+
+    /// The unit's own works, in list order: what a person opens first, then newest (`Listing`).
+    /// With `inner`, the works of the units inside it follow, unit by unit.
+    public func works(in key: String, inner: Bool = false) -> [Work] {
+        let own = (unitWorks[key] ?? []).map { works[$0] }
+        return inner ? own + units(inside: key).flatMap { works(in: $0.key) } : own
+    }
+
+    /// The first image among the unit's works and those of the units inside it, in list order: what
+    /// stands for it in a list.
+    public func poster(of key: String) -> Work? {
+        works(in: key, inner: true).first { $0.kind == .image }
+    }
+
+    /// The names of the unit holding the work and of the one it is inside, as a search matches
+    /// them; none for a work in no unit.
+    public func unitNames(of work: Work) -> [String] {
+        guard let key = work.unit, let unit = unit(key) else { return [] }
+        return [unit.name] + (unit.parent.map { [unitName($0)] } ?? [])
+    }
+
+    /// The unit holding the work, with the decision that put it there.
+    public func unit(of work: Work) -> (unit: WorkUnit, decision: Correction)? {
+        guard let key = work.unit, let unit = unit(key), let decision = unitDecisions[work.id] else { return nil }
+        return (unit, decision)
+    }
+
+    /// Works in list order (`Listing.ordered`).
+    static func listed(_ works: [Work]) -> [Work] {
+        Listing.ordered(works.map(Listing.Entry.work)).compactMap { if case .work(let work) = $0 { work } else { nil } }
+    }
 
     public func candidate(_ path: String) -> Candidate? { candidateIndex[path].map { candidates[$0] } }
 

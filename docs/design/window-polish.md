@@ -68,7 +68,7 @@ Files are drawn with the icon Finder uses for their type (`NSWorkspace.icon(for:
 
 ## Marks
 
-`Sources/GleanerUI/Glyph.swift` (then `Sources/Gleaner/Glyphs.swift`) draws Gleaner's marks natively from SVG path data. Each is on the kit's 24-point grid, with a 1.5 stroke that scales with the size and never draws under 1 point, round caps and joins. The renderer reads SVG path syntax, elliptical arcs included, stops at numbers after a close rather than repeating it, and takes any whitespace between numbers. `MarkTests` (in `GleanerUITests`, then `GlyphTests`) checks that every mark and agent mark draws inside its grid. Twenty-six marks are copied from the kit's `glyphs.svg`. Two are Gleaner's own, drawn to the same grid (a third, `lost`, came with the component library, [components.md](components.md)):
+`Sources/GleanerUI/Glyph.swift` (then `Sources/Gleaner/Glyphs.swift`) draws Gleaner's marks natively from SVG path data. Each is on the kit's 24-point grid, with a 1.5 stroke that scales with the size and never draws under 1 point, round caps and joins. The renderer reads SVG path syntax, elliptical arcs included, stops at numbers after a close rather than repeating it, and takes any whitespace between numbers. `MarkTests` (in `GleanerUITests`, then `GlyphTests`) checks that every mark and agent mark draws inside its grid. Twenty-six marks are copied from the kit's `glyphs.svg`. Two are Gleaner's own, drawn to the same grid (a third, `lost`, came with the component library, [components.md](components.md), and `collection` and `published` with reviewing, [review.md](review.md)):
 - **repository**: three nodes and a branch, for git projects;
 - **work**: a file with another behind it, for one work in several files.
 

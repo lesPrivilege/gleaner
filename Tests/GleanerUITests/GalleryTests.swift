@@ -221,6 +221,7 @@ struct StatusSection: View {
         .solid: "Same as delivery 2", .hollow: "As first seen", .dashed: "Not on disk", .na: "Folder",
         .attention: "Changed", .cross: "Lost", .failed: "Can’t read", .awaiting: "Suggested",
         .declined: "Kept apart", .running: "Checking…", .done: "Copied", .observed: "Appeared during",
+        .revise: "Changes requested", .published: "Published",
     ]
 
     var body: some View {

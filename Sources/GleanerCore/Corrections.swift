@@ -12,10 +12,12 @@ public struct UserProject: Sendable, Equatable, Identifiable {
 
 /// A person's decision about how the library is organized. It is kept apart from what Gleaner
 /// observed (review-rulings §3, foundation 2): no correction changes a delivery, a capture, a hash
-/// or a status, and reading the logs again never undoes one.
+/// or a status, and reading the logs again never undoes one. Keeping an observed file adds a
+/// revision of the person's own beside the deliveries, never one of them.
 public struct Correction: Sendable, Equatable, Identifiable {
     public enum Kind: String, Sendable {
-        /// The work holding the file `subject` belongs to the project `target`.
+        /// The work holding the file `subject` belongs to the project `target`. The latest of these
+        /// for a work's files places it.
         case project
         /// The project derived from the folder `subject` is shown inside the project `target`.
         case combine
@@ -29,6 +31,19 @@ public struct Correction: Sendable, Equatable, Identifiable {
         /// The observed file `subject` goes with the work holding the file `target`. It is shown with
         /// that work, never as one of its versions, and shares none of its revisions or marks.
         case related
+        /// The file `subject`, observed during the session whose log is `target`, is kept: a work
+        /// whose one revision is that observation (docs/design/review.md).
+        case kept
+        /// The work holding the file `subject` is in the work unit `target`. The latest of these and
+        /// `outOfUnit` for a work's files decides its unit.
+        case unit
+        /// The work holding the file `subject` is taken out of the work unit `target`.
+        case outOfUnit = "out_of_unit"
+        /// The work unit `subject` is named `target`; the latest name stands.
+        case unitName = "unit_name"
+        /// The work unit `subject` is deleted, with the units inside it: their works go back to its
+        /// project.
+        case unitDeleted = "unit_deleted"
     }
 
     public var id: Int64
@@ -66,12 +81,14 @@ extension Registry {
         try writing { try db.run("UPDATE projects SET name = ? WHERE key = ?", [name, key]) }
     }
 
-    /// Removes a project the person made, with every correction that put work or projects in it:
-    /// that work goes back to where Gleaner would put it. No file is touched.
+    /// Removes a project the person made, with every correction that put work or projects in it,
+    /// and the work units made in it: that work goes back to where Gleaner would put it. No file is
+    /// touched.
     public func removeProject(_ key: String) throws {
         try writing { try db.transaction {
             try db.run("DELETE FROM corrections WHERE kind IN ('project', 'combine') AND target = ?", [key])
             try db.run("DELETE FROM projects WHERE key = ?", [key])
+            try removeUnits(try db.rows("SELECT key FROM units WHERE project = ?", [key]).compactMap { $0["key"] as? String })
         } }
     }
 
@@ -101,17 +118,26 @@ extension Registry {
         }
     }
 
-    /// Records a decision. A file's work, or a folder's project, has one place: a new one replaces
-    /// the last. Two files are one work or not, so saying one replaces the other. An observed file
-    /// may be detached from several sessions and related to several works; saying the same again
-    /// replaces it.
+    /// Records a decision. A folder's project has one place: a new one replaces the last. Two files
+    /// are one work or not, so saying one replaces the other. An observed file may be detached from
+    /// several sessions and related to several works; saying the same again replaces it. A file is
+    /// kept once. A work's project, and a work unit's contents and name, are appended, each decision
+    /// on top of the last, so undoing one returns to the one before it (A19): a work moved on from a
+    /// project it was moved to goes back there, and into its unit there. Deleting a unit twice is
+    /// once.
     public func correct(_ kind: Correction.Kind, subject: String, target: String, at date: Date) throws {
         try correct(kind, subjects: [subject], target: target, at: date)
     }
 
     /// The same decision for each of `subjects`, made whole or not at all.
     public func correct(_ kind: Correction.Kind, subjects: [String], target: String, at date: Date) throws {
-        try writing { try db.transaction { try record(kind, subjects: subjects, target: target, at: date) } }
+        try correct(subjects.map { (kind, $0, target) }, at: date)
+    }
+
+    /// Several decisions made as one, whole or not at all: keeping an observed file and adding it to
+    /// a unit, say, or adding a work to a unit of another project and moving it there.
+    public func correct(_ decisions: [(kind: Correction.Kind, subject: String, target: String)], at date: Date) throws {
+        try writing { try db.transaction { for d in decisions { try record(d.kind, subjects: [d.subject], target: d.target, at: date) } } }
     }
 
     private func record(_ kind: Correction.Kind, subjects: [String], target: String, at date: Date) throws {
@@ -119,13 +145,15 @@ extension Registry {
             let (subject, target) = kind == .sameWork || kind == .notSameWork
                 ? (min(subject, target), max(subject, target)) : (subject, target)
             switch kind {
-            case .project, .combine:
+            case .combine, .kept, .unitDeleted:
                 try db.run("DELETE FROM corrections WHERE kind = ? AND subject = ?", [kind.rawValue, subject])
             case .sameWork, .notSameWork:
                 try db.run("DELETE FROM corrections WHERE kind IN ('same_work', 'not_same_work') AND subject = ? AND target = ?",
                            [subject, target])
             case .notFromSession, .related:
                 try db.run("DELETE FROM corrections WHERE kind = ? AND subject = ? AND target = ?", [kind.rawValue, subject, target])
+            case .project, .unit, .outOfUnit, .unitName:
+                break
             }
             try db.run("INSERT INTO corrections (kind, subject, target, made_at) VALUES (?, ?, ?, ?)",
                        [kind.rawValue, subject, target, date])
@@ -141,9 +169,11 @@ extension Registry {
         try undo([correction])
     }
 
-    /// Undoes every correction and removes the projects the person made: the library is organized
-    /// as Gleaner found it. No file is touched.
+    /// Undoes every correction and removes the projects and work units the person made: the
+    /// library is organized as Gleaner found it, and what the person kept is a candidate again.
+    /// Verdicts and published marks stay: they judge bytes, not how the library is organized. No
+    /// file is touched.
     public func undoAllCorrections() throws {
-        try writing { try db.transaction { try db.execute("DELETE FROM corrections; DELETE FROM projects;") } }
+        try writing { try db.transaction { try db.execute("DELETE FROM corrections; DELETE FROM projects; DELETE FROM units;") } }
     }
 }

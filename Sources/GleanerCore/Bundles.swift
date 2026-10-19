@@ -93,7 +93,7 @@ extension Indexer {
     /// listed before. A folder is walked as a workspace is (`Workspace.walk`), by metadata only,
     /// once per run whatever the number of its deliveries, without entering a repository inside it,
     /// which is another project; each delivery takes the files and packages its reply's time shows
-    /// were there, and never the hidden ones. A package is one of them, a folder, captured as a
+    /// were there, never a hidden one, which no walk lists. A package is one of them, a folder, captured as a
     /// delivered folder is. A folder that is never unpacked (`listability`) keeps why. A delivery's
     /// listing and its files are recorded together, so a listing that couldn't be recorded is made
     /// next run, as is one of a folder that is gone or can't be read now. Only the folders of
@@ -134,8 +134,7 @@ extension Indexer {
                 // the live window of a reply that came after its last write (SPEC §5.1).
                 let live = now.timeIntervalSince(deliveredAt) <= liveWindow
                 members = walk.files.compactMap { file in
-                    guard !(file.path as NSString).lastPathComponent.hasPrefix("."),
-                          Membership.handedOver(file, deliveredAt: deliveredAt, grace: clockTolerance) else { return nil }
+                    guard Membership.handedOver(file, deliveredAt: deliveredAt, grace: clockTolerance) else { return nil }
                     var file = file
                     if let names = named[FileIdentity(device: file.device, inode: file.inode)], !names.contains(file.path) {
                         file.path = names.min()!
@@ -252,9 +251,11 @@ extension Indexer {
     /// with `read`, the bytes Gleaner read of it as `file` (SPEC §5.4): at delivery only when the
     /// read came within the live window of the reply, and the file, unchanged since it was listed,
     /// was last written and its inode last changed by the reply's time (§5.1); else first seen
-    /// after it. Nothing is completed when the file changed while it was read.
+    /// after it. The revisions the person kept of it are completed the same way (`completeKept`).
+    /// Nothing is completed when the file changed while it was read.
     func completeMembers(of path: String, with read: Capture, file: Workspace.File?) throws {
         guard let file, read.sha256 != nil, read.size == file.size, Workspace.file(at: path) == file else { return }
+        try completeKept(of: path, with: read, file: file)
         for member in try registry.listedMembers(of: path, as: file) {
             let live = member.deliveredAt.map { reply in
                 let by = reply.addingTimeInterval(clockTolerance)
@@ -365,7 +366,7 @@ extension Registry {
             d.logPath + "\n" + (d.replyLine.map { "\($0)" } ?? d.deliveredAt.map { "\($0.timeIntervalSince1970)" } ?? d.id)
         }
         let named = found.filter { $0.delivery.member == nil }
-        let replies = Set(named.map { reply($0.delivery) })
+        let replies = Set(named.filter { $0.delivery.kept == nil }.map { reply($0.delivery) })
         var inFolders: [String: Found] = [:]
         for item in found {
             guard let member = item.delivery.member, !replies.contains(reply(item.delivery)) else { continue }

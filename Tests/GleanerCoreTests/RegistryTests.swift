@@ -13,6 +13,15 @@ import Testing
         #expect(row?["cwd"] as? String == "/p")
     }
 
+    @Test func aFilesDecisionsAreFoundByItsPathNotByReadingEveryOne() throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString).sqlite").path
+        let registry = try Registry(path: path)
+        // Every read of a file asks whether it was kept; every decision appended grows the table.
+        let plans = try registry.db.rows("EXPLAIN QUERY PLAN SELECT target, made_at FROM corrections WHERE kind = 'kept' AND subject = ?",
+                                         ["/p/a.png"]).compactMap { $0["detail"] as? String }
+        #expect(plans.contains { $0.hasPrefix("SEARCH") && $0.contains("INDEX corrections_subject") }, "\(plans)")
+    }
+
     @Test func pruningOneLogNeverTouchesAnotherLogOfTheSameSession() throws {
         let path = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString).sqlite").path
         let registry = try Registry(path: path)

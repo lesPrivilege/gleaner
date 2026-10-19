@@ -3,12 +3,13 @@ import SwiftUI
 /// Gleaner's marks, drawn natively from SVG geometry on a 24-point grid with a 1.5 stroke that
 /// scales with the size. Each repeats a word written beside it and is never the only carrier of a
 /// meaning (Praxis `kit/design/marks`, grammar §2). The kit's glyphs are copied from its
-/// `glyphs.svg`; `repository`, `work` and `lost` are Gleaner's own, drawn to the same grid.
+/// `glyphs.svg`; `repository`, `work`, `collection`, `lost` and `published` are Gleaner's own,
+/// drawn to the same grid.
 public enum Glyph: CaseIterable, Sendable {
     // Objects
-    case file, artifact, work, folder, repository, person, agent, terminal, database, checkpoint
+    case file, artifact, work, collection, folder, repository, person, agent, terminal, database, checkpoint
     // States: what the person must know about a thing, each with its word
-    case done, running, awaiting, rejected, error, warning, unknown, unverified, missing, lost, na, outside
+    case done, running, awaiting, rejected, error, warning, unknown, unverified, missing, lost, na, outside, published
     // Flows: what a decision does
     case branch, merge, retry, rollback
     // Relation endpoints: confirmed, not confirmed, declined
@@ -29,6 +30,11 @@ public enum Glyph: CaseIterable, Sendable {
             .path("M9.5 5h5.5l4 4v10a2 2 0 0 1-2 2H9.5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z"),
             .path("M15 5v4h4"),
             .path("M4.5 16.5V5a2 2 0 0 1 2-2h5"),
+        ])
+        // A group the person made: a card with the edges of two more behind it, never a folder.
+        case .collection: Spec(viewBox: CGRect(x: 0, y: 0, width: 24, height: 24), elements: [
+            .path("M7.5 4.5h9M5.5 7.5h13"),
+            .rect(3.5, 10.5, 17.0, 9.5, 2.0),
         ])
         case .file: Spec(viewBox: CGRect(x: 0.0, y: 0.0, width: 24.0, height: 24.0), elements: [
             .path("M7 3h7l5 5v11a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"),
@@ -127,6 +133,11 @@ public enum Glyph: CaseIterable, Sendable {
         case .outside: Spec(viewBox: CGRect(x: 0.0, y: 0.0, width: 24.0, height: 24.0), elements: [
             .path("M5 4.5h5v15H5"),
             .circle(16.5, 12.0, 2.5),
+        ])
+        // Sent out by the person: an arrow leaving a tray.
+        case .published: Spec(viewBox: CGRect(x: 0, y: 0, width: 24, height: 24), elements: [
+            .path("M12 14.5V4M8 7.5L12 3.5l4 4"),
+            .path("M5 12.5v5.5a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-5.5"),
         ])
         case .endSolid: Spec(viewBox: CGRect(x: -6.0, y: -6.0, width: 12.0, height: 12.0), elements: [
             .circle(0, 0, 3.25, filled: true),

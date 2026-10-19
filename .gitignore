@@ -3,3 +3,4 @@
 out/
 build/
 .claude/
+.DS_Store

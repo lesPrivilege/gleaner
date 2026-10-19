@@ -1,4 +1,5 @@
 import AppKit
+import GleanerCore
 import SwiftUI
 
 @main
@@ -44,6 +45,8 @@ struct GleanerApp: App {
                 Button("Copy Path") { if let model, let result = model.selected { model.copyPath(model.file(in: result)) } }
                     .keyboardShortcut("c", modifiers: [.command, .option])
                     .disabled(model?.selected == nil)
+                Divider()
+                if let model { CollectionMenu().environment(model) }
             }
             CommandGroup(after: .toolbar) {
                 Button("Quick Look") { model?.toggleQuickLook() }
@@ -58,5 +61,37 @@ struct GleanerApp: App {
                 Button("Gleaner Help") { NSWorkspace.shared.open(URL(string: "https://github.com/lesPrivilege/gleaner#readme")!) }
             }
         }
+    }
+}
+
+/// The File menu's collections: New Collection where the window is, Add to Collection and Remove
+/// from Collection for the works chosen, and Rename and Delete for the collection shown.
+struct CollectionMenu: View {
+    @Environment(LibraryModel.self) private var model
+
+    var body: some View {
+        let works = model.selectedWorks
+        let unit = model.currentUnit
+        Button("New Collection") {
+            if let place = model.newUnitPlace { model.startNewUnit(in: place.project, inside: place.parent) }
+        }
+        .keyboardShortcut("n", modifiers: [.command, .shift])
+        .disabled(model.newUnitPlace == nil)
+        Menu("Add to Collection") {
+            if let project = works.first?.project {
+                CollectionChoices(project: project, except: Set(works.compactMap(\.unit))) { unit in
+                    Task { await model.add(works, to: unit) }
+                } new: {
+                    model.startNewUnit(in: project, adding: works.map(\.id))
+                }
+            }
+        }
+        .disabled(works.isEmpty)
+        Button("Remove from Collection") { Task { await model.remove(works) } }
+        .disabled(!works.contains { $0.unit != nil })
+        Button("Rename Collection") { if let unit { model.startRenaming(unit) } }
+            .disabled(unit == nil)
+        Button("Delete Collection") { if let unit { Task { await model.delete(unit) } } }
+            .disabled(unit == nil)
     }
 }

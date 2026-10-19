@@ -55,7 +55,7 @@ Both kinds show in one window, where the person can relate them. A candidate is 
 
 **Skipped:**
 - sessions whose workspace is the home folder or a system folder, a hidden folder, or the agents' logs or Gleaner's own library, so Gleaner never observes transcripts or itself;
-- `.git` and hidden folders;
+- `.git`, hidden folders and hidden files (`.env`, `.DS_Store`);
 - the dependency caches tools leave (`node_modules`, `__pycache__`, `DerivedData`; `.build` and `.venv` are hidden), and folders their tool marked as a cache with a `CACHEDIR.TAG` file (Cargo's `target`).
 
 These skips are structural. No file type is excluded: a script may itself be the deliverable. No output folder is excluded by its name either: `dist` or `build` may hold what was asked for.
@@ -77,7 +77,7 @@ Kept apart, as the owner set them:
 
 - **Generated:** handed over in a session, or observed appearing or changing during one (which, when, which agent). These are two evidences, said as such.
 - **On this Mac:** the file is there and readable now.
-- **Reviewed:** the person's verdict on these bytes: approved, changes requested or rejected, with their hash, the time and an optional note. Approving a file that is uncommitted in a worktree says that it may not reopen once its folder is gone.
+- **Reviewed:** the person's verdict on these bytes: approved, changes requested or rejected, with their hash, the time and an optional note. A verdict on bytes Gleaner keeps no copy of (a file over 64 MB, or a save that failed) says so, with the file's size and, while the file still holds those bytes, whether Git ignores it, has it uncommitted (in a worktree, that it may not reopen once its folder is gone) or committed, and offers Save a Copy ([review.md](review.md), Before landing, as built).
 - **Published:** the person's mark on these bytes (the hash, the time, an optional place or link).
 
 A mark stays when the file changes, and the item says "Changed since review". None of the four implies another.
@@ -86,7 +86,7 @@ A mark stays when the file changes, and the item says "Changed since review". No
 
 Provider code is one map per provider, from record shapes to requests, replies, folders and times. It is what the adapters already are. Everything else is shared: the span, observations, order, groups, marks and the window. A new agent is one adapter and its fixtures. When a provider adds a structured record of what a tool wrote (as Claude Code's Write tool and Codex's `apply_patch` do), the adapter may report it as extra evidence ("written by the agent"). Capture never depends on it.
 
-Each shape an adapter knows keeps a sanitized fixture line from a real log and the record's known keys, and drift shows as unknown-field counts, as today. `docs/MAINTAINING.md` gives a coding agent the loop: take the new log line, sanitize it, add the fixture, update the map, and run the fixture tests.
+Each shape an adapter knows keeps a sanitized fixture line from a real log. Today an unknown record type is counted and reported (SPEC §8). Planned, and not built yet: each shape's known keys, with drift shown as unknown-field counts, and `docs/MAINTAINING.md`, to give a coding agent the loop: take the new log line, sanitize it, add the fixture, update the map, and run the fixture tests.
 
 ## Layers
 
@@ -95,7 +95,7 @@ Each shape an adapter knows keeps a sanitized fixture line from a real log and t
    - Metadata only; bytes are read on the person's action.
    - Tests on synthetic sessions in several kinds of work: a video series, a report, a slide deck, a data analysis, and a code change.
 2. **Bundles.** A reply that hands over a folder hands over what is in it. Its files are listed with "Handed over in" evidence, stronger than "Appeared during", by metadata: each is a delivery of its own file, versioned with that file's other deliveries, whose bytes are read when the person acts on it.
-3. **Work units and the window.**
+3. **Work units and the window.** Designed and built in [review.md](review.md), which settles what follows: collections sit in the sidebar, under their project, and first in its outline, after its head; candidates sit under Observed, after its folders.
    - **In a project:** work units first (a series, then its episodes), then what each session handed over and what was observed during it, by folder, with crowded folders folded and stems shown together. Candidates stay under their session until kept.
    - **In a work unit's detail:** its works played, heard and shown in place, each with "Handed over in", "Appeared during" or "Changed during", its versions, and the four states.
    - **Review:** the Reviewed verdict and the Published mark. They, hand-on and comparison read the bytes then. The review queue is a saved view of the library (delivered or new revisions awaiting review), not a second library.
@@ -118,7 +118,7 @@ Built on `feat/capture`, 2026-10-19, and revised after its review the same day. 
 - **Who opens a kind.** A person opens documents, images, audio and video, pages, models, installers and folders. A program reads code, data and formats Gleaner can't place. Each extension's kind is looked up once.
 - **Crowded** is twelve or more observed files of one kind in one folder. What was handed over never folds.
 - **A stem** is the name before its first dot, compared without case, so dotted roles (`ep00.mix.wav`) share it. A hyphen isn't read as a role: `ov-4x3` and `ov-3x4` stay apart.
-- **Hidden files** are observed. Only hidden folders are skipped, as the skips above say.
+- **Hidden files** aren't observed (changed in layer 3): a walk lists no file whose name starts with a dot, as a delivered folder's listing never did, so `.env` is never a candidate to keep. Layer 1 first observed them and skipped only hidden folders.
 - **A package is one entry.** Finder shows a package (an app, an Xcode project, an RTFD document, a bundle: any folder whose extension the system declares conforming to `UTType.package`) as one file, and a person opens it as one. So the walk never enters one: it is observed as one entry, by its own creation, modification and inode change dates, under the same rule as a file (`Workspace.place`). A build that makes an app is observed making the app, not each of its resources. An app rebuilt in place whose own folder's dates don't move (Xcode touches it; not every tool does) isn't observed changing. Whether an extension is a package is the system's declaration, looked up once per extension, not a list Gleaner keeps: it is structure, as a hidden folder is, not a type deciding admission. `.framework` and `.xcassets`, which the system doesn't declare packages, are walked as folders.
 - **A project with candidates and no delivery** isn't added to the sidebar's projects yet. `Organization.candidates(in:)` lists any project's candidates, and the window decides in layer 2.
 - **The observed mark** is the kit's unverified one, a line to an open circle, in secondary ink.

@@ -9,8 +9,9 @@ import SwiftUI
 /// Each mark is a shape that stays apart from the others in grey: an endpoint for whether the
 /// bytes were confirmed, brackets for a missing value and a cross between them for one gone, a
 /// triangle for a look, an octagon for a failed read, a diamond for what waits on the person, a
-/// line to an open circle for what was only observed (Praxis kit, foundations/standing.md; macOS
-/// lists mark the exception, not the rule).
+/// line to an open circle for what was only observed, an open arrow for what was asked again, and
+/// an arrow leaving a tray for what the person sent out (Praxis kit, foundations/standing.md;
+/// macOS lists mark the exception, not the rule).
 public enum Mark: CaseIterable, Sendable {
     /// Confirmed: the filled endpoint.
     case solid
@@ -28,15 +29,19 @@ public enum Mark: CaseIterable, Sendable {
     case failed
     /// Waits on the person's decision: the diamond, the one accent.
     case awaiting
-    /// The person declined it; it stays shown: the crossed circle.
+    /// The person declined it; it stays shown: the crossed circle. A pair kept apart, a file rejected.
     case declined
     /// Under way, for as long as it takes: three dots, never a percentage.
     case running
-    /// Done, such as read or copied: the check.
+    /// Done, such as read, copied or approved: the check.
     case done
     /// Observed on the disk during a session, not handed over and not checked: the kit's
     /// unverified mark, a line to an open circle.
     case observed
+    /// The person asked for it again, with changes: the open arrow.
+    case revise
+    /// The person marked it sent out, published: an arrow leaving a tray.
+    case published
 
     public var glyph: Glyph {
         switch self {
@@ -52,12 +57,14 @@ public enum Mark: CaseIterable, Sendable {
         case .running: .running
         case .done: .done
         case .observed: .unverified
+        case .revise: .retry
+        case .published: .published
         }
     }
 
     public var color: Color {
         switch self {
-        case .solid, .hollow, .done: .primary
+        case .solid, .hollow, .done, .revise, .published: .primary
         case .dashed, .na, .declined, .running, .observed: .secondary
         case .attention, .failed: Palette.attention
         case .cross: Palette.lost

@@ -141,6 +141,8 @@ import Testing
         try write("big build b2, rebuilt in place after delivery", to: "out/build.dmg", modified: Date())
         #expect(throws: ContentStore.Failure.self) { try indexer.saveCopy(of: build.latest, at: Date()) }
         #expect(try artifact("build.dmg").latest.capture?.savedAt == nil)
+        // Nor are the bytes found instead left in the store, where nothing would ever refer to them.
+        #expect(!saved(try #require(Locator.sha256(build.path))))
 
         // The delivered bytes are back: the copy is kept.
         try write("big build b1, larger than the save limit", to: "out/build.dmg", modified: Date())
