@@ -1,0 +1,65 @@
+{
+  "cases" : [
+    {
+      "actual_count" : 1,
+      "case" : "relative_folder",
+      "expected_count" : 1,
+      "passed" : true
+    },
+    {
+      "actual_count" : 3,
+      "case" : "brace_range",
+      "expected_count" : 3,
+      "passed" : true
+    },
+    {
+      "actual_count" : 3,
+      "case" : "repeated_stem_range",
+      "expected_count" : 3,
+      "passed" : true
+    },
+    {
+      "actual_count" : 0,
+      "case" : "wildcard",
+      "expected_count" : 0,
+      "passed" : true
+    },
+    {
+      "actual_count" : 1,
+      "case" : "literal_year_span",
+      "expected_count" : 1,
+      "passed" : true
+    },
+    {
+      "actual_count" : 1,
+      "case" : "ambiguous_relative_kept",
+      "expected_count" : 1,
+      "passed" : true
+    },
+    {
+      "actual_count" : 1,
+      "case" : "anchor_is_not_glob",
+      "expected_count" : 1,
+      "passed" : true
+    },
+    {
+      "actual_count" : 0,
+      "case" : "nul_rejected",
+      "expected_count" : 0,
+      "passed" : true
+    },
+    {
+      "actual_count" : 0,
+      "case" : "bounded_range",
+      "expected_count" : 0,
+      "passed" : true
+    },
+    {
+      "actual_count" : 1,
+      "case" : "encoded_literal",
+      "expected_count" : 1,
+      "passed" : true
+    }
+  ],
+  "kind" : "extractor_only_smoke"
+}

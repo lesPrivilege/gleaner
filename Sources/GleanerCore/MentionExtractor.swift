@@ -32,6 +32,11 @@ public enum MentionExtractor {
         pattern: #"(?<![\w./~\-:])~?/(?!/)[^\s`<>"'()\[\]，。；、！？：（）「」]+/[^\s`<>"'()\[\]，。；、！？：（）「」]+"#)
     static let lineAnchor = try! NSRegularExpression(pattern: #":\d+(?::\d+)?(?:-\d+)?$"#)
     static let fileExtension = try! NSRegularExpression(pattern: #"\.[A-Za-z][A-Za-z0-9]{0,7}$"#)
+    static let bracedRange = try! NSRegularExpression(pattern: #"^([^{}]*)\{([0-9]+)\.\.([0-9]+)\}([^{}]*)$"#)
+    static let writtenRange = try! NSRegularExpression(pattern: #"^(.*?)([0-9]+)[–—](.*?)([0-9]+)(\.[^/]+)$"#)
+    /// A written range names a finite set, never a filesystem search. Refuse an oversized range
+    /// in full, rather than silently presenting a prefix as everything the reply named.
+    static let rangeLimit = 256
     static let ignoredSchemes = ["mailto:", "sandbox:", "data:", "javascript:", "tel:", "about:"]
 
     /// Candidates in a whole reply: one per path, in order of first mention, each keeping every
@@ -58,9 +63,11 @@ public enum MentionExtractor {
 
         func add(_ syntax: Mention.Syntax, raw: String, at range: NSRange) {
             guard let (path, anchor) = normalize(raw, cwd: cwd) else { return }
-            found.append((range.location, Mention(
-                syntax: syntax, rawTarget: raw, path: path, anchor: anchor,
-                excerpt: excerpt(ns, around: range))))
+            for expanded in expandRange(path) {
+                found.append((range.location, Mention(
+                    syntax: syntax, rawTarget: raw, path: expanded, anchor: anchor,
+                    excerpt: excerpt(ns, around: range))))
+            }
         }
 
         // Code examples first: a link inside a fence, or written inside inline code, is an example.
@@ -105,7 +112,12 @@ public enum MentionExtractor {
             anchor = String(target[hash...])
             target = String(target[..<hash])
         }
+        // Glob-like prose is not a literal original. Never pass it to a shell or scan the disk
+        // for it. Percent-encoded metacharacters still name literal files, and fragments above
+        // are document anchors, not filename patterns.
+        guard !target.contains("*"), !target.contains("?") else { return nil }
         target = target.removingPercentEncoding ?? target
+        guard !target.contains("\0") else { return nil }
         let ns = target as NSString
         if let match = lineAnchor.firstMatch(in: target, range: NSRange(location: 0, length: ns.length)) {
             anchor = anchor ?? ns.substring(with: match.range)
@@ -124,6 +136,42 @@ public enum MentionExtractor {
         return (Paths.standard(target), anchor)
     }
 
+    /// Explicit finite shorthand in a filename: `part{01..03}.mp4` or `part01–part03.mp4`
+    /// (also an em dash). A plain hyphen, or a dash without a repeated stem, stays literal:
+    /// names such as `forecast-2024-2025.pdf` and `forecast2024–2025.pdf` are often one report.
+    /// This is textual expansion only: no globbing, file reads, traversal or inferred authorship.
+    static func expandRange(_ path: String) -> [String] {
+        let name = (path as NSString).lastPathComponent as NSString
+        let all = NSRange(location: 0, length: name.length)
+        var prefix: String, suffix: String, start: String, end: String
+        if let match = bracedRange.firstMatch(in: name as String, range: all) {
+            prefix = name.substring(with: match.range(at: 1))
+            start = name.substring(with: match.range(at: 2))
+            end = name.substring(with: match.range(at: 3))
+            suffix = name.substring(with: match.range(at: 4))
+        } else if let match = writtenRange.firstMatch(in: name as String, range: all) {
+            prefix = name.substring(with: match.range(at: 1))
+            start = name.substring(with: match.range(at: 2))
+            let repeated = name.substring(with: match.range(at: 3))
+            guard !repeated.isEmpty else { return [path] }
+            guard !prefix.isEmpty, repeated == prefix else { return [] }
+            end = name.substring(with: match.range(at: 4))
+            suffix = name.substring(with: match.range(at: 5))
+        } else {
+            return [path]
+        }
+        guard let first = Int(start), let last = Int(end), first <= last,
+              last - first < rangeLimit else { return [] }
+        let padded = start.count > 1 && start.hasPrefix("0") || end.count > 1 && end.hasPrefix("0")
+        guard !padded || start.count == end.count else { return [] }
+        let folder = (path as NSString).deletingLastPathComponent
+        return (first...last).map { number in
+            let digits = String(number)
+            let padding = padded ? String(repeating: "0", count: max(0, start.count - digits.count)) : ""
+            return (folder as NSString).appendingPathComponent(prefix + padding + digits + suffix)
+        }
+    }
+
     /// Inline code is mostly identifiers and commands; keep spans that read as paths.
     static func looksLikePath(_ span: String) -> Bool {
         if span.contains("://") && !span.hasPrefix("file://") { return false }
@@ -131,6 +179,9 @@ public enum MentionExtractor {
         // `/goal` is a slash command; an absolute path has at least two components.
         if span.hasPrefix("/") || span.hasPrefix("~/") { return span.dropFirst().contains("/") }
         if span.contains(" ") { return false }
+        // Naming a relative folder hands it over under the same membership rules as a link to
+        // that folder. A trailing slash distinguishes it from identifiers like `origin/main`.
+        if span.hasSuffix("/"), span.count > 1 { return true }
         var last = (span as NSString).lastPathComponent as NSString
         if let match = lineAnchor.firstMatch(in: last as String, range: NSRange(location: 0, length: last.length)) {
             last = last.substring(to: match.range.location) as NSString
