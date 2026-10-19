@@ -170,6 +170,7 @@ final class LibraryModel {
         didSet {
             guard place != oldValue else { return }
             if case .project = place { kind = nil }
+            alsoSelected = []
             // A collection opens on its review page; elsewhere no collection's page is shown.
             if case .unit(let key) = place {
                 selection = nil
@@ -1389,6 +1390,7 @@ final class LibraryModel {
         if let sha256, let file {
             reads[path] = (sha256, file)
             listed[path] = .some(file)
+            absent[path] = nil
         } else {
             reads[path] = nil
             if listed[path] != nil {
