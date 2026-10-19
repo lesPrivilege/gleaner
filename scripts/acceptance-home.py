@@ -40,7 +40,9 @@ chapters, and a logo sits at the top. A session asked three hours ago answers on
 written, naming episode 1's video and script, the folder `ep02/`, episode 3's video and the
 compilation; everything else is only observed, by it and, for the covers, by a second session. A
 video already at its path is kept (the tour writes real ones first); otherwise a placeholder
-stands in. Phase review-revise then recuts episode 1's video, and a new reply names it.
+stands in. Beside it, `work/masters`, a Git repository that ignores `*.mov`, holds a 65 MiB master
+a third session names: over the save limit, so a verdict on it keeps its bytes only when asked.
+Phase review-revise then recuts episode 1's video, and a new reply names it.
 
 Phase initial delivers:
 - Claude Code: CJK Markdown, a PNG, a symlink, a folder and an HTML page inside it, a
@@ -373,6 +375,13 @@ elif phase == 'review':
                    f'is done; [episode 3]({names[2]}) and the [compilation]({names[3]}) too.', at(0), answered)
     claude_session(claude / 'reading-list' / 'reading-list-covers.jsonl', 'reading-list-covers', series, 'Series covers',
                    'Draw the covers at 4:3 and 16:9', 'The covers are ready.', at(60), answered)
+    masters = work / 'masters'
+    masters.mkdir(parents=True, exist_ok=True)
+    git(masters, 'init', '-q')
+    (masters / '.gitignore').write_text('*.mov\n')
+    sparse(masters / 'reading-list-master.mov', b'synthetic master, not a real movie\n')
+    claude_session(claude / 'masters' / 'masters.jsonl', 'masters', masters, 'Masters', 'Render the master',
+                   f'The [master]({masters / "reading-list-master.mov"}) is rendered.', at(100), answered)
 
 elif phase == 'review-revise':
     series = work / 'reading-list'

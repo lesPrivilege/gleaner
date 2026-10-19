@@ -343,6 +343,28 @@ import Testing
         #expect(model.organization.works(in: episodes[1].key).count == 7)
         #expect(model.toReviewCount == 24)
 
+        // The project's outline leads with its collections, each with what waits on the person.
+        model.place = .project(project.key)
+        try await shot("outline-with-collections")
+        // A search finds works by their collection's name: Episode 2's covers, by "episode 2 cover".
+        model.query = "episode 2 cover"
+        #expect(Set(model.results.map(\.work.name)) == ["cover-4x3.png", "cover-4x3.svg", "cover-16x9.png"])
+        try await shot("search-by-collection-name")
+        // New Collection from These, from what the search found: named in place, holding exactly
+        // those three, then taken back as Edit › Undo takes it back.
+        let found = model.results.map(\.work)
+        model.newCollection(from: found)
+        try await shot("new-collection-from-these")
+        let before = Set(model.corrections.map(\.id))
+        await model.commitNaming("Wide Covers")
+        let wide = try #require(model.organization.units.first { $0.name == "Wide Covers" })
+        #expect(Set(model.organization.works(in: wide.key).map(\.id)) == Set(found.map(\.id)))
+        model.query = ""
+        model.place = .unit(wide.key)
+        try await shot("new-collection-made")
+        await model.unmake(wide, with: model.corrections.filter { !before.contains($0.id) })
+        #expect(model.organization.works(in: episodes[1].key).count == 7 && model.toReviewCount == 24)
+
         model.place = .unit(made.key)
         try await shot("series-review-page")
         // A collection is named in place, in the sidebar.
@@ -358,6 +380,18 @@ import Testing
         model.outlineSelection = .unit(episodes[0].key)
         try await shot("episode-1-review-page")
         try await tall("episode-1-whole-page")
+        // Review All's menu as the page offers it once every item is drawn: the images and the
+        // script, with the video and the narration left to their own verdicts. Drawn from the
+        // same `ReviewAll` the menu reads: a menu doesn't open off screen.
+        let page = ReviewLayout(model.organization.works(in: episodes[0].key))
+        let drawnAll = Set(page.works.map(\.latest.path))
+        let shownAll = Dictionary(uniqueKeysWithValues: page.works.compactMap { work in FileStat(work.latest.path).map { (work.latest.path, $0) } })
+        let all = ReviewAll(page.works, drawn: drawnAll, shown: shownAll, verdict: model.verdict)
+        #expect(all.approve.count == 4 && all.oneByOne == "1 video and 1 audio file to review one by one")
+        step += 1
+        try await Self.menu([("Approve All", !all.approve.isEmpty), ("Request Changes to All…", !all.changes.isEmpty),
+                             ("Reject All…", !all.reject.isEmpty)], note: all.oneByOne,
+                            to: out.appendingPathComponent(String(format: "review-%02d-review-all-menu.png", step)))
 
         // Every file of episode 1 approved as shown, its script asked again, its video published.
         let shown = Dictionary(uniqueKeysWithValues: model.organization.works(in: episodes[0].key).compactMap { work in
@@ -397,6 +431,31 @@ import Testing
         try await Self.snapshot(sheet, to: out.appendingPathComponent(String(format: "review-%02d-note-sheet.png", step)))
         sheet.close()
 
+        // A master over 64 MB that Git ignores: Request Changes offers Save a Copy, on, and says
+        // the bytes judged wouldn't be kept otherwise.
+        let masterPath = home.appendingPathComponent("work/masters/reading-list-master.mov").path
+        let master = try #require(model.organization.work(containing: masterPath))
+        let large = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 420, height: 300),
+                             styleMask: [.borderless], backing: .buffered, defer: false)
+        large.isReleasedWhenClosed = false
+        large.contentView = NSHostingView(rootView: NoteSheet(asking: Asking(works: [master], kind: .changesRequested,
+                                                                             shown: [masterPath: try #require(FileStat(masterPath))]))
+            .environment(model).background(Color(nsColor: .windowBackgroundColor)))
+        large.orderBack(nil)
+        step += 1
+        try await Self.snapshot(large, to: out.appendingPathComponent(String(format: "review-%02d-note-sheet-not-kept.png", step)))
+        large.close()
+        // Approved without it: the verdict's row says so, with Save a Copy beside it.
+        await model.review([master], as: .approved)
+        await model.lookUpGit([masterPath])
+        model.place = .project(master.project)
+        model.selection = master.id
+        await model.observe(master.latest)
+        // Its copy prepared first, as for the recut: Quick Look is never handed a file after the
+        // detail's window has closed.
+        if let sha = master.latest.latest.sha256 { await model.stage(sha: sha, artifact: master.latest) }
+        try await tall("master-detail-not-kept")
+
         model.place = .sources
         model.sourcePage = .corrections
         try await shot("corrections")
@@ -407,6 +466,19 @@ import Testing
         model.place = .unit(made.key)
         model.outlineSelection = .unit(episodes[1].key)
         try await shot("dark-episode-2-review-page")
+
+        // An image nothing can draw says so, rather than looking like one still being read (A20).
+        let broken = home.appendingPathComponent("work/broken.png")
+        try Data("not an image".utf8).write(to: broken)
+        let tile = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 400, height: 260),
+                            styleMask: [.borderless], backing: .buffered, defer: false)
+        tile.isReleasedWhenClosed = false
+        tile.contentView = NSHostingView(rootView: ImageTile(path: broken.path, generation: 0).padding(16)
+            .background(Color(nsColor: .windowBackgroundColor)))
+        tile.orderBack(nil)
+        step += 1
+        try await Self.snapshot(tile, to: out.appendingPathComponent(String(format: "review-%02d-image-that-cant-be-drawn.png", step)))
+        tile.close()
     }
 
     /// Runs a phase of `scripts/acceptance-home.py` on `home`.
@@ -431,7 +503,36 @@ import Testing
         detail.contentView = NSHostingView(rootView: DetailColumn().environment(model))
         detail.orderBack(nil)
         try await snapshot(detail, to: url)
+        // Its views go with it: a Quick Look view closed with its window takes no other file.
+        detail.contentView = nil
         detail.close()
+    }
+
+    /// A menu's items as it shows them, the disabled ones dimmed, and a note under a divider: a
+    /// stand-in drawn from the same values the menu reads, since a menu doesn't open off screen.
+    static func menu(_ items: [(title: String, enabled: Bool)], note: String?, to url: URL) async throws {
+        let panel = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 320, height: 140),
+                             styleMask: [.borderless], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.contentView = NSHostingView(rootView: VStack(alignment: .leading, spacing: 0) {
+            ForEach(items, id: \.title) { item in
+                Text(item.title).foregroundStyle(item.enabled ? .primary : .tertiary).padding(.horizontal, 14).padding(.vertical, 3)
+            }
+            if let note {
+                Divider().padding(.vertical, 5)
+                Text(note).foregroundStyle(.tertiary).padding(.horizontal, 14).padding(.vertical, 3)
+            }
+        }
+        .font(.body)
+        .padding(.vertical, 6)
+        .frame(width: 300, alignment: .leading)
+        .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 8))
+        .padding(10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .windowBackgroundColor)))
+        panel.orderBack(nil)
+        try await snapshot(panel, to: url)
+        panel.close()
     }
 
     /// The whole content column, as a person scrolling it would see it.
