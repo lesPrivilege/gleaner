@@ -45,10 +45,10 @@ import Testing
         #expect(detail(delivery(1, .file, sha: "a"), large: true).contains("too large to save"))
         #expect(detail(delivery(1, .file, sha: "a")).contains("Saving delivery 1 failed"))
         // Gleaner never read delivery 1, so it can't say the file changed, or that the delivery was
-        // ever available; the current file is offered by name.
+        // ever available; the current file is shown, named as what it is.
         let unread = detail(delivery(1, .missing))
         #expect(!unread.contains("changed"))
-        #expect(unread.contains("You can hand off the current file"))
+        #expect(unread.contains("Shown below is the file on disk now, which isn’t a delivery Gleaner found."))
         #expect(handoff(delivery(1, .missing), in: artifact(delivery(1, .missing)), now: changed).title == "Delivery 1 isn’t available")
     }
 
@@ -75,7 +75,7 @@ import Testing
                 #expect(!text.contains(claim), "\(claim): \(text)")
             }
             // Nothing on screen offers a file it can't read.
-            #expect(!text.contains("hand off the current file"))
+            #expect(!text.contains("shown below"))
         }
         let storage = Wording.storage(large, hasSaved: false, large: true, now: unreadable).1.lowercased()
         #expect(!storage.contains("no longer") && !storage.contains("exist"))
@@ -154,9 +154,14 @@ import Testing
         let again = delivery(2, .file, sha: "a")
         let both = artifact(later, again)
         // The header names the bytes it shows and hands over.
-        #expect(Wording.bytesCaption(nil, staged: nil, delivery: later) == "Delivery 1 (first seen later)")
-        #expect(Wording.bytesCaption(.ready(sha: "a", from: .original, firstSeen: delivered), staged: "a", delivery: later)
+        #expect(Wording.bytesCaption(nil, staged: nil, delivery: later, in: both) == "Delivery 1 (first seen later)")
+        #expect(Wording.bytesCaption(.ready(sha: "a", from: .original, firstSeen: delivered), staged: "a", delivery: later, in: both)
                 == "Delivery 1 · file on disk · first seen later")
+        // A delivery whose bytes are gone shows the file on disk now, named as what it is.
+        #expect(Wording.bytesCaption(.unavailable(alternative: nil, currentSha: "c"), staged: "c", delivery: later, in: both)
+                == "Current file · not a found delivery")
+        #expect(Wording.bytesCaption(.unavailable(alternative: 1, currentSha: "a"), staged: "a", delivery: again, in: both)
+                == "Current file · same as delivery 1 (first seen later)")
         // The tile names what it carries, before and after its copy is ready.
         let plan = Handoff.ready(sha: "a", from: .original, firstSeen: delivered)
         #expect(Wording.tileVersion(staged: nil, plan: plan, delivery: later, in: artifact(later)) == "delivery 1 (first seen later)")
@@ -337,8 +342,8 @@ import Testing
         #expect(Wording.noCopy(listed, large: false) == "You kept the file as a session left it, and Gleaner hasn’t read it.")
         let changed = FileObservation(state: state(.file, sha: "c"), checkedAt: delivered)
         let texts = [
-            Wording.revision(listed), Wording.compareTitle(read), Wording.bytesCaption(nil, staged: nil, delivery: listed),
-            Wording.bytesCaption(.ready(sha: "a", from: .original, firstSeen: nil), staged: "a", delivery: read),
+            Wording.revision(listed), Wording.compareTitle(read), Wording.bytesCaption(nil, staged: nil, delivery: listed, in: file),
+            Wording.bytesCaption(.ready(sha: "a", from: .original, firstSeen: nil), staged: "a", delivery: read, in: file),
             Wording.tileVersion(staged: nil, plan: .ready(sha: "a", from: .original, firstSeen: nil), delivery: read, in: file),
             Wording.deliveryLine(read, sameAs: nil), words(Wording.onDisk(.changed(since: 1), in: file, now: changed)),
             words(handoff(listed, in: file, now: changed.state)), words(handoff(later, in: file, now: changed.state)),

@@ -1570,11 +1570,10 @@ final class LibraryModel {
     }
 
     /// The bytes a verdict or mark was made on beside the file on disk, as checked, when Gleaner
-    /// keeps them, no revision of the work recorded them (Versions compares those), and the file
-    /// holds others now.
+    /// keeps them and the file holds others now: what was judged beside what is there, whether or
+    /// not a delivery also recorded those bytes.
     func reviewComparison(_ review: Review) -> (from: Comparison.End, to: Comparison.End)? {
         guard let judged = reviewEnd(review), let work = organization.work(containing: review.path),
-              !work.deliveries.contains(where: { $0.sha256 == review.sha256 }),
               let artifact = work.files.first(where: { $0.path == review.path }),
               let now = currentEnd(artifact), now.sha != review.sha256 else { return nil }
         return (judged, now)
@@ -2120,6 +2119,17 @@ final class LibraryModel {
             if let failure = actionFailure, failure.artifact == artifact.id, failure.delivery == nil { actionFailure = nil }
         }
         if goneChanged { reorganize() }
+    }
+
+    /// Prepares the bytes the detail shows for `plan`: the version's, or, when its bytes are gone,
+    /// the file on disk now, while Gleaner can read it. The file can still be read and judged; only
+    /// that version can't be shown. Nothing, for a plan with no bytes to show.
+    func show(_ plan: Handoff?, artifact: Artifact) async {
+        if let sha = plan?.sha {
+            await stage(sha: sha, artifact: artifact)
+        } else {
+            clearStaging()
+        }
     }
 
     /// Prepares a verified, immutable copy of `sha` to drag. A copy already prepared for these

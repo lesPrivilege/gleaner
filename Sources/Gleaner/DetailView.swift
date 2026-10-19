@@ -36,10 +36,12 @@ struct DetailView: View {
                 } else {
                     PreviewPane(artifact: artifact, plan: plan, staging: staging)
                 }
-                InformationSection(artifact: artifact, delivery: delivery, plan: plan, onDisk: onDisk, observation: observation)
+                // What to decide comes next to the bytes it is decided on: the verdicts and their notes,
+                // then where the file came from.
                 // A verdict binds to the bytes shown: here, only once they are the file's current bytes.
                 ReviewSection(work: work, shown: artifact.path == work.latest.path ? model.shownFile(work, sha: staging.ready) : nil)
                     .id(work.id)
+                InformationSection(artifact: artifact, delivery: delivery, plan: plan, onDisk: onDisk, observation: observation)
                 if work.deliveries.count > 1 {
                     VersionsSection(work: work, selected: delivery)
                 }
@@ -56,11 +58,7 @@ struct DetailView: View {
         // A ready copy another app changed is prepared again, whenever the view looks at it.
         .task(id: model.isPreparedIntact) { model.prepareAgain() }
         .task(id: "\(artifact.id)|\(delivery.id)|\(observation?.checkedAt.timeIntervalSince1970 ?? 0)|\(model.stagingGeneration)") {
-            if case .ready(let sha, _, _) = plan {
-                await model.stage(sha: sha, artifact: artifact)
-            } else {
-                model.clearStaging()
-            }
+            await model.show(plan, artifact: artifact)
         }
     }
 }
@@ -127,7 +125,7 @@ struct DetailHeader: View {
                     .textSelection(.enabled)
                 HStack(spacing: Space.s) {
                     StatusLabel(mark: status.mark, text: status.text)
-                    Text(Wording.bytesCaption(plan, staged: staged, delivery: delivery)).foregroundStyle(.secondary)
+                    Text(Wording.bytesCaption(plan, staged: staged, delivery: delivery, in: artifact)).foregroundStyle(.secondary)
                     if let staged { Text(staged.prefix(8)).font(.system(.caption, design: .monospaced)).foregroundStyle(.tertiary) }
                 }
                 .font(.callout)
@@ -161,7 +159,8 @@ struct DetailHeader: View {
         case (_, .failed): (.attention, "Not prepared")
         case (.folder?, _): (.na, "Folder")
         case (.ready?, _): (statement!.mark, statement!.title)
-        case (.unavailable(_, let current?)?, .ready(_, let sha)) where sha == current: (.attention, "Not a found delivery")
+        case (.unavailable(nil, let current?)?, .ready(_, let sha)) where sha == current: (.attention, "Not a found delivery")
+        case (.unavailable(_, let current?)?, .ready(_, let sha)) where sha == current: (.attention, "\(Wording.revision(delivery)) is gone")
         case (.lost?, _): (.cross, "Lost")
         case (.restoreFromGit?, _): (.dashed, "In git only")
         case (.unavailable?, _): (.attention, "Unavailable")
@@ -180,10 +179,8 @@ struct DetailHeader: View {
         switch plan {
         case .unavailable(let k?, _):
             if let other = artifact.deliveries.first(where: { $0.number == k }) {
-                Button("Hand Off \(Wording.revision(other)) Instead") { model.chosenDelivery = other.id }
+                Button("Show \(Wording.revision(other))") { model.chosenDelivery = other.id }
             }
-        case .unavailable(nil, let current?):
-            Button("Hand Off the Current File") { Task { await model.stage(sha: current, artifact: artifact) } }
         case .restoreFromGit:
             if let command = observation?.state.restoreCommand {
                 HStack {

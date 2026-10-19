@@ -593,9 +593,12 @@ import UniformTypeIdentifiers
             let staged = try indexer.store.stage(sha: review.sha256, name: "master.mov", source: nil)
             #expect(Locator.sha256(staged.path) == review.sha256)
         }
-        // The window offers them: bytes no revision recorded are compared from the verdict's row,
-        // the others under Versions; each verdict's row drags its own bytes out.
-        #expect(model.reviewComparison(changes)?.from.sha == changes.sha256 && model.reviewComparison(approved) == nil)
+        // The window offers them: each verdict's row compares the bytes it was made on with the file
+        // now, whether or not a delivery also recorded them, and drags its own bytes out.
+        for review in [approved, changes] {
+            let ends = try #require(model.reviewComparison(review))
+            #expect(ends.from.sha == review.sha256 && ends.to.sha == observation.state.sha256)
+        }
         #expect(model.reviewItem(changes) != nil && model.reviewItem(approved) != nil)
     }
 
