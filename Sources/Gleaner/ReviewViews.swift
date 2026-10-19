@@ -626,8 +626,13 @@ struct ReviewSection: View {
                         }
                     }
                 }
-                InfoRow(label: "Reviewed") { state(states.reviewed) }
-                InfoRow(label: "Published") { state(states.published) }
+                // A state as it should be says nothing: no verdict outside a collection, no mark.
+                if work.unit != nil || model.verdict(of: work) != .none {
+                    InfoRow(label: "Reviewed") { state(states.reviewed) }
+                }
+                if model.published(of: work) != .none {
+                    InfoRow(label: "Published") { state(states.published) }
+                }
             }
             .font(.callout)
             if !history.isEmpty {
