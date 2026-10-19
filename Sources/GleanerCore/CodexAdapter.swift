@@ -4,7 +4,8 @@ import Foundation
 ///
 /// Final replies are assistant messages with `phase == "final_answer"`. Forked threads replay
 /// their parent's messages marked `inherited_user_message`; those are skipped. Each turn starts
-/// with a `turn_context`; a `turn_aborted` event names one the person interrupted.
+/// with a `turn_context`; a `turn_aborted` event names one that ended before it answered: the
+/// person interrupted it, another replaced it, or a review or budget ended it.
 public struct CodexAdapter: Sendable {
     /// The keys of every record. Its content is in its payload.
     static let recordKeys: Set<String> = ["timestamp", "type", "ordinal", "payload", "metadata"]
@@ -95,7 +96,7 @@ public struct CodexAdapter: Sendable {
         var turns: [Turn] = []
         var closedReplies = 0
         /// The turns the next turn's context closed, by the id their own gave them: whether the
-        /// assistant answered in each, and whether it was aborted (the person interrupted it).
+        /// assistant answered in each, and whether it was aborted (it ended before it answered).
         var closed: [(id: String?, answered: Bool, aborted: Bool)] = []
         var turnID: String?
         var answered = false
@@ -154,14 +155,16 @@ public struct CodexAdapter: Sendable {
                     break
                 }
             case "event_msg" where payload["type"] as? String == "turn_aborted":
-                // The person interrupted a turn: what the assistant wrote in it is not an answer. The
-                // event names its turn, which the next turn's context may already have closed; one
-                // that names no closed turn is the open turn's.
-                if let id = payload["turn_id"] as? String, id != turnID,
-                   let index = closed.lastIndex(where: { $0.id == id }) {
-                    closed[index].aborted = true
-                } else {
+                // A turn ended before it answered, whatever the reason: what the assistant wrote in
+                // it is not an answer, though a final answer written before stays one. The event
+                // names its turn, which the next turn's context may already have closed. One that
+                // names no turn is the open turn's; one that names a turn this log doesn't have
+                // marks none.
+                let id = payload["turn_id"] as? String
+                if id == nil || id == turnID {
                     aborted = true
+                } else if let index = closed.lastIndex(where: { $0.id == id }) {
+                    closed[index].aborted = true
                 }
             default:
                 break

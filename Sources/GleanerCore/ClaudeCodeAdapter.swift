@@ -105,11 +105,13 @@ public enum ClaudeCodeAdapter {
         var replyModel: String?
         var answered = false
 
-        /// Ends the turn. One the next user record closes is counted: answered, unless that record
-        /// is the person interrupting it, and its final reply. The log's last turn is still open and
-        /// isn't counted: the session may be running, its text may yet be followed by a tool call,
-        /// or it ended on one.
+        /// Ends the turn. One the next user record closes is counted: answered, and its final reply.
+        /// One that record says the person interrupted has neither: text cut off as it was written
+        /// is no final reply, so nothing it names is delivered. The log's last turn is still open
+        /// and isn't counted: the session may be running, its text may yet be followed by a tool
+        /// call, or it ended on one.
         func endTurn(closed: Bool, interrupted: Bool = false) {
+            if interrupted { reply = [] }
             if closed {
                 if answered, !interrupted { answeredTurns += 1 }
                 if !reply.isEmpty { closedReplies += 1 }

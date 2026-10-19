@@ -92,7 +92,7 @@ public final class Registry: @unchecked Sendable {
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
     /// at a moment in time, are never rewritten. Bump it too when the tables change: it is the
     /// library's version, and an older Gleaner opens no library of a later one (`Failure.newer`).
-    public static let extractorVersion = 16
+    public static let extractorVersion = 17
 
     public enum Failure: Error, Equatable, CustomStringConvertible {
         /// The library was last opened by a later Gleaner, whose tables and readings this one
@@ -279,7 +279,8 @@ public final class Registry: @unchecked Sendable {
         if version != Int64(Self.extractorVersion) {
             // No log has this modification time, so every log is read again; each keeps the size
             // it was read at, and whether it lost records, so one that did still removes nothing.
-            try db.execute("UPDATE log_files SET mtime = -1; PRAGMA user_version = \(Self.extractorVersion);")
+            // Its replies were counted by the older reading, so fewer by this one is no alarm.
+            try db.execute("UPDATE log_files SET mtime = -1, closed_replies = NULL; PRAGMA user_version = \(Self.extractorVersion);")
         }
     }
 

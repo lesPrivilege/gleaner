@@ -882,6 +882,23 @@ import Testing
         #expect(report.sources[.codex]?.hasProblems == false)
     }
 
+    @Test func whatAnInterruptedReplyNamedIsNotDelivered() throws {
+        // Read while it writes, the text is the turn's reply, and what it names is delivered (R3).
+        let log = root.appendingPathComponent("claude/-Praxis/session-2.jsonl")
+        try append([user("Summarize the release", at: delivered.addingTimeInterval(100), session: "s2"),
+                    assistant("So far, [the draft](out/summary-draft.md) covers", at: delivered.addingTimeInterval(105),
+                              cwd: project.path, session: "s2")], to: log)
+        #expect(alarms(try indexer.run(now: { delivered.addingTimeInterval(106) })) == ([], []))
+        #expect(try artifact("summary-draft.md").deliveries.count == 1)
+
+        // The person stops it: cut off, the text is no final reply, and its link delivers nothing.
+        try append([user("[Request interrupted by user]", at: delivered.addingTimeInterval(107), session: "s2")], to: log)
+        let stopped = try indexer.run(now: { delivered.addingTimeInterval(108) })
+        #expect(alarms(stopped) == ([], []))
+        #expect(stopped.sources[.claudeCode]?.hasProblems == false)
+        #expect(try indexer.registry.artifacts().allSatisfy { $0.name != "summary-draft.md" || $0.deliveries.isEmpty })
+    }
+
     @Test func aReadWhileATurnRunsFindsNoFewerReplies() throws {
         // The log is read as the agent writes it, between its text and the tool call after it: the
         // text reads as the turn's reply, and what it names is delivered, until the tool call is
@@ -964,6 +981,16 @@ import Testing
         // The log's one reply is in its open last turn.
         let row = try #require(try upgraded.registry.db.rows("SELECT final_replies, closed_replies FROM log_files").first)
         #expect([row["final_replies"] as? Int64, row["closed_replies"] as? Int64] == [1, 0])
+    }
+
+    @Test func aReadingThatCountsFewerRepliesIsNoAlarmOnItsFirstRead() throws {
+        // Read by 16, an interrupted turn's text was counted as a closed reply; 17 counts none (R3).
+        _ = try place("claude-interrupted-reply", at: "claude/-Praxis/session-2.jsonl")
+        _ = try indexer.run(now: { delivered.addingTimeInterval(20) })
+        try indexer.registry.db.execute("UPDATE log_files SET closed_replies = 1 WHERE path LIKE '%session-2.jsonl'; PRAGMA user_version = 16")
+        let report = try reopened().run(now: { delivered.addingTimeInterval(40) })
+        #expect(report.logsRead == 2)
+        #expect(alarms(report) == ([], []))
     }
 
     @Test func aLogsReplyCountOutlivesARelaunch() throws {
