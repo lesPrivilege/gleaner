@@ -201,6 +201,73 @@ import Testing
         window.close()
     }
 
+    /// Folders handed over (`acceptance-home.py <home> bundle`, SPEC §5.4): the launch project's
+    /// outline with its renders folded, a file of the site in its folder, the site as its first
+    /// reply handed it over, before its files were written, and as the second did, the app folder
+    /// that isn't unpacked, and Sources saying why.
+    @Test(.enabled(if: folder != nil)) func walkTheFoldersHandedOver() async throws {
+        let out = try #require(Self.folder)
+        let fm = FileManager.default
+        try fm.createDirectory(at: out, withIntermediateDirectories: true)
+        let home = fm.temporaryDirectory.appendingPathComponent("gleaner-tour-\(UUID().uuidString)")
+        defer { try? fm.removeItem(at: home) }
+        let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent().appendingPathComponent("scripts/acceptance-home.py")
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
+        process.arguments = [script.path, home.path, "bundle"]
+        process.standardOutput = FileHandle.nullDevice
+        try process.run()
+        process.waitUntilExit()
+        #expect(process.terminationStatus == 0)
+        let library = home.appendingPathComponent("Library")
+        let indexer = Indexer(
+            registry: try Registry(path: try library.appendingPathComponent("Application Support/Gleaner").creating()
+                .appendingPathComponent("registry.sqlite").path),
+            store: ContentStore(objects: library.appendingPathComponent("Application Support/Gleaner/objects"),
+                                staging: library.appendingPathComponent("Caches/Gleaner/handoff")),
+            sources: LogSources(claudeProjects: home.appendingPathComponent(".claude/projects"), codexHome: home.appendingPathComponent(".codex")))
+        indexer.home = home.path
+
+        let model = LibraryModel(indexer: indexer)
+        let window = Self.window(model)
+        defer { window.close() }
+        model.reindex()
+        try await Self.until { model.indexed }
+        var step = 0
+        func shot(_ name: String) async throws {
+            step += 1
+            try await Self.snapshot(window, to: out.appendingPathComponent(String(format: "bundle-%02d-%@.png", step, name)))
+        }
+        func work(_ name: String) throws -> Work { try #require(model.organization.works.first { $0.name == name }) }
+        func show(_ work: Work, delivery: Delivery? = nil) async throws {
+            model.selection = work.id
+            if let delivery { model.chosenDelivery = delivery.id }
+            let result = try #require(model.selected)
+            await model.observe(model.file(in: result))
+            if let sha = model.delivery(in: result).sha256 { await model.stage(sha: sha, artifact: model.file(in: result)) }
+        }
+
+        let launch = try #require(model.projects.first { $0.name == "launch" })
+        model.place = .project(launch.key)
+        try await shot("launch-outline")
+        let page = try work("index.html")
+        try await show(page)
+        try await shot("site-page-handed-over-in-site")
+        try await show(try work("site"), delivery: try work("site").deliveries.last)
+        try await shot("site-folder-first-reply-before-its-files-were-written")
+        try await show(try work("site"))
+        try await shot("site-folder-files")
+        try await show(try work("app"))
+        try await shot("app-folder-not-unpacked")
+        let frame = try work("frame-007.png")
+        model.selection = frame.id
+        try await shot("renders-unfolded-for-the-selection")
+        model.place = .sources
+        model.sourcePage = .agent(.claudeCode)
+        try await shot("sources-folders-not-unpacked")
+    }
+
     static func window(_ model: LibraryModel, appearance: NSAppearance? = nil) -> NSWindow {
         let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 1320, height: 860),
                               styleMask: [.titled, .resizable, .miniaturizable], backing: .buffered, defer: false)

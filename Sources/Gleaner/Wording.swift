@@ -46,6 +46,9 @@ enum Wording {
         case .rolledBack(let k, let latest, let seen?):
             return Statement(mark: .attention, title: "Back to delivery \(k) as first seen",
                              detail: "Matches what Gleaner first saw for delivery \(k) on \(date(seen)), after that delivery. Not the latest, delivery \(number(latest, in: artifact)). \(when)")
+        case .changed(let n) where now.state.kind == .file && latest.capture?.provenance == .listed:
+            return Statement(mark: .attention, title: "Can’t verify",
+                             detail: "Gleaner listed delivery \(n) with its folder and never read it, and this file isn’t as listed: its size, dates or identity differ, so Gleaner can’t tell whether it is that delivery. \(when)")
         case .changed(let n) where now.state.kind == .file && latest.sha256 == nil && latest.capture?.isDirectory != true:
             return Statement(mark: .attention, title: "Can’t verify",
                              detail: "Gleaner never read delivery \(n), so it can’t tell whether this file is it. \(when)")
@@ -92,6 +95,7 @@ enum Wording {
     /// delivery was over the save limit.
     static func noCopy(_ delivery: Delivery, large: Bool) -> String {
         let n = number(delivery)
+        if delivery.capture?.provenance == .listed { return "Gleaner listed delivery \(n) with its folder and hasn’t read it." }
         switch delivery.capture?.kind {
         case nil:
             return "Gleaner has no record of delivery \(n)’s bytes."
@@ -160,6 +164,7 @@ enum Wording {
         case (.neverObserved, .special): return (.dashed, "Never read: not a regular file")
         case (.neverObserved, .unreadable): return (.dashed, "Never read: couldn’t be read")
         case (.neverObserved, _): return (.dashed, "Never seen: nothing at this path")
+        case (.listed, _): return (.dashed, "Listed with its folder \(date(capture.observedAt)), not read yet")
         }
     }
 
@@ -168,6 +173,7 @@ enum Wording {
     static func storage(_ delivery: Delivery, hasSaved: Bool, large: Bool, now: LocatorState?) -> (Mark, String) {
         guard let capture = delivery.capture else { return (.dashed, "Not saved: not captured") }
         if capture.isDirectory { return (.na, "Folder: not versioned") }
+        if capture.provenance == .listed { return (.dashed, "Not saved: listed, not read yet") }
         guard let sha = capture.sha256 else { return (.cross, "Not saved: never read") }
         let size = capture.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? ""
         if hasSaved {
@@ -211,6 +217,7 @@ enum Wording {
         case (.neverObserved?, .special?): (.dashed, "Never read")
         case (.neverObserved?, .unreadable?): (.dashed, "Never read")
         case (.neverObserved?, _), (nil, _): (.dashed, "Never seen")
+        case (.listed?, _): (.dashed, "Listed, not read")
         }
     }
 
@@ -254,7 +261,7 @@ enum Wording {
     /// Why a row has nothing to hand over, in a few words.
     private static func unavailable(_ delivery: Delivery, now: LocatorState.Kind?) -> String {
         if delivery.sha256 == nil, delivery.capture?.isDirectory != true {
-            return delivery.capture?.kind == .missing ? "never seen" : "never read"
+            return delivery.capture?.provenance == .listed ? "not read" : delivery.capture?.kind == .missing ? "never seen" : "never read"
         }
         return switch now {
         case .missing?: "not on disk"
@@ -332,6 +339,7 @@ enum Wording {
             source.failures.isEmpty ? nil : count(source.failures.count, "log") + " unreadable",
             source.unlistedFolders.isEmpty ? nil : count(source.unlistedFolders.count, "folder") + " unlisted",
             source.workspaceProblems.isEmpty ? nil : count(source.workspaceProblems.count, "workspace problem"),
+            source.folderProblems.isEmpty ? nil : count(source.folderProblems.count, "delivered folder problem"),
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
@@ -464,6 +472,7 @@ enum Wording {
             ("Replies", "The text after the last tool call of each turn"),
             ("Files", "Named in a reply by a link, an image or a path with a folder"),
             ("Copies", "Each file read at once, saved up to 64 MB"),
+            folders,
             workspaces,
         ]
         case .codex: [
@@ -471,10 +480,14 @@ enum Wording {
             ("Titles", "From session_index.jsonl"),
             ("Files", "Named in an answer by a link, an image or a path with a folder"),
             ("Copies", "Each file read at once, saved up to 64 MB"),
+            folders,
             workspaces,
         ]
         }
     }
+
+    /// What Gleaner reads of a folder a reply handed over.
+    private static let folders = ("Folders", "Names, sizes and dates of the files in a delivered folder, each read when you act on it")
 
     /// What Gleaner reads of the folders conversations worked in.
     private static let workspaces = ("Workspaces", "Names, sizes and dates of the files that appeared or changed during a conversation, never their contents")
@@ -511,6 +524,60 @@ enum Wording {
     /// A folder's observed files of one kind, folded into one row: "out/voice · 211 files".
     static func folded(_ folder: String, count n: Int) -> String {
         "\(self.folder(folder)) · \(count(n, "file"))"
+    }
+
+    /// Files of one kind folded into one row under their folder's heading: "Video & Audio · 211 files".
+    static func folded(_ kind: Artifact.Kind, count n: Int) -> String {
+        "\(kindName(kind)) · \(count(n, "file"))"
+    }
+
+    // MARK: Folders handed over
+
+    /// The folder a file was handed over in, as its link names it: "out/".
+    static func folderName(_ member: Membership) -> String {
+        (member.folder as NSString).lastPathComponent + "/"
+    }
+
+    /// What listing a delivered folder's files found, for its detail: how many were handed over in
+    /// it, or why they aren't listed, and what the listing couldn't see.
+    static func unpacking(_ unpacking: Unpacking?) -> Statement {
+        guard let unpacking else {
+            return Statement(mark: .dashed, title: "Not listed yet",
+                             detail: "Gleaner lists a delivered folder’s files the next time it reads the logs while the folder is there and can be read.")
+        }
+        if let reason = unpacking.notUnpacked {
+            let project = unpacking.pointsAtProject ? " Handing over a project’s own folder points at the project; what changed there is observed instead." : ""
+            return Statement(mark: .na, title: "Not unpacked", detail: "Gleaner doesn’t list its files as handed over: it is \(reason).\(project)")
+        }
+        let listed = "Listed \(date(unpacking.listedAt)) by name, size and dates, without reading them: the files their dates show were in it, unchanged, when the reply named it, hidden ones left out and a package as one. Each file is read when you select, open, compare or hand it on."
+            + without(unpacking.repositories)
+        guard unpacking.problems.isEmpty else {
+            return Statement(mark: .attention, title: "\(count(unpacking.members, "file")), listed in part",
+                             detail: listed + " The listing couldn’t see everything: " + unpacking.problems.map(tilde).joined(separator: "; ") + ".")
+        }
+        return Statement(mark: .done, title: count(unpacking.members, "file"), detail: listed)
+    }
+
+    /// The repositories a folder's listing left out, each another project, named by where they are in it.
+    private static func without(_ repositories: [String]) -> String {
+        switch repositories.count {
+        case 0: ""
+        case 1: " It was listed without the Git repository inside it, \(repositories[0]), which is another project."
+        default: " It was listed without the Git repositories inside it, which are other projects: \(repositories.joined(separator: ", "))."
+        }
+    }
+
+    /// Before Gleaner reads two deliveries' bytes, all it can say is that their size and dates match:
+    /// "dates" when both recorded the file's creation date with its modification date, else the
+    /// modification date alone.
+    static func sameSizeAndDates(_ earlier: Delivery, as delivery: Delivery, named: Bool) -> String {
+        let dates = earlier.capture?.createdAt != nil && delivery.capture?.createdAt != nil ? "dates" : "modification date"
+        return "Same size and \(dates) as " + (named ? (earlier.path as NSString).lastPathComponent + " " : "") + number(earlier)
+    }
+
+    /// Delivered folders that are gone, folded into one row in Sources.
+    static func foldersGone(_ n: Int) -> String {
+        count(n, "folder") + " gone"
     }
 
     /// What the adapter leaves out: these aren't replies to the person (SPEC §8).

@@ -1,4 +1,6 @@
 import Foundation
+import Synchronization
+import UniformTypeIdentifiers
 
 /// A file found on the disk whose dates fall in a session's span, in the session's workspace
 /// (docs/design/capture.md). It shows that the file appeared or changed while the session was
@@ -179,7 +181,8 @@ public enum Workspace {
     /// and no output folder is: `dist` or `build` may hold what was asked for.
     static let caches: Set<String> = ["node_modules", "__pycache__", "DerivedData"]
 
-    /// A regular file as a walk found it, without opening it.
+    /// A regular file as a walk found it, without opening it; or a package, which Finder shows as
+    /// one file (`isPackage`), by its own metadata.
     struct File: Sendable, Equatable {
         var path: String
         var size: Int64
@@ -191,6 +194,8 @@ public enum Workspace {
         var changedAt: Date
         var device: Int64
         var inode: Int64
+        /// A folder the system declares a package (`isPackage`): one entry, never entered.
+        var isPackage = false
     }
 
     /// What one walk found, and why it may not be everything: it stopped at its bound, or a folder
@@ -198,6 +203,11 @@ public enum Workspace {
     struct Walk: Sendable {
         var files: [File] = []
         var problems: [String] = []
+        /// The folders below the root a walk that doesn't enter repositories left out, each one
+        /// (`isRepository`), in walk order.
+        var repositories: [String] = []
+        /// Whether the root itself could be listed: when it couldn't, the walk saw nothing of it.
+        var listedRoot = false
     }
 
     /// The workspace of a folder a session worked in: the Git checkout holding it (a worktree's own
@@ -246,11 +256,34 @@ public enum Workspace {
         return (resolved(parent) as NSString).appendingPathComponent((path as NSString).lastPathComponent)
     }
 
+    /// Whether a folder holding `names` is a Git repository's own folder, as git looks for one: a
+    /// checkout's, holding `.git`, or a bare repository, holding `HEAD`, `objects` and `refs`.
+    static func isRepository(_ names: Set<String>) -> Bool {
+        names.contains(".git") || ["HEAD", "objects", "refs"].allSatisfy(names.contains)
+    }
+
+    /// Whether a folder named `name` is a package, which Finder shows as one file (an app, an Xcode
+    /// project, an RTFD document, a bundle): its extension's type, as the system declares it for a
+    /// folder, conforms to `UTType.package`. That is structure the system gives, not a type Gleaner
+    /// picks. Each extension is looked up once.
+    static func isPackage(_ name: String) -> Bool {
+        let ext = (name as NSString).pathExtension.lowercased()
+        guard !ext.isEmpty else { return false }
+        if let known = packages.withLock({ $0[ext] }) { return known }
+        let package = UTType(filenameExtension: ext, conformingTo: .directory)?.conforms(to: .package) == true
+        packages.withLock { $0[ext] = package }
+        return package
+    }
+
+    private static let packages = Mutex<[String: Bool]>([:])
+
     /// Lists every regular file under `root`, by name, size, dates and identity; never opens one.
-    /// Doesn't enter hidden folders, caches, or folders on another volume, and doesn't follow
-    /// links. Folders are read in name order, so a walk cut at `limit` entries stops at the same
-    /// place each time.
-    static func walk(_ root: String, limit: Int = limit) -> Walk {
+    /// A package (`isPackage`) is listed as one entry by its own metadata, never entered. Doesn't
+    /// enter hidden folders, caches, or folders on another volume, and doesn't follow links.
+    /// Folders are read in name order, so a walk cut at `limit` entries stops at the same place
+    /// each time. Without `entersRepositories`, a folder below the root that is a Git repository's
+    /// own (`isRepository`), another project, is left out whole and named in `repositories`.
+    static func walk(_ root: String, limit: Int = limit, entersRepositories: Bool = true) -> Walk {
         var walk = Walk(), seen = 0
         var info = Darwin.stat()
         // stat(2), following a linked root, by the name `Locator.stat` uses: the struct's name hides the function's.
@@ -268,6 +301,11 @@ public enum Workspace {
                 walk.problems.append("\(folder): \(error.localizedDescription)")
                 continue
             }
+            if folder == root { walk.listedRoot = true }
+            if !entersRepositories, folder != root, isRepository(Set(names)) {
+                walk.repositories.append(folder)
+                continue
+            }
             if names.contains("CACHEDIR.TAG") { continue }
             var inner: [String] = []
             for name in names {
@@ -279,6 +317,10 @@ public enum Workspace {
                 let path = folder + "/" + name
                 guard lstat(path, &info) == 0 else { continue }
                 switch info.st_mode & S_IFMT {
+                case S_IFDIR where !name.hasPrefix(".") && info.st_dev == volume && isPackage(name):
+                    var package = file(path, info)
+                    package.isPackage = true
+                    walk.files.append(package)
                 case S_IFDIR where !name.hasPrefix(".") && !caches.contains(name) && info.st_dev == volume:
                     inner.append(path)
                 case S_IFREG:
@@ -290,6 +332,14 @@ public enum Workspace {
             folders += inner.reversed()
         }
         return walk
+    }
+
+    /// The regular file at `path` itself (not what a link leads to), by its metadata; nil for
+    /// anything else, or nothing.
+    static func file(at path: String) -> File? {
+        var info = Darwin.stat()
+        guard lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+        return file(path, info)
     }
 
     private static func file(_ path: String, _ info: Darwin.stat) -> File {
@@ -468,13 +518,31 @@ extension Registry {
     }
 
     /// The paths the replies of these logs named, and those named under `workspace` in any case
-    /// (as APFS compares names), each once.
+    /// (as APFS compares names), each once; and the files handed over in the folders among them
+    /// and under `workspace` (SPEC §5.4).
     func deliveredPaths(logs: [String], under workspace: String) throws -> [String] {
-        let pattern = workspace.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "%", with: "\\%")
-            .replacingOccurrences(of: "_", with: "\\_") + "/%"
+        let marks = Array(repeating: "?", count: logs.count).joined(separator: ", ")
+        // Each folder's files by a range of the files' key, never by reading every file listed.
+        let listed = try db.rows("""
+            SELECT m.path FROM (SELECT DISTINCT d.path AS folder FROM deliveries d JOIN captures c ON c.delivery_id = d.id
+                                WHERE c.kind = 'directory' AND (d.path LIKE ? ESCAPE '\\' OR d.log_path IN (\(marks)))) f
+                JOIN members m ON m.path > f.folder || '/' AND m.path < f.folder || '0'
+            UNION SELECT path FROM members WHERE path > ? AND path < ?
+            """, [Self.pattern(under: workspace)] + logs + [workspace + "/", workspace + "0"]).compactMap { $0["path"] as? String }
+        return Array(Set(try namedPaths(logs: logs, under: workspace) + listed))
+    }
+
+    /// The paths the replies of these logs named, and those named under `folder` in any case, each once.
+    func namedPaths(logs: [String], under folder: String) throws -> [String] {
         let marks = Array(repeating: "?", count: logs.count).joined(separator: ", ")
         return try db.rows("SELECT DISTINCT path FROM deliveries WHERE path LIKE ? ESCAPE '\\' OR log_path IN (\(marks))",
-                           [pattern] + logs).compactMap { $0["path"] as? String }
+                           [Self.pattern(under: folder)] + logs).compactMap { $0["path"] as? String }
+    }
+
+    /// What `LIKE` matches for every path under `folder`, with the folder's own wildcards escaped.
+    private static func pattern(under folder: String) -> String {
+        folder.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "%", with: "\\%")
+            .replacingOccurrences(of: "_", with: "\\_") + "/%"
     }
 
     /// Records observations the first time Gleaner sees each file during each session: one already

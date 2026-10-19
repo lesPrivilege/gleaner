@@ -67,6 +67,29 @@ import Testing
         #expect(members.first?.name == "line-\(Listing.crowded - 1).wav")
     }
 
+    /// A file handed over in a folder a reply named (SPEC §5.4): its delivery came through the folder's.
+    func member(_ path: String, at minutes: Double) -> Listing.Entry {
+        var delivery = Delivery(id: path, number: 1, path: path, deliveredAt: t0.addingTimeInterval(minutes * 60), provider: .claudeCode,
+                                sessionTitle: nil, request: nil, cwd: "/w", evidence: [], logPath: "/logs/s.jsonl", capture: nil)
+        delivery.member = Membership(folderDelivery: "out", folder: "/w/out")
+        return .work(Work(files: [Artifact(path: path, deliveries: [delivery])], deliveries: [delivery], project: "/w"))
+    }
+
+    @Test func filesHandedOverInAFolderFoldWhenCrowdedAndNamedOnesNever() {
+        let frames = (0..<Listing.crowded).map { member("/w/out/frames/f-\($0).png", at: 10) }
+        let named = (0..<Listing.crowded).map { work("/w/out/stills/s-\($0).png", at: 10) }
+        let observed = (0..<Listing.crowded).map { candidate("/w/out/frames/o-\($0).png", at: 1) }
+        let rows = Listing.rows(frames + named + observed)
+        let folded = rows.compactMap { row -> (Bool, Int)? in
+            if case .folded(_, .image, let entries) = row { (entries[0].isHandedOver, entries.count) } else { nil }
+        }
+        // The folder's files fold, apart from the observed ones beside them, which fold on their
+        // own, after; the stills the reply named one by one stay as they are.
+        #expect(folded.count == 2 && folded[0] == (true, Listing.crowded) && folded[1] == (false, Listing.crowded))
+        #expect(rows.filter { if case .entry = $0 { true } else { false } }.count == Listing.crowded)
+        #expect(frames.allSatisfy { $0.isHandedOver && !$0.isNamed } && named.allSatisfy(\.isNamed))
+    }
+
     @Test func filesSharingAStemInOneFolderAreShownTogetherAndNothingMore() {
         let entries = [
             work("/w/out/ep00.mp4", at: 30), candidate("/w/out/EP00.mix.wav", at: 31), candidate("/w/out/ep00.inputs.json", at: 32),

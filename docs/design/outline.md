@@ -47,7 +47,7 @@ A work and its revisions read as one group. There is no rule under an open work'
 - **A revision:** "Delivery N", with "(first seen later)" when that applies. N is numbered per file (SPEC §5.2), so a renamed work starts again at 1 under its new name. When the work has several files, the revision's row names its file.
 
 **Order, said once.**
-- **Objects:** newest first at every level. Projects go by their latest delivery, works by their newest revision, revisions newest first. The sidebar, every list, the outline and Versions all follow this rule.
+- **Objects:** newest first at every level. Projects go by their latest delivery, works by their newest revision, revisions newest first. The sidebar, every list and Versions follow this rule. In the outline, each folder's works follow the order and grouping of [SPEC §5.3](../SPEC.md) (capture.md, "Order and grouping"): what a person opens before what a program reads, then newest first, with a crowded folder's files that no reply named itself folded and files sharing a stem side by side.
 - **Folders:** they keep the project's own layout, Top level first and then by name, as Finder lays out a folder.
 
 Because the rule is the same everywhere, no list states it, and no row repeats its place in it.
@@ -130,7 +130,7 @@ The outline teaches itself the same way:
 
 - **Contents:** a file's own headings (structure.md, PR #4).
 - **The project timeline.**
-- **Choosing another order.** Newest first is the one rule. A name order waits for a case where scanning by name fails.
+- **Choosing another order.** Newest first is the rule, within a folder of the outline after what a person opens comes first (SPEC §5.3). A name order waits for a case where scanning by name fails.
 - **Keeping what is open across launches.** Selection isn't kept either.
 - **Moving several works at once.**
 

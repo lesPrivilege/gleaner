@@ -59,6 +59,16 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - The model can order a project's files (handed over before observed, what a person opens before what a program reads, newest first), fold a folder crowded with one kind into one row with its count, and show files that share a stem together, claiming nothing. The window lists none of this yet.
 - The extractor version moves to 15: every log is read once more, and each conversation's workspace observed as the disk is now.
 
+### Hand over a folder's files
+
+- A reply that names a folder hands over what is in it. Each regular file under the folder becomes a delivery of its own, carrying the reply, request, conversation, time and evidence, and saying which folder it was handed over in; a file the reply also named itself, in any spelling, is delivered once, as named. Files are listed as a workspace is walked, by names, sizes, dates and identities only, never contents, with the same skips and bound; hidden files never are.
+- A Git repository inside the folder (a submodule, a vendored checkout, a bare repository) is another project: the listing leaves it out, lists everything else, and the folder's detail names it. A package (an app, an Xcode project, an RTFD document, any folder the system declares a package) is one file, as Finder shows it: handed over in a folder as one delivery, a folder, never entered; observed during a conversation as one entry, by its own dates.
+- A file counts by the reply's time: created by then and unchanged since, it was handed over; created later, or changed since (edited, or moved, linked or copied in keeping older dates), it isn't, missed rather than claimed. A folder delivered again lists its files again, at its own time, so each file gets one version per delivery of its folder.
+- A file's bytes are read when you select it, open or look at it, compare it or drag its row, or when a reply names it: that first read records its hash and saves a copy, as at delivery only when it comes within ten minutes of the reply and the file hasn't changed since. A file not as listed isn't taken for the one handed over; a volume mounted again still matches. Before a hash, two versions say only that their size and dates match, and only when both record the file at their own delivery: "dates" when the creation and modification dates both match, "size and modification date" against a file a reply named, which records no creation date.
+- Not unpacked, with why in the folder's detail and Sources: the home, a volume or a cloud drive, or a folder directly in one; a link; a cache, or a folder inside a cache, a hidden folder or a package, a hidden folder kept as a repository (`~/.config`) or holding one (`~/.local/share/<clone>`) included; a package; a project's own folder (a git checkout's or a bare repository's, or the one a conversation worked in or its checkout) or a folder holding the one a conversation worked in; and what the walk skips. A listing cut short is reported in Sources; a folder gone or unreadable is listed once it can be, and named on each run until then, the folders gone folded into one row with their count.
+- A project's outline lists a folder's files under their folders, a crowded folder's files of one kind folded into one row; files a reply named never fold. Search finds a folder's file by its name and folder; the reply's words find the folder. A file observed during a conversation and handed over in a folder keeps its observation beside it, and corrections apply to it as to any work.
+- Folders already in a library are listed on the next read; no log is read again. The library loads off the main thread at launch, and a file's first read updates that file alone, in the list and outline already shown: with 20,000 files, a first selection no longer stalls the window for over a second.
+
 ### Keep data local
 
 - Keeps redacted excerpts, not whole logs, and never writes to project folders. Redacts before cutting an excerpt to length, so a secret at its edge is still caught. Makes no model calls or network requests of its own.
@@ -67,7 +77,7 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 
 ### Known limits
 
-- Folders are not versioned, and HTML dependencies are not saved with a page.
+- A delivered folder is not versioned as a whole (its files are, one by one), and HTML dependencies are not saved with a page.
 - A file over 64 MB that you didn't save is gone with its worktree, unless git history has it.
 - A git clean filter (Git LFS, for one) may still run when git compares a file.
 - The admission rule is provisional.

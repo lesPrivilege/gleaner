@@ -70,6 +70,14 @@ public final class Registry: @unchecked Sendable {
                 path TEXT NOT NULL, log_path TEXT NOT NULL, kind TEXT NOT NULL, workspace TEXT NOT NULL,
                 size INTEGER NOT NULL, created_at REAL, modified_at REAL NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL,
                 repository TEXT, checkout TEXT, observed_at REAL NOT NULL, PRIMARY KEY (path, log_path)) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS listings (
+                delivery_id TEXT PRIMARY KEY, listed_at REAL NOT NULL, members INTEGER NOT NULL, not_unpacked TEXT,
+                problems TEXT, repositories TEXT) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS members (
+                delivery_id TEXT NOT NULL, path TEXT NOT NULL, kind TEXT NOT NULL, size INTEGER NOT NULL, created_at REAL,
+                modified_at REAL NOT NULL, changed_at REAL NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL,
+                listed_at REAL NOT NULL, sha256 TEXT, observed_at REAL, saved_at REAL, provenance TEXT NOT NULL,
+                PRIMARY KEY (path, delivery_id)) WITHOUT ROWID;
             """)
         // Each change of several statements is made whole or not at all: a launch that stops partway,
         // say while another copy of Gleaner holds the library, leaves all of it to the next launch.
@@ -328,33 +336,93 @@ public final class Registry: @unchecked Sendable {
                    [repository, checkout, id])
     }
 
-    public func markSaved(deliveryID: String, at date: Date) throws {
-        try db.run("UPDATE captures SET saved_at = ? WHERE delivery_id = ?", [date, deliveryID])
+    /// Records that `delivery`'s bytes were saved at `date`: in its capture, or, for one of a
+    /// delivered folder's files, in its row.
+    public func markSaved(_ delivery: Delivery, at date: Date) throws {
+        if let member = delivery.member {
+            try db.run("UPDATE members SET saved_at = ? WHERE delivery_id = ? AND path = ?", [date, member.folderDelivery, delivery.path])
+        } else {
+            try db.run("UPDATE captures SET saved_at = ? WHERE delivery_id = ?", [date, delivery.id])
+        }
     }
 
-    /// Every artifact with its deliveries, newest delivery first, artifacts by latest delivery.
+    /// Every artifact with its deliveries, newest delivery first, artifacts by latest delivery: the
+    /// files replies named, and the files handed over in the folders they named (SPEC §5.4), whose
+    /// deliveries of one file number together by time.
     public func artifacts() throws -> [Artifact] {
-        let rows = try db.rows("""
-            SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.request, d.evidence, d.model,
-                   s.provider, s.title, d.log_path, d.session_id, s.cwd AS session_cwd, s.model_provider,
-                   c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind, c.repository, c.checkout
-            FROM deliveries d JOIN sessions s ON s.id = d.session_id
-            LEFT JOIN captures c ON c.delivery_id = d.id
-            ORDER BY d.path, d.delivered_at
-            """)
-        var byPath: [String: [Delivery]] = [:]
-        var repositories: [String: String] = [:]
-        var checkouts: [String: Checkout] = [:]
-        for row in rows {
-            let path = row["path"] as! String
-            // Rows run oldest first: the earliest recorded repository and checkout win, the likeliest
-            // to have been found while a worktree that held the file was there.
-            if let repository = row["repository"] as? String {
-                if repositories[path] == nil { repositories[path] = repository }
-                if checkouts[path] == nil, let folder = row["checkout"] as? String {
-                    checkouts[path] = Checkout(folder: folder, repository: repository)
+        try artifacts(at: nil)
+    }
+
+    /// The artifact at `path` alone, as `artifacts` reads it, without reading the others: what a
+    /// first read of a file or a saved copy changed. Nil when no delivery names it.
+    public func artifact(at path: String) throws -> Artifact? {
+        try artifacts(at: path).first
+    }
+
+    private func artifacts(at path: String?) throws -> [Artifact] {
+        var found = try deliveries(path.map { ("d.path = ?", [$0]) })
+        // The files handed over in folders, each a copy of its folder's delivery, which is read
+        // here when only one path is.
+        var folders: [String: Found] = [:]
+        for item in found where item.delivery.unpacking != nil { folders[item.delivery.id] = item }
+        if let path {
+            let ids = Set(try db.rows("SELECT delivery_id FROM members WHERE path = ?", [path]).compactMap { $0["delivery_id"] as? String })
+                .subtracting(folders.keys).sorted()
+            if !ids.isEmpty {
+                for item in try deliveries(("d.id IN (\(Array(repeating: "?", count: ids.count).joined(separator: ", ")))", ids)) {
+                    folders[item.delivery.id] = item
                 }
             }
+        }
+        // A folder's files are where it is: one that holds a repository isn't unpacked.
+        for (id, folder) in folders {
+            let artifact = Artifact(path: folder.delivery.path, deliveries: [folder.delivery], repository: folder.repository,
+                                    checkout: folder.repository.flatMap { r in folder.checkout.map { Checkout(folder: $0, repository: r) } })
+            folders[id]?.location = artifact.location
+        }
+        found += try members(at: path, folders: folders, after: found.count)
+
+        let artifacts = Dictionary(grouping: found, by: \.delivery.path).map { path, found in
+            // Oldest first, deliveries of one time in the order they were read. The earliest recorded
+            // repository and checkout win, the likeliest to have been found while a worktree that held
+            // the file was there. A file only ever handed over in folders is where its latest folder is.
+            let found = Self.onePerReply(found).sorted {
+                let (a, b) = ($0.delivery.deliveredAt ?? .distantPast, $1.delivery.deliveredAt ?? .distantPast)
+                return a != b ? a < b : $0.order < $1.order
+            }
+            let deliveries = found.enumerated().map { n, found in
+                var delivery = found.delivery
+                delivery.number = n + 1
+                return delivery
+            }
+            if let location = found.last?.location, found.allSatisfy({ $0.delivery.member != nil }) {
+                return Artifact(path: path, deliveries: deliveries.reversed(), location: location)
+            }
+            let recorded = found.first { $0.repository != nil }
+            let checkout = found.first { $0.repository != nil && $0.checkout != nil }
+            return Artifact(path: path, deliveries: deliveries.reversed(), repository: recorded?.repository,
+                            checkout: checkout.map { Checkout(folder: $0.checkout!, repository: $0.repository!) })
+        }
+        return artifacts.sorted {
+            let (a, b) = ($0.latest.deliveredAt ?? .distantPast, $1.latest.deliveredAt ?? .distantPast)
+            return a != b ? a > b : $0.path < $1.path
+        }
+    }
+
+    /// The deliveries `filter` picks, as `artifacts` reads them: each with its capture, and a
+    /// folder's with its listing.
+    private func deliveries(_ filter: (sql: String, arguments: [Any?])?) throws -> [Found] {
+        try db.rows("""
+            SELECT d.id, d.path, d.delivered_at, d.reply_line, d.reply_rank, d.cwd, d.request, d.evidence, d.model,
+                   s.provider, s.title, d.log_path, d.session_id, s.cwd AS session_cwd, s.model_provider,
+                   c.sha256, c.size, c.mtime, c.observed_at, c.saved_at, c.provenance, c.kind, c.repository, c.checkout,
+                   l.listed_at, l.members, l.not_unpacked, l.problems, l.repositories
+            FROM deliveries d JOIN sessions s ON s.id = d.session_id
+            LEFT JOIN captures c ON c.delivery_id = d.id
+            LEFT JOIN listings l ON l.delivery_id = d.id
+            """ + (filter.map { " WHERE " + $0.sql } ?? "") + " ORDER BY d.path, d.delivered_at", filter?.arguments ?? [])
+        .enumerated().map { index, row in
+            let id = row["id"] as! String, path = row["path"] as! String
             let capture = (row["observed_at"] as? Double).map { observed in
                 Capture(
                     sha256: row["sha256"] as? String, size: row["size"] as? Int64,
@@ -364,29 +432,49 @@ public final class Registry: @unchecked Sendable {
                     provenance: Provenance(rawValue: row["provenance"] as? String ?? "") ?? .firstSeenAfterDelivery,
                     kind: LocatorState.Kind(rawValue: row["kind"] as? String ?? "") ?? .missing)
             }
-            let evidence = (row["evidence"] as? String).flatMap {
-                try? JSONDecoder().decode([Evidence].self, from: Data($0.utf8))
-            } ?? []
-            var list = byPath[path, default: []]
-            list.append(Delivery(
-                id: row["id"] as! String, number: list.count + 1, path: path,
-                deliveredAt: (row["delivered_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
-                replyLine: (row["reply_line"] as? Int64).map(Int.init),
-                replyRank: (row["reply_rank"] as? Int64).map(Int.init) ?? 0,
-                provider: Provider(rawValue: row["provider"] as? String ?? "") ?? .claudeCode,
-                sessionID: row["session_id"] as? String ?? "", sessionCwd: row["session_cwd"] as? String,
-                sessionTitle: row["title"] as? String, request: row["request"] as? String,
-                cwd: row["cwd"] as? String, evidence: evidence,
-                logPath: row["log_path"] as? String ?? "", capture: capture,
-                model: row["model"] as? String, modelProvider: row["model_provider"] as? String))
-            byPath[path] = list
+            var delivery = Self.delivery(row, id: id, path: path, capture: capture, evidence: Self.evidence(row["evidence"] as? String))
+            delivery.unpacking = (row["listed_at"] as? Double).map { listed in
+                Unpacking(listedAt: Date(timeIntervalSince1970: listed), members: Int(row["members"] as? Int64 ?? 0),
+                          notUnpacked: row["not_unpacked"] as? String, problems: Self.list(row["problems"] as? String),
+                          repositories: Self.list(row["repositories"] as? String))
+            }
+            return Found(delivery: delivery, repository: row["repository"] as? String, checkout: row["checkout"] as? String,
+                         order: index)
         }
-        let artifacts = byPath.map { path, deliveries in
-            Artifact(path: path, deliveries: deliveries.reversed(), repository: repositories[path], checkout: checkouts[path])
-        }
-        return artifacts.sorted {
-            let (a, b) = ($0.latest.deliveredAt ?? .distantPast, $1.latest.deliveredAt ?? .distantPast)
-            return a != b ? a > b : $0.path < $1.path
-        }
+    }
+
+    /// A delivery as `artifacts` reads it, with where the file was found, and its place among the
+    /// rows read. A folder's delivery has where its files are shown.
+    struct Found {
+        var delivery: Delivery
+        var repository: String?
+        var checkout: String?
+        var order: Int
+        var location: Artifact.Location?
+    }
+
+    /// A delivery from a row of `deliveries` joined with its session: the reply's own fields, and
+    /// those given.
+    static func delivery(_ row: Database.Row, id: String, path: String, capture: Capture?, evidence: [Evidence]) -> Delivery {
+        Delivery(
+            id: id, number: 0, path: path,
+            deliveredAt: (row["delivered_at"] as? Double).map(Date.init(timeIntervalSince1970:)),
+            replyLine: (row["reply_line"] as? Int64).map(Int.init),
+            replyRank: (row["reply_rank"] as? Int64).map(Int.init) ?? 0,
+            provider: Provider(rawValue: row["provider"] as? String ?? "") ?? .claudeCode,
+            sessionID: row["session_id"] as? String ?? "", sessionCwd: row["session_cwd"] as? String,
+            sessionTitle: row["title"] as? String, request: row["request"] as? String,
+            cwd: row["cwd"] as? String, evidence: evidence,
+            logPath: row["log_path"] as? String ?? "", capture: capture,
+            model: row["model"] as? String, modelProvider: row["model_provider"] as? String)
+    }
+
+    static func evidence(_ json: String?) -> [Evidence] {
+        json.flatMap { try? JSONDecoder().decode([Evidence].self, from: Data($0.utf8)) } ?? []
+    }
+
+    /// A list kept as JSON; empty when there is none.
+    static func list(_ json: String?) -> [String] {
+        json.flatMap { try? JSONDecoder().decode([String].self, from: Data($0.utf8)) } ?? []
     }
 }

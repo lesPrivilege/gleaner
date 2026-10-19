@@ -359,6 +359,27 @@ struct InformationSection: View {
                         }
                     }
                 }
+                if let member = delivery.member {
+                    // The reply named the folder; the file came with it.
+                    InfoRow(label: "Handed Over In") {
+                        if let folder = model.folderDelivery(member) {
+                            LinkButton(title: Wording.folderName(member)) { model.select(folder) }
+                                .help("Show the folder the reply named, \(Wording.tilde(member.folder))")
+                        } else {
+                            Text(Wording.folderName(member)).help(Wording.tilde(member.folder))
+                        }
+                    }
+                }
+                if delivery.capture?.isDirectory == true {
+                    let files = Wording.unpacking(delivery.unpacking)
+                    InfoRow(label: "Files") {
+                        HStack(spacing: Space.s) {
+                            // As it should be, the count alone; otherwise the state, which needs a look.
+                            if files.mark == .done { Text(files.title) } else { StatusLabel(mark: files.mark, text: files.title) }
+                            InfoButton(text: files.detail)
+                        }
+                    }
+                }
                 InfoRow(label: "Agent") {
                     HStack(spacing: Space.s) {
                         AgentMark(provider: delivery.provider, size: 16, color: true)
@@ -506,6 +527,9 @@ struct VersionsSection: View {
                 Text(earlier.path == delivery.path ? "Same as \(Wording.number(earlier))"
                      : "Same as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))")
                     .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).layoutPriority(1)
+            } else if let alike = sameSizeAndDates(delivery) {
+                Text(Wording.sameSizeAndDates(alike, as: delivery, named: alike.path != delivery.path))
+                    .foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle).layoutPriority(1)
             }
             Spacer(minLength: Space.s)
             // Every row keeps the column, so the right edge holds.
@@ -547,11 +571,29 @@ struct VersionsSection: View {
             ?? earlier.first { $0.sha256 != nil && $0.sha256 == delivery.sha256 }
     }
 
+    /// For a delivery Gleaner hasn't read: an earlier one of the same file, else of another, with the
+    /// same size, modification date and creation date where both recorded one, recorded as the file
+    /// was at that delivery: listed with its folder, which counts only a file unchanged since the
+    /// reply (SPEC §5.4), or read at delivery. One read later records the file as it was then. Only
+    /// that is said, never "same as".
+    func sameSizeAndDates(_ delivery: Delivery) -> Delivery? {
+        guard delivery.sha256 == nil, let size = delivery.capture?.size, let modified = delivery.capture?.modifiedAt else { return nil }
+        let created = delivery.capture?.createdAt
+        let earlier = work.deliveries.drop { $0.id != delivery.id }.dropFirst()
+        let alike = { (d: Delivery) in
+            (d.member != nil || d.capture?.provenance == .atDelivery) && d.capture?.size == size && d.capture?.modifiedAt == modified
+                && (created == nil || d.capture?.createdAt == nil || d.capture?.createdAt == created)
+        }
+        return earlier.first { $0.path == delivery.path && alike($0) } ?? earlier.first(where: alike)
+    }
+
     func spoken(_ delivery: Delivery) -> String {
         let earlier = sameAs(delivery)
         var line = Wording.deliveryLine(delivery, sameAs: earlier?.path == delivery.path ? earlier : nil)
         if let earlier, earlier.path != delivery.path {
             line += ", same bytes as \((earlier.path as NSString).lastPathComponent) \(Wording.number(earlier))"
+        } else if earlier == nil, let alike = sameSizeAndDates(delivery) {
+            line += ", " + Wording.sameSizeAndDates(alike, as: delivery, named: alike.path != delivery.path).lowercased()
         }
         if delivery.id == selected.id { line += ", shown" }
         return work.files.count > 1 ? (delivery.path as NSString).lastPathComponent + ", " + line : line

@@ -24,6 +24,14 @@ and a second session in the same workspace, asked two hours ago, so the covers d
 are observed by both. A file's dates can be set back but its inode change time can't, so each
 session answers after its files are written, as a session that wrote them would.
 
+Phase bundle (on its own or after the others) adds `work/launch`, outside git, for folders handed
+over (SPEC §5.4): a session whose first reply, an hour ago, names the folder `site/` and the Git
+checkout `app/`, and whose second, now, names `site/` again with `renders/`. The site's files are
+dated before the first reply but written now, after it, so only the second delivery hands them
+over, as it does `assets/hero.png`, which came after the first reply; its hidden `.env` and
+`.DS_Store` are never handed over; thirty renders crowd their folder and fold; and `app/`, a
+project's own folder, stands alone and says why.
+
 Phase initial delivers:
 - Claude Code: CJK Markdown, a PNG, a symlink, a folder and an HTML page inside it, a
   65 MiB sparse file (tracked by hash only), a long text file and a FIFO;
@@ -255,6 +263,43 @@ elif phase == 'capture':
                    'Render episode 0 with its narration and covers', 'Everything is in [out](out/).', at(0), answered)
     claude_session(claude / 'series' / 'series-covers.jsonl', 'series-covers', series, 'Series covers',
                    'Draw the 4:3 cover', 'The covers are ready.', at(60), answered)
+
+elif phase == 'bundle':
+    launch = work / 'launch'
+    site, renders, app = launch / 'site', launch / 'renders', launch / 'app'
+    start = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0) - datetime.timedelta(hours=2)
+    at = lambda minutes: start + datetime.timedelta(minutes=minutes)
+
+    def made(path, minutes, data=b'synthetic\n'):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        dated(path, at(minutes), at(minutes))
+
+    made(site / 'index.html', 10, b'<!doctype html><title>Launch</title><link rel="stylesheet" href="css/style.css">'
+                                  b'<img src="assets/hero.png"><script src="js/app.js"></script>\n')
+    made(site / 'css' / 'style.css', 11, b'body { font: 16px system-ui; }\n')
+    made(site / 'js' / 'app.js', 12, b'console.log("launch")\n')
+    made(site / '.env', 9, b'DEPLOY_TOKEN=synthetic-not-a-secret\n')
+    made(site / '.DS_Store', 9)
+    app.mkdir(parents=True)
+    git(app, 'init', '-q', '-b', 'main')
+    (app / 'README.md').write_text('# Launch app\n')
+    git(app, 'add', '.')
+    git(app, 'commit', '-q', '-m', 'init')
+    log = claude / 'launch' / 'launch.jsonl'
+    claude_session(log, 'launch', launch, 'Launch site', 'Build the launch site and set up the app',
+                   f'The [site]({site}/) is built, and the [app]({app}) is set up.', at(0), at(60))
+
+    # After the first reply: only the second hands these over.
+    (site / 'assets').mkdir()
+    png(site / 'assets' / 'hero.png', (30, 90, 200))
+    renders.mkdir()
+    for n in range(30):
+        png(renders / f'frame-{n:03}.png', (n * 8, 120, 160))
+    (renders / '.DS_Store').write_bytes(b'synthetic\n')
+    answered = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0) + datetime.timedelta(seconds=1)
+    claude_session(log, 'launch', launch, 'Launch site', 'Add the hero image and export the renders',
+                   f'The [site]({site}/) has its hero image; the [renders]({renders}/) are exported.', at(90), answered)
 
 else:
     raise SystemExit(__doc__)

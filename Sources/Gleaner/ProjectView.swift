@@ -4,8 +4,10 @@ import SwiftUI
 
 /// One project as an outline, to enter and resume: the project at its head (what it is, and what
 /// arrived last), the joins Gleaner suggests, then its works by the folder each is in, as the
-/// project's own folders lay them out, and each work's revisions under it. Works and revisions are
-/// newest first, as everywhere in the window; folders keep the project's own layout.
+/// project's own folders lay them out, and each work's revisions under it. In each folder, what a
+/// person opens comes before what a program reads, then newest first (SPEC §5.3, "Order and
+/// grouping"), with a crowded folder's files that no reply named itself folded; revisions are
+/// newest first, as everywhere in the window.
 struct ProjectOutline: View {
     @Environment(LibraryModel.self) private var model
     var project: Organization.Project
@@ -16,8 +18,7 @@ struct ProjectOutline: View {
     var body: some View {
         @Bindable var model = model
         let results = model.results
-        let folders = Dictionary(grouping: results) { model.outlineFolder($0.work, in: project) }
-        let order = folders.keys.sorted { a, b in a.isEmpty != b.isEmpty ? a.isEmpty : a.localizedStandardCompare(b) == .orderedAscending }
+        let outline = model.outline(of: project)
         let suggestions = model.organization.suggestions(in: project)
         VStack(spacing: 0) {
             FilterBar(named: false)
@@ -38,14 +39,18 @@ struct ProjectOutline: View {
                         Text("Joining never moves or changes a file.").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                ForEach(order, id: \.self) { folder in
-                    let works = folders[folder]!
+                ForEach(outline, id: \.folder) { folder in
                     Section {
-                        ForEach(works) { result in
-                            WorkEntry(result: result, placement: model.organization.placement(of: result.work))
+                        ForEach(folder.items) { item in
+                            switch item {
+                            case .work(let result):
+                                WorkEntry(result: result, placement: model.organization.placement(of: result.work))
+                            case .folded(let key, let kind, let results):
+                                FoldedWorks(key: key, kind: kind, results: results)
+                            }
                         }
                     } header: {
-                        FolderHeader(name: Wording.folder(folder), count: works.count)
+                        FolderHeader(name: Wording.folder(folder.folder), count: folder.count)
                     }
                 }
             }
@@ -59,6 +64,30 @@ struct ProjectOutline: View {
                 }
             }
             TroubleBar()
+        }
+    }
+}
+
+/// A folder's files of one kind that no reply named itself, folded into one row with their count:
+/// a group, not an object, as a folder's heading is, so it is never selected. It opens on demand,
+/// and on its own while it holds the selection.
+struct FoldedWorks: View {
+    @Environment(LibraryModel.self) private var model
+    var key: String
+    var kind: Artifact.Kind
+    var results: [SearchResult]
+
+    var body: some View {
+        DisclosureGroup(isExpanded: Binding(get: { model.isUnfolded(key, results) }, set: { model.unfolded[key] = $0 })) {
+            ForEach(results) { result in
+                WorkEntry(result: result, placement: model.organization.placement(of: result.work))
+            }
+        } label: {
+            // Counted at the trailing end, as every count of the outline is.
+            SectionHeader(title: Wording.kindName(kind), count: results.count, noun: "file") {
+                FileIcon(path: results.first?.work.latest.path ?? "", folder: false, size: 16)
+            }
+            .help(Wording.folded(kind, count: results.count))
         }
     }
 }
@@ -104,7 +133,8 @@ struct ProjectHeader: View {
                     .help("Show \(combined.name) as its own project again, as you set on \(Wording.date(combined.correction.madeAt))")
                 }
             }
-            let recent = project.works.prefix(3)
+            // What replies named; a folder's files come with it, under it in the outline.
+            let recent = project.works.lazy.filter { $0.deliveries.contains { $0.member == nil } }.prefix(3)
             if !recent.isEmpty {
                 HStack(alignment: .firstTextBaseline, spacing: Space.s) {
                     Text("Recent").foregroundStyle(.secondary)

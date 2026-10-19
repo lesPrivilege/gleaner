@@ -7,6 +7,10 @@ public enum Provenance: String, Sendable, Codable {
     case atDelivery = "at_delivery"
     case firstSeenAfterDelivery = "first_seen_after_delivery"
     case neverObserved = "never_observed"
+    /// One of a delivered folder's files, listed with the folder by its name, size and dates, whose
+    /// bytes Gleaner hasn't read yet (SPEC §5.4). Gleaner's first read of the file, while it is still
+    /// as listed, completes it under the rules above.
+    case listed
 }
 
 /// What Gleaner recorded about a delivery's bytes when it first looked. One without a hash, other
@@ -21,8 +25,12 @@ public struct Capture: Sendable, Equatable {
     public var savedAt: Date?
     public var provenance: Provenance
     /// What was at the path: a file Gleaner read (it has a hash) or a folder; or, with no hash and
-    /// never observed, nothing, a file Gleaner couldn't read, or one that isn't a regular file.
+    /// never observed, nothing, a file Gleaner couldn't read, or one that isn't a regular file; or,
+    /// with no hash and listed, a file listed with its folder and not read yet.
     public var kind: LocatorState.Kind
+    /// The file's creation date, recorded only for one of a delivered folder's files, as listed
+    /// (SPEC §5.4); nil for a file whose reply named it.
+    public var createdAt: Date? = nil
 
     public var isDirectory: Bool { kind == .directory }
 
@@ -74,6 +82,13 @@ public struct Delivery: Sendable, Identifiable {
     /// (`Turn.model`, `SessionInfo.modelProvider`); nil when it doesn't.
     public var model: String? = nil
     public var modelProvider: String? = nil
+    /// For a file handed over as one of a delivered folder's files (SPEC §5.4): the folder's
+    /// delivery, whose reply, request, time and evidence this one carries. Nil for a file the reply
+    /// named itself.
+    public var member: Membership? = nil
+    /// For a delivered folder: what listing its files found. Nil for a file, and for a folder not
+    /// listed yet.
+    public var unpacking: Unpacking? = nil
 
     public var sha256: String? { capture?.sha256 }
     /// Bytes Gleaner can vouch for as this delivery's.
@@ -103,19 +118,38 @@ public struct Artifact: Sendable, Identifiable {
     /// The checkout holding the file; nil when the file is in no repository.
     public var checkout: Checkout?
 
+    /// Where a file is shown: its project folder, whether a repository holds it, and its checkout.
+    struct Location: Sendable {
+        var projectFolder: String
+        var inRepository: Bool
+        var checkout: Checkout?
+    }
+
+    var location: Location { Location(projectFolder: projectFolder, inRepository: inRepository, checkout: checkout) }
+
     /// `repository` and `checkout` are the ones recorded at delivery. They win over what can be
     /// found now, which is worse once a worktree is gone.
     public init(path: String, deliveries: [Delivery], repository: String? = nil, checkout: Checkout? = nil) {
-        self.path = path
-        self.deliveries = deliveries
         let cwd = deliveries.first?.cwd
         let root = repository ?? Projects.repository(path: path, cwd: cwd)
-        projectFolder = root ?? Projects.folder(path: path, cwd: cwd)
-        inRepository = root != nil
-        self.checkout = checkout ?? Projects.checkout(path: path)
-        // One line each: a search word holds no whitespace, so it never reads across two of them.
+        self.init(path: path, deliveries: deliveries, location: Location(
+            projectFolder: root ?? Projects.folder(path: path, cwd: cwd), inRepository: root != nil,
+            checkout: checkout ?? Projects.checkout(path: path)))
+    }
+
+    /// Where it is already known: a file handed over in a folder is where its folder is, with no
+    /// repository found again for each file.
+    init(path: String, deliveries: [Delivery], location: Location) {
+        self.path = path
+        self.deliveries = deliveries
+        projectFolder = location.projectFolder
+        inRepository = location.inRepository
+        checkout = location.checkout
+        // One line each: a search word holds no whitespace, so it never reads across two of them. A
+        // file handed over in a folder has none of its own: the reply's words find the folder.
         ownWords = deliveries.map { d in
-            Search.form([d.request ?? "", d.sessionTitle ?? "", d.evidence.map(\.excerpt).joined(separator: " ")].joined(separator: "\n"))
+            d.member != nil ? ""
+                : Search.form([d.request ?? "", d.sessionTitle ?? "", d.evidence.map(\.excerpt).joined(separator: " ")].joined(separator: "\n"))
         }
         // The file name and its folder, not the whole path: words like "users" or "projects" in
         // every path would otherwise match everything.
@@ -131,10 +165,7 @@ public struct Artifact: Sendable, Identifiable {
         let deliveries = deliveries.filter(kept)
         guard !deliveries.isEmpty else { return nil }
         guard deliveries.count < self.deliveries.count else { return self }
-        var artifact = Artifact(path: path, deliveries: deliveries, repository: inRepository ? projectFolder : nil, checkout: checkout)
-        artifact.projectFolder = projectFolder
-        artifact.inRepository = inRepository
-        return artifact
+        return Artifact(path: path, deliveries: deliveries, location: location)
     }
 
     /// The project's name, its folder's. Two projects can share one.
@@ -322,11 +353,12 @@ extension Artifact {
 
     /// The other files each reply named, keyed by delivery id, as their deliveries from that reply
     /// in the order it names them: a sibling delivered again later is still offered as the
-    /// occurrence that came with this one.
+    /// occurrence that came with this one. A delivered folder's files aren't among them: each is
+    /// reached through its folder.
     public static func deliveredWith(_ artifacts: [Artifact]) -> [Delivery.ID: [Delivery]] {
         var byReply: [String: [Delivery]] = [:]
         for artifact in artifacts {
-            for d in artifact.deliveries {
+            for d in artifact.deliveries where d.member == nil {
                 guard let line = d.replyLine else { continue }
                 byReply["\(d.logPath)|\(line)", default: []].append(d)
             }

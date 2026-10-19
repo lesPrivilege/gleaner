@@ -98,10 +98,23 @@ public final class Indexer: @unchecked Sendable {
             /// folder, a system or hidden folder, the agents' logs) or no longer there. Not a problem:
             /// it says why nothing was observed there.
             public var unwalkedWorkspaces: [String] = []
+            /// What the listings of folders its replies delivered couldn't see, each with why: a
+            /// listing stopped at its bound, a folder in it couldn't be read, or its files couldn't
+            /// be recorded. Files there may be missing from what was handed over (SPEC §5.4).
+            public var folderProblems: [String] = []
+            /// Folders its replies delivered whose files aren't listed, each with why: the home, a
+            /// folder directly in it, a project's own folder or one holding it. Not a problem: it
+            /// says why the folder stands alone.
+            public var foldersNotUnpacked: [String] = []
+            /// Folders its replies delivered that are gone, or no longer folders, each with why: their
+            /// files wait to be listed, and every run tries again, since a volume may come back. Not
+            /// a problem, and shown folded into one row with their count.
+            public var foldersGone: [String] = []
 
             /// Listed, but not everything in it could be read or understood.
             public var hasProblems: Bool {
-                !unknownRecordTypes.isEmpty || !shortenedLogs.isEmpty || !workspaceProblems.isEmpty || isIncomplete
+                !unknownRecordTypes.isEmpty || !shortenedLogs.isEmpty || !workspaceProblems.isEmpty || !folderProblems.isEmpty
+                    || isIncomplete
             }
 
             /// Something reading again may fix: the folder, a folder in it, or a log couldn't be read
@@ -184,6 +197,7 @@ public final class Indexer: @unchecked Sendable {
             }
         }
 
+        var reads: [(Read, Provider)] = []
         for (index, (provider, url, size, mtime, shortened)) in changed.enumerated() {
             progress(index, changed.count)
             switch parsed[index] {
@@ -196,8 +210,8 @@ public final class Indexer: @unchecked Sendable {
                 let complete = log.map { $0.isComplete && !shortened } ?? true
                 let derived = log.flatMap(span(of:))
                 do {
-                    report.newDeliveries += try registry.transaction {
-                        let added = try log.map { try ingest($0, isComplete: complete, now: now()) } ?? 0
+                    let ingested = try registry.transaction {
+                        let ingested = try log.map { try ingest($0, isComplete: complete, now: now()) }
                         // With the log's reading, so a session whose walk a quit cut off is walked next run.
                         if let log, let derived {
                             try registry.recordSpan(of: log.session, provider: provider, span: derived.span,
@@ -209,8 +223,10 @@ public final class Indexer: @unchecked Sendable {
                             try registry.markRead(logFile: url.path, size: size, mtime: mtime,
                                                   unknownRecordTypes: log?.unknownRecordTypes ?? [:])
                         }
-                        return added
+                        return ingested
                     }
+                    report.newDeliveries += ingested?.added ?? 0
+                    reads += (ingested?.reads ?? []).map { ($0, provider) }
                 } catch {
                     // A log the registry refuses fails alone; the run goes on.
                     report.sources[provider]?.failures.append("\(url.path): \(error)")
@@ -225,23 +241,37 @@ public final class Indexer: @unchecked Sendable {
             }
         }
 
-        // Every log is in: each workspace waiting to be walked is walked once, for every session in it.
+        // Every log is in: each delivered folder not listed yet is listed, the files read in this run
+        // complete the listings they still match, whichever was made first, and each workspace
+        // waiting to be walked is walked once, for every session in it.
+        var unpacked = unpack(at: now(), providers: providers)
+        for (read, provider) in reads {
+            do {
+                try registry.transaction { try completeMembers(of: read.path, with: read.capture, file: read.file) }
+            } catch {
+                unpacked.problems[provider, default: []].append("\(read.path): its listing not completed: \(error)")
+            }
+        }
         let observed = observe(at: now(), providers: providers)
         report.newObservations = observed.recorded
         let problems = try registry.workspaceProblems(), unwalked = try registry.unwalkedWorkspaces()
+        let folders = try registry.unpackings()
         for provider in report.sources.keys {
             report.sources[provider]?.workspaceProblems = (problems[provider] ?? []) + (observed.failures[provider] ?? [])
             report.sources[provider]?.unwalkedWorkspaces = unwalked[provider] ?? []
+            report.sources[provider]?.folderProblems = (folders.problems[provider] ?? []) + (unpacked.problems[provider] ?? [])
+            report.sources[provider]?.foldersNotUnpacked = folders.notUnpacked[provider] ?? []
+            report.sources[provider]?.foldersGone = unpacked.gone[provider] ?? []
         }
         progress(changed.count, changed.count)
         return report
     }
 
     /// `isComplete` says the whole log was read: only then does it show that a delivery it no
-    /// longer admits is gone.
-    func ingest(_ log: SessionLog, isComplete: Bool, now: Date) throws -> Int {
+    /// longer admits is gone. Returns how many deliveries are new, and the files read for them.
+    func ingest(_ log: SessionLog, isComplete: Bool, now: Date) throws -> (added: Int, reads: [Read]) {
         try registry.upsert(log.session)
-        var added = 0
+        var added = 0, reads: [Read] = []
         var admitted = Set<String>()
         let turns = log.turns.map { turn in
             (turn, MentionExtractor.candidates(in: turn).enumerated().filter { Admission.admits($0.element) })
@@ -272,11 +302,16 @@ public final class Indexer: @unchecked Sendable {
                     },
                     model: turn.model)
                 if isNew {
+                    let file = Workspace.file(at: candidate.path)
                     let captured = capture(candidate.path, deliveredAt: first.part.at, now: now)
                     try registry.addCapture(captured, for: id, logPath: log.session.logPath, path: candidate.path,
                                             replyTimes: Turn.times(turn))
-                    // Gleaner's first read of the file for an earlier delivery whose bytes it never had.
-                    if captured.sha256 != nil { try registry.complete(capturesOf: candidate.path, with: captured) }
+                    // Gleaner's first read of the file for an earlier delivery whose bytes it never had;
+                    // and, once the run has listed the folders, for one in a folder the file still matches.
+                    if captured.sha256 != nil {
+                        try registry.complete(capturesOf: candidate.path, with: captured)
+                        reads.append(Read(path: candidate.path, capture: captured, file: file))
+                    }
                     added += 1
                 }
                 // Where the file is, only while its folder is there to show it: once a worktree is
@@ -288,7 +323,7 @@ public final class Indexer: @unchecked Sendable {
             }
         }
         if isComplete { try registry.removeDeliveries(logPath: log.session.logPath, except: admitted) }
-        return added
+        return (added, reads)
     }
 
     /// A delivery keeps the id, and the capture, it was first given: a new capture would record the
@@ -346,7 +381,7 @@ public final class Indexer: @unchecked Sendable {
         guard let sha = delivery.sha256 else { throw ContentStore.Failure.unavailable }
         let saved = try store.save(delivery.path)
         guard saved.sha == sha else { throw ContentStore.Failure.changed(expected: sha, found: saved.sha) }
-        try registry.markSaved(deliveryID: delivery.id, at: date)
+        try registry.markSaved(delivery, at: date)
     }
 
     /// Reads the delivery's bytes once, saves small files, and records when that happened relative
@@ -379,15 +414,22 @@ public final class Indexer: @unchecked Sendable {
         }
     }
 
-    /// Reads the file at `path` for deliveries of it whose bytes Gleaner never had, because the
-    /// path was missing, unreadable or not a regular file when it first looked. This first read
-    /// completes their captures, once, as first seen after delivery (SPEC §5.1), and saves a small
-    /// file as a capture does. Returns whether it completed any.
+    /// Reads the file at `path` for deliveries of it whose bytes Gleaner never had: because the path
+    /// was missing, unreadable or not a regular file when it first looked, or because the file was
+    /// listed with a delivered folder and not read (SPEC §5.4). This first read completes their
+    /// captures, once: the first as first seen after delivery (SPEC §5.1), the listed ones only while
+    /// the file is still as listed (`completeMembers`). It saves a small file as a capture does.
+    /// Returns whether it completed any.
     public func completeCaptures(of path: String, now: Date) throws -> Bool {
-        guard try registry.hasIncompleteCapture(path: path) else { return false }
+        let file = Workspace.file(at: path)
+        let listed = try file.map { try !registry.listedMembers(of: path, as: $0).isEmpty } ?? false
+        guard try listed || registry.hasIncompleteCapture(path: path) else { return false }
         let read = capture(path, deliveredAt: nil, now: now)
         guard read.sha256 != nil else { return false }
-        try registry.complete(capturesOf: path, with: read)
+        try registry.transaction {
+            try registry.complete(capturesOf: path, with: read)
+            try completeMembers(of: path, with: read, file: file)
+        }
         return true
     }
 }
