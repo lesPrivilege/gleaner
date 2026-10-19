@@ -119,13 +119,32 @@
       "url": "https://github.com/lesPrivilege/gleaner/actions/runs/39277126786/job/118144332343"
     },
     {
-      "conclusion": null,
+      "build_seconds": 155.67,
+      "conclusion": "failure",
+      "decoded_log_sha256": "729d01d31fbff0133469f0ba2e458286bce76990925f4b369857a4a31c10d31b",
+      "duration_seconds": 37.102,
+      "failed_suite": "OriginalResolutionTests",
+      "failed_test_names": [
+        "aCurrentHashDoesNotReplaceCapturedBytesOrChangeEvidenceKind",
+        "concurrentAppendCannotExceedTheByteLimitAndOneSentinel",
+        "exactScopeChecksRejectSiblingPrefixesAndNeverTreatDirectoriesAsFiles",
+        "inPlaceMutationWithRestoredMtimeDiscardsTheHash",
+        "matchingHashStillPreservesBackfillProvenance",
+        "modesKeepListingAndCurrentObservationSeparate",
+        "movedOriginalsAreNotRediscoveredOrCalledUsableByPathOnlyMode",
+        "parentDirectoryReplacementCannotRedirectTheReadOutsideScope",
+        "replacementOfThePathDiscardsThePinnedFilesHash",
+        "unreadableOriginalIsNotMissing"
+      ],
+      "issues": 16,
       "job_id": 118147164818,
-      "note": "Earlier documentation-only checkpoint, contains no resolver repair; do not confuse with successor validation.",
+      "note": "Documentation-only checkpoint before resolver repair; decoded logs confirm the same 16 OriginalResolutionTests issues as 24811b0.",
       "revision": "524fb80672cd2598bd5cad14ce5f483f8709d495",
       "run_id": 39278093014,
-      "status": "in_progress",
-      "status_checked_at_utc": "2026-10-19T15:39:00Z"
+      "status": "completed",
+      "status_checked_at_utc": "2026-10-19T15:45:30.481991+00:00",
+      "suites": 51,
+      "tests": 528
     },
     {
       "conclusion": null,

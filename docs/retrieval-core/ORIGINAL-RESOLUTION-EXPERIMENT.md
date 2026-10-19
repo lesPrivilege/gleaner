@@ -112,5 +112,6 @@ compatible with every core locator or silently relabel a denied path as missing.
 The reviewed repair is committed as `6a39a13e6929bc7ab1ac24700a0af0929ad2bf44`.
 Its ordinary push created [run 39280023363](https://github.com/lesPrivilege/gleaner/actions/runs/39280023363),
 job `118152324799`, queued at the report checkpoint. The older documentation-only
-run `39278093014` remains in progress and does not contain the repair. Exact receipt
+run `39278093014` completed with the same 16 original-reader issues and does not
+contain the repair. Exact receipt
 state is recorded in [cycle3 validation](cycle3/validation-results.json).
