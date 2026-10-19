@@ -95,7 +95,7 @@ Each shape an adapter knows keeps a sanitized fixture line from a real log and t
    - Metadata only; bytes are read on the person's action.
    - Tests on synthetic sessions in several kinds of work: a video series, a report, a slide deck, a data analysis, and a code change.
 2. **Bundles.** A reply that hands over a folder hands over what is in it. Its files are listed with "Handed over in" evidence, stronger than "Appeared during", by metadata: each is a delivery of its own file, versioned with that file's other deliveries, whose bytes are read when the person acts on it.
-3. **Work units and the window.**
+3. **Work units and the window.** Designed in [review.md](review.md), which settles what follows.
    - **In a project:** work units first (a series, then its episodes), then what each session handed over and what was observed during it, by folder, with crowded folders folded and stems shown together. Candidates stay under their session until kept.
    - **In a work unit's detail:** its works played, heard and shown in place, each with "Handed over in", "Appeared during" or "Changed during", its versions, and the four states.
    - **Review:** the Reviewed verdict and the Published mark. They, hand-on and comparison read the bytes then. The review queue is a saved view of the library (delivered or new revisions awaiting review), not a second library.
