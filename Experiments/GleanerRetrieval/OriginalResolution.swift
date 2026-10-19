@@ -94,7 +94,9 @@ public enum OriginalResolutionExperiment {
     }
 
     /// Path-only mode applies lexical scope and returns an explicitly unverified locator without
-    /// disk access. Checked modes reject every symlink in the path, including root ancestors.
+    /// disk access. Parent (`..`) components are refused in locators and authorized roots rather
+    /// than collapsed across a possible symlink. Checked modes reject every symlink in the path,
+    /// including root ancestors.
     /// Hash mode reads at most `hashByteLimit + 1` bytes (one EOF/overflow sentinel), uses a
     /// 256 KiB read buffer, and refuses a hash if metadata or reopened path identity changes. It returns
     /// no staged bytes: using this path later requires another check.
@@ -123,7 +125,7 @@ public enum OriginalResolutionExperiment {
             return path == rootPath || path.hasPrefix(rootPath == "/" ? "/" : rootPath + "/")
         }) else {
             current.state = .deniedScope
-            current.reason = "The original is outside the caller's explicit roots."
+            current.reason = "The original is outside the explicit roots or uses an unsupported parent traversal."
             return finish()
         }
         current.path = path
@@ -174,7 +176,20 @@ public enum OriginalResolutionExperiment {
 
     private static func absolute(_ path: String) -> String? {
         guard path.hasPrefix("/"), !path.contains("\0") else { return nil }
-        return URL(fileURLWithPath: path).standardizedFileURL.path
+        // Scope comparison must be lexical. Foundation may shorten /private/var to /var
+        // even after resolvingSymlinksInPath, introducing an ancestor link that the descriptor
+        // walk deliberately rejects. Do not resolve links or consult existence here, including
+        // for path-only mode; preserve the caller's physical spelling.
+        var parts: [Substring] = []
+        for part in path.split(separator: "/") {
+            switch part {
+            case ".": continue
+            // Collapsing link/.. can change the meaning of a pathname and its scope.
+            case "..": return nil
+            default: parts.append(part)
+            }
+        }
+        return "/" + parts.joined(separator: "/")
     }
 
     /// Follow directory descriptors, never symlinks. This is a conservative experimental scope

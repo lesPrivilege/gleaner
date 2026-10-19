@@ -1,5 +1,10 @@
 import Foundation
 import Testing
+#if canImport(Darwin)
+import Darwin
+#else
+import Glibc
+#endif
 @testable import GleanerCore
 import GleanerRetrievalExperiments
 
@@ -30,7 +35,10 @@ struct OriginalResolutionMeasurements {
 
     @Test func measureOriginalModes() throws {
         let fm = FileManager.default
-        let root = fm.temporaryDirectory.resolvingSymlinksInPath().appendingPathComponent("gleaner-original-cost-\(UUID().uuidString)")
+        let physical = try #require(realpath(fm.temporaryDirectory.path, nil))
+        defer { free(physical) }
+        let root = URL(fileURLWithPath: String(cString: physical), isDirectory: true)
+            .appendingPathComponent("gleaner-original-cost-\(UUID().uuidString)")
         try fm.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? fm.removeItem(at: root) }
         let resultsDirectory = try #require(ProcessInfo.processInfo.environment["GLEANER_CYCLE2_RESULTS_DIR"])

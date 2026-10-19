@@ -46,6 +46,9 @@ let experimentTargets: [Target] = [
                 exclude: ["heldout-labels.json", "heldout-results.json", "heldout-results-first-run.json",
                           "heldout-policy-hashes.json", "native", "results", "measure.py"],
                 sources: ["heldout.swift"]),
+    .testTarget(name: "GleanerRetrievalCycle3HeldOutTests",
+                dependencies: ["GleanerCore", "GleanerRetrievalExperiments"],
+                path: "eval/retrieval/cycle3/Tests"),
 ]
 
 let baseTargets: [Target] = [

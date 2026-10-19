@@ -13,8 +13,11 @@ import Glibc
         let root: URL
         let original: URL
         init(bytes: Data = Data("current synthetic report".utf8)) throws {
-            // Checked modes deliberately reject symlinks, including macOS /var and /tmp aliases.
-            root = FileManager.default.temporaryDirectory.resolvingSymlinksInPath()
+            // Foundation resolvingSymlinksInPath can shorten /private/var back to /var.
+            // POSIX realpath supplies the physical spelling required by the strict nofollow walk.
+            let physical = try #require(realpath(FileManager.default.temporaryDirectory.path, nil))
+            defer { free(physical) }
+            root = URL(fileURLWithPath: String(cString: physical), isDirectory: true)
                 .appendingPathComponent("gleaner-original-experiment-\(UUID().uuidString)")
             original = root.appendingPathComponent("out/report.md")
             try FileManager.default.createDirectory(at: original.deletingLastPathComponent(), withIntermediateDirectories: true)
@@ -111,6 +114,56 @@ import Glibc
         let fifo = fixture.root.appendingPathComponent("pipe")
         #expect(mkfifo(fifo.path, 0o600) == 0)
         #expect(fixture.resolve(fixture.delivery(path: fifo.path)).current.state == .notRegular)
+    }
+
+    @Test func physicalSpellingIsPreservedAndAliasRootsRemainDenied() throws {
+        let fixture = try Fixture()
+        let physical = try #require(realpath(fixture.original.path, nil))
+        defer { free(physical) }
+        #expect(fixture.original.path == String(cString: physical))
+        let physicalResult = fixture.resolve()
+        #expect(physicalResult.current.path == fixture.original.path)
+        #expect(physicalResult.current.state == .hashedCurrent)
+
+        // Portable analogue of a system alias: a known physical directory has a symlink name.
+        // Choosing the physical name does not grant permission to follow the alias as a root.
+        let alias = fixture.root.appendingPathComponent("alias")
+        try FileManager.default.createSymbolicLink(atPath: alias.path,
+            withDestinationPath: fixture.original.deletingLastPathComponent().path)
+        let aliasPath = alias.appendingPathComponent("report.md").path
+        let aliasDelivery = fixture.delivery(path: aliasPath)
+        let unverified = OriginalResolutionExperiment.resolve(delivery: aliasDelivery, mode: .pathOnly, authorizedRoots: [alias])
+        #expect(unverified.current.path == aliasPath && unverified.current.state == .unverifiedPath)
+        let checked = OriginalResolutionExperiment.resolve(delivery: aliasDelivery, mode: .hashCurrent, authorizedRoots: [alias])
+        #expect(checked.current.state == .deniedScope && checked.bytesRead == 0)
+
+        // Existence is irrelevant to lexical scope. No /private prefix may be removed, and
+        // absent originals retain their own spelling instead of borrowing another namespace.
+        let absent = "/private/tmp/gleaner-absent-synthetic/part/./report.md"
+        let lexical = OriginalResolutionExperiment.resolve(delivery: fixture.delivery(path: absent), mode: .pathOnly,
+            authorizedRoots: [URL(fileURLWithPath: "/private/tmp/gleaner-absent-synthetic", isDirectory: true)])
+        #expect(lexical.current.path == "/private/tmp/gleaner-absent-synthetic/part/report.md")
+        #expect(lexical.current.state == .unverifiedPath && lexical.bytesRead == 0)
+    }
+
+    @Test func parentComponentsAreRefusedWithoutReinterpretingSymlinkScope() throws {
+        let fixture = try Fixture()
+        let outside = try Fixture()
+        let link = fixture.root.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(atPath: link.path, withDestinationPath: outside.root.path)
+        let parentRoot = URL(fileURLWithPath: fixture.root.path + "/out/..", isDirectory: true)
+        #expect(parentRoot.path.split(separator: "/").contains(".."))
+        for mode in OriginalResolutionExperiment.Mode.allCases {
+            // Even the ordinary, usable parent traversal is refused: the experiment does not
+            // decide whether a discarded component might refer to a symlink or another mount.
+            for path in [fixture.root.path + "/out/../out/report.md", fixture.root.path + "/link/../out/report.md"] {
+                let result = fixture.resolve(fixture.delivery(path: path), mode: mode)
+                #expect(result.current.state == .deniedScope && result.bytesRead == 0)
+                #expect(result.current.observedCurrentSha256 == nil)
+            }
+            let result = OriginalResolutionExperiment.resolve(delivery: fixture.delivery(), mode: mode, authorizedRoots: [parentRoot])
+            #expect(result.current.state == .deniedScope && result.bytesRead == 0)
+        }
     }
 
     @Test func symbolicLinksAreDeniedIncludingLinksWithinTheRootAndLinksUsedAsRoots() throws {
