@@ -387,10 +387,11 @@ import Testing
         let drawnAll = Set(page.works.map(\.latest.path))
         let shownAll = Dictionary(uniqueKeysWithValues: page.works.compactMap { work in FileStat(work.latest.path).map { (work.latest.path, $0) } })
         let all = ReviewAll(page.works, drawn: drawnAll, shown: shownAll, hasFile: { !model.hasNoFile($0) }, verdict: model.verdict)
-        #expect(all.approve.count == 4 && all.oneByOne == "1 video and 1 audio file to review one by one")
+        #expect(all.approve.count == 4 && all.oneByOne == "1 video, 1 audio file and 1 other file to review one by one")
         step += 1
-        try await Self.menu([("Approve All", !all.approve.isEmpty), ("Request Changes to All…", !all.changes.isEmpty),
-                             ("Reject All…", !all.reject.isEmpty)], note: all.oneByOne,
+        try await Self.menu([(Wording.reviewAll(.approved, all.approve.count), !all.approve.isEmpty),
+                             (Wording.reviewAll(.changesRequested, all.changes.count), !all.changes.isEmpty),
+                             (Wording.reviewAll(.rejected, all.reject.count), !all.reject.isEmpty)], note: all.oneByOne,
                             to: out.appendingPathComponent(String(format: "review-%02d-review-all-menu.png", step)))
 
         // Every file of episode 1 approved as shown, its script asked again, its video published.

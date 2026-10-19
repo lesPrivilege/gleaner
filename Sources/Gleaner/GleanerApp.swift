@@ -77,7 +77,7 @@ struct CollectionMenu: View {
         }
         .keyboardShortcut("n", modifiers: [.command, .shift])
         .disabled(model.newUnitPlace == nil)
-        Menu("Add to Collection") {
+        Menu(Wording.collectionCommand(works)) {
             if let project = works.first?.project {
                 CollectionChoices(project: project, except: Set(works.compactMap(\.unit))) { unit in
                     Task { await model.add(works, to: unit) }

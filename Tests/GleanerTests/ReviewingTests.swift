@@ -183,6 +183,9 @@ import UniformTypeIdentifiers
         try FileManager.default.removeItem(atPath: video)
         model.noteShown(video, FileStat(video))
         #expect(model.onThisMac(shown).title == "Not on disk" && model.hasNoFile(shown))
+        // What can still be read is offered first: the newest revision Gleaner keeps a copy of.
+        let saved = try #require(model.savedVersion(of: shown))
+        #expect(model.hasSaved(try #require(saved.sha256)) && saved.id == shown.deliveries.first { $0.sha256.map(model.hasSaved) == true }?.id)
     }
 
     @Test func aRecutGoneFromDiskKeepsNoVerdictNoOneMadeOnIt() async throws {
@@ -793,14 +796,21 @@ import UniformTypeIdentifiers
         let drawn = Set(works.dropLast().map(\.latest.path)).subtracting(["/w/project/brief.pdf"])
         let all = ReviewAll(works, drawn: drawn, shown: shown, hasFile: { _ in true }) { _ in .none }
         #expect(all.approve.map(\.name) == ["chart.png", "notes.md"] && all.changes.map(\.name) == ["chart.png", "notes.md"])
-        // Every video and audio file waiting is counted, drawn yet or not.
-        #expect(all.videos == 2 && all.audio == 1 && all.oneByOne == "2 videos and 1 audio file to review one by one")
+        // Every video and audio file waiting is counted, drawn yet or not, and so is every other file
+        // it leaves out: the PDF Quick Look draws, and the two drawn as their icons.
+        #expect(all.videos == 2 && all.audio == 1 && all.others == 3)
+        #expect(all.oneByOne == "2 videos, 1 audio file and 3 other files to review one by one")
         // A video with a verdict on its bytes no longer waits one by one, nor one with no file there.
         let approved = Review(id: 1, kind: .approved, path: works[0].latest.path, note: nil, sha256: "a", file: stat, madeAt: t0)
         let after = ReviewAll(works, drawn: drawn, shown: shown, hasFile: { $0.name != "outro.mp4" }) {
             $0.name == "intro.mp4" ? .current(approved) : .none
         }
-        #expect(after.videos == 0 && after.oneByOne == "1 audio file to review one by one")
+        #expect(after.videos == 0 && after.oneByOne == "1 audio file and 3 other files to review one by one")
+        // A work is in one collection at most: putting one that is in another there is a move.
+        var inOne = works[2]
+        inOne.unit = "c"
+        #expect(Wording.collectionCommand([works[3]]) == "Add to Collection")
+        #expect(Wording.collectionCommand([works[3], inOne]) == "Move to Collection")
     }
 
     @Test func aHiddenFileIsNeverObservedSoNeverOfferedKeep() async throws {
