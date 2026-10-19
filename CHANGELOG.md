@@ -109,5 +109,5 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - The admission rule is provisional, pending feedback from more users' logs.
 - Files observed during a conversation are listed, under a project's Observed, only in a project where a reply handed something over. A stretch ends at its last reply, so work after a final reply, an interrupted turn, and a background job still running after the last reply to its request fall outside it. A file renamed, or given new permissions, after its stretch is left out with the copies.
 - What Gleaner saw of a reviewed file is kept only while it runs: a file seen changed and then deleted stays changed until you quit, and after a relaunch its verdict stands as made.
-- An older Gleaner won't open a library a newer one has used, and changes nothing in it; going back to an older version needs the library from before the update.
+- An older Gleaner won't open a library a newer one has used, and changes nothing in it. A newer Gleaner copies an earlier library to `Backups` beside it before updating it, so going back to an older version starts from that copy (docs/release.md). Copies aren't removed.
 - The app has no icon yet, and the release zip is ad-hoc signed, not notarized.

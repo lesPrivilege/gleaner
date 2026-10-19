@@ -26,12 +26,14 @@ The path from a green `main` to a downloadable, notarized `Gleaner-0.1.0.zip`. S
 ## 2. Tag (**owner**)
 
 ```bash
-git tag v0.1.0
+git tag v0.1.0-rc.1
 ```
 
-A tagged commit builds as `0.1.0`; untagged builds read `0.1.0-dev+<commit>`.
+A tag is `vX.Y.Z`, or a candidate's `vX.Y.Z-rc.N`. The app's `CFBundleShortVersionString` holds its three numbers (`0.1.0`); the whole tag minus the `v` is its display version (`GleanerDisplayVersion`), which names the zip. Untagged builds read `0.1.0-dev+<commit>`.
 
-## 3. Sign and notarize (**owner**)
+The build number (`CFBundleVersion`) only goes up across every published build. It counts the commits on main's first-parent line, so build from `main` in a full clone; `bundle-app.sh` refuses a shallow one. `GLEANER_BUILD=<n>` sets it instead. Each published package gets its own tag and build: a published one is never replaced, so a rebuild after notarization or a docs fix is the next candidate (`v0.1.0-rc.2`), never the same tag again.
+
+## 3. Build, sign and notarize (**owner**)
 
 Once per Mac, store notary credentials in the keychain (an app-specific password or an App Store Connect API key; nothing is written to the repository):
 
@@ -45,18 +47,27 @@ Then build, sign with the hardened runtime, notarize, staple and zip:
 GLEANER_SIGN_IDENTITY="Developer ID Application: <Name> (<TEAMID>)" GLEANER_NOTARY_PROFILE=gleaner-notary ./scripts/release.sh
 ```
 
-The script refuses a dirty tree, refuses to notarize an untagged build, runs the tests, and ends with a Gatekeeper assessment of the stapled app. It writes `build/Gleaner-0.1.0.zip` and its `.sha256`. If notarization fails and the ad-hoc zip ships instead, the docs must say so again (§1): fix them and tag again before publishing.
+The script refuses a dirty tree, refuses to notarize an untagged build, runs the tests, validates the stapled ticket, verifies the signature strictly and ends with a Gatekeeper assessment. It writes, under `build/`:
 
-Without the two variables it produces an ad-hoc signed zip for local testing. On another Mac, macOS 15 refuses it the first time; it opens after System Settings → Privacy & Security → Open Anyway.
+- `Gleaner-<display version>-<arch>.zip`, `arch` being what `lipo -archs` reads from the binary (`arm64` from an Apple Silicon Mac; `universal` for more than one);
+- its `.sha256`, computed last, of the zip that ships;
+- `Gleaner-<display version>-<arch>.json`, the manifest: source commit, tag, versions, build, bundle ID, architecture, minimum macOS, the Mac and Swift it was built with, the asset's size and hash, the signing identity, team and hardened runtime, whether it was notarized, the tests, the library version, and the native acceptance as `pending`. It records only what the script saw.
+
+Without the two variables it produces an ad-hoc signed zip for local testing, with `"notarized": false`. On another Mac, macOS 15 refuses it the first time; it opens after System Settings → Privacy & Security → Open Anyway. If an ad-hoc build ships instead of a notarized one, the docs must say so (§1).
 
 ## 4. Publish (**owner**)
 
 ```bash
-git push origin v0.1.0
-gh release create v0.1.0 build/Gleaner-0.1.0.zip build/Gleaner-0.1.0.zip.sha256 --title "Gleaner 0.1.0" --notes-file <(awk '/^## 0\.1\.0/{f=1;next} /^## /{f=0} f' CHANGELOG.md)
+./scripts/publish.sh
 ```
 
-The notes are every line of the 0.1.0 section of `CHANGELOG.md` below its heading, up to the next release's heading.
+It finds the manifest of the tag on HEAD, checks the zip against it, and refuses when a release for the tag exists already or when the build number isn't above every published release's manifest. Then it pushes the tag and makes a **draft** release (a prerelease for a candidate tag) with the zip, its `.sha256` and the manifest, its notes the version's section of `CHANGELOG.md`. Check the draft's assets on GitHub, then publish it there.
+
+After publishing, download the zip from the release, install it in `/Applications`, and run the §1 checks on that copy, not on a local build; record the result beside the manifest.
+
+## Library backups
+
+Before a Gleaner updates a library an earlier version left, it copies `registry.sqlite` whole to `Backups/registry-v<version>-<time>.sqlite` in `~/Library/Application Support/Gleaner/`, and changes nothing if the copy fails. Saved bytes (`objects/`) aren't copied: they are kept by hash and never rewritten. To go back to the earlier Gleaner, quit Gleaner, move `registry.sqlite` and its `-wal` and `-shm` files aside, and copy the backup in as `registry.sqlite`. Gleaner never removes a backup.
 
 A Homebrew cask and in-app updates (Sparkle) come after the first release (SPEC §14, Distribution).
 

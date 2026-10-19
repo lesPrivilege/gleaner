@@ -149,4 +149,32 @@ import Testing
         #expect(try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 == Int64(later))
         #expect(try db.rows("SELECT name FROM sqlite_master").compactMap { $0["name"] as? String } == ["later"])
     }
+
+    /// An earlier Gleaner's library is copied whole, as it was, before this one updates it; a new
+    /// library, or one already this version's, isn't.
+    @Test func anEarlierLibraryIsBackedUpBeforeItIsUpdated() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("gleaner-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let path = folder.appendingPathComponent("registry.sqlite").path, backups = Registry.backups(of: path)
+        func copies() -> [String] { ((try? FileManager.default.contentsOfDirectory(atPath: backups.path)) ?? []).sorted() }
+        do {
+            let registry = try Registry(path: path)
+            try registry.db.execute("CREATE TABLE marker (x TEXT); INSERT INTO marker VALUES ('before');")
+        }
+        #expect(copies().isEmpty)
+        _ = try Registry(path: path)
+        #expect(copies().isEmpty)
+
+        let earlier = Registry.extractorVersion - 1
+        try Database(path: path).execute("PRAGMA user_version = \(earlier)")
+        let updated = try Registry(path: path)
+        #expect(try updated.db.rows("PRAGMA user_version").first?["user_version"] as? Int64 == Int64(Registry.extractorVersion))
+        let names = copies()
+        try #require(names.count == 1)
+        #expect(names[0].hasPrefix("registry-v\(earlier)-"))
+        let copy = try Database(path: backups.appendingPathComponent(names[0]).path)
+        #expect(try copy.rows("PRAGMA user_version").first?["user_version"] as? Int64 == Int64(earlier))
+        #expect(try copy.rows("SELECT x FROM marker").first?["x"] as? String == "before")
+        #expect(try copy.rows("SELECT mtime FROM log_files").isEmpty)
+    }
 }

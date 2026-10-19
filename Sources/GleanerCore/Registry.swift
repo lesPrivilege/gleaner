@@ -98,12 +98,17 @@ public final class Registry: @unchecked Sendable {
         /// The library was last opened by a later Gleaner, whose tables and readings this one
         /// doesn't know. Nothing is written to it.
         case newer(version: Int)
+        /// The library is an earlier Gleaner's, and couldn't be copied before this one updates it.
+        /// Nothing is written to it.
+        case backup(String)
 
         public var description: String {
             switch self {
             case .newer(let version):
                 "A newer Gleaner last opened this library (library version \(version); this Gleaner opens up to \(Registry.extractorVersion)). "
                     + "Nothing in it was changed. Open it with that newer Gleaner."
+            case .backup(let reason):
+                "Gleaner couldn’t back up the library before updating it (\(reason)). Nothing in it was changed."
             }
         }
     }
@@ -114,9 +119,12 @@ public final class Registry: @unchecked Sendable {
         db = try Database(path: path)
         // Before anything is written: setting the version back would have this Gleaner reread a
         // later one's library with its own, older reading, over tables it may not know.
-        if let version = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64, version > Self.extractorVersion {
-            throw Failure.newer(version: Int(version))
-        }
+        let found = try db.rows("PRAGMA user_version").first?["user_version"] as? Int64 ?? 0
+        if found > Self.extractorVersion { throw Failure.newer(version: Int(found)) }
+        // An earlier Gleaner's library is copied whole before this one changes it, so going back to
+        // that Gleaner can start from the copy. The saved bytes aren't copied: they are kept by
+        // hash and never rewritten.
+        if found > 0, found < Self.extractorVersion { try backUp(version: Int(found)) }
         try db.execute("""
             CREATE TABLE IF NOT EXISTS log_files (
                 path TEXT PRIMARY KEY, size INTEGER NOT NULL, mtime REAL NOT NULL, unknown_types TEXT, shortened INTEGER,
@@ -281,6 +289,31 @@ public final class Registry: @unchecked Sendable {
             // it was read at, and whether it lost records, so one that did still removes nothing.
             // Its replies were counted by the older reading, so fewer by this one is no alarm.
             try db.execute("UPDATE log_files SET mtime = -1, closed_replies = NULL; PRAGMA user_version = \(Self.extractorVersion);")
+        }
+    }
+
+    /// Where an earlier Gleaner's library is copied before this one updates it: `Backups` beside
+    /// it. Copies are never removed by Gleaner.
+    public static func backups(of path: String) -> URL {
+        URL(fileURLWithPath: path).deletingLastPathComponent().appendingPathComponent("Backups", isDirectory: true)
+    }
+
+    /// Copies the library, as it is, to `Backups`, named for its version and the time: one
+    /// consistent file, the write-ahead log's pages included (`VACUUM INTO`).
+    private func backUp(version: Int) throws {
+        let folder = Self.backups(of: path), stem = URL(fileURLWithPath: path).deletingPathExtension().lastPathComponent
+        let stamp = Date().formatted(Date.ISO8601FormatStyle(timeZone: .current).year().month().day().time(includingFractionalSeconds: false)
+            .dateSeparator(.dash).timeSeparator(.omitted).dateTimeSeparator(.standard))
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            var copy = folder.appendingPathComponent("\(stem)-v\(version)-\(stamp).sqlite"), next = 2
+            while FileManager.default.fileExists(atPath: copy.path) {
+                copy = folder.appendingPathComponent("\(stem)-v\(version)-\(stamp)-\(next).sqlite")
+                next += 1
+            }
+            try db.run("VACUUM INTO ?", [copy.path])
+        } catch {
+            throw Failure.backup("\(error)")
         }
     }
 
