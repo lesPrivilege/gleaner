@@ -35,6 +35,7 @@ In v0.1:
 - Read-only adapters for Claude Code (`~/.claude/projects`) and Codex (`~/.codex/sessions`).
 - Delivery extraction from user-facing final replies.
 - Registry of sessions, deliveries (mentions) and captures in SQLite. Locator state (git, availability) is recomputed when a file is checked, not stored.
+- Observations of what appeared or changed in each session's workspace during its span, kept beside the deliveries, never as deliveries (§5.3).
 - Content-addressed snapshots under a size policy.
 - Library window: projects and the works in each, search, preview (Quick Look, text, Markdown), compare versions, reveal in Finder, copy path, drag out, and a Sources page for what Gleaner reads, the person's corrections and what it keeps (§5.1a).
 
@@ -51,7 +52,7 @@ The core is a library (`GleanerCore`), not logic inside the UI, so that the Spik
 
 ## 5. Data model
 
-Four core objects, recorded from the logs and the files. Projects and works, which the person sees and may correct, are built over them (§5.1a).
+Four core objects, recorded from the logs and the files. Projects and works, which the person sees and may correct, are built over them (§5.1a). Observations, a second kind of evidence, are kept apart from them (§5.3).
 
 | Object | Holds |
 |---|---|
@@ -106,6 +107,19 @@ Versions follow **delivery events**, not file saves. Twenty-five rebuilds betwee
 
 Same bytes do not imply the same logical artifact.
 
+### 5.3 Observations
+
+What a session gives besides its replies is where and when it worked (`docs/design/capture.md`). Gleaner keeps what it finds there apart from the deliveries:
+
+- **Span.** When the session was working: one stretch per request, from the request's record to the last reply answering it, widened by a minute each way for the clocks of the log's writer and the disk, and joined where stretches meet. A reply to a task notification answers the request before it, so a background job between the two is inside. The time between a reply and the next request is not: a conversation resumed days later wasn't working in between. A session without a reply time has no span, so an interrupted turn, or a title appended later, gives none. The adapters give each reply's request time (§8).
+- **Workspace.** The git checkout holding each folder the session's records name (a worktree's own folder, or the main one), else the folder. Not walked, with the reason kept and shown in Sources under the session's agent (not a problem): a folder that is gone; the home folder or a folder holding it; the home's Library, except inside iCloud Drive (`Library/Mobile Documents`) and cloud storage (`Library/CloudStorage`), where documents are kept; a system folder; a hidden folder (`~/.claude`, `~/.codex`); and a folder that is, holds or is inside the agents' log folders or Gleaner's library, so Gleaner never observes transcripts or itself. These are compared as the disk has them, links followed and case as on disk, so another spelling of a folder is skipped as it is. An agent's worktree with a name of its own (`.claude/worktrees/<name>`, `~/.codex/worktrees/<id>/<repo>`) is walked.
+- **Walk.** A session's workspaces are walked when its span or workspaces have moved since they were last walked, or when the last walk came before its span ended; otherwise reading its log again (for a title appended, say) walks nothing. The span is recorded with the log's reading, and the session marked walked only once all its observations are recorded, so a walk a quit cut off, or whose observations couldn't be written, is made again next run and reported until it is. Each workspace is walked once per run, for every session waiting on it, one workspace at a time, and only for the agents being read. It reads names, sizes, creation, modification and inode change dates and file identity (device and inode), never contents. It doesn't enter hidden folders (`.git`, `.build` and `.venv` among them), the dependency caches tools leave (`node_modules`, `__pycache__`, `DerivedData`), a folder its tool marked as a cache with a `CACHEDIR.TAG` file (Cargo's `target`, for one), or a folder on another volume, and doesn't follow links. No file type is skipped, and no output folder: `dist` or `build` may hold what was asked for. It stops after 100,000 entries. A walk cut short and a folder it couldn't list are reported with their reason under the session's agent, on every run until the session is walked again.
+- **Observation.** A regular file whose creation date falls in a stretch *appeared* during the session; one whose modification date does, and creation date doesn't, *changed* during it. Either only when the file's inode last changed before that stretch ended: a copy that kept older dates (`cp -p`, `rsync -a`, Finder, an archive), or dates `touch` set, made after the stretch isn't placed in it, on the session's first reading or a later one. A file renamed or given new permissions after the stretch is left out too. Gleaner records the file, with its size, dates, identity and the repository and checkout it was in, the first time it sees it during that session (its own `observed_at`, which unlike a capture's (§5.1) reads no bytes), and never rewrites it. Another session's observation of the file is recorded beside it. A file that a reply named in another spelling (another case, or through a linked folder) is recorded under the name the reply gave it, matched by device and inode: the replies of the sessions walked, and any naming a path in the workspace.
+- **What it shows.** That the file appeared or changed while the session was working, in its workspace: not that the session made it, since parallel sessions, a copy made during the stretch and background jobs fall inside spans too, and, for a modification date, not that the contents changed. Nothing is labeled "made by". An observation is a candidate: it never becomes a delivery, a capture, a version or a work, and Invariant 1 stands. A delivered file keeps its delivery, with its observation beside it.
+- **Corrections** (§5.1a). *Not from this session* detaches a file from one session it was observed during; *related* puts an observed file with a work, shown with it and never one of its versions. Both are appended to the corrections, never applied to the observations, and each can be undone.
+- **Order and grouping.** Type, stem and folder order and group a list, and never decide what enters it or which files are one work: handed over before observed; within each, what a person opens (documents, images, audio and video, pages, models, installers, folders) before what a program reads (data, code, formats Gleaner can't place); then newest first. A folder's observed files of one kind fold into one row with their count from twelve; files in one folder whose names share a stem (the name before its first dot) are shown together, which claims nothing.
+- **Reread.** Spans are derived from the logs, so the extractor version moved to 15 and every log is read once more. A session observed for the first time then, long after it worked, is matched against the disk as it is now: files changed since are left out, and nothing is placed in it that the rules above don't. Reading a log again keeps what was recorded as first seen; a walk may add files it couldn't see before (a stretch that grew, a walk that saw more), never remove or rewrite one.
+
 ## 6. Snapshots and storage
 
 - Location: `~/Library/Application Support/Gleaner/` — `registry.sqlite` and `objects/<sha256-prefix>/<sha256>`.
@@ -141,6 +155,7 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 
 - Watch only the agents' log directories (FSEvents). New sessions are ingested near real time, so `observed_at` stays close to `delivered_at`. While a log directory does not exist yet, the nearest existing folder above it is watched only to notice it appear.
 - Do not watch the paths of indexed artifacts. Re-verify a file's hash when it is selected and again when its hand-off copy is staged; there is no background pass in v0.1.
+- A session's workspace is walked, not watched, after its log is read and its span has moved (§5.3). Live capture while a log is being written is a later layer.
 - Observation is read-only: only regular files are opened (a FIFO, socket, or device is reported as `special`; a file that can't be opened or read, or a path behind a folder that can't be searched, as `unreadable`), and git runs with `--no-optional-locks` so `git status` never rewrites the index, and runs nothing the repository configures: `core.fsmonitor` off, so it starts no hook or daemon; `log.showSignature` off, so `git log` starts no signature program; and lazy fetching off, so a partial clone fetches nothing it lacks. A commit is checked to hold a path through its trees, never by reading the file's contents. A clean filter (Git LFS, for one) may still run while git compares a file with the index; that is a known limit.
 
 ## 8. Adapters
@@ -153,7 +168,7 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 ### 8.1 Claude Code (`~/.claude/projects/<project>/<session>.jsonl`)
 
 - Records are one content block per line; `type` is `user`, `assistant`, `system`, `attachment`, `ai-title`, `custom-title`, and others.
-- A turn begins at a `user` record that is not a tool result, not `isMeta`, and not `isCompactSummary`. Records with `origin.kind == "human"` are the user's request; `task-notification` and similar also start a turn (the agent's answer to them is still user-facing) but do not replace the request context.
+- A turn begins at a `user` record that is not a tool result, not `isMeta`, and not `isCompactSummary`. Records with `origin.kind == "human"` are the user's request, and their `timestamp` its time (§5.3); `task-notification` and similar also start a turn (the agent's answer to them is still user-facing) but do not replace the request context or its time.
 - The final reply is the assistant `text` blocks that come after the turn's last `tool_use`.
 - Relative paths resolve against the `cwd` of the reply record, not the request: the agent may have entered a worktree mid-turn.
 - Title: latest `custom-title`, else latest `ai-title`.
@@ -163,7 +178,7 @@ A reply's claims about an artifact ("signed", "notarized", "tests pass", "final"
 
 - `session_meta.payload` gives id, cwd, `thread_source`; skip `thread_source == "subagent"`.
 - Forked threads replay parent messages marked `metadata.inherited_user_message`; skip them.
-- The user request is a `response_item` `message` with role `user` whose `content_item_kinds` include `user.text`. A user message without `content_item_kinds` (older rollouts) is not taken as a request. Codex's attachment header ("# Files mentioned by the user … ## My request:") is dropped: the request is the words after it, or the attachment names when nothing was typed.
+- The user request is a `response_item` `message` with role `user` whose `content_item_kinds` include `user.text`, and the record's `timestamp` its time (§5.3). A user message without `content_item_kinds` (older rollouts) is not taken as a request. Codex's attachment header ("# Files mentioned by the user … ## My request:") is dropped: the request is the words after it, or the attachment names when nothing was typed.
 - The final reply is an assistant `message` with `phase == "final_answer"`.
 - Title from `~/.codex/session_index.jsonl` (`thread_name` by id).
 

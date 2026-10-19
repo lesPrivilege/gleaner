@@ -27,10 +27,13 @@ public final class Database: @unchecked Sendable {
         guard sqlite3_exec(handle, sql, nil, nil, nil) == SQLITE_OK else { throw failure() }
     }
 
-    public func run(_ sql: String, _ arguments: [Any?] = []) throws {
+    /// Returns how many rows the statement inserted, changed or deleted.
+    @discardableResult
+    public func run(_ sql: String, _ arguments: [Any?] = []) throws -> Int {
         let statement = try prepare(sql, arguments)
         defer { sqlite3_finalize(statement) }
         guard sqlite3_step(statement) == SQLITE_DONE else { throw failure() }
+        return Int(sqlite3_changes(handle))
     }
 
     public func rows(_ sql: String, _ arguments: [Any?] = []) throws -> [Row] {
@@ -56,6 +59,7 @@ public final class Database: @unchecked Sendable {
         return rows
     }
 
+    @discardableResult
     public func transaction<T>(_ body: () throws -> T) throws -> T {
         try execute("BEGIN IMMEDIATE")
         do {

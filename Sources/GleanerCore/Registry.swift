@@ -28,6 +28,7 @@ public final class Registry: @unchecked Sendable {
     }
 
     /// Runs `body` holding the library's write gate.
+    @discardableResult
     func writing<T>(_ body: () throws -> T) throws -> T {
         gate.wait()
         defer { gate.signal() }
@@ -35,10 +36,11 @@ public final class Registry: @unchecked Sendable {
     }
 
     /// Bump when extraction changes what is derived from logs (requests, evidence, admission, the
-    /// record types a log holds that Gleaner doesn't know).
+    /// record types a log holds that Gleaner doesn't know, each session's span and workspaces;
+    /// a session whose span or workspaces moved is walked again).
     /// Logs are then reread and derived fields refreshed; captures, which record what Gleaner saw
     /// at a moment in time, are never rewritten.
-    public static let extractorVersion = 14
+    public static let extractorVersion = 15
 
     public init(path: String) throws {
         self.path = path
@@ -61,6 +63,13 @@ public final class Registry: @unchecked Sendable {
             CREATE TABLE IF NOT EXISTS corrections (
                 id INTEGER PRIMARY KEY, kind TEXT NOT NULL, subject TEXT NOT NULL, target TEXT NOT NULL, made_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS sources_off (provider TEXT PRIMARY KEY, since REAL NOT NULL);
+            CREATE TABLE IF NOT EXISTS spans (
+                log_path TEXT PRIMARY KEY, session_id TEXT NOT NULL, provider TEXT NOT NULL, stretches TEXT NOT NULL,
+                end_at REAL NOT NULL, workspaces TEXT NOT NULL, unwalked TEXT, problems TEXT, walked_at REAL);
+            CREATE TABLE IF NOT EXISTS observations (
+                path TEXT NOT NULL, log_path TEXT NOT NULL, kind TEXT NOT NULL, workspace TEXT NOT NULL,
+                size INTEGER NOT NULL, created_at REAL, modified_at REAL NOT NULL, device INTEGER NOT NULL, inode INTEGER NOT NULL,
+                repository TEXT, checkout TEXT, observed_at REAL NOT NULL, PRIMARY KEY (path, log_path)) WITHOUT ROWID;
             """)
         // Each change of several statements is made whole or not at all: a launch that stops partway,
         // say while another copy of Gleaner holds the library, leaves all of it to the next launch.
@@ -170,6 +179,7 @@ public final class Registry: @unchecked Sendable {
         try db.rows("PRAGMA table_info(\(table))").contains { $0["name"] as? String == column }
     }
 
+    @discardableResult
     public func transaction<T>(_ body: () throws -> T) throws -> T { try writing { try db.transaction(body) } }
 
     /// What reading a log found, when it is unchanged since it was read whole: the record types its

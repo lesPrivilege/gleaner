@@ -31,6 +31,9 @@ public struct ReplyPart: Sendable {
 public struct Turn: Sendable {
     /// The most recent human request in the session when this reply was written.
     public var request: String?
+    /// When that request was made, as its record says: a reply to a task notification shares it
+    /// with the reply before. Nil when there is no request or its record has no time.
+    public var requestAt: Date? = nil
     public var parts: [ReplyPart]
     /// The model that wrote the reply, as the log records it: Claude Code the model the provider
     /// answered with, Codex the model the turn asked for. Nil when the log doesn't say.

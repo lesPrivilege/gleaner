@@ -8,8 +8,9 @@ import SwiftUI
 ///   to VoiceOver.
 /// Each mark is a shape that stays apart from the others in grey: an endpoint for whether the
 /// bytes were confirmed, brackets for a missing value and a cross between them for one gone, a
-/// triangle for a look, an octagon for a failed read, a diamond for what waits on the person
-/// (Praxis kit, foundations/standing.md; macOS lists mark the exception, not the rule).
+/// triangle for a look, an octagon for a failed read, a diamond for what waits on the person, a
+/// line to an open circle for what was only observed (Praxis kit, foundations/standing.md; macOS
+/// lists mark the exception, not the rule).
 public enum Mark: CaseIterable, Sendable {
     /// Confirmed: the filled endpoint.
     case solid
@@ -33,6 +34,9 @@ public enum Mark: CaseIterable, Sendable {
     case running
     /// Done, such as read or copied: the check.
     case done
+    /// Observed on the disk during a session, not handed over and not checked: the kit's
+    /// unverified mark, a line to an open circle.
+    case observed
 
     public var glyph: Glyph {
         switch self {
@@ -47,13 +51,14 @@ public enum Mark: CaseIterable, Sendable {
         case .declined: .rejected
         case .running: .running
         case .done: .done
+        case .observed: .unverified
         }
     }
 
     public var color: Color {
         switch self {
         case .solid, .hollow, .done: .primary
-        case .dashed, .na, .declined, .running: .secondary
+        case .dashed, .na, .declined, .running, .observed: .secondary
         case .attention, .failed: Palette.attention
         case .cross: Palette.lost
         case .awaiting: Palette.awaiting

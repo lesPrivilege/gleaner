@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import UniformTypeIdentifiers
 
 /// When Gleaner read a delivery's bytes, relative to the reply that handed them over (SPEC §5.1).
@@ -148,11 +149,22 @@ public struct Artifact: Sendable, Identifiable {
         return Self.kind(ofExtension: (path as NSString).pathExtension)
     }
 
-    /// Checks run from specific to general: source code and JSON are also text, so they are
-    /// matched before documents.
+    /// Asked of every file a list orders or groups, so each extension's kind is looked up in the
+    /// type tree once.
     public static func kind(ofExtension ext: String) -> Kind {
         let ext = ext.lowercased()
         if let kind = byExtension[ext] { return kind }
+        if let kind = kinds.withLock({ $0[ext] }) { return kind }
+        let kind = typed(ext)
+        kinds.withLock { $0[ext] = kind }
+        return kind
+    }
+
+    private static let kinds = Mutex<[String: Kind]>([:])
+
+    /// Checks run from specific to general: source code and JSON are also text, so they are
+    /// matched before documents.
+    private static func typed(_ ext: String) -> Kind {
         guard !ext.isEmpty, let type = UTType(filenameExtension: ext) else { return .other }
         let checks: [(UTType, Kind)] = [
             (.html, .web), (.audiovisualContent, .media), (.image, .image), (.threeDContent, .model),

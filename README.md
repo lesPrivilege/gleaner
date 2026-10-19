@@ -95,7 +95,7 @@ The three without a saved copy go on with what the latest check found: the file 
 
 **Each agent** has a switch, in Sources (⌘,) and in the toolbar's Sources popover. Off, Gleaner neither reads nor watches its logs and hides its deliveries; nothing is removed, and on again shows everything. An agent's page draws its line to the provider and the models behind its replies, each with its vendor's mark, and a delivery's Information names its model.
 
-**The agents' logs**, in Sources (⌘,), as a triangle at the end of the Sources row, and in a line under the list when one needs a look: *Read*; *Read with problems* (unknown record types, logs with malformed lines or shorter than before, logs or folders that couldn't be read); *Can't read*; *Not on this Mac*. Try Again appears when reading again can help, and what Gleaner already found stays shown.
+**The agents' logs**, in Sources (⌘,), as a triangle at the end of the Sources row, and in a line under the list when one needs a look: *Read*; *Read with problems* (unknown record types, logs with malformed lines or shorter than before, logs or folders that couldn't be read, workspaces Gleaner couldn't walk whole); *Can't read*; *Not on this Mac*. Try Again appears when reading again can help, and what Gleaner already found stays shown.
 
 ## Hand-off
 
@@ -130,6 +130,7 @@ Replies from sub-agents are skipped, since they are not addressed to you. This r
 ## What Gleaner reads and keeps
 
 - **Reads** Claude Code logs in `~/.claude/projects`, Codex logs in `~/.codex`, and the files those replies name. It watches the log folders while it is open, including one that appears after launch. It finds a file's repository by reading `.git` entries, and runs only read-only git commands in it: `git status --porcelain --ignored` for a file on disk, and for a file that is gone `git rev-parse` and `git log --all`, to find a commit that holds it. Each runs with `--no-optional-locks`, so git never rewrites the index, and so that it runs nothing the repository configures: `core.fsmonitor` off, so it starts no hook or daemon; signature checks off, so `git log` starts no signature program; and in a partial clone, no fetch of what the clone lacks. A clean filter such as Git LFS may still run while git compares a file.
+- **Observes** the folder each conversation worked in (its git checkout, else the folder itself), after its log is read and the conversation's span has moved: the names, sizes, dates and file identities of the files whose creation or modification date falls while the conversation was working, from each request to the last reply answering it, never their contents. A file whose dates were set after that, such as a copy that kept older dates, isn't counted. Such a file *appeared* or *changed during* that conversation, which doesn't say who made it, and it is kept beside the deliveries, never as one. Your home folder and its Library (but for iCloud Drive and cloud storage), system folders, hidden folders, the agents' logs, Gleaner's own library, dependency caches (`node_modules`, `__pycache__`, `DerivedData`) and folders a tool marked with `CACHEDIR.TAG` are skipped, and Sources names each workspace not walked, with why; links and other volumes aren't followed, and a walk stops after 100,000 entries, which Sources reports. See [docs/design/capture.md](docs/design/capture.md).
 - **Keeps** excerpts of each reply and request, never whole logs. Secret-shaped strings are redacted before an excerpt is cut to length: API keys and access tokens, bearer tokens, `key=value` secrets, credentials in URLs, and runs of 40 or more letters and digits that mix upper case, lower case and digits. Lowercase hex, such as hashes and IDs, is kept. The index and saved copies live in `~/Library/Application Support/Gleaner`. Every file up to 64 MB is saved when Gleaner first reads it; a larger file is tracked by hash, and **Save a Copy** keeps it while the file on disk still matches the delivery. Saved copies are the delivered bytes and are not redacted.
 - **Hand-off copies** live in `~/Library/Caches/Gleaner`. Sources → Storage shows their size and clears them; clearing keeps the copy on the clipboard, which a paste still reads, and never removes a saved copy.
 - **Never writes** to project folders. Gleaner itself makes no network requests. A Quick Look preview of a web page may load what that page references, and links open only when you click them.
@@ -140,6 +141,7 @@ Replies from sub-agents are skipped, since they are not addressed to you. This r
 - An HTML page's images, scripts and stylesheets are not saved with it, and Quick Look previews the page without them.
 - A file over 64 MB is saved only when you choose **Save a Copy** while the file still matches its delivery. If the worktree holding an unsaved one is deleted, Gleaner can offer it only through git, as a command you run, and only if the file was committed; otherwise it is lost. Save a large file you may need before removing its worktree.
 - The admission rule is provisional, pending feedback from more users' logs.
+- Files observed during a conversation are recorded, but the window doesn't list them yet.
 - The app has no icon yet.
 - The release build is not notarized.
 
@@ -153,11 +155,11 @@ swift test                      # fixture tests
 
 `release.sh` refuses to run with uncommitted changes. A commit tagged `v0.1.0` builds as version 0.1.0; any other commit builds as `0.1.0-dev+<commit>`.
 
-- `Sources/GleanerCore`: provider adapters (Claude Code, Codex), mention extraction, locator, redaction, the registry (SQLite), the content store (saved copies, verified hand-off copies), the indexer, the log watcher, and the status logic (`Library.swift`).
+- `Sources/GleanerCore`: provider adapters (Claude Code, Codex), mention extraction, locator, redaction, the registry (SQLite), the content store (saved copies, verified hand-off copies), the indexer, observations of each session's workspace (`Observations.swift`) and how a list of them is ordered (`Listing.swift`), the log watcher, and the status logic (`Library.swift`).
 - `Sources/GleanerUI`: the component library the window draws with: marks, status, surfaces, controls and motion, after [docs/design/components.md](docs/design/components.md). SwiftUI and AppKit only.
 - `Sources/Gleaner`: the macOS app (SwiftUI and AppKit, Quick Look).
 - `Sources/gleaner-spike`: Spike A, read-only extraction over local logs that writes a labeling sheet.
-- `Tests/GleanerCoreTests`: fixture tests built from sanitized record shapes, and the library flow (concurrent edits, deleted worktrees, rollback, backfill, verified staging).
+- `Tests/GleanerCoreTests`: fixture tests built from sanitized record shapes, the library flow (concurrent edits, deleted worktrees, rollback, backfill, verified staging), and observations in several kinds of work.
 - `Tests/GleanerUITests`: the marks, the tokens, and the gallery of every component (`GLEANER_GALLERY=<folder> swift test --filter GalleryTests`).
 - `Tests/GleanerTests`: the app's decisions on a synthetic library (which delivery a click lands on, which bytes Quick Look, Compare and a drag use) and its wording.
 

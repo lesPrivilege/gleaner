@@ -41,12 +41,13 @@ public enum ClaudeCodeAdapter {
         var turns: [Turn] = []
 
         var request: String?
+        var requestAt: Date?
         var turnCwd: String?
         var reply: [ReplyPart] = []
         var replyModel: String?
 
         func closeTurn() {
-            if !reply.isEmpty { turns.append(Turn(request: request, parts: reply, model: replyModel)) }
+            if !reply.isEmpty { turns.append(Turn(request: request, requestAt: requestAt, parts: reply, model: replyModel)) }
             reply = []
             replyModel = nil
         }
@@ -76,7 +77,10 @@ public enum ClaudeCodeAdapter {
                     turnCwd = cwd
                 }
                 let text = userText(message["content"])
-                if isHumanRequest(record, text: text) { request = RequestText.clean(text) }
+                if isHumanRequest(record, text: text) {
+                    request = RequestText.clean(text)
+                    requestAt = Timestamp.parse(record["timestamp"])
+                }
             case "assistant":
                 guard record["isSidechain"] as? Bool != true,
                       let message = record["message"] as? [String: Any],

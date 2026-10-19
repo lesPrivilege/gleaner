@@ -331,6 +331,7 @@ enum Wording {
             source.shortenedLogs.isEmpty ? nil : count(source.shortenedLogs.count, "log") + " shorter than before",
             source.failures.isEmpty ? nil : count(source.failures.count, "log") + " unreadable",
             source.unlistedFolders.isEmpty ? nil : count(source.unlistedFolders.count, "folder") + " unlisted",
+            source.workspaceProblems.isEmpty ? nil : count(source.workspaceProblems.count, "workspace problem"),
         ].compactMap { $0 }
         return parts.isEmpty ? nil : parts.joined(separator: ", ")
     }
@@ -463,14 +464,53 @@ enum Wording {
             ("Replies", "The text after the last tool call of each turn"),
             ("Files", "Named in a reply by a link, an image or a path with a folder"),
             ("Copies", "Each file read at once, saved up to 64 MB"),
+            workspaces,
         ]
         case .codex: [
             ("Replies", "Final answers (phase final_answer)"),
             ("Titles", "From session_index.jsonl"),
             ("Files", "Named in an answer by a link, an image or a path with a folder"),
             ("Copies", "Each file read at once, saved up to 64 MB"),
+            workspaces,
         ]
         }
+    }
+
+    /// What Gleaner reads of the folders conversations worked in.
+    private static let workspaces = ("Workspaces", "Names, sizes and dates of the files that appeared or changed during a conversation, never their contents")
+
+    // MARK: Observations
+
+    /// A conversation as an observation names it.
+    static func session(_ title: String?) -> String {
+        title ?? "an untitled conversation"
+    }
+
+    /// What was observed of a file during a conversation, in the three tiers (window-polish.md,
+    /// Fewer words): the observed mark; "Appeared during …" or "Changed during …"; and the sentence
+    /// saying what that shows and what it doesn't. Never "made": a date in a span doesn't say who
+    /// wrote the file, nor, for a modification date, that its contents changed. The time shown is
+    /// the stretch the date falls in, from a request to the last reply answering it, not the whole
+    /// conversation, which may have been resumed days later.
+    static func observed(_ observation: Observed) -> Statement {
+        let during = session(observation.sessionTitle)
+        let stretch = observation.stretch.map { " (\(($0.start..<$0.end).formatted(date: .abbreviated, time: .shortened)))" } ?? ""
+        let place = "in \(tilde(observation.workspace))"
+        return switch observation.kind {
+        case .appeared:
+            Statement(mark: .observed, title: "Appeared during \(during)",
+                      detail: "Its creation date, \(date(observation.createdAt)), falls while \(during) was working\(stretch), \(place). "
+                          + "That says when it appeared, not who wrote it. Gleaner hasn’t read its contents.")
+        case .changed:
+            Statement(mark: .observed, title: "Changed during \(during)",
+                      detail: "Its modification date, \(date(observation.modifiedAt)), falls while \(during) was working\(stretch), \(place). "
+                          + "That says when it was last written, not who wrote it or what changed. Gleaner hasn’t read its contents.")
+        }
+    }
+
+    /// A folder's observed files of one kind, folded into one row: "out/voice · 211 files".
+    static func folded(_ folder: String, count n: Int) -> String {
+        "\(self.folder(folder)) · \(count(n, "file"))"
     }
 
     /// What the adapter leaves out: these aren't replies to the person (SPEC §8).

@@ -15,6 +15,15 @@ renamed, a chart revised and then saved under a versioned name, a slide deck, a 
 after delivery, and an appendix delivered from a client-a session, so Gleaner files it under
 client-a/app until the person moves it.
 
+Phase capture (on its own or after the others) adds `work/series`, outside git, for what is
+observed rather than handed over (docs/design/capture.md): a session asked three hours ago that
+answers once its files are written, whose reply names only the folder `out/`, while its files,
+media, images, data, code and a nested note, are dated inside its span; forty voice lines in one
+folder, enough to fold; a plan created and changed the day before, which no session observes;
+and a second session in the same workspace, asked two hours ago, so the covers dated after that
+are observed by both. A file's dates can be set back but its inode change time can't, so each
+session answers after its files are written, as a session that wrote them would.
+
 Phase initial delivers:
 - Claude Code: CJK Markdown, a PNG, a symlink, a folder and an HTML page inside it, a
   65 MiB sparse file (tracked by hash only), a long text file and a FIFO;
@@ -66,6 +75,25 @@ def codex_delivery(thread, cwd, request, paths, provider='magpie', model='moonsh
             f.write(json.dumps(dict(timestamp=at, type=kind, payload=payload)) + '\n')
     with (codex / 'session_index.jsonl').open('a') as f:
         f.write(json.dumps(dict(id=thread, thread_name='Atlas feature demo', updated_at=at)) + '\n')
+
+
+def claude_session(log, session, cwd, title, request, reply, start, end):
+    """A Claude Code session asked at `start` and answering at `end`."""
+    stamp = lambda t: t.isoformat().replace('+00:00', 'Z')
+    base = dict(sessionId=session, cwd=str(cwd))
+    log.parent.mkdir(parents=True, exist_ok=True)
+    with log.open('a') as f:
+        f.write(json.dumps(dict(base, type='user', timestamp=stamp(start), origin={'kind': 'human'}, message={'content': request})) + '\n')
+        f.write(json.dumps(dict(base, type='assistant', timestamp=stamp(end),
+                                message={'model': 'claude-fable-5', 'content': [{'type': 'text', 'text': reply}]})) + '\n')
+        f.write(json.dumps(dict(type='custom-title', sessionId=session, customTitle=title)) + '\n')
+
+
+def dated(path, created, modified):
+    """Sets a file's creation and modification dates: APFS moves the creation date back with an
+    earlier modification date, then keeps it when the modification date moves forward again."""
+    os.utime(path, (created.timestamp(), created.timestamp()))
+    os.utime(path, (modified.timestamp(), modified.timestamp()))
 
 
 def git(cwd, *args):
@@ -193,6 +221,40 @@ elif phase == 'board-final':
     (board / 'appendix.md').write_text('# Board appendix\n\nNumbers behind the chart.\n')
     claude_delivery(claude / 'client-a-app' / 'client-a.jsonl', 'client-a', work / 'client-a' / 'app',
                     'Export the board appendix', [board / 'appendix.md'], model='deepseek-v4-flash')
+
+elif phase == 'capture':
+    series = work / 'series'
+    start = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0) - datetime.timedelta(hours=3)
+    at = lambda minutes: start + datetime.timedelta(minutes=minutes)
+
+    def made(relative, minutes, data=b'synthetic\n', changed=None):
+        path = series / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+        dated(path, at(minutes), at(changed if changed is not None else minutes))
+
+    made('scripts/render.py', 5, b'print("render the episode")\n')
+    made('data/segments.csv', 15, b'segment,start,end\n0,0.0,4.2\n')
+    for n in range(40):
+        made(f'out/voice/line-{n:03}.wav', 10 + n / 4, b'RIFF synthetic voice line\n')
+    made('out/ep00.inputs.json', 25, b'{"voice": "out/voice", "segments": "data/segments.csv"}\n')
+    made('out/ep00.narration.wav', 30, b'RIFF synthetic narration\n')
+    made('out/ep00.mix.wav', 35, b'RIFF synthetic mix\n')
+    sparse(series / 'out' / 'ep00.mp4', b'synthetic episode header\n')
+    dated(series / 'out' / 'ep00.mp4', at(40), at(40))
+    made('episodes/00-overview/notes/outline.md', 50, b'# Overview\n\nWhat the episode covers.\n')
+    made('covers/ov-4x3.svg', 70, b'<svg xmlns="http://www.w3.org/2000/svg" width="4" height="3"/>\n')
+    png(series / 'covers' / 'ov-4x3.png', (90, 60, 30))
+    dated(series / 'covers' / 'ov-4x3.png', at(75), at(75))
+    # Created and changed the day before: outside every span.
+    made('notes/plan.md', -48 * 60, b'# Plan\n', changed=-24 * 60)
+
+    # Both answer now, once every file above is written.
+    answered = datetime.datetime.now(datetime.timezone.utc).replace(microsecond=0) + datetime.timedelta(seconds=1)
+    claude_session(claude / 'series' / 'series.jsonl', 'series', series, 'Reading list series, episode 0',
+                   'Render episode 0 with its narration and covers', 'Everything is in [out](out/).', at(0), answered)
+    claude_session(claude / 'series' / 'series-covers.jsonl', 'series-covers', series, 'Series covers',
+                   'Draw the 4:3 cover', 'The covers are ready.', at(60), answered)
 
 else:
     raise SystemExit(__doc__)

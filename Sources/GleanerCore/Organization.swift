@@ -101,16 +101,24 @@ public struct Organization: Sendable {
     /// Newest delivery first.
     public private(set) var works: [Work] = []
     public private(set) var suggestions: [Suggestion] = []
+    /// Files observed during sessions and handed over in none, newest first (docs/design/capture.md).
+    /// A file the person detached from every session it was observed during isn't one.
+    public private(set) var candidates: [Candidate] = []
     public let corrections: [Correction]
     public let userProjects: [UserProject]
     private var workIndex: [String: Int] = [:]
     private var projectIndex: [String: Int] = [:]
+    private var candidateIndex: [String: Int] = [:]
+    /// A handed-over file's observations, kept beside its deliveries, never one of them.
+    private var observedDeliveries: [String: [Observed]] = [:]
     private var placements: [String: Placement] = [:]
     private var derivedNames: [String: String] = [:]
 
+    /// `observed` holds each file observed during sessions, newest first (`Candidate.files`), made
+    /// once when the observations load rather than each time the person corrects something.
     /// `missing` holds the paths last found gone from disk.
-    public init(artifacts: [Artifact], corrections: [Correction] = [], projects userProjects: [UserProject] = [],
-                missing: Set<String> = []) {
+    public init(artifacts: [Artifact], observed: [Candidate] = [], corrections: [Correction] = [],
+                projects userProjects: [UserProject] = [], missing: Set<String> = []) {
         self.corrections = corrections
         self.userProjects = userProjects
         let byPath = Dictionary(artifacts.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
@@ -210,9 +218,61 @@ public struct Organization: Sendable {
         }
         self.projects = projects
         suggestions = Self.suggest(works: works, workIndex: workIndex, corrections: corrections, missing: missing)
+
+        // What was observed: beside a handed-over file's deliveries, else a candidate in the project
+        // its repository or workspace gives, shown inside another as its works are.
+        let detached = Dictionary(grouping: corrections.filter { $0.kind == .notFromSession }, by: \.subject)
+            .mapValues { Set($0.map(\.target)) }
+        var candidates: [Candidate] = []
+        for file in observed {
+            guard let file = detached[file.path].map({ logs in file.keeping { !logs.contains($0.logPath) } }) ?? file else { continue }
+            if workIndex[file.path] != nil {
+                observedDeliveries[file.path] = file.observations
+            } else {
+                var candidate = file
+                candidate.project = resolve(candidate.projectFolder).key
+                candidates.append(candidate)
+            }
+        }
+        // A file detached from, or hidden with, its latest session moves.
+        candidates.sort(by: Candidate.newestFirst)
+        self.candidates = candidates
+        for (index, candidate) in candidates.enumerated() { candidateIndex[candidate.path] = index }
     }
 
     public func work(containing path: String) -> Work? { workIndex[path].map { works[$0] } }
+
+    public func candidate(_ path: String) -> Candidate? { candidateIndex[path].map { candidates[$0] } }
+
+    /// The candidates shown in the project `key`, newest first. A project may have candidates and
+    /// no work yet; it is listed in `projects` only once something was handed over in it.
+    public func candidates(in key: String) -> [Candidate] {
+        candidates.filter { $0.project == key }
+    }
+
+    /// What was observed of the work's files during sessions, newest first: beside their
+    /// deliveries, never counted as one.
+    public func observations(of work: Work) -> [Observed] {
+        work.files.flatMap { observedDeliveries[$0.path] ?? [] }
+            .sorted { $0.modifiedAt != $1.modifiedAt ? $0.modifiedAt > $1.modifiedAt : $0.id < $1.id }
+    }
+
+    /// The candidates the person related to the work, newest first.
+    public func related(to work: Work) -> [Candidate] {
+        let paths = Set(corrections.filter { $0.kind == .related && work.contains($0.target) }.map(\.subject))
+        return candidates.filter { paths.contains($0.path) }
+    }
+
+    /// The person's decisions relating the observed file at `path` to works, so each can be undone.
+    public func relations(of path: String) -> [Correction] {
+        corrections.filter { $0.kind == .related && $0.subject == path }
+    }
+
+    /// The sessions the person said the file at `path` isn't from: kept in view, not in effect,
+    /// as the pairs kept apart are.
+    public func detachments(of path: String) -> [Correction] {
+        corrections.filter { $0.kind == .notFromSession && $0.subject == path }
+    }
 
     public func project(_ key: String) -> Project? { projectIndex[key].map { projects[$0] } }
 

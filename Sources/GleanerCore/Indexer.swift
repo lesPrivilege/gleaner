@@ -90,9 +90,19 @@ public final class Indexer: @unchecked Sendable {
             /// Folders in it that could not be listed, with the reason. Their logs went unread; what
             /// they delivered stays as it was.
             public var unlistedFolders: [String] = []
+            /// What the walks of its sessions' workspaces couldn't see, each with why: a walk stopped
+            /// at its bound, a folder in it couldn't be listed, or what it found couldn't be recorded.
+            /// Files there may be missing from what was observed; no delivery is affected.
+            public var workspaceProblems: [String] = []
+            /// Folders its sessions worked in that aren't walked, each with why: skipped (the home
+            /// folder, a system or hidden folder, the agents' logs) or no longer there. Not a problem:
+            /// it says why nothing was observed there.
+            public var unwalkedWorkspaces: [String] = []
 
             /// Listed, but not everything in it could be read or understood.
-            public var hasProblems: Bool { !unknownRecordTypes.isEmpty || !shortenedLogs.isEmpty || isIncomplete }
+            public var hasProblems: Bool {
+                !unknownRecordTypes.isEmpty || !shortenedLogs.isEmpty || !workspaceProblems.isEmpty || isIncomplete
+            }
 
             /// Something reading again may fix: the folder, a folder in it, or a log couldn't be read
             /// whole. Unknown record types stay until Gleaner learns them, and lost records stay lost.
@@ -104,6 +114,8 @@ public final class Indexer: @unchecked Sendable {
 
         public var logsRead = 0
         public var newDeliveries = 0
+        /// Files recorded as observed during a session for the first time.
+        public var newObservations = 0
         /// Every provider, whether or not its folder is there.
         public var sources: [Provider: Source] = [:]
     }
@@ -118,6 +130,14 @@ public final class Indexer: @unchecked Sendable {
     public var liveWindow: TimeInterval = 600
     /// Log and file timestamps come from different writers; this absorbs their granularity only.
     public var clockTolerance: TimeInterval = 2
+    /// The folder taken for the person's home. A session working in it, or in a system folder, has
+    /// no workspace walked; the real home never is, whatever this says (docs/design/capture.md).
+    public var home = NSHomeDirectory()
+    /// How far each stretch of a session's span reaches before its request and after its last
+    /// reply, for the clocks of the log's writer and the disk's.
+    public var spanGrace: TimeInterval = 60
+    /// Entries one workspace walk looks at before it stops (`Workspace.limit`).
+    public var walkLimit = Workspace.limit
 
     public init(registry: Registry, store: ContentStore, sources: LogSources) {
         self.registry = registry
@@ -174,9 +194,15 @@ public final class Indexer: @unchecked Sendable {
                 // A log shorter than when it was read lost records, so like a malformed one it can't
                 // show that a delivery is gone: not now, and not once it grows again.
                 let complete = log.map { $0.isComplete && !shortened } ?? true
+                let derived = log.flatMap(span(of:))
                 do {
                     report.newDeliveries += try registry.transaction {
                         let added = try log.map { try ingest($0, isComplete: complete, now: now()) } ?? 0
+                        // With the log's reading, so a session whose walk a quit cut off is walked next run.
+                        if let log, let derived {
+                            try registry.recordSpan(of: log.session, provider: provider, span: derived.span,
+                                                    workspaces: derived.workspaces, unwalked: derived.unwalked)
+                        }
                         if shortened { try registry.markShortened(logFile: url.path) }
                         // A log with malformed lines stays unread, so it is read and reported again next run.
                         if log?.isComplete ?? true {
@@ -197,6 +223,15 @@ public final class Indexer: @unchecked Sendable {
                 }
                 report.logsRead += 1
             }
+        }
+
+        // Every log is in: each workspace waiting to be walked is walked once, for every session in it.
+        let observed = observe(at: now(), providers: providers)
+        report.newObservations = observed.recorded
+        let problems = try registry.workspaceProblems(), unwalked = try registry.unwalkedWorkspaces()
+        for provider in report.sources.keys {
+            report.sources[provider]?.workspaceProblems = (problems[provider] ?? []) + (observed.failures[provider] ?? [])
+            report.sources[provider]?.unwalkedWorkspaces = unwalked[provider] ?? []
         }
         progress(changed.count, changed.count)
         return report

@@ -33,6 +33,12 @@ func fixture(_ name: String) throws -> URL {
         #expect(log.turns[1].reply == "The subtitle pass is in `output/subs.srt`.")
     }
 
+    /// The time of the human request's record, kept by the reply to a task notification with it.
+    @Test func eachTurnKeepsWhenItsRequestWasMade() {
+        let asked = Timestamp.parse("2026-07-12T10:17:04.524Z")
+        #expect(asked != nil && log.turns.map(\.requestAt) == [asked, asked])
+    }
+
     /// The model the provider answered with, from the reply's own records.
     @Test func theModelBehindAReply() {
         #expect(log.turns.map(\.model) == ["claude-fable-5", "claude-fable-5"])
@@ -75,6 +81,8 @@ func fixture(_ name: String) throws -> URL {
         #expect(log.turns.count == 1)
         #expect(log.turns[0].reply == "Report: [review](/work/Sealwright/docs/reviews/review.md)")
         #expect(log.turns[0].request == "Review the seal codebase")
+        // The typed request's own record, not the injected context before it.
+        #expect(log.turns[0].requestAt != nil && log.turns[0].requestAt == Timestamp.parse("2026-10-05T05:13:14.000Z"))
         #expect(log.turns[0].cwd == "/work/Sealwright")
         #expect(log.unknownRecordTypes == ["mystery": 1])
     }

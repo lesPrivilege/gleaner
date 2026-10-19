@@ -220,7 +220,7 @@ struct StatusSection: View {
     static let words: [Mark: String] = [
         .solid: "Same as delivery 2", .hollow: "As first seen", .dashed: "Not on disk", .na: "Folder",
         .attention: "Changed", .cross: "Lost", .failed: "Can’t read", .awaiting: "Suggested",
-        .declined: "Kept apart", .running: "Checking…", .done: "Copied",
+        .declined: "Kept apart", .running: "Checking…", .done: "Copied", .observed: "Appeared during",
     ]
 
     var body: some View {
