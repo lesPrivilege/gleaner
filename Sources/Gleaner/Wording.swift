@@ -591,11 +591,11 @@ enum Wording {
         }
     }
 
-    /// A verdict or a mark as made: when, its note or place, and the bytes it binds to, by hash,
-    /// never the path.
+    /// A verdict or a mark as made: when, its note or place, and the bytes it binds to, those
+    /// hashed when it was made, never the path nor what was shown before.
     static func made(_ review: Review) -> String {
         let note = review.note.map { review.kind == .published ? ", at \($0)" : ": “\($0)”" } ?? ""
-        return "\(reviewName(review.kind)) \(date(review.madeAt))\(note). Made on the bytes with hash \(review.sha256.prefix(8))."
+        return "\(reviewName(review.kind)) \(date(review.madeAt))\(note). Bound to the bytes hashed when it was made, \(review.sha256.prefix(8))."
     }
 
     /// The Reviewed state of a work's current file (docs/design/review.md, The four states): the

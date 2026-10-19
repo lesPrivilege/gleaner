@@ -85,6 +85,9 @@ struct ReviewPage: View {
     var unit: WorkUnit
     /// Each file as it was when its item was drawn, by path.
     @State private var shown: [String: FileStat] = [:]
+    /// The files drawn in their form (played, shown or rendered), not only named: what Review All
+    /// acts on. A file named beside another, or under Other Files, is judged on its own (A10).
+    @State private var drawn: Set<String> = []
     /// Bumped by Look Again: each item reads its file again.
     @State private var generation = 0
     @State private var asking: Asking?
@@ -133,7 +136,7 @@ struct ReviewPage: View {
                         VStack(alignment: .leading, spacing: Space.s) {
                             ForEach(layout.others) { work in
                                 ReviewBar(work: work, shown: shown[work.latest.path], icon: true, ask: ask)
-                                    .task(id: generation) { look(work) }
+                                    .task(id: generation) { look(work, inForm: false) }
                             }
                         }
                         .padding(.top, Space.s)
@@ -180,15 +183,15 @@ struct ReviewPage: View {
             }
             .fixedSize()
             .disabled(targets(.approved, all).isEmpty && targets(.rejected, all).isEmpty)
-            .help("A verdict on each work shown here, on the bytes there now")
+            .help("A verdict on each work played, shown or rendered here, bound to the bytes hashed as it is made. Files only named are judged on their own.")
         }
     }
 
-    /// The works shown that a verdict of `kind` would add to: those drawn, with a file there, not
-    /// already given that verdict on these bytes. A folder has no bytes to judge.
+    /// The works that a verdict of `kind` would add to: those drawn in their form, with a file
+    /// there, not already given that verdict on these bytes. A folder has no bytes to judge.
     func targets(_ kind: Review.Kind, _ works: [Work]) -> [Work] {
         works.filter { work in
-            guard work.kind != .folder, shown[work.latest.path] != nil else { return false }
+            guard work.kind != .folder, drawn.contains(work.latest.path), shown[work.latest.path] != nil else { return false }
             if case .current(let review) = model.verdict(of: work), review.kind == kind { return false }
             return true
         }
@@ -208,10 +211,12 @@ struct ReviewPage: View {
         }
     }
 
-    /// Takes the file as it is now, as its item is drawn: what a verdict made on it binds to.
-    func look(_ work: Work) {
+    /// Takes the file as it is now, as its item is drawn: a verdict made on it is made only while
+    /// the file is still so. `inForm` when the file itself is played, shown or rendered.
+    func look(_ work: Work, inForm: Bool) {
         let path = work.latest.path
         shown[path] = FileStat(path)
+        if inForm { drawn.insert(path) }
     }
 
     /// A work in place, its states and actions under it, and the files sharing its stem beside it.
@@ -225,7 +230,7 @@ struct ReviewPage: View {
                     ReviewMedia(work: lead, form: item.form, generation: generation)
                 }
             }
-            .task(id: generation) { look(lead) }
+            .task(id: generation) { look(lead, inForm: item.form != .file) }
             ReviewBar(work: lead, shown: shown[lead.latest.path], ask: ask)
             ForEach(item.beside) { other in
                 VStack(alignment: .leading, spacing: Space.xs) {
@@ -237,7 +242,7 @@ struct ReviewPage: View {
                 }
                 .padding(.leading, Space.m)
                 .overlay(alignment: .leading) { Rectangle().fill(.quaternary).frame(width: 2) }
-                .task(id: generation) { look(other) }
+                .task(id: generation) { look(other, inForm: ReviewForm(other) == .audio) }
             }
         }
         .frame(width: item.form == .image ? ImageTile.itemWidth(aspects[lead.latest.path]) : nil, alignment: .leading)
@@ -465,7 +470,7 @@ struct ReviewBar: View {
         }
         .fixedSize()
         .disabled(shown == nil || work.kind == .folder)
-        .help(shown == nil || work.kind == .folder ? "No bytes here to judge" : "A verdict on the bytes shown")
+        .help(shown == nil || work.kind == .folder ? "No bytes here to judge" : "A verdict on the file as shown, bound to the bytes hashed as you make it")
         Button("Mark Published…") { ask(Asking(works: [work], kind: .published, shown: judged)) }
             .disabled(shown == nil || work.kind == .folder)
         Button("More") { model.selection = work.id }
@@ -553,8 +558,8 @@ struct NoteSheet: View {
         VStack(alignment: .leading, spacing: Space.m) {
             Text(asking.kind == .published ? "Mark \(what) Published" : "\(Wording.reviewAction(asking.kind)) \(what)")
                 .font(.headline)
-            Text(asking.kind == .published ? "Where it was published, in words or a link. Optional."
-                 : "A note goes with the verdict, on the bytes shown. Optional.")
+            Text(asking.kind == .published ? "The mark is bound to the bytes Gleaner hashes as you make it. Where, in words or a link, is optional."
+                 : "The verdict is bound to the bytes Gleaner hashes as you make it, never to the file’s later bytes. A note is optional.")
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             TextField(asking.kind == .published ? "Where" : "Note", text: $note,
                       prompt: Text(asking.kind == .published ? "Where it was published" : "What to change"), axis: .vertical)
@@ -604,7 +609,7 @@ struct ReviewSection: View {
             .controlRole(.inline)
             .disabled(shown == nil || work.kind == .folder)
             .help(work.kind == .folder ? "A folder has no bytes of its own to judge"
-                  : shown == nil ? "Verdicts are made on the bytes shown, once they are the file’s current bytes" : "")
+                  : shown == nil ? "A verdict is bound to the bytes hashed as it is made: show the file’s current bytes to judge them" : "")
         } content: {
             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: Space.m, verticalSpacing: Space.s + 2) {
                 InfoRow(label: "Collection") {

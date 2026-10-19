@@ -220,8 +220,9 @@ import Testing
                                    (.rejected, .declined, "Rejected")] {
             let current = Wording.verdict(.current(review(kind, note: "Trim the intro")), inUnit: true)
             #expect(current.mark == mark && current.title == name)
-            // Bound to the bytes it was made on, by hash, never the path.
-            #expect(current.detail.contains("hash 3f2a9c1b") && current.detail.contains("“Trim the intro”"))
+            // Bound to the bytes hashed when it was made, never the path (A17).
+            #expect(current.detail.contains("Bound to the bytes hashed when it was made, 3f2a9c1b."))
+            #expect(current.detail.contains("“Trim the intro”"))
             #expect(!current.detail.contains("/p/out"))
             said.append(current)
         }
@@ -251,7 +252,7 @@ import Testing
                       Wording.publishedState(.unavailable(review(.published)))]
         #expect(states.map(\.title) == ["Not published", "Published", "May have changed since published", "Changed since published", "Published"])
         #expect(states.map(\.mark) == [.dashed, .published, .attention, .attention, .published])
-        #expect(states[1].detail.contains("at the channel") && states[1].detail.contains("hash 3f2a9c1b"))
+        #expect(states[1].detail.contains("at the channel") && states[1].detail.contains("bytes hashed when it was made, 3f2a9c1b"))
         #expect(!states[2].detail.contains("other bytes") && states[3].detail.contains("other bytes"))
         for statement in states {
             for claim in ["review", "approved", "rejected", "verdict", "gone", "not on disk"] {

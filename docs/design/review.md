@@ -167,7 +167,7 @@ Built on `feat/review`, 2026-10-19, over the core. [SPEC §5.5](../SPEC.md) gain
 
 **The review page**
 - **What it shows.** The collection's own works, drawn as they scroll into view, so a collection of hundreds plays and reads only what is shown, and images are read no larger than their tiles. The collections inside it are rows at the top, each showing its own page, so Review All acts only on what the page drew.
-- **Review All** gives each work drawn a verdict on the bytes there now: those already given that verdict on these bytes are skipped, as are folders and files gone. Other Files count once opened.
+- **Review All** gives a verdict to each work the page played, showed or rendered, on the bytes there now. Those already given that verdict on these bytes are skipped, as are folders and files gone. A file only named, beside another or under Other Files, or drawn only as its icon, is judged on its own Review menu: a source next to its render isn't passed with it (A10).
 - **The forms**, all the platform's:
   - video: AVKit's player, its floating controls, at its own aspect up to 420 points tall;
   - audio: the same player with its inline controls, as a row;
@@ -176,7 +176,7 @@ Built on `feat/review`, 2026-10-19, over the core. [SPEC §5.5](../SPEC.md) gain
   - models, builds and folders: the file's own icon.
 - **Same stem.** The file drawn is the first a person looks at: a video before an image, an image before a document, a document before audio, else the first in list order. The others are named beside it, each with its own states and actions, and audio beside it plays in its own row. A file a program reads goes under Other Files even when it shares the stem (`ep01.inputs.json`): the page is for looking, and Other Files is where the design puts what a program reads.
 - **Marks.** Generated is the agent's mark for a reply or a folder, the observed mark for a kept file. On this Mac shows nothing while the file is there. Reviewed is the check, the open arrow or the crossed circle alone; "To review" in the accent, and "May have changed since review" or "Changed since review" in amber. Published is the tray alone, with words only when its bytes may have changed or did. Each has its sentence in the help tag, and all four are read to VoiceOver with the name.
-- **As shown (A17).** Each item takes its file's size, dates and inode as it is drawn, and a verdict binds only to the file still so. A refusal is said at the top of the page, with Look Again, which draws every item again from disk.
+- **As shown (A17).** Each item takes its file's size, dates and inode as it is drawn, and a verdict is made only while the file is still so. It is bound to the bytes hashed when it is made, which the Review menu's help, the note sheet and each verdict's sentence say. A refusal is said at the top of the page, with Look Again, which draws every item again from disk. A file replaced between that and AVKit's own read of it isn't caught: the player's race is untested.
 
 **A work's detail** has its Review section after Information:
 - its collection, with Remove, or Add to Collection;
@@ -214,6 +214,7 @@ Review and Mark Published act only while the detail shows the file's current byt
   - A collection chosen in a list wasn't selected in it: the list's selection now names the collection whose page is shown.
 - **Not checked:**
   - a video's frames, and the players' glass: drawn off screen, a video is black and AVKit's glass capsule is white;
+  - a file replaced while AVKit reads it, after the page took its size and dates (A17);
   - a real drag onto the sidebar, and its highlight;
   - naming in place from the keyboard;
   - VoiceOver listening, and full keyboard access through a page;
