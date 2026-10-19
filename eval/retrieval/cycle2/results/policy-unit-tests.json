@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "kind": "focused_policy_unit_tests",
+  "baseline_checkpoint": "7e004a72920d0648c8d7ce38bdb4da86eab4926c",
+  "candidate": "cycle2_uncommitted_development_experiment",
+  "runtime": {
+    "swift": "6.2.4",
+    "release": "swift-6.2.4-RELEASE",
+    "target": "x86_64-unknown-linux-gnu",
+    "user": "gleaner"
+  },
+  "command": "docker exec gleaner-swift runuser -u gleaner -- swift test -j 4 --filter 'RetrievalPolicyTests|ExperimentalSectionLookupTests'",
+  "executed_at_utc": "2026-10-19T15:08:28Z",
+  "exit_code": 0,
+  "build_seconds": 5.10,
+  "test_seconds": 0.033,
+  "test_suites": 2,
+  "tests_passed": 7,
+  "tests_failed": 0,
+  "tests": [
+    "firstLayerPoliciesPreserveEverySharedCoreMatchAndExposeSelectionTradeoff",
+    "intermediateNamesStayDiscoverableAndContextOnlyQueriesDoNotCollapseToNothing",
+    "nativeGroupingDoesNotEquateConcurrentSessionsUnknownAnchorsOrProjects",
+    "requestedStatesStaySeparateAndNewerBytesInheritNoReviewAuthority",
+    "currentOriginalNeedsExplicitScopedLocatorAndDoesNotTreatMetadataAsBytes",
+    "lastDeliveryRetainsFolderMembershipAndLaterCaptureProvenance",
+    "exactIdentifierDistinguishesR1FromR10ButDoesNotClaimGlobalIdentity"
+  ],
+  "limits": [
+    "Synthetic focused tests, not held-out task evaluation.",
+    "Development and held-out measurement test sources compiled but were excluded by this run's filter.",
+    "No macOS execution; no product acceptance or Finder/library superiority claim.",
+    "Earlier attempts stopped in the package-manifest type checker before these tests ran."
+  ]
+}

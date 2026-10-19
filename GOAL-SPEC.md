@@ -6,6 +6,11 @@
 > preserved as exploratory prototypes, not an accepted architecture. Read
 > `docs/retrieval-core/CONVERGENCE.md` first. Private conversation recall is handled
 > by the parent separately; this checkout does not infer it from local logs.
+>
+> **Second cycle:** [decision note](docs/retrieval-core/cycle2/DECISION-NOTE.md)
+> compares isolated state, first-layer, original-resolution and report-ID policies
+> with sealed independent labels. No production policy or ontology was adopted.
+> The named-focus recall regression prevents a universal-default recommendation.
 
 ## Baseline and boundary
 

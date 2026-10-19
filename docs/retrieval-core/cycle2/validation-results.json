@@ -1,0 +1,94 @@
+{
+  "additional_executed_checks": {
+    "development_measurement": {
+      "artifact": "docs/retrieval-core/cycle2/development-results.json",
+      "passed": 1,
+      "seconds": 9.607
+    },
+    "independent_heldout": {
+      "artifact": "eval/retrieval/cycle2/heldout-results.json",
+      "metric_tests": 1,
+      "policy_observations": 101,
+      "scenarios": 19,
+      "seconds": 0.453
+    },
+    "original_cost_measurement": {
+      "artifact": "docs/retrieval-core/cycle2/original-cost-results.json",
+      "passed": 1,
+      "seconds": 0.086
+    },
+    "original_resolution_tests": {
+      "passed": 12,
+      "seconds": 0.045
+    },
+    "policy_unit_tests": {
+      "artifact": "eval/retrieval/cycle2/results/policy-unit-tests.json",
+      "passed": 7
+    }
+  },
+  "baseline_revision": "2648094610facfd1ae1805f52a9de282043c808f",
+  "ci": "Existing push workflow runs swift test on macos-26. Native CI outcome has not been verified.",
+  "full_suite": {
+    "command": "docker exec gleaner-swift runuser -u gleaner -- swift test -j 4",
+    "duration_seconds": 6.304,
+    "exit_code": 1,
+    "failed": 18,
+    "failed_test_names": [
+      "aBuiltAppIsObservedAsOneEntry",
+      "aDataAnalysisWithCSVFiguresAndANotebook",
+      "aFileNamedInAnotherSpellingIsObservedUnderItsDeliveredName",
+      "aFolderDeliveredTwiceListsItsFilesAtEachDelivery",
+      "aFolderIsSkippedHoweverItIsSpelled",
+      "aFolderUnderPrivateIsOneProjectWithWhatItsAgentDelivered",
+      "aFolderUnderPrivateVarIsOneProjectWithItsFilesThereOrGone",
+      "aHandedOverFileKeepsItsDeliveryWithItsObservationBeside",
+      "aLaterSessionEditingAFileAddsItsOwnObservation",
+      "aLibraryThatCantBeOpenedToReadSaysToOpenGleaner",
+      "aMediaPipelineHandsOverItsSegmentsButNeverItsHiddenFiles",
+      "aReportWithMarkdownPDFAndCharts",
+      "aRewriteInPlaceThatPutsTheDatesBackIsNotAsShown",
+      "aVideoSeriesWhoseReplyNamesOnlyAFolder",
+      "keepingMakesAWorkWhoseOneRevisionIsTheFileAsObserved",
+      "membershipByTimeOnALiveRead",
+      "theHomeFolderAndSystemFoldersAreNotWalked",
+      "theSyntheticHomesCapturePhase"
+    ],
+    "issues": 25,
+    "log_sha256": "6d123ba29cdca8c1c0e3de7c2d9432bec6af56c878d0c76e18b0d6e8e1f7ebf1",
+    "passed": 348,
+    "same_failed_names_as_baseline": true,
+    "skipped_opt_in_measurements": 2,
+    "suites": 36,
+    "tests": 368
+  },
+  "native_execution": "not performed; see NATIVE-FAILURES.md M1-M5 and exact commands",
+  "previous_checkpoint": "7e004a72920d0648c8d7ce38bdb4da86eab4926c",
+  "production_changes_this_cycle": false,
+  "runtime": {
+    "image": "swift:6.2-jammy",
+    "image_digest": "sha256:5db2c7b978a8d00d3a7faa3787c66da7e2f34373c5bd81c13f5cc90ea477ac49",
+    "os": "Ubuntu 22.04 container on Debian 13 x86_64 host",
+    "sqlite": "3.37.2",
+    "swift": "6.2.4",
+    "user": "unprivileged UID 1000"
+  },
+  "schema": 1,
+  "source_commit": "39877974fb57fa4f45f08836cfc06eb873fb4666",
+  "source_sha256": {
+    "Experiments/GleanerRetrieval/FirstLayerPolicies.swift": "b3fd70fe1943aab2092b3a0462fa281a5b3ce28799b3db5724364787c649c521",
+    "Experiments/GleanerRetrieval/OriginalResolution.swift": "6bcbc9ff449b2b61dc840aaf2d60439d32f3eaa302d43743de0daacd9c772bfc",
+    "Experiments/GleanerRetrieval/SectionLookup.swift": "a6b686a274126ab446fc74b0fd98c62210db94b8e30d66cefd0521c94f36b837",
+    "Experiments/GleanerRetrieval/StatePolicies.swift": "541a9707daa9840fad35b945f923a3aa65819314b8bd2181c50ef3b9eb62c10e",
+    "Package.swift": "088bed4cc58fbf150dee644fa1f798636874046fc4b94d0aa552cda4081a7f0a",
+    "Tests/GleanerRetrievalExperimentTests/DevelopmentMeasurements.swift": "0bf21c1b2ff571d8a3f083e61a4d3f9d27ceeb5e88976f88ad9eaf25a2c5b271",
+    "Tests/GleanerRetrievalExperimentTests/OriginalResolutionMeasurements.swift": "f53c4a871126312ff0669caaef412012f535a2e813963ba82dc34585c24b6d46",
+    "Tests/GleanerRetrievalExperimentTests/OriginalResolutionTests.swift": "c78efd3ae0c91e2189bed72cee449ebe797127651fbf40a7be8238be3436c744",
+    "Tests/GleanerRetrievalExperimentTests/PolicyTests.swift": "71ee3380c8163a046f49f86335f20a64c922b636451902c481d6b32c56949be8",
+    "Tests/GleanerRetrievalExperimentTests/SectionLookupTests.swift": "826a718332e11173eaf8ca1dc7d77beb54e047610066b5876b055f78d9de5bc9",
+    "eval/retrieval/cycle2/heldout-labels.json": "d11c155fdcb3a42e7d8e7c20c681e4ccb7f0b93466dfe0ea0ab61f71d645aab9",
+    "eval/retrieval/cycle2/heldout.swift": "c3601b605be21458b1a921535734d63630af96609961dfde653281b2204dd735",
+    "eval/retrieval/cycle2/measure.py": "a30d19354b36bb304612d9cc6d700c8512cb76d6e452d8e94860bf44154a223b",
+    "eval/retrieval/cycle2/native/NativeProbe.swift": "021017a391d13e5e4819624b08823d9231914d55615e96d1355cffcc7745b522",
+    "eval/retrieval/cycle2/native/run.py": "fce447a744d92aac6bb6fabd48934a70851cc50b03932a405d897203154044ac"
+  }
+}

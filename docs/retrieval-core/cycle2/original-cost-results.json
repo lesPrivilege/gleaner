@@ -1,0 +1,214 @@
+{
+  "cache_conditions" : "Five repeated reads of the same newly written file; cache warmth is uncontrolled. No cold-cache claim.",
+  "fixture" : "deterministic repeated-byte files; one listed folder member per size",
+  "kind" : "synthetic_current_original_cost",
+  "measurements" : [
+    {
+      "bytes_read" : [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "elapsed_nanoseconds" : [
+        104485,
+        18207,
+        14091,
+        12538,
+        12488
+      ],
+      "file_bytes" : 4096,
+      "hash_byte_limit" : 67108864,
+      "median_nanoseconds" : 14091,
+      "mode" : "path_only",
+      "state" : "unverified_path"
+    },
+    {
+      "bytes_read" : [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "elapsed_nanoseconds" : [
+        98046,
+        41031,
+        26779,
+        23825,
+        23966
+      ],
+      "file_bytes" : 4096,
+      "hash_byte_limit" : 67108864,
+      "median_nanoseconds" : 26779,
+      "mode" : "metadata",
+      "state" : "metadata_only"
+    },
+    {
+      "bytes_read" : [
+        4096,
+        4096,
+        4096,
+        4096,
+        4096
+      ],
+      "elapsed_nanoseconds" : [
+        563705,
+        174018,
+        131895,
+        99206,
+        90313
+      ],
+      "file_bytes" : 4096,
+      "hash_byte_limit" : 67108864,
+      "median_nanoseconds" : 131895,
+      "mode" : "hash_current",
+      "state" : "hashed_current"
+    },
+    {
+      "bytes_read" : [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "elapsed_nanoseconds" : [
+        25658,
+        13981,
+        12508,
+        12399,
+        12569
+      ],
+      "file_bytes" : 1048576,
+      "hash_byte_limit" : 67108864,
+      "median_nanoseconds" : 12569,
+      "mode" : "path_only",
+      "state" : "unverified_path"
+    },
+    {
+      "bytes_read" : [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "elapsed_nanoseconds" : [
+        58737,
+        28212,
+        24457,
+        24987,
+        23555
+      ],
+      "file_bytes" : 1048576,
+      "hash_byte_limit" : 67108864,
+      "median_nanoseconds" : 24987,
+      "mode" : "metadata",
+      "state" : "metadata_only"
+    },
+    {
+      "bytes_read" : [
+        1048576,
+        1048576,
+        1048576,
+        1048576,
+        1048576
+      ],
+      "elapsed_nanoseconds" : [
+        875637,
+        860414,
+        808327,
+        792534,
+        759305
+      ],
+      "file_bytes" : 1048576,
+      "hash_byte_limit" : 67108864,
+      "median_nanoseconds" : 808327,
+      "mode" : "hash_current",
+      "state" : "hashed_current"
+    },
+    {
+      "bytes_read" : [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "elapsed_nanoseconds" : [
+        52968,
+        13840,
+        12649,
+        12288,
+        12448
+      ],
+      "file_bytes" : 16777216,
+      "hash_byte_limit" : 67108864,
+      "median_nanoseconds" : 12649,
+      "mode" : "path_only",
+      "state" : "unverified_path"
+    },
+    {
+      "bytes_read" : [
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "elapsed_nanoseconds" : [
+        54411,
+        25938,
+        24516,
+        23635,
+        24427
+      ],
+      "file_bytes" : 16777216,
+      "hash_byte_limit" : 67108864,
+      "median_nanoseconds" : 24516,
+      "mode" : "metadata",
+      "state" : "metadata_only"
+    },
+    {
+      "bytes_read" : [
+        16777216,
+        16777216,
+        16777216,
+        16777216,
+        16777216
+      ],
+      "elapsed_nanoseconds" : [
+        11233827,
+        11157175,
+        10765073,
+        11110375,
+        11661200
+      ],
+      "file_bytes" : 16777216,
+      "hash_byte_limit" : 67108864,
+      "median_nanoseconds" : 11157175,
+      "mode" : "hash_current",
+      "state" : "hashed_current"
+    },
+    {
+      "bytes_read" : [
+        0
+      ],
+      "elapsed_nanoseconds" : [
+        148030
+      ],
+      "file_bytes" : 16777216,
+      "hash_byte_limit" : 1048576,
+      "median_nanoseconds" : 148030,
+      "mode" : "hash_current_oversize",
+      "state" : "hash_limit_exceeded"
+    }
+  ],
+  "memory_note" : "A 256 KiB buffer plus a temporary Data copy up to 256 KiB; no measured process-memory bound.",
+  "platform" : "linux",
+  "process_resident_memory_measured" : false,
+  "read_buffer_bytes" : 262144,
+  "setup_excluded" : true
+}

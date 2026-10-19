@@ -1,0 +1,626 @@
+{
+  "baseline_revision": "2648094610facfd1ae1805f52a9de282043c808f",
+  "candidate_checkpoint": "7e004a72920d0648c8d7ce38bdb4da86eab4926c",
+  "baseline_suite": {
+    "tests": 324,
+    "failed_tests": 18,
+    "issues": 25
+  },
+  "candidate_suite": {
+    "tests": 346,
+    "failed_tests": 18,
+    "issues": 25
+  },
+  "scope": "Diagnosis only: no production changes, skipped failures, or altered expectations.",
+  "classification_counts": {
+    "expected_platform_mismatch": 9,
+    "harness_dependency": 8,
+    "genuine_assumption_defect": 1
+  },
+  "classifications": {
+    "expected_platform_mismatch": "The unavailable native fact changes the assertion; probe and source explain the result without fabricating that fact.",
+    "harness_dependency": "The fixture or test precondition assumes an unverified filesystem capability/layout; its intended claim may not be exercised.",
+    "genuine_assumption_defect": "A repository contract/test premise is demonstrably false under supported dependency behavior; the classification does not by itself allege a core algorithm bug.",
+    "uncertain": "Mac execution and listed unresolved implications remain uncertain; no test is assigned this primary label after the probes, but uncertainty is retained per test."
+  },
+  "tests": [
+    {
+      "id": "N01",
+      "test": "aVideoSeriesWhoseReplyNamesOnlyAFolder",
+      "suite": "ObservationTests",
+      "primary_classification": "expected_platform_mismatch",
+      "assertions": [
+        {
+          "file": "ObservationTests.swift",
+          "line": 122,
+          "column": 9
+        },
+        {
+          "file": "ObservationTests.swift",
+          "line": 130,
+          "column": 9
+        }
+      ],
+      "issue_count": 2,
+      "expected": "All 308 temporal observations and the observations beside 304 folder-member works have kind appeared.",
+      "observed": "Two allSatisfy appeared assertions fail; the run reports no failure for the observation/member counts.",
+      "explanation": "Fixture sets creation and modification dates. Linux core birth is nil; Workspace.place falls through to the in-span modification date and returns changed. Compound result is explained by the identical shared-core metadata probe; no missing-count issue is recorded.",
+      "runtime_probe_sections": [
+        "birthtime"
+      ],
+      "implementation_sources": [
+        "Sources/GleanerCore/Platform.swift:8",
+        "Sources/GleanerCore/Observations.swift:362",
+        "Sources/GleanerCore/Observations.swift:376"
+      ],
+      "mac_check": "M1",
+      "remaining_uncertainty": "Native birth-time behavior is unexecuted. The failing kind assertion alone does not prove capture completeness, delivery authorship, or correct historical membership.",
+      "secondary_findings": []
+    },
+    {
+      "id": "N02",
+      "test": "aReportWithMarkdownPDFAndCharts",
+      "suite": "ObservationTests",
+      "primary_classification": "expected_platform_mismatch",
+      "assertions": [
+        {
+          "file": "ObservationTests.swift",
+          "line": 168,
+          "column": 9
+        }
+      ],
+      "issue_count": 1,
+      "expected": "Existing style.css is changed; newly dated report.md is appeared; seven observations.",
+      "observed": "The style/report/count conjunction fails at the appeared part, before the logged short-circuit reaches count.",
+      "explanation": "Both files have nil core birth; style.css remains changed, while the newly dated report cannot satisfy appeared. The source and shared-core probe establish the fallback; the log does not separately print the seven-item count.",
+      "runtime_probe_sections": [
+        "birthtime"
+      ],
+      "implementation_sources": [
+        "Sources/GleanerCore/Platform.swift:8",
+        "Sources/GleanerCore/Observations.swift:362",
+        "Sources/GleanerCore/Observations.swift:376"
+      ],
+      "mac_check": "M1",
+      "remaining_uncertainty": "Native birth-time behavior is unexecuted. The failing kind assertion alone does not prove capture completeness, delivery authorship, or correct historical membership.",
+      "secondary_findings": []
+    },
+    {
+      "id": "N03",
+      "test": "aDataAnalysisWithCSVFiguresAndANotebook",
+      "suite": "ObservationTests",
+      "primary_classification": "expected_platform_mismatch",
+      "assertions": [
+        {
+          "file": "ObservationTests.swift",
+          "line": 202,
+          "column": 9
+        },
+        {
+          "file": "ObservationTests.swift",
+          "line": 204,
+          "column": 9
+        }
+      ],
+      "issue_count": 2,
+      "expected": "Delivered notebook observation and clean.csv candidate are appeared.",
+      "observed": "Both actual kinds are changed.",
+      "explanation": "No birth time reaches Workspace.place; modification time still places both in the span. Delivered/candidate state is not promoted by this fallback.",
+      "runtime_probe_sections": [
+        "birthtime"
+      ],
+      "implementation_sources": [
+        "Sources/GleanerCore/Platform.swift:8",
+        "Sources/GleanerCore/Observations.swift:362",
+        "Sources/GleanerCore/Observations.swift:376"
+      ],
+      "mac_check": "M1",
+      "remaining_uncertainty": "Native birth-time behavior is unexecuted. The failing kind assertion alone does not prove capture completeness, delivery authorship, or correct historical membership.",
+      "secondary_findings": []
+    },
+    {
+      "id": "N04",
+      "test": "aBuiltAppIsObservedAsOneEntry",
+      "suite": "ObservationTests",
+      "primary_classification": "expected_platform_mismatch",
+      "assertions": [
+        {
+          "file": "ObservationTests.swift",
+          "line": 260,
+          "column": 9
+        }
+      ],
+      "issue_count": 1,
+      "expected": "Foo.app is one observed package, kind appeared, with the fixture birth date.",
+      "observed": "Foo.app exists as one package, but the appeared/creation-date assertion fails; no issue is recorded for the two expected entry names.",
+      "explanation": "The Linux package table recognizes app and the walk does not descend it. Its core createdAt is nil, so kind is changed. Package recognition is therefore not the failing assertion cause.",
+      "runtime_probe_sections": [
+        "birthtime",
+        "packages"
+      ],
+      "implementation_sources": [
+        "Sources/GleanerCore/Platform.swift:8",
+        "Sources/GleanerCore/Observations.swift:362",
+        "Sources/GleanerCore/Observations.swift:376",
+        "Sources/GleanerCore/Observations.swift:278",
+        "Sources/GleanerCore/Observations.swift:337"
+      ],
+      "mac_check": "M1+M4",
+      "remaining_uncertainty": "Native UTType registration remains unexecuted. Nested-file rewrite is invisible to package-root metadata in both probes.",
+      "secondary_findings": [
+        "A1"
+      ]
+    },
+    {
+      "id": "N05",
+      "test": "aLaterSessionEditingAFileAddsItsOwnObservation",
+      "suite": "ObservationTests",
+      "primary_classification": "expected_platform_mismatch",
+      "assertions": [
+        {
+          "file": "ObservationTests.swift",
+          "line": 295,
+          "column": 9
+        }
+      ],
+      "issue_count": 1,
+      "expected": "Later/first observations are [changed, appeared].",
+      "observed": "Actual kinds are [changed, changed]; session ordering and retained first modification date do not record issues.",
+      "explanation": "First observation had no birth time and was recorded as changed; subsequent indexing preserves that record. No evidence of correction loss or history rewriting is produced by this failure.",
+      "runtime_probe_sections": [
+        "birthtime"
+      ],
+      "implementation_sources": [
+        "Sources/GleanerCore/Platform.swift:8",
+        "Sources/GleanerCore/Observations.swift:362",
+        "Sources/GleanerCore/Observations.swift:376"
+      ],
+      "mac_check": "M1",
+      "remaining_uncertainty": "Native birth-time behavior is unexecuted. The failing kind assertion alone does not prove capture completeness, delivery authorship, or correct historical membership.",
+      "secondary_findings": []
+    },
+    {
+      "id": "N06",
+      "test": "aHandedOverFileKeepsItsDeliveryWithItsObservationBeside",
+      "suite": "ObservationTests",
+      "primary_classification": "expected_platform_mismatch",
+      "assertions": [
+        {
+          "file": "ObservationTests.swift",
+          "line": 444,
+          "column": 9
+        }
+      ],
+      "issue_count": 1,
+      "expected": "Observation beside the delivered work is appeared.",
+      "observed": "Actual kind is changed.",
+      "explanation": "Explicit delivery is retained; nil birth only changes temporal observation classification through Workspace.place.",
+      "runtime_probe_sections": [
+        "birthtime"
+      ],
+      "implementation_sources": [
+        "Sources/GleanerCore/Platform.swift:8",
+        "Sources/GleanerCore/Observations.swift:362",
+        "Sources/GleanerCore/Observations.swift:376"
+      ],
+      "mac_check": "M1",
+      "remaining_uncertainty": "Native birth-time behavior is unexecuted. The failing kind assertion alone does not prove capture completeness, delivery authorship, or correct historical membership.",
+      "secondary_findings": []
+    },
+    {
+      "id": "N07",
+      "test": "theSyntheticHomesCapturePhase",
+      "suite": "ObservationTests",
+      "primary_classification": "expected_platform_mismatch",
+      "assertions": [
+        {
+          "file": "ObservationTests.swift",
+          "line": 644,
+          "column": 9
+        },
+        {
+          "file": "ObservationTests.swift",
+          "line": 646,
+          "column": 9
+        }
+      ],
+      "issue_count": 2,
+      "expected": "Delivered video observation and outline candidate observation are appeared.",
+      "observed": "Both actual kinds are changed; the 49-observation and cover-path assertions do not record issues.",
+      "explanation": "The public synthetic fixture uses date-setting helpers. Core does not replace unavailable birth with Foundation ctime, so both expectations become changed.",
+      "runtime_probe_sections": [
+        "birthtime"
+      ],
+      "implementation_sources": [
+        "Sources/GleanerCore/Platform.swift:8",
+        "Sources/GleanerCore/Observations.swift:362",
+        "Sources/GleanerCore/Observations.swift:376"
+      ],
+      "mac_check": "M1",
+      "remaining_uncertainty": "Native birth-time behavior is unexecuted. The failing kind assertion alone does not prove capture completeness, delivery authorship, or correct historical membership.",
+      "secondary_findings": []
+    },
+    {
+      "id": "N08",
+      "test": "aMediaPipelineHandsOverItsSegmentsButNeverItsHiddenFiles",
+      "suite": "BundleTests",
+      "primary_classification": "expected_platform_mismatch",
+      "assertions": [
+        {
+          "file": "BundleTests.swift",
+          "line": 145,
+          "column": 9
+        }
+      ],
+      "issue_count": 1,
+      "expected": "Observation beside the delivered video is appeared.",
+      "observed": "Actual kind is changed; 302 folder-member count, exclusions, and explicit folder provenance checks do not record issues.",
+      "explanation": "Failure is the observation kind, not loss of the 302 member records or a hidden-file admission. Birth is unknown and modification is in-span.",
+      "runtime_probe_sections": [
+        "birthtime"
+      ],
+      "implementation_sources": [
+        "Sources/GleanerCore/Platform.swift:8",
+        "Sources/GleanerCore/Observations.swift:362",
+        "Sources/GleanerCore/Observations.swift:376"
+      ],
+      "mac_check": "M1",
+      "remaining_uncertainty": "Native birth-time behavior is unexecuted. The failing kind assertion alone does not prove capture completeness, delivery authorship, or correct historical membership.",
+      "secondary_findings": []
+    },
+    {
+      "id": "N09",
+      "test": "keepingMakesAWorkWhoseOneRevisionIsTheFileAsObserved",
+      "suite": "KeepTests",
+      "primary_classification": "expected_platform_mismatch",
+      "assertions": [
+        {
+          "file": "KeepTests.swift",
+          "line": 92,
+          "column": 9
+        }
+      ],
+      "issue_count": 1,
+      "expected": "User-kept revision retains observation kind appeared.",
+      "observed": "Retained kind is changed.",
+      "explanation": "Keeping copies the actual observation kind instead of inventing birth evidence. No issue is recorded for durable keep/undo, capture metadata, or provider/session identity checks.",
+      "runtime_probe_sections": [
+        "birthtime"
+      ],
+      "implementation_sources": [
+        "Sources/GleanerCore/Platform.swift:8",
+        "Sources/GleanerCore/Observations.swift:362",
+        "Sources/GleanerCore/Observations.swift:376",
+        "Sources/GleanerCore/Keeping.swift"
+      ],
+      "mac_check": "M1",
+      "remaining_uncertainty": "Native birth-time behavior is unexecuted. The failing kind assertion alone does not prove capture completeness, delivery authorship, or correct historical membership.",
+      "secondary_findings": []
+    },
+    {
+      "id": "N10",
+      "test": "aFolderDeliveredTwiceListsItsFilesAtEachDelivery",
+      "suite": "BundleTests",
+      "primary_classification": "harness_dependency",
+      "assertions": [
+        {
+          "file": "BundleTests.swift",
+          "line": 623,
+          "column": 9
+        },
+        {
+          "file": "BundleTests.swift",
+          "line": 625,
+          "column": 9
+        }
+      ],
+      "issue_count": 2,
+      "expected": "Appendix created at synthetic minute90 belongs only to minute120 delivery; total memberships=3.",
+      "observed": "Appendix is also attributed to minute60; two assertions fail.",
+      "explanation": "Both files physically exist before either future reply. The requested future birth time does not take effect; nil birth makes Membership.handedOver use actual ctime, which precedes both replies. Probe reproduces true/true membership; supplied known birth changes the first to false. This fixture does not simulate the intended chronology on this filesystem.",
+      "runtime_probe_sections": [
+        "synthetic_future_birth"
+      ],
+      "implementation_sources": [
+        "Tests/GleanerCoreTests/BundleTests.swift:58",
+        "Tests/GleanerCoreTests/BundleTests.swift:610",
+        "Sources/GleanerCore/Bundles.swift:26"
+      ],
+      "mac_check": "M1",
+      "remaining_uncertainty": "Historical membership on volumes lacking birth time still needs real-sequence validation; the probe diagnoses the synthetic fixture, not universal correctness.",
+      "secondary_findings": []
+    },
+    {
+      "id": "N11",
+      "test": "membershipByTimeOnALiveRead",
+      "suite": "BundleTests",
+      "primary_classification": "harness_dependency",
+      "assertions": [
+        {
+          "file": "BundleTests.swift",
+          "line": 578,
+          "column": 13
+        },
+        {
+          "file": "BundleTests.swift",
+          "line": 578,
+          "column": 13
+        },
+        {
+          "file": "BundleTests.swift",
+          "line": 578,
+          "column": 13
+        }
+      ],
+      "issue_count": 3,
+      "expected": "Moved, linked, copied files report creation dates preceding the reply; only cut.mp4 is admitted.",
+      "observed": "Three Foundation creationDate assertions fail; final membership assertions do not report issues.",
+      "explanation": "Swift Foundation on Linux exposes ctime as creationDate. Move/link/copy and setAttributes update ctime after reply. These assertions read Foundation, not core; the core uses nil birth and rejects files whose ctime is after reply.",
+      "runtime_probe_sections": [
+        "birthtime",
+        "synthetic_future_birth"
+      ],
+      "implementation_sources": [
+        "Tests/GleanerCoreTests/BundleTests.swift:557",
+        "Sources/GleanerCore/Bundles.swift:26"
+      ],
+      "mac_check": "M1",
+      "remaining_uncertainty": "Native birth-date preservation across move/hardlink/copy must be executed. Linux result does not establish native preservation behavior.",
+      "secondary_findings": []
+    },
+    {
+      "id": "N12",
+      "test": "aRewriteInPlaceThatPutsTheDatesBackIsNotAsShown",
+      "suite": "ReviewTests",
+      "primary_classification": "harness_dependency",
+      "assertions": [
+        {
+          "file": "ReviewTests.swift",
+          "line": 167,
+          "column": 104
+        }
+      ],
+      "issue_count": 1,
+      "expected": "Restore original creation+modification dates, then reject approval against stale FileStat.",
+      "observed": "Required shown.createdAt is nil; test throws before freshness/approval assertions.",
+      "explanation": "Fixture unnecessarily requires a birth date to reach the ctime protection. Separate shared-core probe restores its whole-second mtime, observes persisted-state equality but freshness=false, and confirms Indexer.review throws changedSinceShown with zero reviews written.",
+      "runtime_probe_sections": [
+        "review_freshness"
+      ],
+      "implementation_sources": [
+        "Tests/GleanerCoreTests/ReviewTests.swift:160",
+        "Sources/GleanerCore/Review.swift:29",
+        "Sources/GleanerCore/Review.swift:44"
+      ],
+      "mac_check": "M1",
+      "remaining_uncertainty": "Probe proves the Linux stale-approval path with nil birth; native same-size rewrite and timestamp granularity remain unexecuted.",
+      "secondary_findings": []
+    },
+    {
+      "id": "N13",
+      "test": "aFileNamedInAnotherSpellingIsObservedUnderItsDeliveredName",
+      "suite": "ObservationTests",
+      "primary_classification": "harness_dependency",
+      "assertions": [
+        {
+          "file": "ObservationTests.swift",
+          "line": 600,
+          "column": 9
+        },
+        {
+          "file": "ObservationTests.swift",
+          "line": 601,
+          "column": 9
+        }
+      ],
+      "issue_count": 2,
+      "expected": "report.md and reply target Report.md are one file, with its observation beside delivery.",
+      "observed": "Named Report.md work exists, lowercase report.md remains a candidate, and named work has no observation; two assertions fail.",
+      "explanation": "This volume is case-sensitive: wrong-case target is missing, and creating both spellings yields distinct identities. Identity reconciliation correctly cannot merge distinct paths based on case alone. The test presumes a case-insensitive volume, which is not guaranteed even on macOS.",
+      "runtime_probe_sections": [
+        "case_and_alias"
+      ],
+      "implementation_sources": [
+        "Tests/GleanerCoreTests/ObservationTests.swift:592",
+        "Sources/GleanerCore/Observations.swift:476"
+      ],
+      "mac_check": "M2",
+      "remaining_uncertainty": "Must execute on both actual case-insensitive and case-sensitive APFS test locations; preserve separate object identities on the latter.",
+      "secondary_findings": []
+    },
+    {
+      "id": "N14",
+      "test": "aFolderIsSkippedHoweverItIsSpelled",
+      "suite": "ObservationTests",
+      "primary_classification": "harness_dependency",
+      "assertions": [
+        {
+          "file": "ObservationTests.swift",
+          "line": 348,
+          "column": 9
+        }
+      ],
+      "issue_count": 1,
+      "expected": "Uppercase spelling of home is skipped as the same home; symlink alias is also skipped.",
+      "observed": "Uppercase-home skip reason is nil. Symlink home/library checks do not report issues.",
+      "explanation": "Uppercase path does not exist here and realpath cannot turn it into home. Probe confirms a real symlink is excluded and uppercase spelling is distinct. Case folding by text would conflate real distinct directories on a case-sensitive volume.",
+      "runtime_probe_sections": [
+        "case_and_alias"
+      ],
+      "implementation_sources": [
+        "Tests/GleanerCoreTests/ObservationTests.swift:340",
+        "Sources/GleanerCore/Observations.swift:235",
+        "Sources/GleanerCore/Observations.swift:258"
+      ],
+      "mac_check": "M2",
+      "remaining_uncertainty": "On case-sensitive APFS the original expectation is not valid. Validate identity-based exclusion and unavailable-source handling without forcing case folding.",
+      "secondary_findings": []
+    },
+    {
+      "id": "N15",
+      "test": "aFolderUnderPrivateIsOneProjectWithWhatItsAgentDelivered",
+      "suite": "ProjectTests",
+      "primary_classification": "harness_dependency",
+      "assertions": [
+        {
+          "file": "ProjectTests.swift",
+          "line": 184,
+          "column": 13
+        }
+      ],
+      "issue_count": 1,
+      "expected": "Resolved temporary repository has /private prefix while Foundation spelling does not.",
+      "observed": "Required /private prefix is false; test stops before project assertions.",
+      "explanation": "Container temporaryDirectory is /tmp and resolves to /tmp. Native macOS alias-layout precondition is absent. The public Paths.standard implementation still strips /private text unconditionally, which is a separate platform assumption.",
+      "runtime_probe_sections": [
+        "private_and_permissions"
+      ],
+      "implementation_sources": [
+        "Tests/GleanerCoreTests/ProjectTests.swift:178",
+        "Sources/GleanerCore/Paths.swift:7"
+      ],
+      "mac_check": "M3",
+      "remaining_uncertainty": "The project assertions were not exercised by this test. Native alias behavior still requires execution.",
+      "secondary_findings": [
+        "A2"
+      ]
+    },
+    {
+      "id": "N16",
+      "test": "aFolderUnderPrivateVarIsOneProjectWithItsFilesThereOrGone",
+      "suite": "ProjectTests",
+      "primary_classification": "harness_dependency",
+      "assertions": [
+        {
+          "file": "ProjectTests.swift",
+          "line": 207,
+          "column": 6
+        }
+      ],
+      "issue_count": 1,
+      "expected": "Create fixture under /private plus native temporaryDirectory, then reconcile aliases including missing files.",
+      "observed": "Creating /private/tmp/... fails EACCES; no project assertions run.",
+      "explanation": "Container lacks /private, and UID1000 cannot create a new root-level directory. This is test setup failure, not evidence that readable originals were mislabeled. Separate chmod000 probe preserves file existence while denying FileStat/hash reads.",
+      "runtime_probe_sections": [
+        "private_and_permissions"
+      ],
+      "implementation_sources": [
+        "Tests/GleanerCoreTests/ProjectTests.swift:207",
+        "Sources/GleanerCore/Paths.swift:7",
+        "Sources/GleanerCore/Review.swift:29"
+      ],
+      "mac_check": "M3",
+      "remaining_uncertainty": "Native test must run unprivileged in Foundation temporaryDirectory; do not create /private or use root to manufacture a Linux pass.",
+      "secondary_findings": [
+        "A2"
+      ]
+    },
+    {
+      "id": "N17",
+      "test": "theHomeFolderAndSystemFoldersAreNotWalked",
+      "suite": "ObservationTests",
+      "primary_classification": "harness_dependency",
+      "assertions": [
+        {
+          "file": "ObservationTests.swift",
+          "line": 330,
+          "column": 13
+        }
+      ],
+      "issue_count": 1,
+      "expected": "All named system/home roots, including /Users, are excluded.",
+      "observed": "Probe isolates /Users as the single nil reason; /Users does not exist in container.",
+      "explanation": "Core has no explicit /Users rule: it excludes ancestors of real and supplied home. Real home here is /home/gleaner and fixture home is /tmp, so /Users is neither ancestor nor listed system root. Workspace.root checks existence before walking, so missing /Users is not traversed in this run.",
+      "runtime_probe_sections": [
+        "system_paths",
+        "private_and_permissions"
+      ],
+      "implementation_sources": [
+        "Tests/GleanerCoreTests/ObservationTests.swift:316",
+        "Sources/GleanerCore/Observations.swift:224",
+        "Sources/GleanerCore/Observations.swift:235"
+      ],
+      "mac_check": "M3",
+      "remaining_uncertainty": "An existing /Users with the actual home elsewhere is not guaranteed excluded by this rule. Authorized-root policy must not rely solely on usual home layout.",
+      "secondary_findings": [
+        "A3"
+      ]
+    },
+    {
+      "id": "N18",
+      "test": "aLibraryThatCantBeOpenedToReadSaysToOpenGleaner",
+      "suite": "CatalogTests",
+      "primary_classification": "genuine_assumption_defect",
+      "assertions": [
+        {
+          "file": "CatalogTests.swift",
+          "line": 157,
+          "column": 9
+        }
+      ],
+      "issue_count": 1,
+      "expected": "Checkpointed WAL database without sidecars cannot open read-only and returns unreadable_library.",
+      "observed": "Catalog opens successfully; expected throw is absent.",
+      "explanation": "Registry documentation and the test assume missing sidecars imply unreadability. SQLite supports recreation when the parent is writable. Probe confirms sidecars are created, SQL writes refused, main database bytes unchanged; with unwritable parent Catalog returns unreadable_library. This is a confirmed contract/test assumption defect, not demonstrated data corruption or a broken read-only SQL connection.",
+      "runtime_probe_sections": [
+        "readonly_wal"
+      ],
+      "implementation_sources": [
+        "Tests/GleanerCoreTests/CatalogTests.swift:147",
+        "Sources/GleanerCore/Registry.swift:331",
+        "Sources/GleanerCore/Database.swift:25"
+      ],
+      "mac_check": "M5",
+      "remaining_uncertainty": "Mac SQLite/VFS must be measured. Successful open cannot prove a missing WAL contained no uncheckpointed commits; only a clean checkpointed fixture is probed.",
+      "secondary_findings": []
+    }
+  ],
+  "additional_algorithm_findings": [
+    {
+      "id": "A1",
+      "status": "confirmed_linux_limitation_native_unexecuted",
+      "source": "Sources/GleanerCore/Observations.swift:337",
+      "finding": "Opaque-package observation uses root directory metadata; rewriting a nested file leaves that metadata unchanged in both actual-core probes. A changed package can be missed. This is not the cause of N04 appeared-kind failure.",
+      "probe": "packages.package_metadata_unchanged_after_nested_file_rewrite",
+      "mac_check": "M4"
+    },
+    {
+      "id": "A2",
+      "status": "confirmed_platform_assumption",
+      "source": "Sources/GleanerCore/Paths.swift:25",
+      "finding": "Textual /private/tmp normalization yields /tmp even when those locations are not aliases. This is unsafe as a general Linux identity rule; no collision against real /private files was created or observed.",
+      "probe": "private_and_permissions",
+      "mac_check": "M3"
+    },
+    {
+      "id": "A3",
+      "status": "confirmed_policy_assumption_consequence_unexecuted",
+      "source": "Sources/GleanerCore/Observations.swift:240",
+      "finding": "/Users exclusion depends on home ancestry rather than an explicit root rule. No unauthorized scan occurred: /Users is absent here. Existing other-user roots and relocated homes need authorized-root checks.",
+      "probe": "system_paths./Users",
+      "mac_check": "M3"
+    }
+  ],
+  "primary_sources": [
+    {
+      "url": "https://www.sqlite.org/wal.html#read_only_databases",
+      "supports": "Read-only WAL opening may recreate sidecars if parent writable; cleanly checkpointed vs lost WAL must be distinguished."
+    },
+    {
+      "url": "https://github.com/swiftlang/swift-foundation/blob/swift-6.2.4-RELEASE/Sources/FoundationEssentials/FileManager/FileManager%2BFiles.swift",
+      "supports": "Portable stat creationDate accessor reads st_ctim; corroborated by executed probe."
+    },
+    {
+      "url": "https://support.apple.com/guide/disk-utility/file-system-formats-dsku19ed921c/mac",
+      "supports": "APFS includes case-sensitive formats; an OS-only classification is insufficient."
+    }
+  ],
+  "probe_results": [
+    "native-probe-baseline.json",
+    "native-probe-candidate.json"
+  ],
+  "log_digests": {
+    "gleaner-baseline-tests.log": "6ec7c21ae8b37c3d3c53cf72bca0eab3b68b9402a32392abb480b03fbbd04e06",
+    "gleaner-checkpoint-tests.log": "92d18dd6c1488e94a57e974e33c422e66fee38ab88ee9380b87f9bfc6cfaabfd"
+  }
+}

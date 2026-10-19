@@ -1,0 +1,276 @@
+{
+  "basis" : "Actual Indexer and Organization.search; experiment changes presentation only. No production behavior change.",
+  "measurementBoundary" : "Query timing includes in-memory shared search and full experimental response construction, excludes process launch\/index\/DB load. Group member counts are fully expanded objects, not group-title precision.",
+  "metamorphicChecks" : {
+    "all_policies_preserve_shared_core_candidates" : true,
+    "combined_project_rename_reordered_mentions_duplicate_evidence_irrelevant_session" : true
+  },
+  "scale" : {
+    "documents" : 1000,
+    "indexSeconds" : 4.816552091,
+    "inputBytes" : 168370,
+    "measurements" : [
+      {
+        "matches" : 1000,
+        "maximumMilliseconds" : 20.57592,
+        "p50Milliseconds" : 19.313935,
+        "p95Milliseconds" : 20.252374,
+        "policy" : "baseline",
+        "query" : [
+          "Atlas"
+        ]
+      },
+      {
+        "matches" : 1000,
+        "maximumMilliseconds" : 20.014034,
+        "p50Milliseconds" : 19.571468,
+        "p95Milliseconds" : 19.973093,
+        "policy" : "named_focus",
+        "query" : [
+          "Atlas"
+        ]
+      },
+      {
+        "matches" : 1000,
+        "maximumMilliseconds" : 21.204449,
+        "p50Milliseconds" : 20.391471,
+        "p95Milliseconds" : 21.013919,
+        "policy" : "native_reply_groups",
+        "query" : [
+          "Atlas"
+        ]
+      },
+      {
+        "matches" : 10,
+        "maximumMilliseconds" : 10.822273,
+        "p50Milliseconds" : 9.931746,
+        "p95Milliseconds" : 10.421347,
+        "policy" : "baseline",
+        "query" : [
+          "record-0500"
+        ]
+      },
+      {
+        "matches" : 10,
+        "maximumMilliseconds" : 10.596056,
+        "p50Milliseconds" : 9.811018,
+        "p95Milliseconds" : 10.595595,
+        "policy" : "named_focus",
+        "query" : [
+          "record-0500"
+        ]
+      },
+      {
+        "matches" : 10,
+        "maximumMilliseconds" : 12.680348,
+        "p50Milliseconds" : 9.809806,
+        "p95Milliseconds" : 11.218732,
+        "policy" : "native_reply_groups",
+        "query" : [
+          "record-0500"
+        ]
+      }
+    ],
+    "newlyRecordedObservations" : 100000,
+    "organizationLoadSeconds" : 1.432464967,
+    "queriesPerPolicy" : 30,
+    "sessions" : 100,
+    "uniqueCapturedHashes" : 1000,
+    "workloadShape" : "100 overlapping sessions in one workspace; 10 named outputs each. All documents have distinct content. This is a concurrent-work stress shape, not a typical-library estimate."
+  },
+  "schema" : 1,
+  "tasks" : [
+    {
+      "label" : "Only release-spec.md is relevant; eight explicitly delivered helpers are useful secondary evidence.",
+      "layers" : [
+        {
+          "deferredObjects" : 4,
+          "directlySelectableRelevantObjects" : 1,
+          "expandedMemberPrecision" : 0.2,
+          "expandedMemberRecall" : 1,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "baseline",
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 1,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 8,
+          "directlySelectableRelevantObjects" : 1,
+          "expandedMemberPrecision" : 1,
+          "expandedMemberRecall" : 1,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "named_focus",
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 1,
+          "visibleGroups" : 1,
+          "visibleObjects" : 1
+        },
+        {
+          "deferredObjects" : 0,
+          "directlySelectableRelevantObjects" : 0,
+          "expandedMemberPrecision" : 0.1111111111111111,
+          "expandedMemberRecall" : 1,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "native_reply_groups",
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 1,
+          "visibleGroups" : 1,
+          "visibleObjects" : 9
+        }
+      ],
+      "query" : [
+        "release"
+      ],
+      "task" : "name_distinguishes_deliverable"
+    },
+    {
+      "label" : "Same wanted specification; project-name matching cannot identify its task role.",
+      "layers" : [
+        {
+          "deferredObjects" : 4,
+          "directlySelectableRelevantObjects" : 0,
+          "expandedMemberPrecision" : 0,
+          "expandedMemberRecall" : 0,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "baseline",
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 0,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 4,
+          "directlySelectableRelevantObjects" : 0,
+          "expandedMemberPrecision" : 0,
+          "expandedMemberRecall" : 0,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "named_focus",
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 0,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 0,
+          "directlySelectableRelevantObjects" : 0,
+          "expandedMemberPrecision" : 0.1111111111111111,
+          "expandedMemberRecall" : 1,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "native_reply_groups",
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 1,
+          "visibleGroups" : 1,
+          "visibleObjects" : 9
+        }
+      ],
+      "query" : [
+        "LaunchWorkshop"
+      ],
+      "task" : "project_context_names_every_object"
+    },
+    {
+      "label" : "Same wanted specification; relevance comes from the task label, not a lexical filename distinction.",
+      "layers" : [
+        {
+          "deferredObjects" : 4,
+          "directlySelectableRelevantObjects" : 0,
+          "expandedMemberPrecision" : 0,
+          "expandedMemberRecall" : 0,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "baseline",
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 0,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 4,
+          "directlySelectableRelevantObjects" : 0,
+          "expandedMemberPrecision" : 0,
+          "expandedMemberRecall" : 0,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "named_focus",
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 0,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 0,
+          "directlySelectableRelevantObjects" : 0,
+          "expandedMemberPrecision" : 0.1111111111111111,
+          "expandedMemberRecall" : 1,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "native_reply_groups",
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 1,
+          "visibleGroups" : 1,
+          "visibleObjects" : 9
+        }
+      ],
+      "query" : [
+        "trajectory"
+      ],
+      "task" : "request_only_query"
+    },
+    {
+      "label" : "Two wanted complementary outputs and eight construction files share one native reply. A compact group still requires member selection.",
+      "layers" : [
+        {
+          "deferredObjects" : 5,
+          "directlySelectableRelevantObjects" : 0,
+          "expandedMemberPrecision" : 0,
+          "expandedMemberRecall" : 0,
+          "matchedObjects" : 10,
+          "noMatchLost" : true,
+          "policy" : "baseline",
+          "relevantObjects" : 2,
+          "relevantVisibleObjects" : 0,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 5,
+          "directlySelectableRelevantObjects" : 0,
+          "expandedMemberPrecision" : 0,
+          "expandedMemberRecall" : 0,
+          "matchedObjects" : 10,
+          "noMatchLost" : true,
+          "policy" : "named_focus",
+          "relevantObjects" : 2,
+          "relevantVisibleObjects" : 0,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 0,
+          "directlySelectableRelevantObjects" : 0,
+          "expandedMemberPrecision" : 0.2,
+          "expandedMemberRecall" : 1,
+          "matchedObjects" : 10,
+          "noMatchLost" : true,
+          "policy" : "native_reply_groups",
+          "relevantObjects" : 2,
+          "relevantVisibleObjects" : 2,
+          "visibleGroups" : 1,
+          "visibleObjects" : 10
+        }
+      ],
+      "query" : [
+        "journey"
+      ],
+      "task" : "one_reply_is_not_one_relevant_object"
+    }
+  ]
+}

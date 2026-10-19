@@ -1,0 +1,273 @@
+{
+  "basis" : "Actual Indexer and Organization.search; experiment changes presentation only. No production behavior change.",
+  "measurementBoundary" : "Query timing includes in-memory shared search and full experimental response construction, excludes process launch\/index\/DB load. Group member counts are fully expanded objects, not group-title precision.",
+  "metamorphicChecks" : {
+    "all_policies_preserve_shared_core_candidates" : true,
+    "combined_project_rename_reordered_mentions_duplicate_evidence_irrelevant_session" : true
+  },
+  "scale" : {
+    "documents" : 1000,
+    "indexSeconds" : 4.944525327,
+    "inputBytes" : 145370,
+    "measurements" : [
+      {
+        "matches" : 1000,
+        "maximumMilliseconds" : 20.233606,
+        "p50Milliseconds" : 19.150065,
+        "p95Milliseconds" : 19.291163,
+        "policy" : "baseline",
+        "query" : [
+          "Atlas"
+        ]
+      },
+      {
+        "matches" : 1000,
+        "maximumMilliseconds" : 19.270762,
+        "p50Milliseconds" : 19.128943,
+        "p95Milliseconds" : 19.267298,
+        "policy" : "named_focus",
+        "query" : [
+          "Atlas"
+        ]
+      },
+      {
+        "matches" : 1000,
+        "maximumMilliseconds" : 20.117675,
+        "p50Milliseconds" : 19.949245,
+        "p95Milliseconds" : 20.09497,
+        "policy" : "native_reply_groups",
+        "query" : [
+          "Atlas"
+        ]
+      },
+      {
+        "matches" : 10,
+        "maximumMilliseconds" : 9.805713,
+        "p50Milliseconds" : 9.691864,
+        "p95Milliseconds" : 9.755759,
+        "policy" : "baseline",
+        "query" : [
+          "record-0500"
+        ]
+      },
+      {
+        "matches" : 10,
+        "maximumMilliseconds" : 9.831121,
+        "p50Milliseconds" : 9.687729,
+        "p95Milliseconds" : 9.805252,
+        "policy" : "named_focus",
+        "query" : [
+          "record-0500"
+        ]
+      },
+      {
+        "matches" : 10,
+        "maximumMilliseconds" : 12.809793,
+        "p50Milliseconds" : 9.676382,
+        "p95Milliseconds" : 9.813415,
+        "policy" : "native_reply_groups",
+        "query" : [
+          "record-0500"
+        ]
+      }
+    ],
+    "organizationLoadSeconds" : 1.534033474,
+    "queriesPerPolicy" : 30,
+    "sessions" : 100
+  },
+  "schema" : 1,
+  "tasks" : [
+    {
+      "label" : "Only release-spec.md is relevant; eight explicitly delivered helpers are useful secondary evidence.",
+      "layers" : [
+        {
+          "deferredObjects" : 4,
+          "directlySelectableRelevantObjects" : 1,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "baseline",
+          "precision" : 0.2,
+          "recall" : 1,
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 1,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 8,
+          "directlySelectableRelevantObjects" : 1,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "named_focus",
+          "precision" : 1,
+          "recall" : 1,
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 1,
+          "visibleGroups" : 1,
+          "visibleObjects" : 1
+        },
+        {
+          "deferredObjects" : 0,
+          "directlySelectableRelevantObjects" : 0,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "native_reply_groups",
+          "precision" : 0.1111111111111111,
+          "recall" : 1,
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 1,
+          "visibleGroups" : 1,
+          "visibleObjects" : 9
+        }
+      ],
+      "query" : [
+        "release"
+      ],
+      "task" : "name_distinguishes_deliverable"
+    },
+    {
+      "label" : "Same wanted specification; project-name matching cannot identify its task role.",
+      "layers" : [
+        {
+          "deferredObjects" : 4,
+          "directlySelectableRelevantObjects" : 0,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "baseline",
+          "precision" : 0,
+          "recall" : 0,
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 0,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 4,
+          "directlySelectableRelevantObjects" : 0,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "named_focus",
+          "precision" : 0,
+          "recall" : 0,
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 0,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 0,
+          "directlySelectableRelevantObjects" : 0,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "native_reply_groups",
+          "precision" : 0.1111111111111111,
+          "recall" : 1,
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 1,
+          "visibleGroups" : 1,
+          "visibleObjects" : 9
+        }
+      ],
+      "query" : [
+        "LaunchWorkshop"
+      ],
+      "task" : "project_context_names_every_object"
+    },
+    {
+      "label" : "Same wanted specification; relevance comes from the task label, not a lexical filename distinction.",
+      "layers" : [
+        {
+          "deferredObjects" : 4,
+          "directlySelectableRelevantObjects" : 0,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "baseline",
+          "precision" : 0,
+          "recall" : 0,
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 0,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 4,
+          "directlySelectableRelevantObjects" : 0,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "named_focus",
+          "precision" : 0,
+          "recall" : 0,
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 0,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 0,
+          "directlySelectableRelevantObjects" : 0,
+          "matchedObjects" : 9,
+          "noMatchLost" : true,
+          "policy" : "native_reply_groups",
+          "precision" : 0.1111111111111111,
+          "recall" : 1,
+          "relevantObjects" : 1,
+          "relevantVisibleObjects" : 1,
+          "visibleGroups" : 1,
+          "visibleObjects" : 9
+        }
+      ],
+      "query" : [
+        "trajectory"
+      ],
+      "task" : "request_only_query"
+    },
+    {
+      "label" : "Two wanted complementary outputs and eight construction files share one native reply. A compact group still requires member selection.",
+      "layers" : [
+        {
+          "deferredObjects" : 5,
+          "directlySelectableRelevantObjects" : 0,
+          "matchedObjects" : 10,
+          "noMatchLost" : true,
+          "policy" : "baseline",
+          "precision" : 0,
+          "recall" : 0,
+          "relevantObjects" : 2,
+          "relevantVisibleObjects" : 0,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 5,
+          "directlySelectableRelevantObjects" : 0,
+          "matchedObjects" : 10,
+          "noMatchLost" : true,
+          "policy" : "named_focus",
+          "precision" : 0,
+          "recall" : 0,
+          "relevantObjects" : 2,
+          "relevantVisibleObjects" : 0,
+          "visibleGroups" : 5,
+          "visibleObjects" : 5
+        },
+        {
+          "deferredObjects" : 0,
+          "directlySelectableRelevantObjects" : 0,
+          "matchedObjects" : 10,
+          "noMatchLost" : true,
+          "policy" : "native_reply_groups",
+          "precision" : 0.2,
+          "recall" : 1,
+          "relevantObjects" : 2,
+          "relevantVisibleObjects" : 2,
+          "visibleGroups" : 1,
+          "visibleObjects" : 10
+        }
+      ],
+      "query" : [
+        "journey"
+      ],
+      "task" : "one_reply_is_not_one_relevant_object"
+    }
+  ]
+}

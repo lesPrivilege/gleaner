@@ -28,3 +28,11 @@ Reviewed 2026-10-19. Primary sources only. These are mechanism references, not e
 | S22 | [Microsoft, RAG design and evaluation guide](https://learn.microsoft.com/en-us/azure/architecture/ai-ml/guide/rag/rag-solution-design-and-evaluation-guide), updated 2026-06-30 | Recommends representative media, uncovered queries, structure-sensitive segmentation, separate stage evaluation and end-to-end evaluation. | Separate capture, retrieval, context utility and task success. Use deterministic labeled fixtures before any optional model-assisted evaluation. |
 
 Repository readings: [AGENTS.md](../../AGENTS.md), [SPEC](../SPEC.md), [review rulings](../design/review-rulings.md), [capture](../design/capture.md), [query core](../design/query-core.md), [MCP adapter](../design/mcp-adapter.md), [architecture precedents](../design/architecture-precedents.md), [Organization](../../Sources/GleanerCore/Organization.swift), [Catalog](../../Sources/GleanerCore/Catalog.swift), [MentionExtractor](../../Sources/GleanerCore/MentionExtractor.swift), [Projects](../../Sources/GleanerCore/Projects.swift), [Registry](../../Sources/GleanerCore/Registry.swift), [search tests](../../Tests/GleanerCoreTests/SearchTests.swift), [MCP tests](../../Tests/GleanerCommandTests/MCPTests.swift). No private logs or library snapshots were used.
+
+Second-cycle primary-source mechanisms and transfer limits are indexed in
+[METHODS.md](cycle2/METHODS.md): Git state separation, W3C DCAT version links,
+Elastic collapse, SQLite read-only/isolation and W3C source/range selectors.
+[NATIVE-FAILURES.md](cycle2/NATIVE-FAILURES.md) adds pinned Swift 6.2.4 Foundation
+source, Apple's case-sensitive APFS documentation and SQLite's read-only WAL
+contract. These references support the diagnosis and alternatives; local execution
+results remain separately identified. No outside benchmark is counted as a local pass.

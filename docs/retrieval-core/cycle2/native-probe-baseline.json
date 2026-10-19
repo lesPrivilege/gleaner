@@ -1,0 +1,165 @@
+{
+  "birthtime": {
+    "after": {
+      "core_changed": 1792422453.6261196,
+      "core_creation": null,
+      "core_modified": 1792422393.624942,
+      "foundation_creation": 1792422453.6261196
+    },
+    "before": {
+      "core_changed": 1792422453.6250076,
+      "core_creation": null,
+      "core_modified": 1792422453.6250076,
+      "foundation_creation": 1792422453.6250076
+    },
+    "counterfactual_observed_with_known_birth": "appeared",
+    "observed_with_actual_metadata": "changed",
+    "requested_creation": 1792422393.6249418,
+    "set_attributes_returned_without_error": true
+  },
+  "case_and_alias": {
+    "symlink_home_skip_reason": "the home folder or a folder holding it",
+    "symlink_library_skip_reason": "the home\u2019s Library",
+    "two_spellings_have_same_identity_after_creation": false,
+    "uppercase_home_exists": false,
+    "uppercase_home_skip_reason": null,
+    "wrong_case_exists_before_creation": false,
+    "wrong_case_identity_before_creation": false
+  },
+  "execution_mode": "container",
+  "packages": {
+    "classifications": {
+      "Demo.app": true,
+      "Demo.framework": false,
+      "Notes.rtfd": true,
+      "Other.unknown": false
+    },
+    "package_metadata_unchanged_after_nested_file_rewrite": true,
+    "walk": [
+      {
+        "creation": null,
+        "is_package": true,
+        "relative_path": "Demo.app"
+      },
+      {
+        "creation": null,
+        "is_package": false,
+        "relative_path": "Demo.framework/Headers/Demo.h"
+      },
+      {
+        "creation": null,
+        "is_package": true,
+        "relative_path": "Notes.rtfd"
+      }
+    ]
+  },
+  "private_and_permissions": {
+    "can_create_in_root": false,
+    "locked_file_stat_is_nil": true,
+    "locked_hash_is_nil": true,
+    "locked_locator_kind": "file",
+    "private_exists": false,
+    "private_tmp_and_tmp_resolve_equally": false,
+    "resolved_temporary_has_private_prefix": false,
+    "temporary_directory": "/tmp",
+    "textual_private_tmp_normalization": "/tmp/synthetic-probe-file"
+  },
+  "probe_sha256": "021017a391d13e5e4819624b08823d9231914d55615e96d1355cffcc7745b522",
+  "probe_source": "eval/retrieval/cycle2/native/NativeProbe.swift",
+  "readonly_wal": {
+    "unwritable_parent": {
+      "catalog_opened": false,
+      "database_bytes_unchanged": true,
+      "error_kind": "unreadable_library",
+      "sidecars_after_close": [],
+      "sidecars_before": []
+    },
+    "writable_parent": {
+      "artifact_count": 0,
+      "catalog_opened": true,
+      "database_bytes_unchanged": true,
+      "sidecars_after_close": [
+        "-wal",
+        "-shm"
+      ],
+      "sidecars_before": [],
+      "sidecars_during_read": [
+        "-wal",
+        "-shm"
+      ],
+      "write_refused": true
+    }
+  },
+  "repository_revision": "2648094610facfd1ae1805f52a9de282043c808f",
+  "review_freshness": {
+    "ctime_changed": true,
+    "equal_for_persisted_review_state": true,
+    "reviews_written": 0,
+    "shown_creation": null,
+    "stale_review_refused_by_indexer": true,
+    "unchanged_for_immediate_approval": false
+  },
+  "started_at": 1792422453.6249418,
+  "synthetic_future_birth": {
+    "actual_membership_first": true,
+    "actual_membership_second": true,
+    "counterfactual_known_birth_first": false,
+    "first_reply": 1792424853.6249418,
+    "metadata": {
+      "core_changed": 1792422453.6261196,
+      "core_creation": null,
+      "core_modified": 1792426653.624942,
+      "foundation_creation": 1792422453.6261196
+    },
+    "requested_creation": 1792426653.6249418,
+    "second_reply": 1792428453.6249418
+  },
+  "system_paths": {
+    "/": {
+      "exists": true,
+      "resolved": "/",
+      "skip_reason": "the home folder or a folder holding it"
+    },
+    "/Applications": {
+      "exists": false,
+      "resolved": "/Applications",
+      "skip_reason": "a system folder"
+    },
+    "/Library/Caches": {
+      "exists": false,
+      "resolved": "/Library/Caches",
+      "skip_reason": "a system folder"
+    },
+    "/System/Library": {
+      "exists": false,
+      "resolved": "/System/Library",
+      "skip_reason": "a system folder"
+    },
+    "/Users": {
+      "exists": false,
+      "resolved": "/Users",
+      "skip_reason": null
+    },
+    "/private": {
+      "exists": false,
+      "resolved": "/private",
+      "skip_reason": "a system folder"
+    },
+    "/tmp": {
+      "exists": true,
+      "resolved": "/tmp",
+      "skip_reason": "the home folder or a folder holding it"
+    },
+    "/usr/local/src": {
+      "exists": true,
+      "resolved": "/usr/local/src",
+      "skip_reason": "a system folder"
+    },
+    "/var": {
+      "exists": true,
+      "resolved": "/var",
+      "skip_reason": "a system folder"
+    }
+  },
+  "uid": 1000
+}

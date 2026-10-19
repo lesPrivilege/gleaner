@@ -1,5 +1,12 @@
 # Convergence checkpoint handoff
 
+Latest: [second-cycle decision note](docs/retrieval-core/cycle2/DECISION-NOTE.md),
+[independent evaluation](docs/retrieval-core/cycle2/EVALUATION.md), and
+[failure diagnosis / exact Mac checks](docs/retrieval-core/cycle2/NATIVE-FAILURES.md).
+This cycle adds isolated executable policy experiments, not shipped behavior.
+It supports a bounded current-original / report-ID implementation proposal and
+rejects universal named-tier focus after a held-out recall regression.
+
 Start with [CONVERGENCE.md](docs/retrieval-core/CONVERGENCE.md): intent → public
 declaration → implementation matrix, superseded decisions, experiments versus
 owner rulings and recommended next questions. This checkpoint follows the later
@@ -19,7 +26,9 @@ Delivery branch: `cloud/gleaner-retrieval-core-20261019` in
 | `2d6319b` | Linux execution experiment; exact baseline portability patch |
 | `7cb1983` | Locator syntax prototype, extraction-only evidence |
 | `44624ba8ed9c189fe903710d16f0b4f534ef8c0e` | Project/outline/section/pagination prototype; exact implementation benchmark revision |
-| Branch tip | Convergence report, independent review, fixture/results preservation and this handoff |
+| `7e004a72920d0648c8d7ce38bdb4da86eab4926c` | First convergence report, independent review and evaluation preservation |
+| `3987797` | Second-cycle isolated policies, independent harness and synthetic measurements |
+| Branch tip | Second-cycle isolated experiments, held-out counterexamples, scale measurements and failure diagnosis |
 
 No main merge, tags/releases, workflow enablement, credentials or personal author
 identity changes. Author and committer are repository-local
@@ -44,7 +53,7 @@ notes, synthetic tests/results and implementation are included.
   message findings globally searchable, infer rulings, or solve cross-report
   lineage. Generation guards are not consistent snapshot pagination.
 
-## Executed evidence
+## First-checkpoint executed evidence
 
 [Evaluation README](eval/retrieval/README.md) gives commands, task labels, limitations
 and links to all machine-readable results.
@@ -70,7 +79,33 @@ and links to all machine-readable results.
 
 No Finder comparison, human-effort trial, broad-scale run, semantic-model arm,
 native UI/FSEvents/APFS validation, or release check was executed. Those are
-unperformed work, not passes or hidden blockers.
+unperformed work, not passes or hidden blockers. The second cycle adds a documented
+1,000-document concurrent-work workload; it is not broad-scale validation.
+
+## Second-cycle evidence
+
+- Independent sealed set: 19 scenarios and 101 policy observations. Explicit state
+  selection is correct for 20/20 requests; the naive newest-delivery control is
+  not main's baseline. No working-state authority is inferred.
+- Named focus improves some first pages but hides a wanted editable deck in another
+  task (first-layer recall 1 → 0). Reply grouping retains noise inside the group
+  and can add selection effort. Neither is accepted as a universal default.
+- Current-original modes preserve history and perform no registry writes in 21/21
+  checks. Hash-current meets 6/7 scenario expectations; safe in-root symlinks are
+  conservatively denied. Exact historical read behavior remains unchanged.
+- Exact report-local IDs distinguish R1 from R10. Table-only findings and global
+  body-ID search remain unresolved. Repeated sections stay scoped and ambiguous.
+- The original 18 shared Linux failures are individually classified: nine unavailable
+  birth-time mismatches, eight fixture/layout dependencies, and one false SQLite WAL
+  contract/test premise. Separate probes expose package nested-edit, `/private`
+  normalization and home-root assumptions. No failures were suppressed.
+- [Cycle reproduction and measurements](docs/retrieval-core/cycle2/README.md) define
+  workload boundaries, expanded-member versus directly actionable metrics, actual
+  original-read volume, and native limitations.
+- Final portable regression: **368 tests, 348 passed, 18 failed / 25 issues, two
+  opt-in measurement tests skipped**. Failed names exactly match baseline; both
+  measurement workloads pass separately. All CLI/MCP and added correctness tests
+  pass within the portable boundary. [Exact source/runtime record](docs/retrieval-core/cycle2/validation-results.json).
 
 ## Prototype boundaries before any adoption
 
@@ -90,11 +125,13 @@ unperformed work, not passes or hidden blockers.
 
 ## Resume and next handoff
 
-Read the convergence report, branch map and independent review before adding code.
-The next coordinated discussion should settle: searchable observation tiers;
-navigation passage versus persistent finding identity; selective first layer;
-exact-current versus exact-historical agent access; and evidence-authorized
-relationships. Then select small experiments and formal implementation priority.
+Read the second-cycle decision note alongside the convergence report, branch map
+and independent review before adding code. Next, review the bounded shared-core
+current-read and exact report-ID proposal, then test ranking against the observed
+deck/context counterexamples. Do not adopt named focus, confuse group compression
+with relevance, or turn this experimental target into a second search engine.
+Searchable observation tiers, persistent finding identity and authority relations
+still require explicit scope decisions.
 The matrix also incorporates the parent's refined requirements: five distinct
 current-state meanings, durable scoped names, explicit reset semantics, and shared
 human/agent semantics. Historical command/storage/model proposals remain options.

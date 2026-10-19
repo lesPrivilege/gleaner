@@ -1,0 +1,16 @@
+{
+  "boundary": "Whole skip-build SwiftPM/test invocation; child maximum RSS, not summed process memory or per-query memory. Debug build, no concurrent experiment runs.",
+  "child_max_rss_kib": 252540,
+  "child_system_cpu_seconds": 1.982618,
+  "child_user_cpu_seconds": 9.903767,
+  "command": [
+    "swift",
+    "test",
+    "--skip-build",
+    "--filter",
+    "DevelopmentMeasurements"
+  ],
+  "elapsed_seconds": 12.319436973999927,
+  "exit_code": 0,
+  "platform": "linux"
+}

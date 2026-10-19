@@ -1,0 +1,43 @@
+{
+  "schema": 1,
+  "checkpoint": "7e004a7",
+  "frozen_for_independent_evaluation": true,
+  "policy_sha256": {
+    "Experiments/GleanerRetrieval/FirstLayerPolicies.swift": "b3fd70fe1943aab2092b3a0462fa281a5b3ce28799b3db5724364787c649c521",
+    "Experiments/GleanerRetrieval/OriginalResolution.swift": "dc8b7f9a6c1315d52db1df22f4c2aa39f284642ae094e34867a24f54e8c50320",
+    "Experiments/GleanerRetrieval/SectionLookup.swift": "a6b686a274126ab446fc74b0fd98c62210db94b8e30d66cefd0521c94f36b837",
+    "Experiments/GleanerRetrieval/StatePolicies.swift": "541a9707daa9840fad35b945f923a3aa65819314b8bd2181c50ef3b9eb62c10e"
+  },
+  "labels_sha256": "d11c155fdcb3a42e7d8e7c20c681e4ccb7f0b93466dfe0ea0ab61f71d645aab9",
+  "harness_sha256_first_run": "8d53b66748d132b9522471bc4ebcecffa5a487ceaa405b631fdb027a4300c98d",
+  "harness_sha256": "c3601b605be21458b1a921535734d63630af96609961dfde653281b2204dd735",
+  "policies_frozen_no_later_than_utc": "2026-10-19T15:10:44Z",
+  "harness_only_change": "Export requires GLEANER_CYCLE2_RESULTS, so normal tests do not rewrite checked-in evaluation evidence. Labels and policy source unchanged.",
+  "reexport_metrics_equivalent": {
+    "state_cases": true,
+    "selection_cases": true,
+    "section_cases": true,
+    "current_cases": true
+  },
+  "post_freeze_source_correction": {
+    "path": "Experiments/GleanerRetrieval/OriginalResolution.swift",
+    "reason": "Darwin dev_t is signed 32-bit; preserve its bit pattern when converting to UInt64 instead of trapping for a valid negative device identifier. Independent code-review correction, not held-out tuning. Linux implementation behavior unchanged.",
+    "before_sha256": "dc8b7f9a6c1315d52db1df22f4c2aa39f284642ae094e34867a24f54e8c50320",
+    "after_sha256": "6bcbc9ff449b2b61dc840aaf2d60439d32f3eaa302d43743de0daacd9c772bfc",
+    "native_execution": "not performed",
+    "linux_rerun_utc": "2026-10-19T15:17:50Z",
+    "linux_rerun_seconds": 0.453
+  },
+  "final_policy_sha256": {
+    "Experiments/GleanerRetrieval/FirstLayerPolicies.swift": "b3fd70fe1943aab2092b3a0462fa281a5b3ce28799b3db5724364787c649c521",
+    "Experiments/GleanerRetrieval/OriginalResolution.swift": "6bcbc9ff449b2b61dc840aaf2d60439d32f3eaa302d43743de0daacd9c772bfc",
+    "Experiments/GleanerRetrieval/SectionLookup.swift": "a6b686a274126ab446fc74b0fd98c62210db94b8e30d66cefd0521c94f36b837",
+    "Experiments/GleanerRetrieval/StatePolicies.swift": "541a9707daa9840fad35b945f923a3aa65819314b8bd2181c50ef3b9eb62c10e"
+  },
+  "post_correction_metrics_equivalent_to_first_run": {
+    "state_cases": true,
+    "selection_cases": true,
+    "section_cases": true,
+    "current_cases": true
+  }
+}

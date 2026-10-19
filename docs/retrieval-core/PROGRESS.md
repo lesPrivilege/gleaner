@@ -43,3 +43,32 @@ were intentionally not started before contract convergence.
 Resume from HANDOFF.md and the intent/spec/implementation matrix, not the original
 build-first plan. Discuss the unresolved discovery/identity/selection/access
 semantics with the parent; retain defect fixes independently from product choices.
+
+## Second convergence cycle
+
+2026-10-19: continued on the same branch; remote main rechecked unchanged at
+2648094, old query branch still integrated. Explorer researched bounded methods;
+query and capture workers implemented isolated experimental targets; independent
+reviewer sealed 19 scenarios before evaluation. No production source/schema or
+provider format changes. Public synthetic material only.
+
+The independent set exposes the named-focus counterexample (wanted deck deferred),
+keeps state meanings distinct, records the safe-symlink access failure, and isolates
+report-heading ID precision from unsupported table/global finding discovery. The
+implementation remained frozen against held-out outcomes. A source-inspected
+Darwin signed-device conversion defect was repaired separately, then the same
+held-out cases reran; native execution is still outstanding.
+
+Root development-harness review strengthened identity/reachability checks and
+workload descriptions before final measurement. Initial calibration results are
+retained; they are superseded by the final instrumented run, not silently replaced.
+Ordinary tests cannot overwrite held-out evidence; timing workloads are opt-in.
+
+All original 18 failures now have exact assertion/probe explanations and Mac checks.
+Nine reflect unavailable birth evidence, eight fixture/layout dependencies, one
+the false unconditional-WAL-refusal premise. Additional algorithm assumptions are
+reported separately. No failures or expectations were removed.
+
+Resume with cycle2/DECISION-NOTE.md and HANDOFF.md. Preserve all prototypes as
+experiments. Review the bounded shared-core current-read / scoped report-ID proposal;
+do not adopt named focus as a default or count collapsed groups as relevance gains.
