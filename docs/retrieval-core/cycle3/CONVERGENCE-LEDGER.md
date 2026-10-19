@@ -29,6 +29,58 @@ five result before scoring. It is still not a human or Finder trial. Directory
 reads current bytes; CLI reads exact captured bytes. See [EVALUATION](EVALUATION.md)
 and [directory comparison](DIRECTORY-COMPARISON.md).
 
+## Untested assumptions and original-goal gaps
+
+The original goal—useful, actionable logical objects with less effort than Finder
+or an agent's raw library—remains unfinished. Convergence-first direction changed
+the implementation sequence, not that acceptance criterion. The questions above
+are adequately answered **within their recorded fixtures**: candidate count is not
+task success; none of the tested first-layer alternatives earns a universal-default
+recommendation; explicit states differ; and historical observations cannot all be
+discarded as a rebuildable projection. These conclusions do not complete the eight
+original architectural requirements:
+
+| Original requirement | Established boundary and remaining work |
+|---|---|
+| **1. Native evidence structure** | Existing provider/session/turn/reply anchors and capture distinctions support the tested cases. A complete role/tool-call evidence structure, message-backed findings and communicated cross-round rulings are not implemented or validated. Observation time still cannot establish authorship or acceptance. |
+| **2. Separate layers, shared core** | Actual shared-core comparison and thin adapters are established; no parallel search engine was introduced. The new selection/state/original-resolution policies remain isolated. There is no integrated useful-object workflow; the original resolver returns observations/hashes, not bounded content from that checked read. |
+| **3. Project and logical-object contexts** | Human joins, separate equal-byte contexts and selected project/worktree cases pass. Work remains path/file-based with explicit joins. Byte-bound report headings do not provide persistent finding identity, message objects or cross-report relations; the full folder/repository/worktree/provider-project/branch interaction is not exhaustively benchmarked. |
+| **4. Rebuildable projection, durable decisions, separate snapshots** | Tested rereads and evidence-preserving reconstruction retain decisions. No production rebuild/migration plan or crash-recovery validation for these prototypes was delivered; nonempty folder history, arbitrary join/move identity and cursor continuity remain unproven. Snapshot retention/lifecycle policy was unchanged. The missing extractor-version/migration decision blocks adopting the extraction prototype on real libraries. |
+| **5. Health versus absence** | Independent partial-index cases distinguish problems from an empty result. End-to-end behavior under every stale, unavailable or changing source is not validated, nor is a concise human presentation of completeness. A negative experimental selection is not proof that a useful object is absent. |
+| **6. Broad discovery, selective first layer** | Useful intermediates and multiple needed outputs remain explicit labels. First-layer misses persist, and unkept observations/new current files remain outside shared search. No accepted discovery tier or selection default closes those misses. Duplicate metrics count repeated Work rows; they do not prove semantic-copy or obsolete-variant resolution. |
+| **7. Thin, stable, bounded CLI/MCP** | Current main already has shared adapters; progressive prototype parity was exercised. New commands and the 1,000-result cap remain provisional. Selected limits do not bound raw/eligible/deferred/unmatched arrays, representations or overview; these need bounded payloads and representation pagination. Generation-change behavior must be explicit, and current guards are not snapshot pagination. Report navigation needs heading-count and single-parse bounds. Protocol research does not establish newer-version support than the installed SDK negotiates. |
+| **8. Reuse and delivery boundary** | Actual main/old-query ancestry and existing CLI/MCP were verified; no blind merge, main merge or release action was needed. This requirement is answered at the checkpoint. It does not confer product or release acceptance on the prototypes. |
+
+Before adoption, declare the authorized discovery universe and label useful
+unkept intermediates, unindexed current files and approved alternative representations
+separately. Recall restricted to admitted Works cannot stand in for recall over
+that intended universe. An approved result needs the selected hash and its review
+provenance; recovering a different representation outside the approved constraint
+does not satisfy that request.
+
+The [first benchmark](../../../eval/retrieval/README.md),
+[cycle 2 measurements](../cycle2/README.md) and [independent evaluation](EVALUATION.md)
+provide actual baseline comparisons, independently authored domains and selected
+metamorphic checks. They are not a complete cross-provider/path/worktree/event-order
+matrix or a generalization estimate. The first capture-count gain is dominated by
+proposed range syntax; the historical 1/56 frozen-index reference remains no fresh
+algorithm-recall measurement. Cycle 2's 1,000-document workload does not measure
+cycle 3 cost; broad-scale RSS, pathological heading workloads and cold-source
+behavior remain unmeasured. No BM25/semantic arm was executed, so neither semantic
+superiority nor deterministic sufficiency for all known misses is established.
+
+Known-name navigation bounds and four equal-input directory tasks do not establish
+human task success, filtering time or Finder superiority. A native physical-path
+test pass does not resolve shortened core aliases or safe in-root symlinks, and
+cannot substitute for exported relevance measurements or the additional native
+diagnostics. Opus must choose the discovery/representation interaction described
+below. Provenance truth, durable-state preservation, original-byte correctness,
+migration safety and bounded public access remain engineering obligations, not
+preference questions. No further broad ranking cycle is implied by listing these
+gaps; a next build needs one concrete interaction and its acceptance checks.
+[ENGINEERING-GATES.md](ENGINEERING-GATES.md) spells out focused contract examples
+for the five concrete adoption gates; these are specifications, not extra passes.
+
 ## Requires Opus product judgment
 
 1. **Default interaction:** show actionable objects immediately with a visible
@@ -80,4 +132,6 @@ choose a concrete discovery/representation interaction and its success criterion
 then implement that through shared core and thin adapters. Independently review
 the existing current-original and scoped report-ID proposals, their migration and
 pagination contracts, and native receipts before adoption. Do not merge experiments
-or expand schema merely because their tests execute.
+or expand schema merely because their tests execute. The
+[bounded proposal](BOUNDED-PROPOSAL.md) defines two independently reviewable slices
+and their required exit checks without changing a default.
