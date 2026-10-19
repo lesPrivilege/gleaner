@@ -30,36 +30,63 @@ enum Wording {
         artifact.deliveries.first { $0.number == n }.map(number) ?? "\(n)"
     }
 
+    /// A revision as a label names it: "Delivery 2", or "Kept file" for one the person kept from
+    /// what a session was observed doing, which no reply delivered (docs/design/review.md). Either
+    /// keeps "first seen later".
+    static func revision(_ delivery: Delivery) -> String {
+        guard delivery.kept != nil else { return "Delivery \(number(delivery))" }
+        return "Kept file" + (delivery.capture?.provenance == .firstSeenAfterDelivery ? " (first seen later)" : "")
+    }
+
+    /// A revision inside a sentence: "delivery 2", or "the kept file".
+    static func revisionInText(_ delivery: Delivery) -> String {
+        delivery.kept != nil ? "the " + revision(delivery).lowercased() : "delivery \(number(delivery))"
+    }
+
+    /// Revision `n` of `artifact` inside a sentence, as `revisionInText` names it.
+    static func revision(_ n: Int, in artifact: Artifact) -> String {
+        artifact.deliveries.first { $0.number == n }.map(revisionInText) ?? "delivery \(n)"
+    }
+
     /// "On disk", from what the check `now` found.
     static func onDisk(_ status: OnDisk, in artifact: Artifact, now: FileObservation) -> Statement {
         let when = "Checked \(now.checkedAt.formatted(.relative(presentation: .named)))."
         let latest = artifact.latest
+        // Revision `n` where the sentence says "first seen later" itself, and what it came by.
+        func plain(_ n: Int) -> String { kept(n) ? "the kept file" : "delivery \(n)" }
+        func kept(_ n: Int) -> Bool { artifact.deliveries.first { $0.number == n }?.kept != nil }
+        func after(_ n: Int) -> String { kept(n) ? "after the write observed" : "after the delivery" }
         switch status {
         case .same(let n):
-            return Statement(mark: .solid, title: "Same as delivery \(number(n, in: artifact))", detail: "The hash matches. \(when)")
+            return Statement(mark: .solid, title: "Same as \(revision(n, in: artifact))", detail: "The hash matches. \(when)")
         case .unchangedSinceFirstSeen(let seen):
             return Statement(mark: .hollow, title: "As first seen",
-                             detail: "Unchanged since Gleaner first saw it on \(date(seen)), after the delivery. \(when)")
+                             detail: "Unchanged since Gleaner first saw it on \(date(seen)), \(after(latest.number)). \(when)")
         case .rolledBack(let k, let latest, nil):
-            return Statement(mark: .attention, title: "Back to delivery \(k)",
-                             detail: "Not the latest, delivery \(number(latest, in: artifact)). \(when)")
+            return Statement(mark: .attention, title: "Back to \(plain(k))",
+                             detail: "Not the latest, \(revision(latest, in: artifact)). \(when)")
         case .rolledBack(let k, let latest, let seen?):
-            return Statement(mark: .attention, title: "Back to delivery \(k) as first seen",
-                             detail: "Matches what Gleaner first saw for delivery \(k) on \(date(seen)), after that delivery. Not the latest, delivery \(number(latest, in: artifact)). \(when)")
+            return Statement(mark: .attention, title: "Back to \(plain(k)) as first seen",
+                             detail: "Matches what Gleaner first saw for \(plain(k)) on \(date(seen)), \(kept(k) ? "after the write observed" : "after that delivery"). Not the latest, \(revision(latest, in: artifact)). \(when)")
+        case .changed(let n) where now.state.kind == .file && latest.capture?.provenance == .listed && kept(n):
+            return Statement(mark: .attention, title: "Can’t verify",
+                             detail: "You kept this file as a session left it, and Gleaner never read it. It isn’t as observed now: its size, dates or identity differ, so Gleaner can’t tell whether it is the file you kept. \(when)")
         case .changed(let n) where now.state.kind == .file && latest.capture?.provenance == .listed:
             return Statement(mark: .attention, title: "Can’t verify",
                              detail: "Gleaner listed delivery \(n) with its folder and never read it, and this file isn’t as listed: its size, dates or identity differ, so Gleaner can’t tell whether it is that delivery. \(when)")
         case .changed(let n) where now.state.kind == .file && latest.sha256 == nil && latest.capture?.isDirectory != true:
             return Statement(mark: .attention, title: "Can’t verify",
-                             detail: "Gleaner never read delivery \(n), so it can’t tell whether this file is it. \(when)")
+                             detail: "Gleaner never read \(plain(n)), so it can’t tell whether this file is it. \(when)")
         case .changed(let n):
-            let what = now.state.kind == .directory ? "A folder is at this path now." : "Not among the deliveries Gleaner found."
-            return Statement(mark: .attention, title: "Changed", detail: "\(what) Changed since delivery \(number(n, in: artifact)). \(when)")
+            let what = now.state.kind == .directory ? "A folder is at this path now."
+                : artifact.deliveries.allSatisfy({ $0.kept != nil }) ? "Not the bytes Gleaner read of the file you kept."
+                : "Not among the deliveries Gleaner found."
+            return Statement(mark: .attention, title: "Changed", detail: "\(what) Changed since \(revision(n, in: artifact)). \(when)")
         case .missingWithSavedCopy(let n, nil):
-            return Statement(mark: .dashed, title: "Not on disk", detail: "Gleaner has a saved copy of delivery \(n). \(when)")
+            return Statement(mark: .dashed, title: "Not on disk", detail: "Gleaner has a saved copy of \(plain(n)). \(when)")
         case .missingWithSavedCopy(let n, let seen?):
             return Statement(mark: .dashed, title: "Not on disk",
-                             detail: "Gleaner has a saved copy of delivery \(n), first seen \(date(seen)), after the delivery. \(when)")
+                             detail: "Gleaner has a saved copy of \(plain(n)), first seen \(date(seen)), \(after(n)). \(when)")
         case .missingInGitHistory:
             return Statement(mark: .dashed, title: "Not on disk", detail: "Git still has a file at this path. \(when)")
         case .lost:
@@ -94,76 +121,89 @@ enum Wording {
     /// save that failed; or a copy it saved that its store no longer holds. `large` says the
     /// delivery was over the save limit.
     static func noCopy(_ delivery: Delivery, large: Bool) -> String {
-        let n = number(delivery)
-        if delivery.capture?.provenance == .listed { return "Gleaner listed delivery \(n) with its folder and hasn’t read it." }
+        let r = revisionInText(delivery), R = revision(delivery)
+        if delivery.capture?.provenance == .listed {
+            return delivery.kept != nil ? "You kept the file as a session left it, and Gleaner hasn’t read it."
+                : "Gleaner listed \(r) with its folder and hasn’t read it."
+        }
         switch delivery.capture?.kind {
         case nil:
-            return "Gleaner has no record of delivery \(n)’s bytes."
+            return "Gleaner has no record of \(r)’s bytes."
         case .directory?:
-            return "Delivery \(n) was a folder. Folders aren’t versioned."
+            return "\(R) was a folder. Folders aren’t versioned."
         case .special?:
-            return "Gleaner never read delivery \(n): it wasn’t a regular file then."
+            return "Gleaner never read \(r): it wasn’t a regular file then."
         case .unreadable?:
-            return "Gleaner never read delivery \(n): it couldn’t be read then."
+            return "Gleaner never read \(r): it couldn’t be read then."
         case .missing?:
-            return "Gleaner never saw delivery \(n): nothing was at this path then."
+            return "Gleaner never saw \(r): nothing was at this path then."
         case .file? where delivery.capture?.savedAt != nil:
-            return "Gleaner’s saved copy of delivery \(n) is no longer in its store."
+            return "Gleaner’s saved copy of \(r) is no longer in its store."
         case .file?:
-            return large ? "Delivery \(n) was too large to save without asking." : "Saving delivery \(n) failed when Gleaner read it."
+            return large ? "\(R) was too large to save without asking." : "Saving \(r) failed when Gleaner read it."
         }
     }
 
     /// What a drag of `delivery` hands over, from what the check `now` found. When there is
     /// nothing, it says why, and offers only what the panel can do.
     static func handoff(_ plan: Handoff, delivery: Delivery, in artifact: Artifact, now: LocatorState, large: Bool) -> Statement {
-        let n = number(delivery)
+        let r = revisionInText(delivery), R = revision(delivery)
         // "No longer" only for bytes Gleaner had: not for a delivery it never read, nor for a file
         // it can't read now.
-        let unavailable = now.kind == .unreadable ? "Delivery \(n) isn’t available now"
-            : delivery.sha256 == nil && delivery.capture?.isDirectory != true ? "Delivery \(n) isn’t available"
-            : "Delivery \(n) is no longer available"
+        let unavailable = now.kind == .unreadable ? "\(R) isn’t available now"
+            : delivery.sha256 == nil && delivery.capture?.isDirectory != true ? "\(R) isn’t available"
+            : "\(R) is no longer available"
         switch plan {
         case .ready(_, .original, nil):
             return Statement(mark: .solid, title: "Verified",
-                             detail: "The file on disk is delivery \(n). Gleaner hands over a copy it checked, so later edits can’t slip in.")
+                             detail: "The file on disk is \(r). Gleaner hands over a copy it checked, so later edits can’t slip in.")
         case .ready(_, .savedCopy, nil):
             return Statement(mark: .solid, title: "Verified",
-                             detail: "\(atPath(now, delivery: delivery)) Gleaner hands over its saved copy of delivery \(n), checked by hash.")
+                             detail: "\(atPath(now, delivery: delivery)) Gleaner hands over its saved copy of \(r), checked by hash.")
+        case .ready(_, _, let seen?) where delivery.kept != nil:
+            return Statement(mark: .hollow, title: "First seen later",
+                             detail: "Gleaner first saw these bytes on \(date(seen)), after the write observed. They may differ from the file as the session left it.")
         case .ready(_, _, let seen?):
             return Statement(mark: .hollow, title: "First seen later",
                              detail: "Gleaner first saw these bytes on \(date(seen)), after the delivery. They may differ from what was delivered.")
         case .unavailable(let k?, _):
-            let firstSeen = artifact.deliveries.first { $0.number == k }?.capture?.provenance == .firstSeenAfterDelivery
-            let again = firstSeen ? "matches what Gleaner first saw for delivery \(k)" : "is delivery \(number(k, in: artifact)) again"
+            let other = artifact.deliveries.first { $0.number == k }
+            let firstSeen = other?.capture?.provenance == .firstSeenAfterDelivery
+            let again = firstSeen ? "matches what Gleaner first saw for \(other?.kept != nil ? "the kept file" : "delivery \(k)")"
+                : "is \(revision(k, in: artifact)) again"
             return Statement(mark: .attention, title: unavailable,
                              detail: "The file on disk \(again). \(noCopy(delivery, large: large))")
         case .unavailable(nil, let current):
-            let offer = current == nil ? "" : " You can hand off the current file instead; it isn’t a delivery Gleaner found."
+            let found = artifact.deliveries.allSatisfy { $0.kept != nil } ? "the file you kept" : "a delivery Gleaner found"
+            let offer = current == nil ? "" : " You can hand off the current file instead; it isn’t \(found)."
             return Statement(mark: .attention, title: unavailable,
                              detail: "\(atPath(now, delivery: delivery)) \(noCopy(delivery, large: large))" + offer)
         case .restoreFromGit:
             return Statement(mark: .dashed, title: "Restore from git first",
-                             detail: "Git has a file at this path, but Gleaner can’t confirm it’s this delivery, and never writes to your repository.")
+                             detail: "Git has a file at this path, but Gleaner can’t confirm it’s \(delivery.kept != nil ? "the file you kept" : "this delivery"), and never writes to your repository.")
         case .lost:
             // Git isn't asked about a folder: nothing in it shows which folder was delivered.
             let git = delivery.capture?.isDirectory == true ? ""
                 : now.git == .notInRepo ? ", and it isn’t in a git repository" : ", and git has nothing at this path"
-            return Statement(mark: .cross, title: "Delivery \(n) is lost",
+            return Statement(mark: .cross, title: "\(R) is lost",
                              detail: "It isn’t on disk\(git). \(noCopy(delivery, large: large))")
         case .folder:
             return Statement(mark: .na, title: "Folder", detail: "Dragging hands over the folder as it is now. Folders aren’t verified.")
         }
     }
 
-    static func provenance(_ capture: Capture?) -> (Mark, String) {
+    /// A revision's bytes, as recorded: seen when it came, first seen later, never read, or listed
+    /// and not read yet. A file the person `kept` came as a session left it, not with a reply.
+    static func provenance(_ capture: Capture?, kept: Bool = false) -> (Mark, String) {
         guard let capture else { return (.dashed, "Not captured") }
         switch (capture.provenance, capture.kind) {
-        case (.atDelivery, _): return (.solid, "Seen at delivery")
-        case (.firstSeenAfterDelivery, _): return (.hollow, "First seen \(date(capture.observedAt)), after delivery")
+        case (.atDelivery, _): return (.solid, kept ? "Seen as observed" : "Seen at delivery")
+        case (.firstSeenAfterDelivery, _):
+            return (.hollow, "First seen \(date(capture.observedAt)), after " + (kept ? "the write observed" : "delivery"))
         case (.neverObserved, .special): return (.dashed, "Never read: not a regular file")
         case (.neverObserved, .unreadable): return (.dashed, "Never read: couldn’t be read")
         case (.neverObserved, _): return (.dashed, "Never seen: nothing at this path")
+        case (.listed, _) where kept: return (.dashed, "Kept as observed, not read yet")
         case (.listed, _): return (.dashed, "Listed with its folder \(date(capture.observedAt)), not read yet")
         }
     }
@@ -173,7 +213,7 @@ enum Wording {
     static func storage(_ delivery: Delivery, hasSaved: Bool, large: Bool, now: LocatorState?) -> (Mark, String) {
         guard let capture = delivery.capture else { return (.dashed, "Not saved: not captured") }
         if capture.isDirectory { return (.na, "Folder: not versioned") }
-        if capture.provenance == .listed { return (.dashed, "Not saved: listed, not read yet") }
+        if capture.provenance == .listed { return (.dashed, delivery.kept != nil ? "Not saved: kept, not read yet" : "Not saved: listed, not read yet") }
         guard let sha = capture.sha256 else { return (.cross, "Not saved: never read") }
         let size = capture.size.map { ByteCountFormatter.string(fromByteCount: $0, countStyle: .file) } ?? ""
         if hasSaved {
@@ -197,12 +237,12 @@ enum Wording {
     }
 
     static func saveFailed(_ error: Error, delivery: Delivery) -> String {
-        let n = number(delivery)
+        let r = revisionInText(delivery)
         return switch error {
         case ContentStore.Failure.changed:
-            "The file changed before Gleaner could save it; it no longer holds delivery \(n)."
+            "The file changed before Gleaner could save it; it no longer holds \(r)."
         case ContentStore.Failure.unavailable:
-            "Gleaner couldn’t read delivery \(n)’s bytes at this path."
+            "Gleaner couldn’t read \(r)’s bytes at this path."
         default:
             "Couldn’t save a copy: \(error.localizedDescription)"
         }
@@ -210,14 +250,14 @@ enum Wording {
 
     /// A version row's mark and words: the mark alone when Gleaner saw the bytes at delivery,
     /// which is the rule; words for the exception.
-    static func provenanceShort(_ capture: Capture?) -> (Mark, String) {
+    static func provenanceShort(_ capture: Capture?, kept: Bool = false) -> (Mark, String) {
         switch (capture?.provenance, capture?.kind) {
-        case (.atDelivery?, _): (.solid, "Seen at delivery")
+        case (.atDelivery?, _): (.solid, kept ? "Seen as observed" : "Seen at delivery")
         case (.firstSeenAfterDelivery?, _): (.hollow, "First seen later")
         case (.neverObserved?, .special?): (.dashed, "Never read")
         case (.neverObserved?, .unreadable?): (.dashed, "Never read")
         case (.neverObserved?, _), (nil, _): (.dashed, "Never seen")
-        case (.listed?, _): (.dashed, "Listed, not read")
+        case (.listed?, _): (.dashed, kept ? "Kept, not read" : "Listed, not read")
         }
     }
 
@@ -230,11 +270,12 @@ enum Wording {
     /// nothing else needs a look, and otherwise stays with the number.
     static func row(_ delivery: Delivery, latest: Int, now: LocatorState.Kind?, changed: Bool, available: Bool)
         -> (mark: (Mark, String)?, number: String?) {
-        let number = delivery.number != latest ? "Delivery \(delivery.number) of \(latest)" : nil
+        let name = delivery.kept != nil ? "Kept file" : "Delivery \(delivery.number)"
+        let number = delivery.number != latest ? name + " of \(latest)" : nil
         let attention: (Mark, String)? = available ? fileState(now: now, changed: changed) : (.attention, "Unavailable · " + unavailable(delivery, now: now))
         guard delivery.capture?.provenance == .firstSeenAfterDelivery else { return (attention, number) }
         guard let attention else { return ((.hollow, "First seen later"), number) }
-        return (attention, (number ?? "Delivery \(delivery.number)") + " · first seen later")
+        return (attention, (number ?? name) + " · first seen later")
     }
 
     /// What a row says of the file itself, whichever delivery it names: gone, or holding bytes no
@@ -279,24 +320,26 @@ enum Wording {
 
     /// A delivery as one end of a comparison, keeping "first seen later" (SPEC §6).
     static func compareTitle(_ delivery: Delivery) -> String {
-        "Delivery \(number(delivery))"
+        revision(delivery)
     }
 
     /// The version the drag tile carries, as its caption and its accessible name say it: a
     /// delivery Gleaner vouches for with these bytes, this delivery, or the current file the
     /// person chose to hand over instead. `staged` is nil until a copy is ready.
     static func tileVersion(staged sha: String?, plan: Handoff, delivery: Delivery, in artifact: Artifact) -> String {
-        guard let sha else { return plan == .folder ? "folder as it is now" : "delivery \(number(delivery))" }
-        if let trusted = artifact.deliveries.first(where: { $0.sha256 == sha && $0.isTrusted }) { return "delivery \(trusted.number)" }
-        return sha == delivery.sha256 ? "delivery \(number(delivery))" : "current file · not a found delivery"
+        guard let sha else { return plan == .folder ? "folder as it is now" : revisionInText(delivery) }
+        if let trusted = artifact.deliveries.first(where: { $0.sha256 == sha && $0.isTrusted }) {
+            return trusted.kept != nil ? "the kept file" : "delivery \(trusted.number)"
+        }
+        return sha == delivery.sha256 ? revisionInText(delivery) : "current file · not a found delivery"
     }
 
     /// A line of the versions list, as VoiceOver reads it. `sameAs` is an earlier delivery with
     /// the same bytes.
     static func deliveryLine(_ delivery: Delivery, sameAs: Delivery?) -> String {
-        ["Delivery \(delivery.number)", date(delivery.deliveredAt), provider(delivery.provider),
-         provenanceShort(delivery.capture).1.lowercased(),
-         sameAs.map { "same content as delivery \(number($0))" }].compactMap { $0 }.joined(separator: ", ")
+        [delivery.kept != nil ? "Kept file" : "Delivery \(delivery.number)", date(delivery.deliveredAt), provider(delivery.provider),
+         provenanceShort(delivery.capture, kept: delivery.kept != nil).1.lowercased(),
+         sameAs.map { "same content as \(revisionInText($0))" }].compactMap { $0 }.joined(separator: ", ")
     }
 
     /// Names the bytes on screen and in the drag tile, so the preview never speaks for another
@@ -307,11 +350,11 @@ enum Wording {
             return "Folder as it is now"
         case .ready(_, let from, let seen)?:
             let source = from == .original ? "file on disk" : "saved copy"
-            return "Delivery \(delivery.number) · \(source)" + (seen == nil ? "" : " · first seen later")
+            return (delivery.kept != nil ? "Kept file" : "Delivery \(delivery.number)") + " · \(source)" + (seen == nil ? "" : " · first seen later")
         case .unavailable(_, let current?)? where sha == current:
             return "Current file · not a found delivery"
         default:
-            return "Delivery \(number(delivery))"
+            return revision(delivery)
         }
     }
 
@@ -526,6 +569,135 @@ enum Wording {
         case Review.Failure.changedWhileRead: "\(name) changed while Gleaner read it. Look at it again, then decide."
         default: "Couldn’t record that for \(name): \(error.localizedDescription)"
         }
+    }
+
+    /// A verdict or a mark by its name, as its state says it.
+    static func reviewName(_ kind: Review.Kind) -> String {
+        switch kind {
+        case .approved: "Approved"
+        case .changesRequested: "Changes requested"
+        case .rejected: "Rejected"
+        case .published: "Published"
+        }
+    }
+
+    /// A verdict's or a mark's own mark: the check, the open arrow, the crossed circle, the tray.
+    static func reviewMark(_ kind: Review.Kind) -> Mark {
+        switch kind {
+        case .approved: .done
+        case .changesRequested: .revise
+        case .rejected: .declined
+        case .published: .published
+        }
+    }
+
+    /// A verdict or a mark as made: when, its note or place, and the bytes it binds to, by hash,
+    /// never the path.
+    static func made(_ review: Review) -> String {
+        let note = review.note.map { review.kind == .published ? ", at \($0)" : ": “\($0)”" } ?? ""
+        return "\(reviewName(review.kind)) \(date(review.madeAt))\(note). Made on the bytes with hash \(review.sha256.prefix(8))."
+    }
+
+    /// The Reviewed state of a work's current file (docs/design/review.md, The four states): the
+    /// newest verdict on these bytes, or why none holds. In a collection, a file with none waits on
+    /// the person, in the one accent. "Changed" only once the file was read; a file Gleaner can't
+    /// read keeps its verdict as made, and is never called gone.
+    static func verdict(_ standing: Standing, inUnit: Bool) -> Statement {
+        switch standing {
+        case .none:
+            inUnit ? Statement(mark: .awaiting, title: "To review", detail: "No verdict on these bytes yet. It waits in its collection.")
+                : Statement(mark: .dashed, title: "Not reviewed", detail: "No verdict on any of its bytes.")
+        case .current(let review):
+            Statement(mark: reviewMark(review.kind), title: reviewName(review.kind), detail: made(review))
+        case .mayHaveChanged(let review):
+            Statement(mark: .attention, title: "May have changed since review",
+                      detail: "\(made(review)) The file’s size or dates differ from then, and Gleaner hasn’t read it since, so it can’t tell whether these are the bytes judged. Selecting it reads it.")
+        case .changed(let review):
+            Statement(mark: .attention, title: "Changed since review",
+                      detail: "\(made(review)) The file holds other bytes now, and no verdict was made on them.")
+        case .unavailable(let review):
+            Statement(mark: reviewMark(review.kind), title: reviewName(review.kind),
+                      detail: "\(made(review)) No file Gleaner can read is at its path now; the verdict stands as made.")
+        }
+    }
+
+    /// The Published state of a work's current file, read as verdicts are, on its own: published
+    /// says nothing of a verdict, nor a verdict of publishing.
+    static func publishedState(_ standing: Standing) -> Statement {
+        switch standing {
+        case .none:
+            Statement(mark: .dashed, title: "Not published", detail: "You haven’t marked these bytes published.")
+        case .current(let mark):
+            Statement(mark: .published, title: "Published", detail: made(mark))
+        case .mayHaveChanged(let mark):
+            Statement(mark: .attention, title: "May have changed since published",
+                      detail: "\(made(mark)) The file’s size or dates differ from then, and Gleaner hasn’t read it since, so it can’t tell whether these are the bytes marked.")
+        case .changed(let mark):
+            Statement(mark: .attention, title: "Changed since published",
+                      detail: "\(made(mark)) The file holds other bytes now; they aren’t marked published.")
+        case .unavailable(let mark):
+            Statement(mark: .published, title: "Published",
+                      detail: "\(made(mark)) No file Gleaner can read is at its path now; the mark stands as made.")
+        }
+    }
+
+    /// What waits on the person, on a work's row: nothing when nothing does.
+    static func waiting(_ standing: Standing, inUnit: Bool) -> (Mark, String)? {
+        switch standing {
+        case .none: inUnit ? (.awaiting, "To review") : nil
+        case .mayHaveChanged: (.attention, "May have changed since review")
+        case .changed: (.attention, "Changed since review")
+        case .current, .unavailable: nil
+        }
+    }
+
+    /// The Generated state of a work's current file: how it came, as recorded. A kept file came as
+    /// a session left it, by the person's decision, never by a reply.
+    static func generated(_ delivery: Delivery) -> (title: String, detail: String) {
+        if let kept = delivery.kept {
+            let during = session(delivery.sessionTitle)
+            return ("Kept by you, observed during \(during)",
+                    "You kept it \(date(kept.keptAt)). It \(kept.observed == .appeared ? "appeared" : "changed") while \(during) was working. No reply handed it over.")
+        }
+        if let member = delivery.member {
+            return ("Handed over in \(folderName(member))",
+                    "\(provider(delivery.provider))’s reply named the folder \(folderName(member)) \(date(delivery.deliveredAt)), and the file was in it.")
+        }
+        return ("Named in a reply", "\(provider(delivery.provider))’s reply named it \(date(delivery.deliveredAt)).")
+    }
+
+    /// The On this Mac state of a work's current file, as the library knows it without reading:
+    /// there, changed, gone, unreadable, a folder or not a regular file, each said as itself (A20).
+    /// Unreadable is never said as gone or changed.
+    static func onThisMac(_ now: LocatorState.Kind?, changed: Bool) -> Statement {
+        switch now {
+        case .missing?: Statement(mark: .dashed, title: "Not on disk", detail: "Nothing is at its path on this Mac now.")
+        case .unreadable?: Statement(mark: .failed, title: "Can’t read", detail: "Something is at its path, but Gleaner can’t read it.")
+        case .special?: Statement(mark: .attention, title: "Not a file", detail: "What is at its path isn’t a regular file.")
+        case .directory?: Statement(mark: .na, title: "Folder", detail: "A folder, as it is now, with no bytes of its own to judge.")
+        case .file?, nil:
+            changed ? Statement(mark: .attention, title: "Changed", detail: "The file on disk holds bytes no revision had.")
+                : Statement(mark: .done, title: "On this Mac", detail: "The file is at its path.")
+        }
+    }
+
+    /// A collection as a list names it: inside another, after it ("Season › Part 2").
+    static func unitPath(_ unit: WorkUnit, in organization: Organization) -> String {
+        unit.parent.map { organization.unitName($0) + " › " + unit.name } ?? unit.name
+    }
+
+    /// What a collection holds, in one line: the collections inside it, then its own works.
+    static func unitCounts(works: Int, units: Int) -> String {
+        [units > 0 ? count(units, "collection") : nil, count(works, "work")].compactMap { $0 }.joined(separator: " · ")
+    }
+
+    /// How many works wait on the person: "3 to review".
+    static func toReview(_ n: Int) -> String { "\(n) to review" }
+
+    /// A line of a work's review history, as VoiceOver reads it: what, when, which file and bytes.
+    static func historyLine(_ review: Review, file: String?) -> String {
+        [reviewName(review.kind), date(review.madeAt), file, "hash \(review.sha256.prefix(8))", review.note]
+            .compactMap { $0 }.joined(separator: ", ")
     }
 
     // MARK: Observations
