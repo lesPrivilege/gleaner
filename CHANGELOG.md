@@ -69,6 +69,14 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - A project's outline lists a folder's files under their folders, a crowded folder's files of one kind folded into one row; files a reply named never fold. Search finds a folder's file by its name and folder; the reply's words find the folder. A file observed during a conversation and handed over in a folder keeps its observation beside it, and corrections apply to it as to any work.
 - Folders already in a library are listed on the next read; no log is read again. The library loads off the main thread at launch, and a file's first read updates that file alone, in the list and outline already shown: with 20,000 files, a first selection no longer stalls the window for over a second.
 
+### Review, in the model
+
+- Collections (work units): made in a project, one inside another one level deep, each work in at most one. Renaming, deleting, adding a work and taking one out are corrections, kept through rereads and relaunches, listed in Sources → Corrections and undone one by one, each back to the decision before it. Deleting a collection deletes those inside it and returns their works to the project; undone, they are back. A work added from another project moves with it.
+- Keep: a file observed during a conversation becomes a work whose one revision is kept by you, observed during it, listed by its size and dates and read when you act on it. Adding an observed file to a collection keeps it. Undone, it is a candidate again.
+- Verdicts (approved, changes requested, rejected, with a note) and published marks (with where) are made on the bytes there then: making one reads the file and records its hash with its size, dates and inode. A file touched, rewritten or replaced since may have changed until it is read, and then has changed, or hasn't; bytes that match a verdict's hash keep it, at any revision; a file gone keeps its verdict as made. A file changed since you were shown it isn't judged. Every verdict stays in the history, each can be undone, and Undo All Corrections leaves them. No state completes another.
+- To Review holds the works in collections with no verdict on their bytes and the works anywhere whose verdict is on other bytes, by collection. It and each work's states come from sizes and dates, never by reading bytes.
+- The window lists none of this yet.
+
 ### Keep data local
 
 - Keeps redacted excerpts, not whole logs, and never writes to project folders. Redacts before cutting an excerpt to length, so a secret at its edge is still caught. Makes no model calls or network requests of its own.
@@ -81,5 +89,5 @@ The first release: a macOS 15 app that lists the files Claude Code and Codex nam
 - A file over 64 MB that you didn't save is gone with its worktree, unless git history has it.
 - A git clean filter (Git LFS, for one) may still run when git compares a file.
 - The admission rule is provisional.
-- Files observed during a conversation are recorded but not yet listed in the window. A stretch ends at its last reply, so work after a final reply, an interrupted turn, and a background job still running after the last reply to its request fall outside it. A file renamed, or given new permissions, after its stretch is left out with the copies.
+- Files observed during a conversation are recorded but not yet listed in the window; neither are collections, kept files, verdicts and published marks, which the model holds. A stretch ends at its last reply, so work after a final reply, an interrupted turn, and a background job still running after the last reply to its request fall outside it. A file renamed, or given new permissions, after its stretch is left out with the copies.
 - No app icon; the release zip is ad-hoc signed, not notarized.

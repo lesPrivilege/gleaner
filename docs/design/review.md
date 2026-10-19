@@ -124,3 +124,26 @@ A file nobody put in a collection and nobody reviewed is never queued. Otherwise
 2. **Window.**
    - The sidebar, a collection's list and review page, the Observed section, a work's Review section, and To Review.
    - Wording tests, and a tour that renders a synthetic series.
+
+## The core, as built
+
+Built on `feat/review`, 2026-10-19. [SPEC §5.5](../SPEC.md) is the contract. Where it settles what this chapter left open, or departs from it:
+
+- **Storage.** A unit is a row of `units`: its key, project, parent, name as made, and when. Everything after that is a correction: adding a work, taking it out, renaming, deleting, and keeping. They are appended, so undoing one returns to the decision before it (A19). A work's unit is the latest of these for any of its files. Keeping is keyed by the file and the session's log.
+- **Making a unit isn't listed.** Undoing New Collection removes the unit with every decision naming it, as if never made. Rename, Delete, Add and Remove are each listed under Sources › Corrections. Decisions made together, like keeping an observed file and adding it to a unit, are one line and one Undo.
+- **A unit inside a deleted one** is deleted with it, as Finder and Mail delete what a folder holds; its works go back to the project, and Undo brings both back.
+- **A work in a unit of another project.** A unit belongs to one project, so adding a work shown elsewhere also moves it there, as one decision, and the work says it was moved. A move to another project takes it out of the unit, and undoing the move puts it back. A work's unit applies only in the work's project, so a work is never listed in one project and in a unit of another.
+- **A kept revision** is dated by the write the observation recorded, so it sits among the file's other revisions in time. Its first read completes it as a listed member's does, measured against that write: within ten minutes, unchanged since, `at_delivery`; otherwise first seen later. The read is stored with the observation, so undoing a keep loses nothing and keeping again finds it. An observed package is kept as a folder and never read.
+- **Binding records the inode too,** beside the hash, the size and both dates, as a listed file is matched (§5.4). A copy that keeps the size and the dates but replaces the file is then said to have possibly changed, rather than taken for the bytes judged. Dates are compared as stored, in seconds since 1970.
+- **Not as shown (A17).** A verdict or mark can carry the file as the person was shown it, by size, dates and inode. If the file isn't so when the verdict is made, nothing is recorded and the window says to look again. A file that changes while it is read is refused the same way.
+- **To Review includes "may have changed".** Without reading, Gleaner can't say the bytes differ, only that the file isn't as it was when judged; that waits on the person until a selection reads it. A file gone that was never judged stays queued in its unit, said as gone. One gone after a verdict isn't queued: its verdict stands as made (A22). A folder has no bytes and is never queued.
+- **Undo All Corrections** removes units and kept files with the other corrections, and leaves verdicts and published marks, which judge bytes, not how the library is organized.
+- **A work of several files** keeps a verdict made on bytes any of its files had. Files the person hasn't joined share no verdict, even with the same bytes (§5.2).
+- **Reading.** The model takes the size, dates and inode of each work in a unit or with a verdict when it organizes the library, and remembers the bytes read this session, on select or by a verdict, while the file is still as read. To Review and each work's states draw from these and read nothing.
+- **The window** is the next layer: nothing here is listed or drawn yet, though Sources › Corrections words every new decision.
+
+Checked: `swift test`.
+- `WorkUnitTests`: nesting one level, natural order, membership by the latest decision and undo back to the one before, a work of several files, a work from another project moved with it and out again, rename, delete and undo, taking back a made unit, Undo All, a removed project, a unit following its project shown inside another, another connection to the library.
+- `KeepTests`: a kept file's one revision as observed and undone back to a candidate; its first read while as observed, at delivery and first seen later, and not when changed since; adding an observed file to a unit; a reply naming it later; a reread and a relaunch; no bytes read by keeping.
+- `ReviewTests`: a verdict on the bytes read; a rewrite, a rollback to approved bytes, a change of dates alone, a copy keeping size and dates (A16, A18); not as shown, gone, a folder and unreadable (A17, A20); history and undo; a work of several files; the four states as a matrix (A22); To Review's contents and grouping; no bytes read but for a verdict; another connection, a reread and Undo All.
+- `ReviewingTests`: the model's decisions and their words in Sources › Corrections, verdicts and To Review through a relaunch and a selection, a file changed since shown, and every decision through a reread and a relaunch.
