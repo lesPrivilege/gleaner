@@ -23,6 +23,20 @@ enum OutlineRow: Hashable {
     }
 }
 
+/// A row under a folder's heading in a project's outline: a work, or the works of one kind that no
+/// reply named itself, folded into one row when there are many (`Listing.rows`).
+enum FolderItem: Identifiable {
+    case work(SearchResult)
+    case folded(key: String, kind: Artifact.Kind, results: [SearchResult])
+
+    var id: String {
+        switch self {
+        case .work(let result): result.id
+        case .folded(let key, _, _): "folded\n" + key
+        }
+    }
+}
+
 /// Where the library window is: every delivery, one project, or what Gleaner reads and keeps.
 enum Place: Hashable {
     case all
@@ -120,6 +134,9 @@ final class LibraryModel {
     /// Works the person opened or closed in a list this session, wherever it is listed; the rest
     /// follow `opensByDefault`.
     var disclosed: [Work.ID: Bool] = [:]
+    /// Folded rows of an outline the person opened or closed this session, by folder and kind; the
+    /// rest stay folded unless they hold the selection.
+    var unfolded: [String: Bool] = [:]
     /// Two exact versions shown in place of the preview, older first.
     var comparison: (from: Comparison.End, to: Comparison.End)?
     var progress: (done: Int, total: Int)?
@@ -458,6 +475,35 @@ final class LibraryModel {
                 chosenDelivery = delivery
             }
         }
+    }
+
+    /// A folder's works as its outline lists them (docs/design/capture.md, "Order and grouping"):
+    /// what a person opens before what a program reads, newest first, files sharing a stem side by
+    /// side, and the files of one kind that no reply named itself folded when they crowd the folder.
+    /// A file a reply named never folds.
+    func outlineItems(_ results: [SearchResult]) -> [FolderItem] {
+        let byID = Dictionary(results.map { ($0.work.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return Listing.rows(results.map { .work($0.work) }).flatMap { row -> [FolderItem] in
+            switch row {
+            case .entry(let entry): [byID[entry.id]].compactMap { $0.map(FolderItem.work) }
+            case .together(_, let entries): entries.compactMap { byID[$0.id].map(FolderItem.work) }
+            case .folded(let folder, let kind, let entries):
+                [.folded(key: folder + "\n" + kind.rawValue, kind: kind, results: entries.compactMap { byID[$0.id] })]
+            }
+        }
+    }
+
+    /// Whether a folded row of an outline shows its works: as the person left it, else open while
+    /// it holds the selection, so a work chosen elsewhere is shown where it is listed.
+    func isUnfolded(_ key: String, _ results: [SearchResult]) -> Bool {
+        if let open = unfolded[key] { return open }
+        guard let selection, let selected = organization.work(containing: selection) else { return false }
+        return results.contains { $0.work.id == selected.id }
+    }
+
+    /// The delivery of the folder a file was handed over in, while the library shows it.
+    func folderDelivery(_ member: Membership) -> Delivery? {
+        organization.work(containing: member.folder)?.deliveries.first { $0.id == member.folderDelivery }
     }
 
     /// What a work's own row names. Closed, it stands for its revisions: the one chosen in the
@@ -816,6 +862,9 @@ final class LibraryModel {
         case bytes(sha: String)
         /// A delivered folder, as it is now.
         case folder
+        /// A file listed with its folder and not read yet: read at the drop, which completes its
+        /// listing while the file is still as listed, and handed over only then (SPEC §5.4).
+        case unread
     }
 
     /// What dragging `result`'s row hands over; nil when the library already knows there is
@@ -837,6 +886,7 @@ final class LibraryModel {
             }
         }
         if delivery.capture?.isDirectory == true { return missing.contains(artifact.path) ? nil : .folder }
+        if delivery.capture?.provenance == .listed { return missing.contains(artifact.path) ? nil : .unread }
         guard let sha = delivery.sha256, !missing.contains(artifact.path) || hasSaved(sha) else { return nil }
         return .bytes(sha: sha)
     }
@@ -896,7 +946,37 @@ final class LibraryModel {
         case nil: nil
         case .folder: Self.folderItem(artifact.path)
         case .bytes(let sha): handoffItem(sha: sha, artifact: artifact)
+        case .unread: delivery.member.map { unreadItem($0, artifact: artifact) }
         }
+    }
+
+    /// A file listed with its folder and not read yet, for another app: read when the receiver asks
+    /// for it, which completes its listing while the file is still as listed, then staged and hashed
+    /// as any version is. A file changed since it was listed isn't this delivery, and the drop fails.
+    func unreadItem(_ member: Membership, artifact: Artifact) -> NSItemProvider {
+        let indexer = indexer, store = indexer.store, name = artifact.name, source = artifact.path
+        let provider = NSItemProvider()
+        provider.suggestedName = name
+        let type = UTType(filenameExtension: (name as NSString).pathExtension) ?? .data
+        provider.registerFileRepresentation(forTypeIdentifier: type.identifier, fileOptions: [], visibility: .all) { done in
+            DispatchQueue.global(qos: .userInitiated).async {
+                do {
+                    _ = try indexer.completeCaptures(of: source, now: Date())
+                    guard let sha = try indexer.registry.sha256(of: member, path: source) else { throw ContentStore.Failure.unavailable }
+                    done(try store.stage(sha: sha, name: name, source: source), false, nil)
+                } catch {
+                    done(nil, false, error)
+                }
+                Task { @MainActor [weak self] in self?.reload() }
+            }
+            return nil
+        }
+        return provider
+    }
+
+    /// Reads the library again, after Gleaner first read a file or saved a copy of it.
+    private func reload() {
+        library = (try? indexer.registry.artifacts()) ?? library
     }
 
     /// The version `sha` of `artifact`'s file for another app, under the file's own name: a
@@ -1056,7 +1136,7 @@ final class LibraryModel {
         observations[path] = FileObservation(state: state, checkedAt: Date())
         saved.subtract(versions)
         saved.formUnion(held)
-        if completed { library = (try? indexer.registry.artifacts()) ?? library }
+        if completed { reload() }
         // Whether a file is gone decides which joins Gleaner suggests.
         let goneChanged = (state.kind == .missing) != missing.contains(path)
         if state.kind == .missing {
@@ -1107,7 +1187,7 @@ final class LibraryModel {
         let indexer = indexer
         let result = await Task.detached { Result { try indexer.saveCopy(of: delivery, at: Date()) } }.value
         switch result {
-        case .success: library = (try? indexer.registry.artifacts()) ?? library
+        case .success: reload()
         case .failure(let error): actionFailure = (artifact.id, delivery.id, Wording.saveFailed(error, delivery: delivery))
         }
         await observe(artifact)

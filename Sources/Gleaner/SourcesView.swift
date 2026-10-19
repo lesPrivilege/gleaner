@@ -117,6 +117,10 @@ struct AgentSourcePage: View {
                                paths: source.workspaceProblems)
                 ProblemSection(title: "Workspaces Not Walked", footer: "Nothing is observed in these. Gleaner doesn’t walk the home folder, its Library, system or hidden folders, or the agents’ logs, and can’t walk a folder that’s gone.",
                                paths: source.unwalkedWorkspaces, isProblem: false)
+                ProblemSection(title: "Delivered Folders Listed in Part", footer: "Files in them may be missing from what was handed over with them. The folders stay delivered.",
+                               paths: source.folderProblems)
+                ProblemSection(title: "Delivered Folders Not Unpacked", footer: "Their files aren’t listed one by one. Gleaner doesn’t unpack the home folder or a folder directly in it, a project’s own folder or one holding it, or what it doesn’t walk; what changed in a project is observed instead.",
+                               paths: source.foldersNotUnpacked, isProblem: false)
                 if !source.unknownRecordTypes.isEmpty {
                     Section {
                         ForEach(source.unknownRecordTypes.sorted { $0.key < $1.key }, id: \.key) { type, count in
