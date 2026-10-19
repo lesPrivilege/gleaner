@@ -57,16 +57,17 @@ import Testing
     func reviews() throws -> Reviews { Reviews(try indexer.registry.reviews()) }
 
     /// What the window knows of a file without reading it again: its size and dates, or a read
-    /// it made this session while the file is still as it was then.
-    func present(_ path: String, read: [String: (String, FileStat)] = [:]) -> Present {
-        guard let file = FileStat(path) else { return .absent }
+    /// it made this session while the file is still as it was then. With nothing readable there,
+    /// what `work`'s newest delivery recorded, when given.
+    func present(_ path: String, read: [String: (String, FileStat)] = [:], of work: Work? = nil) -> Present {
+        guard let file = FileStat(path) else { return work.map { .absent($0) } ?? .absent(sha256: nil, deliveredAt: nil) }
         if let (sha, then) = read[path], then == file { return .read(sha) }
         return .listed(file)
     }
 
     /// Reads the file now, as selecting it does.
-    func select(_ path: String) -> Present {
-        guard let sha = Locator.observe(path).sha256 else { return .absent }
+    func select(_ path: String, of work: Work? = nil) -> Present {
+        guard let sha = Locator.observe(path).sha256 else { return work.map { .absent($0) } ?? .absent(sha256: nil, deliveredAt: nil) }
         return .read(sha)
     }
 
@@ -147,8 +148,48 @@ import Testing
         let locked = try write("locked.wav", "voice")
         #expect(chmod(locked, 0) == 0)
         defer { chmod(locked, 0o644) }
-        // A file that can't be read is said as unreadable, never as gone.
+        // A file that can't be read is said as unreadable, never as gone; stat alone would find it.
         #expect(throws: Review.Failure.notAFile(.unreadable)) { try indexer.review(locked, as: .approved, at: at(4)) }
+        #expect(FileStat(locked) == nil && Locator.stat(locked).kind == .file)
+    }
+
+    @Test func aFileGoneAfterALaterDeliveryKeepsNoVerdictOnBytesNoOneJudged() throws {
+        let video = try write("out/ep01.mp4", "take one", modified: at(1))
+        let approved = try indexer.review(video, as: .approved, at: at(2))
+        let mark = try indexer.review(video, as: .published, at: at(2))
+        /// The file delivered at each of `hours`, newest first, with the bytes each delivery recorded.
+        func delivered(_ takes: [(hours: Double, sha: String?)]) throws -> Work {
+            let deliveries = takes.enumerated().map { i, take in
+                Delivery(id: "\(video)#\(takes.count - i)", number: takes.count - i, path: video, deliveredAt: at(take.hours),
+                         replyLine: 1, provider: .claudeCode, sessionTitle: nil, request: nil, cwd: folder.path, evidence: [],
+                         logPath: "/logs/s.jsonl",
+                         capture: Capture(sha256: take.sha, size: 8, modifiedAt: nil, observedAt: at(take.hours), savedAt: nil,
+                                          provenance: .atDelivery, kind: .file))
+            }
+            return try #require(try organize([Artifact(path: video, deliveries: deliveries)]).work(containing: video))
+        }
+        try FileManager.default.removeItem(atPath: video)
+
+        // Recut after the verdict, with other bytes, then gone: the verdict isn't carried to the
+        // recut nobody judged (A16, A24), nor the mark.
+        let recut = try delivered([(3, sha256("take two")), (1, sha256("take one"))])
+        #expect(try verdict(recut, present(video, of: recut)) == .changed(approved))
+        #expect(try published(recut, present(video, of: recut)) == .changed(mark))
+        // Delivered again with the bytes approved: the verdict holds, as made.
+        let back = try delivered([(4, sha256("take one")), (3, sha256("take two")), (1, sha256("take one"))])
+        #expect(try verdict(back, present(video, of: back)) == .unavailable(approved))
+        // Delivered with no bytes recorded: they may have been other bytes.
+        let unread = try delivered([(3, nil), (1, sha256("take one"))])
+        #expect(try verdict(unread, present(video, of: unread)) == .mayHaveChanged(approved))
+        // Nothing delivered since the verdict: it stands as made (A22).
+        let before = try delivered([(1, sha256("take one"))])
+        #expect(try verdict(before, present(video, of: before)) == .unavailable(approved))
+
+        // The recut waits in its unit, though nothing is there to read.
+        let unit = try indexer.registry.addUnit(named: "Episode 1", in: folder.path, at: at(0))
+        try indexer.registry.correct(.unit, subject: video, target: unit.key, at: at(5))
+        let organization = try organize([Artifact(path: video, deliveries: recut.deliveries)])
+        #expect(organization.toReview(try reviews()) { present($0.latest.path, of: $0) }.flatMap(\.works).map(\.id) == [video])
     }
 
     @Test func theHistoryKeepsEveryVerdictAndUndoTakesBackOne() throws {

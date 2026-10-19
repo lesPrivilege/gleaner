@@ -16,12 +16,13 @@ public struct FileStat: Sendable, Equatable {
         self.inode = inode
     }
 
-    /// The regular file at `path`, a link followed as a delivered link is (SPEC §6); nil for
-    /// anything else, or nothing. Reads no bytes.
+    /// The regular file at `path` that Gleaner may read, a link followed as a delivered link is
+    /// (SPEC §6); nil for anything else, for a file it may not read, or for nothing. Reads no bytes:
+    /// `stat` needs no permission to read, so whether it has one is asked on its own (A20).
     public init?(_ path: String) {
         var info = Darwin.stat()
         // stat(2), following a link, by the name `Locator.stat` uses: the struct's name hides the function's.
-        guard fstatat(AT_FDCWD, path, &info, 0) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+        guard fstatat(AT_FDCWD, path, &info, 0) == 0, info.st_mode & S_IFMT == S_IFREG, access(path, R_OK) == 0 else { return nil }
         func date(_ time: timespec) -> Date { Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_nsec) / 1e9) }
         let born = info.st_birthtimespec
         self.init(size: Int64(info.st_size), createdAt: born.tv_sec > 0 ? date(born) : nil, modifiedAt: date(info.st_mtimespec),
@@ -79,7 +80,9 @@ public struct Review: Sendable, Equatable, Identifiable {
     /// `records` are one kind's, newest first. A record made on the bytes there now holds, the
     /// newest such, matched by hash once the file was read, else by its size, dates and inode while
     /// they are still as when it was made. Otherwise the newest record may have been made on other
-    /// bytes until the file is read, and was once it is.
+    /// bytes until the file is read, and was once it is. With no file to read, the newest stands as
+    /// made, unless a delivery came after it: then the bytes it delivered decide, as if read, and
+    /// with none recorded they may have been other bytes (A16).
     public static func standing(_ records: [Review], now: Present) -> Standing {
         guard let latest = records.first else { return .none }
         switch now {
@@ -87,8 +90,10 @@ public struct Review: Sendable, Equatable, Identifiable {
             return records.first { $0.sha256 == sha }.map(Standing.current) ?? .changed(latest)
         case .listed(let file):
             return records.first { $0.file == file }.map(Standing.current) ?? .mayHaveChanged(latest)
-        case .absent:
-            return .unavailable(latest)
+        case .absent(let sha, let deliveredAt):
+            guard let deliveredAt, deliveredAt > latest.madeAt else { return .unavailable(latest) }
+            guard let sha else { return .mayHaveChanged(latest) }
+            return records.first { $0.sha256 == sha }.map(Standing.unavailable) ?? .changed(latest)
         }
     }
 }
@@ -99,8 +104,15 @@ public enum Present: Sendable, Equatable {
     case read(String)
     /// Not read since it last changed: its size, dates and inode.
     case listed(FileStat)
-    /// No regular file is there to read: gone, a folder, not a regular file, or unreadable.
-    case absent
+    /// No regular file Gleaner can read is there: gone, a folder, not a regular file, or unreadable.
+    /// With what the work's newest delivery recorded of the file: its hash, nil when Gleaner read
+    /// none, and when it came.
+    case absent(sha256: String?, deliveredAt: Date?)
+
+    /// Nothing readable at the work's current file, as its newest delivery left it.
+    public static func absent(_ work: Work) -> Present {
+        .absent(sha256: work.deliveries[0].sha256, deliveredAt: work.deliveries[0].deliveredAt)
+    }
 }
 
 /// What verdicts, or published marks, say of a work's file now (`Review.standing`).
@@ -112,10 +124,11 @@ public enum Standing: Sendable, Equatable {
     /// The file isn't as it was when this one, the newest, was made, and hasn't been read since: it
     /// may have changed.
     case mayHaveChanged(Review)
-    /// Read since: none was made on these bytes. This one, the newest, was made on other bytes.
+    /// Read since, or delivered since and gone: none was made on those bytes. This one, the newest,
+    /// was made on other bytes.
     case changed(Review)
-    /// No file is there to read: this one, the newest, was made on bytes not there now. A reviewed
-    /// file need not be on this Mac.
+    /// No file is there to read: this one was made on the bytes the file last held, as far as
+    /// Gleaner knows. A reviewed file need not be on this Mac.
     case unavailable(Review)
 
     /// The record it names; nil for none.
@@ -239,20 +252,25 @@ extension Organization {
     /// in units or with a verdict or mark. Grouped by unit, as the sidebar lists them, then the works
     /// in none, by project.
     public func toReview(_ reviews: Reviews, present: (Work) -> Present) -> [ReviewGroup] {
-        var waiting: [String: [Work]] = [:]
+        var waiting: [String: [Work]] = [:], waits = Set<Work.ID>()
         for work in works where work.unit != nil || reviews.any(work) {
             guard work.kind != .folder else { continue }
-            let waits = switch Review.standing(reviews.verdicts(of: work), now: present(work)) {
+            let pending = switch Review.standing(reviews.verdicts(of: work), now: present(work)) {
             case .none: work.unit != nil
             case .changed, .mayHaveChanged: true
             case .current, .unavailable: false
             }
-            if waits { waiting[work.unit ?? work.project, default: []].append(work) }
+            if pending {
+                waiting[work.unit ?? work.project, default: []].append(work)
+                waits.insert(work.id)
+            }
         }
         var groups: [ReviewGroup] = []
         func add(_ key: String, project: String, unit: String?) {
             guard let list = waiting[key] else { return }
-            groups.append(ReviewGroup(project: project, unit: unit, works: Self.listed(list)))
+            // A unit's works are kept in list order already.
+            let works = unit == nil ? Self.listed(list) : self.works(in: key).filter { waits.contains($0.id) }
+            groups.append(ReviewGroup(project: project, unit: unit, works: works))
         }
         for project in projects {
             for unit in units(in: project.key) {

@@ -87,15 +87,9 @@ struct CollectionMenu: View {
             }
         }
         .disabled(works.isEmpty)
-        Button("Remove from Collection") {
-            Task {
-                for (key, works) in Dictionary(grouping: works.filter { $0.unit != nil }, by: { $0.unit! }) {
-                    if let unit = model.organization.unit(key) { await model.remove(works, from: unit) }
-                }
-            }
-        }
+        Button("Remove from Collection") { Task { await model.remove(works) } }
         .disabled(!works.contains { $0.unit != nil })
-        Button("Rename Collection") { if let unit { model.naming = .rename(unit.key) } }
+        Button("Rename Collection") { if let unit { model.startRenaming(unit) } }
             .disabled(unit == nil)
         Button("Delete Collection") { if let unit { Task { await model.delete(unit) } } }
             .disabled(unit == nil)

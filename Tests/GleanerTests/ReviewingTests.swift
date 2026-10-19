@@ -1,4 +1,6 @@
+import AppKit
 import Foundation
+import SwiftUI
 import Testing
 import UniformTypeIdentifiers
 @testable import Gleaner
@@ -131,8 +133,153 @@ import UniformTypeIdentifiers
         // A file changed while its bytes were being judged is refused, with why.
         let stale = try #require(FileStat(video))
         try file("out/ep01.mp4", "episode one, final", at: 46)
-        #expect(await again.review([shown], as: .approved, shown: [video: stale]).isEmpty)
-        #expect(again.reviewFailure == "ep01.mp4 changed since it was shown. Look at it again, then decide.")
+        #expect(await again.review([shown], as: .approved, shown: [video: stale], from: shown.id).isEmpty)
+        let refusal = try #require(again.reviewRefusal)
+        #expect(refusal.place == shown.id && Wording.refusal(refusal).title == "Nothing recorded")
+        #expect(refusal.reason(video) == "ep01.mp4 changed since it was shown. Look at it again, then decide.")
+        // Said where it was asked for, until the person shows something else.
+        again.selection = cover
+        #expect(again.reviewRefusal == nil)
+    }
+
+    @Test func severalAskedForTogetherSayWhatWasRecordedAndWhatWasntWhereTheyWereAsked() async throws {
+        let model = relaunch()
+        let work = try #require(model.organization.work(containing: video))
+        let made = try #require(await model.newUnit(named: "Pilot", in: work.project))
+        await model.add([work], to: try #require(model.organization.unit(made.key)))
+        await model.add([try #require(model.organization.candidate(cover))], to: try #require(model.organization.unit(made.key)))
+        model.place = .unit(made.key)
+        let works = model.organization.works(in: made.key)
+        let shown = Dictionary(uniqueKeysWithValues: works.compactMap { work in FileStat(work.latest.path).map { (work.latest.path, $0) } })
+        #expect(shown.count == 2)
+        // The cover is touched after the page drew it.
+        try file("cover.png", "cover, again", at: 47)
+        #expect(await model.review(works, as: .approved, shown: shown, from: made.key).map(\.path) == [video])
+        let refusal = try #require(model.reviewRefusal)
+        #expect(Wording.refusal(refusal).title == "Approved 1 work, 1 not recorded")
+        #expect(refusal.place == made.key && refusal.reason(cover)?.hasPrefix("cover.png changed since it was shown") == true)
+        // Another collection's page, or a work's detail, doesn't say it.
+        model.place = .toReview
+        #expect(model.reviewRefusal == nil)
+    }
+
+    @Test func aPageSaysWhatItDrewOfAFileRewrittenOutsideAnySession() async throws {
+        let model = relaunch()
+        let work = try #require(model.organization.work(containing: video))
+        let made = try #require(await model.newUnit(named: "Pilot", in: work.project))
+        await model.add([work], to: try #require(model.organization.unit(made.key)))
+        let inUnit = try #require(model.organization.work(containing: video))
+        let approved = try #require(await model.review([inUnit], as: .approved).first)
+        // Rendered again by hand: no log changes, so no run tells the model.
+        try file("out/ep01.mp4", "episode one, rendered by hand", at: 48)
+        let shown = try #require(model.organization.work(containing: video))
+        #expect(model.verdict(of: shown) == .current(approved))
+        // The page draws it, and says what it drew.
+        model.noteShown(video, FileStat(video))
+        #expect(model.verdict(of: shown) == .mayHaveChanged(approved))
+        #expect(model.toReview.flatMap(\.works).map(\.id) == [video])
+        // Gone when the page looks again: said as gone, and nothing is there to review.
+        try FileManager.default.removeItem(atPath: video)
+        model.noteShown(video, FileStat(video))
+        #expect(model.onThisMac(shown).title == "Not on disk" && model.hasNoFile(shown))
+    }
+
+    @Test func aRecutGoneFromDiskKeepsNoVerdictNoOneMadeOnIt() async throws {
+        let model = relaunch()
+        let work = try #require(model.organization.work(containing: video))
+        let made = try #require(await model.newUnit(named: "Pilot", in: work.project))
+        await model.add([work], to: try #require(model.organization.unit(made.key)))
+        let inUnit = try #require(model.organization.work(containing: video))
+        let approved = try #require(await model.review([inUnit], as: .approved).first)
+        // The agent recuts it and a reply names the recut; the run reads its bytes.
+        try file("out/ep01.mp4", "episode one, recut", at: 49)
+        try session("three", title: "Recut", from: 48, to: 50, reply: "The [recut](out/ep01.mp4).")
+        _ = try indexer.run()
+        try FileManager.default.removeItem(atPath: video)
+        let again = relaunch()
+        let recut = try #require(again.organization.work(containing: video))
+        #expect(recut.deliveries.count == 2 && recut.deliveries[0].sha256 != approved.sha256)
+        // Gone, the recut nobody judged isn't approved, and it waits (A16, A24).
+        #expect(again.verdict(of: recut) == .changed(approved))
+        #expect(again.toReview.flatMap(\.works).map(\.id) == [video] && again.onThisMac(recut).title == "Not on disk")
+    }
+
+    @Test func aFileThatCantBeReadIsSaidAsUnreadableAndCantBeReviewed() async throws {
+        let model = relaunch()
+        let work = try #require(model.organization.work(containing: video))
+        let made = try #require(await model.newUnit(named: "Pilot", in: work.project))
+        await model.add([work], to: try #require(model.organization.unit(made.key)))
+        #expect(chmod(video, 0) == 0)
+        defer { chmod(video, 0o644) }
+        let again = relaunch()
+        let locked = try #require(again.organization.work(containing: video))
+        // Never "On this Mac", never gone (A20); and with nothing to judge, not "To review" either.
+        #expect(again.onThisMac(locked).title == "Can’t read")
+        #expect(again.hasNoFile(locked) && again.waits(locked)?.1 == "Can’t be reviewed")
+        #expect(FileStat(video) == nil)
+    }
+
+    @Test func eachCollectionDecisionIsMadeOnceAndAsOneLine() async throws {
+        let model = relaunch()
+        let project = try #require(model.organization.work(containing: video)?.project)
+        let one = try #require(await model.newUnit(named: "One", in: project))
+        let two = try #require(await model.newUnit(named: "Two", in: project))
+        await model.add([try #require(model.organization.work(containing: video))], to: try #require(model.organization.unit(one.key)))
+        // Dropped on the collection it is already in: nothing is decided again.
+        await model.add([try #require(model.organization.work(containing: video))], to: try #require(model.organization.unit(one.key)))
+        #expect(model.correctionGroups.map { model.describe($0) } == ["Added ep01.mp4 to One"])
+        await model.add([try #require(model.organization.candidate(cover))], to: try #require(model.organization.unit(two.key)))
+        // Taken out of both together: one decision, one line, one Undo.
+        let both = [video, cover].compactMap { model.organization.work(containing: $0) }
+        await model.remove(both)
+        #expect(model.describe(try #require(model.correctionGroups.first)) == "Removed ep01.mp4 from One; Removed cover.png from Two")
+        #expect(both.allSatisfy { model.organization.work(containing: $0.id)?.unit == nil })
+        await model.undo(try #require(model.correctionGroups.first))
+        #expect(model.organization.work(containing: video)?.unit == one.key && model.organization.work(containing: cover)?.unit == two.key)
+    }
+
+    @Test func undoingAKeepTakesBackWhatWasDecidedAboutTheFileSince() async throws {
+        let model = relaunch()
+        let project = try #require(model.organization.work(containing: video)?.project)
+        await model.keep([try #require(model.organization.candidate(cover))])
+        let keep = try #require(model.correctionGroups.first)
+        let made = try #require(await model.newUnit(named: "Pilot", in: project))
+        await model.add([try #require(model.organization.work(containing: cover))], to: try #require(model.organization.unit(made.key)))
+        #expect(model.correctionGroups.count == 2)
+        // Undone, the keep takes its collection with it: nothing is left listed with nothing to act on.
+        await model.undo(keep)
+        #expect(model.corrections.isEmpty && model.organization.candidate(cover) != nil)
+        // Kept again, it is only kept.
+        await model.keep([try #require(model.organization.candidate(cover))])
+        #expect(model.organization.work(containing: cover)?.unit == nil)
+        #expect(model.organization.works(in: made.key).isEmpty)
+    }
+
+    @Test func aProjectDeletedSaysWhichCollectionsGoWithIt() async throws {
+        let model = relaunch()
+        let work = try #require(model.organization.work(containing: video))
+        await model.move(work, toNewProject: "Channel")
+        let channel = try #require(model.userProjects.first)
+        let series = try #require(await model.newUnit(named: "Series", in: channel.key))
+        _ = try #require(await model.newUnit(named: "Episode 1", in: channel.key, inside: series.key))
+        #expect(model.unitsDeleted(with: channel.key) == 2)
+        #expect(Wording.deletingProject(units: 2).contains("its 2 collections are deleted. You can’t undo this."))
+        #expect(Wording.deletingProject(units: 0) == "Its work goes back where Gleaner found it. No file changes.")
+    }
+
+    @Test func selectingAFileNoReviewStateIsShownForLeavesTheQueueAsItWas() async throws {
+        let model = relaunch()
+        let work = try #require(model.organization.work(containing: video))
+        let made = try #require(await model.newUnit(named: "Pilot", in: work.project))
+        await model.add([try #require(model.organization.candidate(cover))], to: try #require(model.organization.unit(made.key)))
+        _ = model.toReview
+        let version = model.reviewsVersion
+        // The episode is in no collection and has no verdict: reading it moves nothing the queue shows.
+        await model.observe(try #require(model.organization.work(containing: video)).latest)
+        #expect(model.reviewsVersion == version)
+        // The kept cover is in one: reading it does.
+        await model.observe(try #require(model.organization.work(containing: cover)).latest)
+        #expect(model.reviewsVersion > version)
     }
 
     @Test func everyDecisionSurvivesARereadAndARelaunch() async throws {
@@ -190,6 +337,68 @@ import UniformTypeIdentifiers
         // A place a relaunch can find again, by the collection's key.
         #expect(LibraryView.decode(LibraryView.encode(.unit(pilot.key))) == .unit(pilot.key))
         #expect(LibraryView.decode(LibraryView.encode(.toReview)) == .toReview)
+    }
+
+    @Test func aPageDrawsEachFileThatSharesOnlyAStemAndNamesARenderBesideItsSource() throws {
+        func work(_ name: String) -> Work {
+            let path = "/w/series/ep01/" + name
+            let delivery = Delivery(id: path + "#1", number: 1, path: path, deliveredAt: t0, replyLine: 1, provider: .claudeCode,
+                                    sessionTitle: nil, request: nil, cwd: "/w/series", evidence: [], logPath: "/logs/s.jsonl", capture: nil)
+            let file = Artifact(path: path, deliveries: [delivery])
+            return Work(files: [file], deliveries: file.deliveries, project: "/w/series")
+        }
+        let names = ["ep01.mp4", "ep01.vertical.mp4", "ep01.cover-4x3.png", "ep01.cover-3x4.png", "ov-4x3.png", "ov-4x3.svg",
+                     "ep01.script.md", "ep01.inputs.json"]
+        let layout = ReviewLayout(names.map(work))
+        // Both cuts, both covers and the script are each drawn; only the source of a render is
+        // named beside it, and what a program reads is under Other Files.
+        #expect(layout.items.map(\.lead.name) == ["ep01.mp4", "ep01.vertical.mp4", "ep01.cover-4x3.png", "ep01.cover-3x4.png",
+                                                  "ov-4x3.png", "ep01.script.md"])
+        #expect(layout.items.first { $0.lead.name == "ov-4x3.png" }?.beside.map(\.name) == ["ov-4x3.svg"])
+        #expect(layout.items.filter { $0.lead.name != "ov-4x3.png" }.allSatisfy { $0.beside.isEmpty })
+        #expect(layout.others.map(\.name) == ["ep01.inputs.json"])
+        // A picture too tall or too wide to see in a tile isn't counted as shown.
+        #expect(ImageTile.legible(CGSize(width: 1920, height: 1080)) && ImageTile.legible(CGSize(width: 1080, height: 1440)))
+        #expect(!ImageTile.legible(CGSize(width: 1080, height: 20000)) && !ImageTile.legible(CGSize(width: 20000, height: 800)))
+    }
+
+    @Test func aReviewPageReadsOnlyTheImagesThatScrollIntoView() async throws {
+        let rep = try #require(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 64, pixelsHigh: 48, bitsPerSample: 8, samplesPerPixel: 4,
+                                                hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let png = try #require(rep.representation(using: .png, properties: [:]))
+        let count = 60
+        let paths = (0..<count).map { series.path + String(format: "/stills/still-%02d.png", $0) }
+        try FileManager.default.createDirectory(atPath: series.path + "/stills", withIntermediateDirectories: true)
+        for path in paths { try png.write(to: URL(fileURLWithPath: path)) }
+        try session("three", title: "Stills", from: 24, to: 29, reply: "The stills: " + (0..<count).map { String(format: "[%02d](stills/still-%02d.png)", $0, $0) }.joined(separator: ", "))
+        _ = try indexer.run()
+        let model = relaunch()
+        let stills = model.organization.works.filter { $0.latest.path.contains("/stills/") }
+        #expect(stills.count == count)
+        let first = try #require(stills.first)
+        let made = try #require(await model.newUnit(named: "Stills", in: first.project))
+        await model.add(stills, to: try #require(model.organization.unit(made.key)))
+        // Not read since a while ago, so a read shows.
+        let past = 1_700_000_000
+        func read() -> Int {
+            paths.filter { path in
+                var info = Darwin.stat()
+                return lstat(path, &info) == 0 && info.st_atimespec.tv_sec != past
+            }.count
+        }
+        for path in paths {
+            var times = [timespec(tv_sec: past, tv_nsec: 0), timespec(tv_sec: 0, tv_nsec: Int(UTIME_OMIT))]
+            #expect(utimensat(AT_FDCWD, path, &times, 0) == 0)
+        }
+        let window = NSWindow(contentRect: NSRect(x: -20000, y: -20000, width: 880, height: 860),
+                              styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = NSHostingView(rootView: ReviewPage(unit: try #require(model.organization.unit(made.key))).environment(model))
+        window.orderBack(nil)
+        for _ in 0..<30 { try await TourTests.settle(0.05) }
+        // A few rows of images are on screen: those are read, and only those (each counts for Review All).
+        #expect(read() < count / 3, "\(read()) of \(count) read")
     }
 
     @Test func aCollectionIsNamedInPlaceAndTakesWhatWasChosen() async throws {

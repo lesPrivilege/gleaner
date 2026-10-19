@@ -558,6 +558,37 @@ enum Wording {
         return "\(what) \(count(n, "work"))"
     }
 
+    /// In place of a video or audio AVFoundation finds nothing to play in.
+    static let unplayable = "Gleaner can’t play this file here, so it is judged on its own Review menu, not with Review All."
+
+    /// A note sheet's title: the verdict or mark about to be made, and on what, one work by its name
+    /// or several by their count ("Request Changes to “script.md”", "Mark 3 Works Published").
+    static func reviewTitle(_ kind: Review.Kind, names: [String]) -> String {
+        let what = names.count == 1 ? "“\(names[0])”" : count(names.count, "Work")
+        return switch kind {
+        case .approved: "Approve \(what)"
+        case .changesRequested: "Request Changes to \(what)"
+        case .rejected: "Reject \(what)"
+        case .published: "Mark \(what) Published"
+        }
+    }
+
+    /// Verdicts or marks asked for together that weren't all made: how many were, then why each
+    /// other wasn't. "Nothing recorded" only when none was.
+    static func refusal(_ refusal: ReviewRefusal) -> Statement {
+        let title = refusal.made == 0 ? "Nothing recorded"
+            : "\(reviewed(refusal.kind, count: refusal.made)), \(refusal.refused.count) not recorded"
+        return Statement(mark: .attention, title: title, detail: refusal.refused.map(\.reason).joined(separator: " "))
+    }
+
+    /// What deleting a project of the person's own does, said before it is done: its work goes
+    /// back, and the collections made in it go with it, for good.
+    static func deletingProject(units: Int) -> String {
+        guard units > 0 else { return "Its work goes back where Gleaner found it. No file changes." }
+        return "Its work goes back where Gleaner found it, and its \(count(units, "collection")) \(units == 1 ? "is" : "are") deleted. "
+            + "You can’t undo this. No file changes."
+    }
+
     /// Why a verdict or a mark wasn't made on the file `name`. Unreadable is never said as gone.
     static func reviewFailed(_ error: Error, name: String) -> String {
         switch error {
@@ -600,21 +631,24 @@ enum Wording {
 
     /// The Reviewed state of a work's current file (docs/design/review.md, The four states): the
     /// newest verdict on these bytes, or why none holds. In a collection, a file with none waits on
-    /// the person, in the one accent. "Changed" only once the file was read; a file Gleaner can't
-    /// read keeps its verdict as made, and is never called gone.
-    static func verdict(_ standing: Standing, inUnit: Bool) -> Statement {
+    /// the person, in the one accent, unless no file Gleaner can read is there (`noFile`): that
+    /// can't be reviewed, and needs a look instead. "Changed" only once the bytes were read; a file
+    /// Gleaner can't read keeps its verdict as made, and is never called gone.
+    static func verdict(_ standing: Standing, inUnit: Bool, noFile: Bool = false) -> Statement {
         switch standing {
         case .none:
-            inUnit ? Statement(mark: .awaiting, title: "To review", detail: "No verdict on these bytes yet. It waits in its collection.")
-                : Statement(mark: .dashed, title: "Not reviewed", detail: "No verdict on any of its bytes.")
+            !inUnit ? Statement(mark: .dashed, title: "Not reviewed", detail: "No verdict on any of its bytes.")
+                : noFile ? Statement(mark: .attention, title: "Can’t be reviewed",
+                                     detail: "No verdict yet, and no file Gleaner can read is at its path to judge. It waits in its collection until the file is back or you remove it.")
+                : Statement(mark: .awaiting, title: "To review", detail: "No verdict on these bytes yet. It waits in its collection.")
         case .current(let review):
             Statement(mark: reviewMark(review.kind), title: reviewName(review.kind), detail: made(review))
         case .mayHaveChanged(let review):
             Statement(mark: .attention, title: "May have changed since review",
-                      detail: "\(made(review)) The file’s size or dates differ from then, and Gleaner hasn’t read it since, so it can’t tell whether these are the bytes judged. Selecting it reads it.")
+                      detail: "\(made(review)) The file isn’t as it was then, and Gleaner hasn’t read it since, so it can’t tell whether these are the bytes judged.")
         case .changed(let review):
             Statement(mark: .attention, title: "Changed since review",
-                      detail: "\(made(review)) The file holds other bytes now, and no verdict was made on them.")
+                      detail: "\(made(review)) Gleaner read other bytes there since, and no verdict was made on them.")
         case .unavailable(let review):
             Statement(mark: reviewMark(review.kind), title: reviewName(review.kind),
                       detail: "\(made(review)) No file Gleaner can read is at its path now; the verdict stands as made.")
@@ -631,10 +665,10 @@ enum Wording {
             Statement(mark: .published, title: "Published", detail: made(mark))
         case .mayHaveChanged(let mark):
             Statement(mark: .attention, title: "May have changed since published",
-                      detail: "\(made(mark)) The file’s size or dates differ from then, and Gleaner hasn’t read it since, so it can’t tell whether these are the bytes marked.")
+                      detail: "\(made(mark)) The file isn’t as it was then, and Gleaner hasn’t read it since, so it can’t tell whether these are the bytes marked.")
         case .changed(let mark):
             Statement(mark: .attention, title: "Changed since published",
-                      detail: "\(made(mark)) The file holds other bytes now; they aren’t marked published.")
+                      detail: "\(made(mark)) Gleaner read other bytes there since; they aren’t marked published.")
         case .unavailable(let mark):
             Statement(mark: .published, title: "Published",
                       detail: "\(made(mark)) No file Gleaner can read is at its path now; the mark stands as made.")
@@ -642,9 +676,9 @@ enum Wording {
     }
 
     /// What waits on the person, on a work's row: nothing when nothing does.
-    static func waiting(_ standing: Standing, inUnit: Bool) -> (Mark, String)? {
+    static func waiting(_ standing: Standing, inUnit: Bool, noFile: Bool = false) -> (Mark, String)? {
         switch standing {
-        case .none: inUnit ? (.awaiting, "To review") : nil
+        case .none: !inUnit ? nil : noFile ? (.attention, "Can’t be reviewed") : (.awaiting, "To review")
         case .mayHaveChanged: (.attention, "May have changed since review")
         case .changed: (.attention, "Changed since review")
         case .current, .unavailable: nil

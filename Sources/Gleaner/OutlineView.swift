@@ -237,14 +237,15 @@ struct MoveHereSheet: View {
 
     var body: some View {
         WorkPicker(title: "Move Work to “\(project.name)”", note: "Files stay where they are. Later deliveries of them follow.",
-                   action: "Move", works: model.organization.works.filter { $0.project != project.key }) { work in
-            Task { await model.move(work, to: project.key) }
+                   action: "Move", works: model.organization.works.filter { $0.project != project.key }) { works in
+            if let work = works.first { Task { await model.move(work, to: project.key) } }
         }
     }
 }
 
-/// A sheet that picks one work: its title, one line about what the action does, a filter by
-/// name, the works in the order given, and Cancel and the action.
+/// A sheet that picks one work, or with `several` any number of them: its title, one line about
+/// what the action does, a filter by name, the works in the order given, and Cancel and the
+/// action. With none to pick, it says so.
 struct WorkPicker: View {
     @Environment(LibraryModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -252,8 +253,12 @@ struct WorkPicker: View {
     var note: String
     var action: String
     var works: [Work]
-    var choose: (Work) -> Void
-    @State private var chosen: Work.ID?
+    /// Whether ⌘- and ⇧-clicks choose several, for one decision on all of them.
+    var several = false
+    /// What the sheet says when there is no work to pick.
+    var none = "No Works"
+    var choose: ([Work]) -> Void
+    @State private var chosen: Set<Work.ID> = []
     @State private var filter = ""
 
     var body: some View {
@@ -262,32 +267,43 @@ struct WorkPicker: View {
             Text(title).font(.headline)
             Text(note).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             TextField("Filter", text: $filter, prompt: Text("Filter by name"))
-            List(selection: $chosen) {
-                ForEach(shown) { work in
-                    HStack(spacing: Space.s) {
-                        FileIcon(path: work.latest.path, folder: work.latest.kind == .folder, size: 24)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(work.files.map(\.name).joined(separator: " → ")).lineLimit(1).truncationMode(.middle)
-                            caption(work)
-                        }
-                    }
-                    .tag(Optional(work.id))
+                .disabled(works.isEmpty)
+            Group {
+                if several {
+                    List(selection: $chosen) { rows(shown) }
+                } else {
+                    List(selection: Binding(get: { chosen.first }, set: { chosen = $0.map { [$0] } ?? [] })) { rows(shown) }
                 }
             }
             .frame(minHeight: 220)
+            .overlay { if works.isEmpty { EmptyState(title: none, glyph: .work) } }
             HStack {
                 Spacer()
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(action) {
-                    if let chosen, let work = works.first(where: { $0.id == chosen }) { choose(work) }
+                    let picked = works.filter { chosen.contains($0.id) }
+                    if !picked.isEmpty { choose(picked) }
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
-                .disabled(chosen == nil)
+                .disabled(chosen.isEmpty)
             }
         }
         .padding(Space.xl)
         .frame(width: 460)
+    }
+
+    func rows(_ shown: [Work]) -> some View {
+        ForEach(shown) { work in
+            HStack(spacing: Space.s) {
+                FileIcon(path: work.latest.path, folder: work.latest.kind == .folder, size: 24)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(work.files.map(\.name).joined(separator: " → ")).lineLimit(1).truncationMode(.middle)
+                    caption(work)
+                }
+            }
+            .tag(work.id)
+        }
     }
 
     /// Where the work is and when it last arrived: its project by mark and name, its folder, the date.

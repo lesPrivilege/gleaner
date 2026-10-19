@@ -352,6 +352,32 @@ import Testing
                 == "Changes requested, \(Wording.date(delivered)), demo.mp4, hash 3f2a9c1b, Trim")
     }
 
+    @Test func aFileWithNothingToJudgeInACollectionNeedsALookNotAReview() {
+        let gone = Wording.verdict(.none, inUnit: true, noFile: true)
+        #expect(gone.mark == .attention && gone.title == "Can’t be reviewed")
+        #expect(Wording.waiting(.none, inUnit: true, noFile: true).map(\.1) == "Can’t be reviewed")
+        // Out of a collection nothing waits on it, and a verdict on it stands as made.
+        #expect(Wording.verdict(.none, inUnit: false, noFile: true).title == "Not reviewed")
+        #expect(Wording.verdict(.unavailable(review(.approved)), inUnit: true, noFile: true).title == "Approved")
+        for claim in ["gone", "missing", "deleted", "changed"] { #expect(!words(gone).contains(claim), "\(claim)") }
+    }
+
+    @Test func aNoteSheetNamesTheVerdictAndWhatItIsOn() {
+        #expect(Wording.reviewTitle(.changesRequested, names: ["script.md"]) == "Request Changes to “script.md”")
+        #expect(Wording.reviewTitle(.rejected, names: ["script.md"]) == "Reject “script.md”")
+        #expect(Wording.reviewTitle(.published, names: ["ep01.mp4"]) == "Mark “ep01.mp4” Published")
+        #expect(Wording.reviewTitle(.changesRequested, names: ["a.png", "b.png", "c.png"]) == "Request Changes to 3 Works")
+        #expect(Wording.reviewTitle(.approved, names: ["a.png", "b.png"]) == "Approve 2 Works")
+    }
+
+    @Test func verdictsAskedForTogetherSayWhatWasRecordedAndWhyTheRestWasnt() {
+        let reason = Wording.reviewFailed(Review.Failure.changedSinceShown, name: "img02.png")
+        let some = ReviewRefusal(place: "unit:a", kind: .approved, made: 49, refused: [.init(path: "/p/img02.png", reason: reason)])
+        #expect(Wording.refusal(some).title == "Approved 49 works, 1 not recorded" && Wording.refusal(some).detail == reason)
+        let none = ReviewRefusal(place: "unit:a", kind: .changesRequested, made: 0, refused: [.init(path: "/p/img02.png", reason: reason)])
+        #expect(Wording.refusal(none).title == "Nothing recorded")
+    }
+
     @Test func aVerdictRefusedSaysWhyAndNeverCallsAnUnreadableFileGone() {
         let unreadable = Wording.reviewFailed(Review.Failure.notAFile(.unreadable), name: "demo.mp4").lowercased()
         #expect(unreadable.contains("can’t be read"))

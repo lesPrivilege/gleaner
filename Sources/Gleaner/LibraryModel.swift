@@ -59,6 +59,26 @@ enum Naming: Equatable {
     case rename(String)
 }
 
+/// Verdicts or marks the person asked for together that weren't all made: how many were, and each
+/// file refused with why, said where they were asked for.
+struct ReviewRefusal: Equatable {
+    struct Refused: Equatable {
+        var path: String
+        var reason: String
+    }
+
+    /// Where they were asked for: a collection's key, for its review page, or a work's id, for its
+    /// detail.
+    var place: String?
+    var kind: Review.Kind
+    var made: Int
+    /// In the order asked.
+    var refused: [Refused]
+
+    /// Why the file at `path` was refused, if it was.
+    func reason(_ path: String) -> String? { refused.first { $0.path == path }?.reason }
+}
+
 /// A session's files observed in a project and handed over in none, newest first: what a project's
 /// Observed section lists under the session (docs/design/review.md, Keeping an observed file).
 struct ObservedSession: Identifiable {
@@ -127,18 +147,20 @@ final class LibraryModel {
     }
     /// Why the last correction couldn't be recorded.
     private(set) var correctionFailure: String?
-    /// Why the last verdict or mark couldn't be made.
-    private(set) var reviewFailure: String?
+    /// The verdicts or marks last asked for that weren't all made, said where they were asked for
+    /// until the person goes elsewhere, looks again or decides again.
+    private(set) var reviewRefusal: ReviewRefusal?
     /// The size, dates and inode of each file a review state is shown for (the current file of each
     /// work in a unit or with a verdict or mark), nil when no regular file is there: taken with each
     /// organization, never by reading bytes, so the review states never touch the disk while they
     /// are drawn.
     private var listed: [String: FileStat?] = [:] { didSet { reviewsVersion += 1 } }
     /// The bytes read of a file this session, on select or for a verdict, with the file as it was
-    /// then: they stand for the file while it is still so.
-    private var reads: [String: (sha256: String, file: FileStat)] = [:] { didSet { reviewsVersion += 1 } }
-    /// What is at each of those paths when no regular file is: gone, a folder, not a regular file
-    /// or unreadable, taken with `listed`, from the file's metadata.
+    /// then: they stand for the file while it is still so. A read of a file no review state is
+    /// shown for leaves the queue as it was (`noteRead`).
+    private var reads: [String: (sha256: String, file: FileStat)] = [:]
+    /// What is at each of those paths when no regular file Gleaner can read is: gone, a folder, not
+    /// a regular file or unreadable, taken with `listed`, from the file's metadata.
     private var absent: [String: LocatorState.Kind] = [:]
     /// Paths not on disk, checked once per load and refreshed when a file is observed, so list
     /// rows never touch the disk while drawing.
@@ -171,6 +193,7 @@ final class LibraryModel {
             guard place != oldValue else { return }
             if case .project = place { kind = nil }
             alsoSelected = []
+            reviewRefusal = nil
             // A collection opens on its review page; elsewhere no collection's page is shown.
             if case .unit(let key) = place {
                 selection = nil
@@ -184,7 +207,7 @@ final class LibraryModel {
     /// The work shown: its id, or any of its files' paths.
     var selection: Work.ID? {
         didSet {
-            if selection != oldValue { chosenDelivery = nil; comparison = nil; alsoSelected = [] }
+            if selection != oldValue { chosenDelivery = nil; comparison = nil; alsoSelected = []; reviewRefusal = nil }
             if selection != nil { shownUnit = nil }
         }
     }
@@ -975,13 +998,30 @@ final class LibraryModel {
         Wording.session(observed.lazy.flatMap(\.observations).first { $0.logPath == logPath }?.sessionTitle)
     }
 
-    /// Undoes decisions made together, such as moving every file of a work. With `following`,
-    /// the window follows the selected work to where it now is.
+    /// Undoes decisions made together, such as moving every file of a work. Undoing a keep takes
+    /// back with it what was decided since about the file, while it is a work only because it was
+    /// kept: its collection and project would otherwise stay listed with nothing to act on, and
+    /// come back with the next keep. With `following`, the window follows the selected work to
+    /// where it now is.
     func undo(_ corrections: [Correction], following: Bool = true) async {
-        let ids = corrections.map(\.id), before = (place, selection)
+        let ids = (corrections + decidedSince(keeping: corrections)).map(\.id), before = (place, selection)
         await correcting { try $0.undo(ids) }
         if following, let selected = before.1 { follow(selected, from: before) }
         said("Undone")
+    }
+
+    /// The decisions about each file kept in `corrections` made after it was kept, while no reply
+    /// handed the file over: its collection and its project.
+    private func decidedSince(keeping corrections: [Correction]) -> [Correction] {
+        let undone = Set(corrections.map(\.id))
+        return corrections.filter { $0.kind == .kept }.flatMap { keep -> [Correction] in
+            guard let file = organization.work(containing: keep.subject)?.files.first(where: { $0.path == keep.subject }),
+                  file.deliveries.allSatisfy({ $0.kept != nil }) else { return [] }
+            return self.corrections.filter {
+                [.unit, .outOfUnit, .project].contains($0.kind) && $0.subject == keep.subject && !undone.contains($0.id)
+                    && ($0.madeAt, $0.id) > (keep.madeAt, keep.id)
+            }
+        }
     }
 
     func undo(_ correction: Correction, following: Bool = true) async {
@@ -1111,7 +1151,7 @@ final class LibraryModel {
         let name = name.trimmingCharacters(in: .whitespacesAndNewlines), key = unit.key, made = Set(corrections.map(\.id))
         guard !name.isEmpty, name != organization.unitName(key) else { return }
         await correcting { try $0.correct(.unitName, subject: key, target: name, at: Date()) }
-        undoable("Rename", since: made)
+        undoable("Rename Collection", since: made)
         said("Renamed \(unit.name) to \(name)")
     }
 
@@ -1120,13 +1160,15 @@ final class LibraryModel {
     func delete(_ unit: WorkUnit) async {
         let key = unit.key, made = Set(corrections.map(\.id))
         await correcting { try $0.correct(.unitDeleted, subject: key, target: "", at: Date()) }
-        undoable("Delete", since: made)
+        undoable("Delete Collection", since: made)
         said("Deleted \(unit.name)")
     }
 
     /// Puts the works, every file of each, in the unit; a work shown in another project is moved
-    /// to the unit's with it, as one decision.
+    /// to the unit's with it, as one decision. A work already in it stays as it is: nothing is
+    /// decided again.
     func add(_ works: [Work], to unit: WorkUnit) async {
+        let works = works.filter { $0.unit != unit.key }
         let decisions = works.flatMap { work in
             work.files.map { (kind: Correction.Kind.unit, subject: $0.path, target: unit.key) }
                 + (work.project == unit.project ? [] : work.files.map { (kind: .project, subject: $0.path, target: unit.project) })
@@ -1144,9 +1186,14 @@ final class LibraryModel {
         await decide(decisions, as: "Add to Collection", saying: "Kept and added \(names(candidates.map(\.name), "file")) to \(unit.name)")
     }
 
-    func remove(_ works: [Work], from unit: WorkUnit) async {
-        let decisions = works.flatMap { $0.files.map { (kind: Correction.Kind.outOfUnit, subject: $0.path, target: unit.key) } }
-        await decide(decisions, as: "Remove from Collection", saying: "Removed \(names(works.map(\.name))) from \(unit.name)")
+    /// Takes the works out of the units they are in, one or several, as one decision.
+    func remove(_ works: [Work]) async {
+        let works = works.filter { $0.unit != nil }
+        let units = Set(works.compactMap(\.unit))
+        guard let unit = units.first else { return }
+        let decisions = works.flatMap { work in work.files.map { (kind: Correction.Kind.outOfUnit, subject: $0.path, target: work.unit!) } }
+        let from = units.count == 1 ? organization.unitName(unit) : Wording.count(units.count, "collection")
+        await decide(decisions, as: "Remove from Collection", saying: "Removed \(names(works.map(\.name))) from \(from)")
     }
 
     /// Keeps the observed files, as one decision: each a work whose one revision is the file as its
@@ -1175,17 +1222,21 @@ final class LibraryModel {
     /// Makes a verdict or a published mark on each work's current file, on the bytes there now,
     /// read then. `shown` holds each file as the person was shown it, by path: a file no longer so
     /// is left, since they may not have judged those bytes. Edit › Undo takes back all of them.
+    /// Those refused are said `from` where the person asked: a collection's key, or a work's id.
     @discardableResult
-    func review(_ works: [Work], as kind: Review.Kind, note: String? = nil, shown: [String: FileStat] = [:]) async -> [Review] {
+    func review(_ works: [Work], as kind: Review.Kind, note: String? = nil, shown: [String: FileStat] = [:],
+                from place: String? = nil) async -> [Review] {
         let indexer = indexer, paths = works.map(\.latest.path), date = Date()
         let outcomes = await Task.detached(priority: .userInitiated) {
             paths.map { path in (path, Result { try indexer.review(path, as: kind, note: note, shown: shown[path], at: date) }) }
         }.value
         let made = outcomes.compactMap { try? $0.1.get() }
-        reviewFailure = outcomes.lazy.compactMap { path, outcome in
-            if case .failure(let error) = outcome { Wording.reviewFailed(error, name: (path as NSString).lastPathComponent) } else { nil }
-        }.first
-        for review in made { noteRead(review.path, sha256: review.sha256, file: review.file) }
+        let refused = outcomes.compactMap { path, outcome -> ReviewRefusal.Refused? in
+            guard case .failure(let error) = outcome else { return nil }
+            return .init(path: path, reason: Wording.reviewFailed(error, name: (path as NSString).lastPathComponent))
+        }
+        reviewRefusal = refused.isEmpty ? nil : ReviewRefusal(place: place, kind: kind, made: made.count, refused: refused)
+        for review in made { noteRead(review.path, sha256: review.sha256, file: review.file, judged: true) }
         reviews = Reviews((try? indexer.registry.reviews()) ?? [])
         // The read may have completed a listed capture: its file's revisions are read again.
         for path in Set(made.map(\.path)) { await reread(path) }
@@ -1193,13 +1244,14 @@ final class LibraryModel {
             undoManager.registerUndo(withTarget: self) { model in Task { await model.undo(made) } }
             undoManager.setActionName(Wording.reviewAction(kind))
         }
-        announce(reviewFailure ?? Wording.reviewed(kind, count: made.count))
+        // What was recorded and what wasn't, both.
+        announce(reviewRefusal.map { Wording.refusal($0).title + ". " + Wording.refusal($0).detail } ?? Wording.reviewed(kind, count: made.count))
         return made
     }
 
-    /// Clears why the last verdict or mark wasn't made, once the person looks again.
+    /// Clears what was refused, once the person looks again.
     func lookAgain() {
-        reviewFailure = nil
+        reviewRefusal = nil
     }
 
     /// Takes back verdicts and marks; those made before or after them stay.
@@ -1209,10 +1261,10 @@ final class LibraryModel {
         switch outcome {
         case .success(let all):
             self.reviews = Reviews(all)
-            reviewFailure = nil
+            reviewRefusal = nil
             announce("Undone")
         case .failure(let error):
-            reviewFailure = "Couldn’t undo that: \(error.localizedDescription)"
+            correctionFailure = "Couldn’t undo that: \(error.localizedDescription)"
         }
     }
 
@@ -1220,7 +1272,7 @@ final class LibraryModel {
     /// still as read, else its size and dates when the library was organized. Reads nothing.
     func present(_ work: Work) -> Present {
         let path = work.latest.path
-        guard let entry = listed[path], let file = entry else { return .absent }
+        guard let entry = listed[path], let file = entry else { return .absent(work) }
         if let read = reads[path], read.file == file { return .read(read.sha256) }
         return .listed(file)
     }
@@ -1239,8 +1291,9 @@ final class LibraryModel {
     /// again only when the organization, the verdicts or what is known of a file changed: the
     /// sidebar asks for it on every collection's row.
     var toReview: [Organization.ReviewGroup] {
-        // Read for the views that ask, so they follow every change the queue follows.
-        _ = (organization.works.count, reviews, listed.count, reads.count)
+        // Read for the views that ask, so they follow every change the queue follows: a read that
+        // moves it also writes `listed` (`noteRead`).
+        _ = (organization.works.count, reviews, listed.count)
         let key = [organizationVersion, reviewsVersion]
         if let cached = queueCache, cached.key == key { return cached.groups }
         let groups = organization.toReview(reviews, present: present)
@@ -1262,7 +1315,14 @@ final class LibraryModel {
     /// on other bytes. A folder has no bytes to judge, so nothing waits on one.
     func waits(_ work: Work) -> (Mark, String)? {
         guard work.kind != .folder else { return nil }
-        return Wording.waiting(verdict(of: work), inUnit: work.unit != nil)
+        return Wording.waiting(verdict(of: work), inUnit: work.unit != nil, noFile: hasNoFile(work))
+    }
+
+    /// Whether no regular file Gleaner can read was found at the current file of a work a review
+    /// state is shown for, when its size and dates were last taken: there are no bytes there to
+    /// judge.
+    func hasNoFile(_ work: Work) -> Bool {
+        if case .some(.none) = listed[work.latest.path] { true } else { false }
     }
 
     /// The On this Mac state of the work's current file, as the library knows it without reading
@@ -1270,8 +1330,13 @@ final class LibraryModel {
     /// what the library found gone.
     func onThisMac(_ work: Work) -> Statement {
         let file = work.latest, now = rowNow(file)
+        // A file a review state is shown for: as its size and dates were last taken, when the
+        // library was organized, the file selected or its review page drawn.
+        if let entry = listed[file.path] {
+            guard entry != nil else { return Wording.onThisMac(absent[file.path] ?? .missing, changed: false) }
+            return Wording.onThisMac(.file, changed: now.kind == .file && now.changed)
+        }
         if let kind = now.kind { return Wording.onThisMac(kind, changed: now.changed) }
-        if let kind = absent[file.path] { return Wording.onThisMac(kind, changed: false) }
         return Wording.onThisMac(file.kind == .folder ? .directory : .file, changed: false)
     }
 
@@ -1305,6 +1370,21 @@ final class LibraryModel {
         sidebarClosed.remove(project)
         if let parent { sidebarClosed.remove(parent) }
         naming = .new(project: project, parent: parent, adding: adding)
+    }
+
+    /// Starts naming the collection in place in the sidebar, with its project and the collection
+    /// it is inside opened to show it.
+    func startRenaming(_ unit: WorkUnit) {
+        sidebarClosed.remove(unit.project)
+        if let parent = unit.parent { sidebarClosed.remove(parent) }
+        naming = .rename(unit.key)
+    }
+
+    /// How many collections deleting the person's project `key` deletes with it: those made in it,
+    /// and those inside them, while they are shown.
+    func unitsDeleted(with key: String) -> Int {
+        let made = Set(units.filter { $0.project == key }.map(\.key))
+        return organization.units.filter { made.contains($0.key) || $0.parent.map(made.contains) == true }.count
     }
 
     /// Ends naming in place with `name`: makes the collection, or renames it. An empty name makes
@@ -1378,27 +1458,40 @@ final class LibraryModel {
         for work in organization.works where work.unit != nil || reviews.any(work) {
             let path = work.latest.path, file = FileStat(path)
             listed[path] = .some(file)
-            if file == nil { absent[path] = Locator.stat(path).kind }
+            if file == nil { absent[path] = Self.absence(path) }
         }
         self.listed = listed
         self.absent = absent
     }
 
+    /// What is at `path` when no regular file Gleaner can read is: a regular file it may not read
+    /// is unreadable, never gone (A20).
+    private static func absence(_ path: String) -> LocatorState.Kind {
+        let kind = Locator.stat(path).kind
+        return kind == .file ? .unreadable : kind
+    }
+
     /// Records a read of the file at `path` this session: its bytes stand for the file while it is
-    /// still as `file`. Without bytes or a file, the read stands for nothing.
-    private func noteRead(_ path: String, sha256: String?, file: FileStat?) {
-        if let sha256, let file {
-            reads[path] = (sha256, file)
-            listed[path] = .some(file)
-            absent[path] = nil
-        } else {
-            reads[path] = nil
-            if listed[path] != nil {
-                let file = FileStat(path)
-                listed[path] = .some(file)
-                absent[path] = file == nil ? Locator.stat(path).kind : nil
-            }
-        }
+    /// still as `file`. Without bytes or a file, the read stands for nothing. The review states and
+    /// the queue follow it for a file they are shown for, or one a verdict or mark was just made on
+    /// (`judged`); a read of any other file leaves them as they were.
+    private func noteRead(_ path: String, sha256: String?, file: FileStat?, judged: Bool = false) {
+        let read = sha256.flatMap { sha in file.map { (sha256: sha, file: $0) } }
+        reads[path] = read
+        guard judged || listed[path] != nil else { return }
+        let now = read?.file ?? FileStat(path)
+        listed[path] = .some(now)
+        absent[path] = now == nil ? Self.absence(path) : nil
+        reviewsVersion += 1
+    }
+
+    /// Takes what a review page found at `path` as it drew the file: its size, dates and inode, or
+    /// nil when no regular file Gleaner can read is there. The marks, To Review and Review All then
+    /// say what the page drew, even of a file rewritten outside any session. Metadata only.
+    func noteShown(_ path: String, _ file: FileStat?) {
+        guard let entry = listed[path], entry != file else { return }
+        listed[path] = .some(file)
+        absent[path] = file == nil ? Self.absence(path) : nil
     }
 
     /// How to go back to the conversation that made `delivery`, checked now.

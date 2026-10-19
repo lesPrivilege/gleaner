@@ -16,7 +16,8 @@ public struct UserProject: Sendable, Equatable, Identifiable {
 /// revision of the person's own beside the deliveries, never one of them.
 public struct Correction: Sendable, Equatable, Identifiable {
     public enum Kind: String, Sendable {
-        /// The work holding the file `subject` belongs to the project `target`.
+        /// The work holding the file `subject` belongs to the project `target`. The latest of these
+        /// for a work's files places it.
         case project
         /// The project derived from the folder `subject` is shown inside the project `target`.
         case combine
@@ -117,11 +118,12 @@ extension Registry {
         }
     }
 
-    /// Records a decision. A file's work, or a folder's project, has one place: a new one replaces
-    /// the last. Two files are one work or not, so saying one replaces the other. An observed file
-    /// may be detached from several sessions and related to several works; saying the same again
-    /// replaces it. A file is kept once. A work unit's contents and name are appended, each decision
-    /// on top of the last, so undoing one returns to the one before it; deleting a unit twice is
+    /// Records a decision. A folder's project has one place: a new one replaces the last. Two files
+    /// are one work or not, so saying one replaces the other. An observed file may be detached from
+    /// several sessions and related to several works; saying the same again replaces it. A file is
+    /// kept once. A work's project, and a work unit's contents and name, are appended, each decision
+    /// on top of the last, so undoing one returns to the one before it (A19): a work moved on from a
+    /// project it was moved to goes back there, and into its unit there. Deleting a unit twice is
     /// once.
     public func correct(_ kind: Correction.Kind, subject: String, target: String, at date: Date) throws {
         try correct(kind, subjects: [subject], target: target, at: date)
@@ -143,14 +145,14 @@ extension Registry {
             let (subject, target) = kind == .sameWork || kind == .notSameWork
                 ? (min(subject, target), max(subject, target)) : (subject, target)
             switch kind {
-            case .project, .combine, .kept, .unitDeleted:
+            case .combine, .kept, .unitDeleted:
                 try db.run("DELETE FROM corrections WHERE kind = ? AND subject = ?", [kind.rawValue, subject])
             case .sameWork, .notSameWork:
                 try db.run("DELETE FROM corrections WHERE kind IN ('same_work', 'not_same_work') AND subject = ? AND target = ?",
                            [subject, target])
             case .notFromSession, .related:
                 try db.run("DELETE FROM corrections WHERE kind = ? AND subject = ? AND target = ?", [kind.rawValue, subject, target])
-            case .unit, .outOfUnit, .unitName:
+            case .project, .unit, .outOfUnit, .unitName:
                 break
             }
             try db.run("INSERT INTO corrections (kind, subject, target, made_at) VALUES (?, ?, ?, ?)",

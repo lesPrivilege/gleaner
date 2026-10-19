@@ -326,19 +326,35 @@ struct FoldedCandidates: View {
         DisclosureGroup(isExpanded: Binding(get: { model.unfolded[key] ?? false }, set: { model.unfolded[key] = $0 })) {
             ForEach(candidates) { CandidateRow(candidate: $0, project: project) }
         } label: {
-            SectionHeader(title: Wording.folded(model.outlineFolder(candidates[0], in: project), count: candidates.count),
-                          count: candidates.count, noun: "file") {
-                FileIcon(path: candidates[0].path, folder: false, size: 16)
+            // Its actions are on the row, as a single file's are, and in its menu.
+            HStack(alignment: .center, spacing: Space.s + 2) {
+                SectionHeader(title: Wording.folded(model.outlineFolder(candidates[0], in: project), count: candidates.count),
+                              count: candidates.count, noun: "file") {
+                    FileIcon(path: candidates[0].path, folder: false, size: 16)
+                }
+                Button("Keep All") { Task { await model.keep(candidates) } }
+                    .controlRole(.inline)
+                    .help("Add every one to the library, as this session left it")
+                Menu { addAll } label: { Image(systemName: "ellipsis.circle") }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                    .fixedSize()
+                    .help("More")
+                    .accessibilityLabel("More")
             }
             .contextMenu {
                 Button("Keep All") { Task { await model.keep(candidates) } }
-                Menu("Add All to Collection") {
-                    CollectionChoices(project: project.key) { unit in
-                        Task { await model.add(candidates, to: unit) }
-                    } new: {
-                        model.startNewUnit(in: project.key, adding: candidates.map(\.path))
-                    }
-                }
+                addAll
+            }
+        }
+    }
+
+    var addAll: some View {
+        Menu("Add All to Collection") {
+            CollectionChoices(project: project.key) { unit in
+                Task { await model.add(candidates, to: unit) }
+            } new: {
+                model.startNewUnit(in: project.key, adding: candidates.map(\.path))
             }
         }
     }

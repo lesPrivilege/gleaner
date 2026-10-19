@@ -62,6 +62,7 @@ public final class Registry: @unchecked Sendable {
             CREATE TABLE IF NOT EXISTS projects (key TEXT PRIMARY KEY, name TEXT NOT NULL, created_at REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS corrections (
                 id INTEGER PRIMARY KEY, kind TEXT NOT NULL, subject TEXT NOT NULL, target TEXT NOT NULL, made_at REAL NOT NULL);
+            CREATE INDEX IF NOT EXISTS corrections_subject ON corrections(subject, kind);
             CREATE TABLE IF NOT EXISTS sources_off (provider TEXT PRIMARY KEY, since REAL NOT NULL);
             CREATE TABLE IF NOT EXISTS spans (
                 log_path TEXT PRIMARY KEY, session_id TEXT NOT NULL, provider TEXT NOT NULL, stretches TEXT NOT NULL,

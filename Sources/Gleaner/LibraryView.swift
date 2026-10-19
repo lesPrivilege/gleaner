@@ -12,12 +12,13 @@ struct LibraryView: View {
     @SceneStorage("query") private var savedQuery = ""
     @SceneStorage("kind") private var savedKind = ""
     @SceneStorage("place") private var savedPlace = ""
+    @State private var columns = NavigationSplitViewVisibility.automatic
 
     var body: some View {
         @Bindable var model = model
         // Read here so the view follows every change to what the selection hands over.
         let quickLookURL = model.quickLookURL
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $columns) {
             Sidebar()
                 .navigationSplitViewColumnWidth(min: 190, ideal: 220, max: 300)
         } content: {
@@ -36,6 +37,8 @@ struct LibraryView: View {
         .onChange(of: model.query) { savedQuery = model.query }
         .onChange(of: model.kind) { savedKind = model.kind?.rawValue ?? "" }
         .onChange(of: model.place) { savedPlace = Self.encode(model.place) }
+        // A collection is named in place in the sidebar, so the sidebar shows while it is.
+        .onChange(of: model.naming) { if model.naming != nil { columns = .all } }
         .navigationSubtitle(model.progress.map { "Reading logs… \($0.done) of \($0.total)" } ?? model.status)
         .toolbar {
             ToolbarItem {
@@ -153,7 +156,7 @@ struct Sidebar: View {
         .confirmationDialog("Delete “\(removing?.name ?? "")”?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Delete Project", role: .destructive) { if let removing { Task { await model.remove(removing) } } }
         } message: {
-            Text("Its work goes back where Gleaner found it. No file changes.")
+            Text(Wording.deletingProject(units: removing.map { model.unitsDeleted(with: $0.key) } ?? 0))
         }
     }
 

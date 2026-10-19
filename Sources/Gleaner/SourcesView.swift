@@ -282,7 +282,7 @@ struct CorrectionsPage: View {
         .confirmationDialog("Delete “\(removing?.name ?? "")”?", isPresented: Binding(get: { removing != nil }, set: { if !$0 { removing = nil } })) {
             Button("Delete Project", role: .destructive) { if let removing { Task { await model.remove(removing) } } }
         } message: {
-            Text("Its work goes back where Gleaner found it. No file changes.")
+            Text(Wording.deletingProject(units: removing.map { model.unitsDeleted(with: $0.key) } ?? 0))
         }
         .confirmationDialog("Undo every correction?", isPresented: $confirming) {
             Button("Undo All", role: .destructive) { Task { await model.undoAllCorrections() } }

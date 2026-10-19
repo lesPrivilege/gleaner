@@ -197,8 +197,8 @@ struct JoinSheet: View {
         let others = model.organization.works.filter { $0.id != work.id }
         // This project's works first: versions of one work are usually kept together.
         WorkPicker(title: "Join “\(work.name)” With…", note: "Both files show as versions of one work. Gleaner checks nothing: it’s your call.",
-                   action: "Join", works: others.filter { $0.project == work.project } + others.filter { $0.project != work.project }) { other in
-            Task { await model.join(work.id, other.id) }
+                   action: "Join", works: others.filter { $0.project == work.project } + others.filter { $0.project != work.project }) { picked in
+            if let other = picked.first { Task { await model.join(work.id, other.id) } }
         }
     }
 }

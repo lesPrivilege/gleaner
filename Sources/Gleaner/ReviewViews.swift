@@ -26,12 +26,15 @@ enum ReviewForm: Int, Comparable {
 }
 
 /// A collection's works as its review page lays them out: what a person opens, by form, in list
-/// order, each with the files that share its stem in its folder beside it; then what a program
-/// reads. Files shown together claim nothing about which was made from which (SPEC §5.3).
+/// order, each with the files beside it whose names in its folder differ from its own only by their
+/// extension (`ov-4x3.png`, `ov-4x3.svg`); then what a program reads. Files that share no more
+/// than a stem (`ep01.mp4`, `ep01.cover-4x3.png`, `ep01.script.md`) are each drawn in their own
+/// form. Files shown together claim nothing about which was made from which (SPEC §5.3).
 struct ReviewLayout {
     struct Item: Identifiable {
-        /// Drawn in its form: of the files sharing a stem, the first a person sees (a video before
-        /// an image, a render before its source of the same kind), else the first in list order.
+        /// Drawn in its form: of the files that differ only by extension, the first a person sees
+        /// (a video before an image, an image before a document, a document before audio), else
+        /// the first in list order.
         var lead: Work
         /// The others, each named beside it.
         var beside: [Work]
@@ -42,17 +45,19 @@ struct ReviewLayout {
     var items: [Item] = []
     var others: [Work] = []
 
+    /// `works` in list order, as a unit holds them.
     init(_ works: [Work]) {
         others = works.filter { ReviewForm($0) == nil }
-        let opened = works.filter { ReviewForm($0) != nil }
-        for row in Listing.rows(opened.map(Listing.Entry.work), crowded: .max) {
-            let entries: [Listing.Entry] = switch row {
-            case .entry(let entry): [entry]
-            case .together(_, let entries), .folded(_, _, let entries): entries
-            }
-            let group = entries.compactMap { entry -> Work? in if case .work(let work) = entry { work } else { nil } }
-            guard let lead = group.enumerated().min(by: { (ReviewForm($0.element)!, $0.offset) < (ReviewForm($1.element)!, $1.offset) })?.element
-            else { continue }
+        var groups: [String: [Work]] = [:], order: [String] = []
+        for work in works where ReviewForm(work) != nil {
+            // Compared without case, as the disk compares names.
+            let key = (work.latest.path as NSString).deletingPathExtension.lowercased()
+            if groups[key] == nil { order.append(key) }
+            groups[key, default: []].append(work)
+        }
+        for key in order {
+            let group = groups[key]!
+            let lead = group.enumerated().min { (ReviewForm($0.element)!, $0.offset) < (ReviewForm($1.element)!, $1.offset) }!.element
             items.append(Item(lead: lead, beside: group.filter { $0.id != lead.id }, form: ReviewForm(lead)!))
         }
         // By form, each in list order: images then stand side by side.
@@ -70,6 +75,8 @@ struct Asking: Identifiable {
     var kind: Review.Kind
     /// Each file as it was shown, by path.
     var shown: [String: FileStat]
+    /// Where it was asked for, where a refusal is said: a collection's key, or a work's id.
+    var place: String? = nil
     var id: String { kind.rawValue + "\n" + works.map(\.id).joined(separator: "\n") }
 }
 
@@ -85,29 +92,30 @@ struct ReviewPage: View {
     var unit: WorkUnit
     /// Each file as it was when its item was drawn, by path.
     @State private var shown: [String: FileStat] = [:]
-    /// The files drawn in their form (played, shown or rendered), not only named: what Review All
-    /// acts on. A file named beside another, or under Other Files, is judged on its own (A10).
+    /// The files drawn whole in their form: played, shown large enough to see, or rendered, as
+    /// each form says once it did. What Review All acts on. A file named beside another, under
+    /// Other Files, drawn as its icon, cut off, by Quick Look, or that couldn't be drawn is judged
+    /// on its own (A10).
     @State private var drawn: Set<String> = []
     /// Bumped by Look Again: each item reads its file again.
     @State private var generation = 0
     @State private var asking: Asking?
     @State private var othersOpen = false
-    /// Each image's width over its height, once read, by path: an image's item is as wide as its
-    /// picture at the shared height.
-    @State private var aspects: [String: CGFloat] = [:]
 
     var body: some View {
         let organization = model.organization
         let layout = ReviewLayout(organization.works(in: unit.key))
         let inner = organization.units(inside: unit.key)
+        let refusal = model.reviewRefusal.flatMap { $0.place == unit.key ? $0 : nil }
         ScrollView {
-            // Drawn as it scrolls into view: a long collection plays and reads only what is
-            // shown, and Review All acts on that.
+            // Drawn as it scrolls into view, row by row: a long collection plays and reads only
+            // what is shown, and Review All acts on that.
             LazyVStack(alignment: .leading, spacing: Space.xl) {
                 header(layout)
-                if let failure = model.reviewFailure {
-                    StatusPanel(statement: Statement(mark: .attention, title: "Nothing recorded", detail: failure)) {
-                        Button("Look Again") { generation += 1; model.lookAgain() }
+                // Several asked for at once: what was recorded and what wasn't, by Review All.
+                if let refusal, refusal.made + refusal.refused.count > 1 {
+                    StatusPanel(statement: Wording.refusal(refusal)) {
+                        Button("Look Again", action: lookAgain)
                     }
                 }
                 if !inner.isEmpty {
@@ -124,19 +132,22 @@ struct ReviewPage: View {
                     }
                 }
                 let images = layout.items.filter { $0.form == .image }
-                ForEach(layout.items.filter { $0.form < .image }) { item($0) }
+                ForEach(layout.items.filter { $0.form < .image }) { item($0, refusal) }
                 if !images.isEmpty {
-                    FlowLayout(spacing: Space.l) {
-                        ForEach(images) { item($0) }
+                    // Each row of images is made as it scrolls into view.
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: ImageTile.width), spacing: Space.l, alignment: .topLeading)],
+                              alignment: .leading, spacing: Space.l) {
+                        ForEach(images) { item($0, refusal) }
                     }
                 }
-                ForEach(layout.items.filter { $0.form > .image }) { item($0) }
+                ForEach(layout.items.filter { $0.form > .image }) { item($0, refusal) }
                 if !layout.others.isEmpty {
                     DisclosureGroup(isExpanded: $othersOpen) {
                         VStack(alignment: .leading, spacing: Space.s) {
                             ForEach(layout.others) { work in
-                                ReviewBar(work: work, shown: shown[work.latest.path], icon: true, ask: ask)
-                                    .task(id: generation) { look(work, inForm: false) }
+                                ReviewBar(work: work, shown: shown[work.latest.path], icon: true,
+                                          refused: refusal?.reason(work.latest.path), ask: ask, lookAgain: lookAgain)
+                                    .task(id: generation) { look(work) }
                             }
                         }
                         .padding(.top, Space.s)
@@ -156,7 +167,7 @@ struct ReviewPage: View {
     }
 
     /// The collection's name, what it holds and what waits, and Review All, which makes one verdict
-    /// on each work the page shows, on the bytes there now.
+    /// on each work the page drew, on the bytes there now.
     func header(_ layout: ReviewLayout) -> some View {
         let organization = model.organization
         let waiting = model.waiting(in: unit.key)
@@ -176,19 +187,24 @@ struct ReviewPage: View {
             }
             Spacer(minLength: Space.s)
             let all = layout.works
+            let approve = targets(.approved, all), changes = targets(.changesRequested, all), reject = targets(.rejected, all)
+            // Each verdict only while some work drawn hasn't been given it on these bytes.
             Menu("Review All") {
-                Button("Approve All") { make(.approved, all, note: nil) }
-                Button("Request Changes to All…") { ask(Asking(works: targets(.changesRequested, all), kind: .changesRequested, shown: shown)) }
-                Button("Reject All…") { ask(Asking(works: targets(.rejected, all), kind: .rejected, shown: shown)) }
+                Button("Approve All") { make(.approved, approve, note: nil) }
+                    .disabled(approve.isEmpty)
+                Button("Request Changes to All…") { ask(Asking(works: changes, kind: .changesRequested, shown: shown, place: unit.key)) }
+                    .disabled(changes.isEmpty)
+                Button("Reject All…") { ask(Asking(works: reject, kind: .rejected, shown: shown, place: unit.key)) }
+                    .disabled(reject.isEmpty)
             }
             .fixedSize()
-            .disabled(targets(.approved, all).isEmpty && targets(.rejected, all).isEmpty)
-            .help("A verdict on each work played, shown or rendered here, bound to the bytes hashed as it is made. Files only named are judged on their own.")
+            .disabled(approve.isEmpty && changes.isEmpty && reject.isEmpty)
+            .help("A verdict on each work played, shown or rendered here, bound to the bytes hashed as it is made. Files only named, or that couldn’t be drawn whole, are judged on their own.")
         }
     }
 
-    /// The works that a verdict of `kind` would add to: those drawn in their form, with a file
-    /// there, not already given that verdict on these bytes. A folder has no bytes to judge.
+    /// The works that a verdict of `kind` would add to: those drawn whole in their form, with a
+    /// file there, not already given that verdict on these bytes. A folder has no bytes to judge.
     func targets(_ kind: Review.Kind, _ works: [Work]) -> [Work] {
         works.filter { work in
             guard work.kind != .folder, drawn.contains(work.latest.path), shown[work.latest.path] != nil else { return false }
@@ -198,106 +214,150 @@ struct ReviewPage: View {
     }
 
     func make(_ kind: Review.Kind, _ works: [Work], note: String?) {
-        let works = targets(kind, works), shown = shown
+        let shown = shown, place = unit.key
         guard !works.isEmpty else { return }
-        Task { await model.review(works, as: kind, note: note, shown: shown) }
+        Task { await model.review(works, as: kind, note: note, shown: shown, from: place) }
     }
 
     func ask(_ asking: Asking) {
         if asking.kind == .approved {
-            Task { await model.review(asking.works, as: .approved, shown: asking.shown) }
+            Task { await model.review(asking.works, as: .approved, shown: asking.shown, from: asking.place) }
         } else if !asking.works.isEmpty {
             self.asking = asking
         }
     }
 
-    /// Takes the file as it is now, as its item is drawn: a verdict made on it is made only while
-    /// the file is still so. `inForm` when the file itself is played, shown or rendered.
-    func look(_ work: Work, inForm: Bool) {
-        let path = work.latest.path
-        shown[path] = FileStat(path)
-        if inForm { drawn.insert(path) }
+    /// Draws every item again from disk, and clears what was refused.
+    func lookAgain() {
+        drawn = []
+        generation += 1
+        model.lookAgain()
     }
 
-    /// A work in place, its states and actions under it, and the files sharing its stem beside it.
-    @ViewBuilder func item(_ item: ReviewLayout.Item) -> some View {
+    /// Takes the file as it is now, as its item is drawn: a verdict made on it is made only while
+    /// the file is still so, and the marks and To Review say what the page drew.
+    func look(_ work: Work) {
+        let path = work.latest.path, file = FileStat(path)
+        shown[path] = file
+        model.noteShown(path, file)
+    }
+
+    /// A work in place, its states and actions under it, and the files beside it.
+    @ViewBuilder func item(_ item: ReviewLayout.Item, _ refusal: ReviewRefusal?) -> some View {
         let lead = item.lead
         VStack(alignment: .leading, spacing: Space.s) {
-            Group {
-                if item.form == .image {
-                    ImageTile(path: lead.latest.path, generation: generation, aspect: $aspects[lead.latest.path])
-                } else {
-                    ReviewMedia(work: lead, form: item.form, generation: generation)
-                }
-            }
-            .task(id: generation) { look(lead, inForm: item.form != .file) }
-            ReviewBar(work: lead, shown: shown[lead.latest.path], ask: ask)
+            ReviewMedia(work: lead, form: item.form, generation: generation) { drawn.insert(lead.latest.path) }
+                .task(id: generation) { look(lead) }
+            ReviewBar(work: lead, shown: shown[lead.latest.path], refused: refusal?.reason(lead.latest.path), ask: ask, lookAgain: lookAgain)
             ForEach(item.beside) { other in
                 VStack(alignment: .leading, spacing: Space.xs) {
                     // Audio beside plays in its own row; anything else is named beside it.
                     if ReviewForm(other) == .audio {
-                        ReviewMedia(work: other, form: .audio, generation: generation)
+                        ReviewMedia(work: other, form: .audio, generation: generation) { drawn.insert(other.latest.path) }
                     }
-                    ReviewBar(work: other, shown: shown[other.latest.path], beside: true, ask: ask)
+                    ReviewBar(work: other, shown: shown[other.latest.path], beside: true, refused: refusal?.reason(other.latest.path),
+                              ask: ask, lookAgain: lookAgain)
                 }
                 .padding(.leading, Space.m)
                 .overlay(alignment: .leading) { Rectangle().fill(.quaternary).frame(width: 2) }
-                .task(id: generation) { look(other, inForm: ReviewForm(other) == .audio) }
+                .task(id: generation) { look(other) }
             }
         }
-        .frame(width: item.form == .image ? ImageTile.itemWidth(aspects[lead.latest.path]) : nil, alignment: .leading)
-        .frame(maxWidth: item.form == .image ? nil : .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
 /// A work drawn as a person opens it, from the file on disk: a video at its own aspect, audio in a
 /// player row, an image at its own aspect, a document as the preview pane renders it, or the
-/// file's own icon.
+/// file's own icon. With no file Gleaner can read there, or one it can't play, it is the file's
+/// icon and why, compact. `rendered` is called once the file is drawn whole in its form.
 struct ReviewMedia: View {
+    @Environment(LibraryModel.self) private var model
     var work: Work
     var form: ReviewForm
     /// Read again whenever it changes.
     var generation: Int
+    var rendered: () -> Void
 
     var body: some View {
         let url = URL(fileURLWithPath: work.latest.path)
-        switch form {
-        case .video: VideoItem(url: url).id(generation)
-        case .audio:
-            // Audio has no picture: its row is AVKit's controls alone.
-            PlayerView(url: url, audio: true).frame(height: 36)
-                .clipShape(RoundedRectangle(cornerRadius: Radius.card))
-                .id(generation)
-        case .image: ImageTile(path: work.latest.path, generation: generation, aspect: .constant(nil))
-        case .document: DocumentItem(url: url, generation: generation)
-        case .file:
-            FileIcon(path: work.latest.path, folder: work.kind == .folder, size: 64)
-                .frame(maxWidth: .infinity, minHeight: 96)
-                .surface(.page)
+        if model.hasNoFile(work) && work.kind != .folder {
+            Undrawn(path: work.latest.path, reason: model.onThisMac(work).detail)
+        } else {
+            switch form {
+            case .video, .audio: PlayedItem(url: url, audio: form == .audio, rendered: rendered).id(generation)
+            case .image: ImageTile(path: work.latest.path, generation: generation, rendered: rendered)
+            case .document: DocumentItem(url: url, generation: generation, rendered: rendered)
+            case .file:
+                FileIcon(path: work.latest.path, folder: work.kind == .folder, size: 64)
+                    .frame(maxWidth: .infinity, minHeight: 96)
+                    .surface(.page)
+            }
         }
     }
 }
 
-/// A video, played where it is and never copied, at its own aspect, up to a height.
-struct VideoItem: View {
+/// In place of a file that can't be drawn: its icon and why, compact, so it never stands as large
+/// as one that can.
+struct Undrawn: View {
+    var path: String
+    var reason: String
+
+    var body: some View {
+        HStack(spacing: Space.m) {
+            FileIcon(path: path, folder: false, size: 32).opacity(0.6)
+            Text(reason).font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(Space.m)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .surface(.page)
+    }
+}
+
+/// A video, played where it is and never copied, at its own aspect, up to a height; or audio, as a
+/// row of AVKit's controls alone. Played only once AVFoundation finds a track it can play;
+/// otherwise the file's icon says it can't be played here.
+struct PlayedItem: View {
     var url: URL
-    @State private var aspect: CGFloat?
+    var audio: Bool
+    var rendered: () -> Void
+    /// Nil until the file is looked at; then its picture's width over its height (1 for audio), or
+    /// nothing it can play.
+    @State private var playable: CGFloat??
 
     static let tallest: CGFloat = 420
 
     var body: some View {
-        PlayerView(url: url, audio: false)
-            .aspectRatio(aspect ?? 16 / 9, contentMode: .fit)
-            .frame(maxWidth: .infinity, maxHeight: Self.tallest, alignment: .leading)
-            .clipShape(RoundedRectangle(cornerRadius: Radius.card))
-            .task(id: url) { aspect = await Self.aspect(url) }
+        Group {
+            switch playable {
+            case .some(.none): Undrawn(path: url.path, reason: Wording.unplayable)
+            case .some(.some(let aspect)) where !audio:
+                PlayerView(url: url, audio: false)
+                    .aspectRatio(aspect, contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: Self.tallest, alignment: .leading)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.card))
+            case .some(.some):
+                PlayerView(url: url, audio: true).frame(height: 36)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.card))
+            case .none:
+                Color.clear.frame(height: audio ? 36 : 96)
+            }
+        }
+        .task(id: url) {
+            playable = .some(await Self.aspect(url, audio: audio))
+            if playable != .some(.none) { rendered() }
+        }
     }
 
-    /// The width over the height of its picture as shown, turned as it is meant to be.
-    static func aspect(_ url: URL) async -> CGFloat? {
+    /// The width over the height of a video's picture as shown, turned as it is meant to be; 1 for
+    /// audio with a sound track. Nil when there is no track AVFoundation can play.
+    static func aspect(_ url: URL, audio: Bool) async -> CGFloat? {
         let asset = AVURLAsset(url: url)
-        guard let track = try? await asset.loadTracks(withMediaType: .video).first,
-              let (size, transform) = try? await track.load(.naturalSize, .preferredTransform) else { return nil }
+        guard (try? await asset.load(.isPlayable)) == true,
+              let track = try? await asset.loadTracks(withMediaType: audio ? .audio : .video).first else { return nil }
+        if audio { return 1 }
+        guard let (size, transform) = try? await track.load(.naturalSize, .preferredTransform) else { return nil }
         let shown = size.applying(transform)
         return shown.height == 0 ? nil : abs(shown.width / shown.height)
     }
@@ -327,27 +387,23 @@ struct PlayerView: NSViewRepresentable {
     }
 }
 
-/// An image at its own aspect, at the height every image on the page shares, so several stand side
-/// by side.
+/// An image at its own aspect, fitted to its tile: a page's images stand side by side in tiles of
+/// one height, as wide as the page gives each.
 struct ImageTile: View {
     var path: String
     var generation: Int
-    /// Its width over its height, once read.
-    @Binding var aspect: CGFloat?
+    /// Called once the image is drawn large enough to see.
+    var rendered: () -> Void = {}
     @State private var image: NSImage?
     @Environment(\.displayScale) private var scale
 
     static let height: CGFloat = 220
-    static let widest: CGFloat = 560
-
-    /// The width of an image's item on a page: its picture's at the shared height, and at least
-    /// room for its name and actions under it.
-    static func itemWidth(_ aspect: CGFloat?) -> CGFloat {
-        max(min(height * (aspect ?? 4 / 3), widest), 260)
-    }
+    /// The least width of a tile, which leaves room for its name and actions under it.
+    static let width: CGFloat = 360
+    /// The widest a tile is drawn, alone in a row of a narrow page.
+    static let widest: CGFloat = 720
 
     var body: some View {
-        let aspect = image.map { $0.size.height > 0 ? $0.size.width / $0.size.height : 1 } ?? 4 / 3
         ZStack {
             RoundedRectangle(cornerRadius: Radius.tag).fill(.quaternary.opacity(0.5))
             if let image {
@@ -356,25 +412,39 @@ struct ImageTile: View {
                 FileIcon(path: path, folder: false, size: 48).opacity(0.5)
             }
         }
-        .frame(width: min(Self.height * aspect, Self.widest), height: Self.height)
+        .frame(maxWidth: .infinity)
+        .frame(height: Self.height)
         .clipShape(RoundedRectangle(cornerRadius: Radius.tag))
         .overlay(RoundedRectangle(cornerRadius: Radius.tag).strokeBorder(Color(nsColor: .separatorColor)))
         .task(id: "\(path)|\(generation)") {
             // No more pixels than the widest tile shows.
             image = await ImageFile.load(path, pixels: Int((Self.widest * scale).rounded(.up)))
-            self.aspect = image.map { $0.size.height > 0 ? $0.size.width / $0.size.height : 1 }
+            if let image, Self.legible(image.size) { rendered() }
         }
         .accessibilityElement()
         .accessibilityLabel((path as NSString).lastPathComponent)
         .accessibilityAddTraits(.isImage)
     }
+
+    /// Whether a picture of `size` is drawn large enough to see in the narrowest tile: one far
+    /// taller or wider than that (a long scroll, a thin banner) is a sliver there, and is judged on
+    /// its own.
+    static func legible(_ size: CGSize) -> Bool {
+        guard size.width > 0, size.height > 0 else { return false }
+        let scale = min(width / size.width, height / size.height)
+        return min(size.width, size.height) * scale >= height / 5
+    }
 }
 
 /// A document as the preview pane renders it: Markdown and text from their words, as tall as they
-/// are up to a height, anything else (a PDF, a page) by Quick Look.
+/// are up to a height, anything else (a PDF, a page) by Quick Look. Text past the first 64 KB isn't
+/// shown, and the page says so.
 struct DocumentItem: View {
     var url: URL
     var generation: Int
+    /// Called once the words are drawn whole. Gleaner can't tell what Quick Look drew, nor is a
+    /// document cut off drawn whole.
+    var rendered: () -> Void
     @State private var text: (text: String, truncated: Bool)?
     @State private var loaded = false
     @State private var height: CGFloat = 0
@@ -396,6 +466,15 @@ struct DocumentItem: View {
                 }
                 .scrollDisabled(height <= PreviewPane.tallest)
                 .frame(height: min(max(height, 64), PreviewPane.tallest))
+                .overlay(alignment: .bottomTrailing) {
+                    if text.truncated {
+                        Text("First 64 KB").font(.caption).foregroundStyle(.secondary)
+                            .padding(.horizontal, Space.s).padding(.vertical, 2)
+                            .surface(.floating, in: Capsule())
+                            .padding(Space.s)
+                            .help("Only its first 64 KB are shown here, so Review All leaves it to its own Review menu. Open it to read the rest.")
+                    }
+                }
             } else if loaded {
                 QuickLookPreview(url: url).frame(height: 360)
             } else {
@@ -408,46 +487,60 @@ struct DocumentItem: View {
             let url = url
             text = await Task.detached(priority: .userInitiated) { TextPreview.load(url) }.value
             loaded = true
+            if let text, !text.truncated { rendered() }
         }
     }
 }
 
 /// A work's name, its four states, and what the person can do: Review ▸ (Approve; Request
-/// Changes…; Reject…), Mark Published…, and More, which opens the work's own detail. The states
-/// are marks, with words only where something needs a look; every word is in the help tags and
-/// for VoiceOver.
+/// Changes…; Reject…), Mark Published…, and More, which opens the work's own detail; with no file
+/// Gleaner can read there, Remove from Collection in their place. The states are marks, with words
+/// only where something needs a look; every word is in the help tags and for VoiceOver. A verdict
+/// or mark refused for this file is said under it.
 struct ReviewBar: View {
     @Environment(LibraryModel.self) private var model
     var work: Work
     /// The file as it was shown; nil when no regular file was there to show.
     var shown: FileStat?
-    /// Named beside the work sharing its stem.
+    /// Named beside the work whose name differs from its own only by extension.
     var beside = false
     /// The file's icon before its name, where nothing above shows the file.
     var icon = false
+    /// Why a verdict or mark asked for here wasn't made.
+    var refused: String?
     var ask: (Asking) -> Void
+    var lookAgain: () -> Void
 
     var body: some View {
         let states = ReviewStates(work: work, model: model)
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: Space.s) {
-                name
-                ReviewMarks(states: states)
-                Spacer(minLength: Space.s)
-                actions
-            }
-            VStack(alignment: .leading, spacing: Space.xs) {
+        VStack(alignment: .leading, spacing: Space.xs) {
+            ViewThatFits(in: .horizontal) {
                 HStack(spacing: Space.s) {
                     name
                     ReviewMarks(states: states)
+                    Spacer(minLength: Space.s)
+                    actions
                 }
-                HStack(spacing: Space.s) { actions }
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    HStack(spacing: Space.s) {
+                        name
+                        ReviewMarks(states: states)
+                    }
+                    HStack(spacing: Space.s) { actions }
+                }
+            }
+            .controlRole(.inline)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel(work.name)
+            .accessibilityValue(states.spoken)
+            if let refused {
+                HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                    StatusLabel(mark: .attention, text: refused, size: 11).fixedSize(horizontal: false, vertical: true)
+                    Button("Look Again", action: lookAgain).controlRole(.inline)
+                }
+                .font(.caption)
             }
         }
-        .controlRole(.inline)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel(work.name)
-        .accessibilityValue(states.spoken)
     }
 
     var name: some View {
@@ -461,18 +554,24 @@ struct ReviewBar: View {
     }
 
     @ViewBuilder var actions: some View {
-        let path = work.latest.path
+        let path = work.latest.path, place = work.unit
         let judged = shown.map { [path: $0] } ?? [:]
-        Menu("Review") {
-            Button("Approve") { ask(Asking(works: [work], kind: .approved, shown: judged)) }
-            Button("Request Changes…") { ask(Asking(works: [work], kind: .changesRequested, shown: judged)) }
-            Button("Reject…") { ask(Asking(works: [work], kind: .rejected, shown: judged)) }
-        }
-        .fixedSize()
-        .disabled(shown == nil || work.kind == .folder)
-        .help(shown == nil || work.kind == .folder ? "No bytes here to judge" : "A verdict on the file as shown, bound to the bytes hashed as you make it")
-        Button("Mark Published…") { ask(Asking(works: [work], kind: .published, shown: judged)) }
+        if model.hasNoFile(work) && work.kind != .folder {
+            // Nothing here to judge: what the person can do instead.
+            Button("Remove from Collection") { Task { await model.remove([work]) } }
+                .help("Take it out of its collection. No file changes.")
+        } else {
+            Menu("Review") {
+                Button("Approve") { ask(Asking(works: [work], kind: .approved, shown: judged, place: place)) }
+                Button("Request Changes…") { ask(Asking(works: [work], kind: .changesRequested, shown: judged, place: place)) }
+                Button("Reject…") { ask(Asking(works: [work], kind: .rejected, shown: judged, place: place)) }
+            }
+            .fixedSize()
             .disabled(shown == nil || work.kind == .folder)
+            .help(shown == nil || work.kind == .folder ? "No bytes here to judge" : "A verdict on the file as shown, bound to the bytes hashed as you make it")
+            Button("Mark Published…") { ask(Asking(works: [work], kind: .published, shown: judged, place: place)) }
+                .disabled(shown == nil || work.kind == .folder)
+        }
         Button("More") { model.selection = work.id }
             .help("Show its own detail: its versions, its history and where it came from")
     }
@@ -495,7 +594,7 @@ struct ReviewStates {
         provider = current.provider
         onThisMac = model.onThisMac(work)
         reviewed = work.kind == .folder ? Statement(mark: .na, title: "Not reviewed", detail: "A folder has no bytes of its own to judge.")
-            : Wording.verdict(model.verdict(of: work), inUnit: work.unit != nil)
+            : Wording.verdict(model.verdict(of: work), inUnit: work.unit != nil, noFile: model.hasNoFile(work))
         published = Wording.publishedState(model.published(of: work))
     }
 
@@ -554,9 +653,8 @@ struct NoteSheet: View {
     @State private var note = ""
 
     var body: some View {
-        let what = asking.works.count == 1 ? "“\(asking.works[0].name)”" : Wording.count(asking.works.count, "work")
         VStack(alignment: .leading, spacing: Space.m) {
-            Text(asking.kind == .published ? "Mark \(what) Published" : "\(Wording.reviewAction(asking.kind)) \(what)")
+            Text(Wording.reviewTitle(asking.kind, names: asking.works.map(\.name)))
                 .font(.headline)
             Text(asking.kind == .published ? "The mark is bound to the bytes Gleaner hashes as you make it. Where, in words or a link, is optional."
                  : "The verdict is bound to the bytes Gleaner hashes as you make it, never to the file’s later bytes. A note is optional.")
@@ -569,7 +667,7 @@ struct NoteSheet: View {
                 Button("Cancel", role: .cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Button(Wording.reviewAction(asking.kind)) {
                     let asking = asking, note = note
-                    Task { await model.review(asking.works, as: asking.kind, note: note, shown: asking.shown) }
+                    Task { await model.review(asking.works, as: asking.kind, note: note, shown: asking.shown, from: asking.place) }
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -595,16 +693,16 @@ struct ReviewSection: View {
         let organization = model.organization
         let states = ReviewStates(work: work, model: model)
         let history = model.reviews.history(of: work)
-        let judged = shown.map { [work.latest.path: $0] } ?? [:]
+        let judged = shown.map { [work.latest.path: $0] } ?? [:], place = work.id
         DetailSection(title: "Review") {
             HStack(spacing: Space.s) {
                 Menu("Review") {
-                    Button("Approve") { Task { await model.review([work], as: .approved, shown: judged) } }
-                    Button("Request Changes…") { asking = Asking(works: [work], kind: .changesRequested, shown: judged) }
-                    Button("Reject…") { asking = Asking(works: [work], kind: .rejected, shown: judged) }
+                    Button("Approve") { Task { await model.review([work], as: .approved, shown: judged, from: place) } }
+                    Button("Request Changes…") { asking = Asking(works: [work], kind: .changesRequested, shown: judged, place: place) }
+                    Button("Reject…") { asking = Asking(works: [work], kind: .rejected, shown: judged, place: place) }
                 }
                 .fixedSize()
-                Button("Mark Published…") { asking = Asking(works: [work], kind: .published, shown: judged) }
+                Button("Mark Published…") { asking = Asking(works: [work], kind: .published, shown: judged, place: place) }
             }
             .controlRole(.inline)
             .disabled(shown == nil || work.kind == .folder)
@@ -618,7 +716,7 @@ struct ReviewSection: View {
                             Label { LinkButton(title: Wording.unitPath(unit, in: organization)) { model.place = .unit(unit.key); model.selection = work.id } } icon: {
                                 GlyphView(glyph: .collection, size: 14).foregroundStyle(Palette.mark)
                             }
-                            Button("Remove") { Task { await model.remove([work], from: unit) } }
+                            Button("Remove") { Task { await model.remove([work]) } }
                                 .controlRole(.inline)
                                 .help("Take it out of \(unit.name). No file changes.")
                         } else {
@@ -652,8 +750,9 @@ struct ReviewSection: View {
                 }
                 .padding(.top, Space.xs)
             }
-            if let failure = model.reviewFailure {
-                StatusLabel(mark: .attention, text: failure).font(.callout)
+            // Refused here, said here, until the person shows another work.
+            if let refusal = model.reviewRefusal, refusal.place == work.id {
+                StatusLabel(mark: .attention, text: refusal.refused.map(\.reason).joined(separator: " ")).font(.callout)
             }
         }
         .sheet(item: $asking) { NoteSheet(asking: $0) }

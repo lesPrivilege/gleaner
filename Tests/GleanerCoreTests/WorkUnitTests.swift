@@ -166,6 +166,37 @@ import Testing
         #expect(try organize([cover, video]).work(containing: cover.path)?.unit == unit.key)
     }
 
+    @Test func undoingAMoveReturnsTheWorkToTheProjectBeforeItAndToItsUnitThere() throws {
+        let video = file("/w/series/out/ep01.mp4", [1], repository: "/w/series")
+        // In a project of the person's own, and a unit there.
+        let channel = try registry.addProject(named: "Channel", at: at(0), moving: [video.path])
+        let series = try registry.addUnit(named: "Series", in: channel.key, at: at(0.5))
+        try decide(.unit, [video.path], series.key, at: 1)
+        let archive = try registry.addProject(named: "Archive", at: at(1.5))
+        try decide(.project, [video.path], archive.key, at: 2)
+        var work = try #require(try organize([video]).work(containing: video.path))
+        #expect(work.project == archive.key && work.unit == nil)
+        // Undone, the move before it stands again, and the unit with it (A19).
+        try registry.undo(try latest(.project).id)
+        work = try #require(try organize([video]).work(containing: video.path))
+        #expect(work.project == channel.key && work.unit == series.key)
+        if case .moved(let move) = try organize([video]).placement(of: work) { #expect(move.target == channel.key) } else {
+            Issue.record("not said to be moved")
+        }
+
+        // Added from where Gleaner found it to a unit of the person's project, moved on, and undone.
+        let other = file("/w/series/out/ep02.mp4", [1], repository: "/w/series")
+        try registry.correct([(.unit, other.path, series.key), (.project, other.path, channel.key)], at: at(3))
+        try decide(.project, [other.path], archive.key, at: 4)
+        try registry.undo(try latest(.project).id)
+        work = try #require(try organize([video, other]).work(containing: other.path))
+        #expect(work.project == channel.key && work.unit == series.key)
+        // Put Back takes back every move: the work is where Gleaner found it, in no unit there.
+        try registry.undo(try registry.corrections().filter { $0.kind == .project && $0.subject == other.path }.map(\.id))
+        work = try #require(try organize([video, other]).work(containing: other.path))
+        #expect(work.project == "/w/series" && work.unit == nil)
+    }
+
     // MARK: changing them
 
     @Test func renamingIsAppendedAndUndoneToThePreviousName() throws {

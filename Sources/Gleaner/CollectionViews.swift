@@ -92,7 +92,7 @@ struct UnitCommands: View {
         if unit.parent == nil {
             Button("New Collection Inside") { model.startNewUnit(in: unit.project, inside: unit.key) }
         }
-        Button("Rename") { model.naming = .rename(unit.key) }
+        Button("Rename") { model.startRenaming(unit) }
         Button("Delete") { Task { await model.delete(unit) } }
             .help("Its works go back to the project. No file changes.")
     }
@@ -113,15 +113,8 @@ struct CollectionCommands: View {
                 }
             }
         }
-        let units = Dictionary(grouping: works.filter { $0.unit != nil }, by: { $0.unit! })
-        if !units.isEmpty {
-            Button("Remove from Collection") {
-                Task {
-                    for (key, works) in units {
-                        if let unit = model.organization.unit(key) { await model.remove(works, from: unit) }
-                    }
-                }
-            }
+        if works.contains(where: { $0.unit != nil }) {
+            Button("Remove from Collection") { Task { await model.remove(works) } }
         }
     }
 }
@@ -143,7 +136,7 @@ struct CollectionChoices: View {
                 .disabled(except == [unit.key])
         }
         if !units.isEmpty { Divider() }
-        Button("New Collection…", action: new)
+        Button("New Collection", action: new)
     }
 }
 
@@ -181,7 +174,7 @@ struct UnitList: View {
             .modifier(FollowsSelection())
             .onDeleteCommand {
                 let works = model.selectedWorks.filter { $0.unit == unit.key }
-                if !works.isEmpty { Task { await model.remove(works, from: unit) } }
+                if !works.isEmpty { Task { await model.remove(works) } }
             }
             .onKeyPress(.return) {
                 guard case .unit(let key)? = model.outlineSelection, key != unit.key else { return .ignored }
@@ -206,15 +199,17 @@ struct UnitList: View {
     }
 }
 
-/// Brings works of the collection's project into it.
+/// Brings works of the collection's project that are in no collection into it, as many as the
+/// person chooses, as one decision.
 struct AddWorksSheet: View {
     @Environment(LibraryModel.self) private var model
     var unit: WorkUnit
 
     var body: some View {
         WorkPicker(title: "Add to “\(unit.name)”", note: "Files stay where they are.", action: "Add",
-                   works: model.organization.works.filter { $0.project == unit.project && $0.unit == nil }) { work in
-            Task { await model.add([work], to: unit) }
+                   works: model.organization.works.filter { $0.project == unit.project && $0.unit == nil }, several: true,
+                   none: "Every Work Here Is in a Collection") { works in
+            Task { await model.add(works, to: unit) }
         }
     }
 }
