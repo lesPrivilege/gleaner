@@ -1,7 +1,11 @@
 // Spike A: read-only delivery extraction over local agent logs.
 // Writes a labeling sheet, a recall sample, and a summary. See docs/SPEC.md §12–13.
 
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 import Foundation
 import GleanerCore
 

@@ -1,4 +1,8 @@
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 import Foundation
 
 /// How a file came with a delivered folder (SPEC §5.4). A reply that names a folder names what is
@@ -184,7 +188,7 @@ extension Indexer {
     /// as the disk has them, as `Workspace.skipped` compares.
     func listability(_ folder: Registry.PendingFolder) -> Listability {
         guard folder.deliveredAt != nil else { return .never("named by a reply without a time") }
-        var info = Darwin.stat()
+        var info = SystemStat()
         if lstat(folder.path, &info) == 0, info.st_mode & S_IFMT == S_IFLNK { return .never("a link") }
         switch Locator.stat(folder.path).kind {
         case .directory: break
@@ -197,7 +201,7 @@ extension Indexer {
         let homes = Set([home, NSHomeDirectory()].map(Workspace.resolved))
 
         func device(_ path: String) -> dev_t? {
-            var info = Darwin.stat()
+            var info = SystemStat()
             return fstatat(AT_FDCWD, path, &info, 0) == 0 ? info.st_dev : nil
         }
         /// What a folder is when it holds a person's things, as the home does.

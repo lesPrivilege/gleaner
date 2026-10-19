@@ -1,4 +1,8 @@
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 import Foundation
 
 public enum GitState: String, Sendable {
@@ -77,7 +81,7 @@ public enum Locator {
     /// asking git. Missing only when nothing is there (a link to nothing included); any other
     /// failure, such as a folder on the way that can't be searched, is unreadable.
     public static func stat(_ path: String) -> (kind: LocatorState.Kind, size: Int64?, modifiedAt: Date?) {
-        var info = Darwin.stat()
+        var info = SystemStat()
         // stat(2), by another name because this function's hides it. It follows links.
         guard fstatat(AT_FDCWD, path, &info, 0) == 0 else {
             return (errno == ENOENT || errno == ENOTDIR ? .missing : .unreadable, nil, nil)

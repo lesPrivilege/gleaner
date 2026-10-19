@@ -105,11 +105,11 @@ public struct ContentStore: Sendable {
     /// app can set back, and replacing it gives the path another inode: while this is the same, the
     /// file holds the bytes it held when this was read.
     struct Identity: Sendable, Equatable {
-        var device: Int32, inode: UInt64, size: Int64
+        var device: dev_t, inode: ino_t, size: off_t
         var modified: Int, modifiedNanos: Int, changed: Int, changedNanos: Int
 
         init?(_ url: URL) {
-            var info = stat()
+            var info = SystemStat()
             guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
             device = info.st_dev
             inode = info.st_ino

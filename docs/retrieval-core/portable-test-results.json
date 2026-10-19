@@ -1,0 +1,100 @@
+{
+  "status": "experimental_portability_not_platform_support",
+  "runtime": {
+    "swift": "6.2.4",
+    "image": "swift:6.2-jammy",
+    "image_digest": "sha256:5db2c7b978a8d00d3a7faa3787c66da7e2f34373c5bd81c13f5cc90ea477ac49",
+    "os": "Ubuntu 22.04 container on Debian 13 x86_64 host",
+    "user": "unprivileged UID 1000",
+    "sqlite": "3.37.2"
+  },
+  "baseline_revision": "2648094610facfd1ae1805f52a9de282043c808f",
+  "portability_patch_sha256": "9f4592192b4a8ff07883c68a8a399ab9ecbf4759d1e8f1bac6909ea7376f4ef5",
+  "baseline_full_suite": {
+    "tests": 324,
+    "suites": 27,
+    "duration_seconds": 6.301,
+    "issues": 25,
+    "failed_tests": 18,
+    "passed_tests": 306,
+    "failed_test_names": [
+      "aBuiltAppIsObservedAsOneEntry()",
+      "aDataAnalysisWithCSVFiguresAndANotebook()",
+      "aFileNamedInAnotherSpellingIsObservedUnderItsDeliveredName()",
+      "aFolderDeliveredTwiceListsItsFilesAtEachDelivery()",
+      "aFolderIsSkippedHoweverItIsSpelled()",
+      "aFolderUnderPrivateIsOneProjectWithWhatItsAgentDelivered()",
+      "aFolderUnderPrivateVarIsOneProjectWithItsFilesThereOrGone()",
+      "aHandedOverFileKeepsItsDeliveryWithItsObservationBeside()",
+      "aLaterSessionEditingAFileAddsItsOwnObservation()",
+      "aLibraryThatCantBeOpenedToReadSaysToOpenGleaner()",
+      "aMediaPipelineHandsOverItsSegmentsButNeverItsHiddenFiles()",
+      "aReportWithMarkdownPDFAndCharts()",
+      "aRewriteInPlaceThatPutsTheDatesBackIsNotAsShown()",
+      "aVideoSeriesWhoseReplyNamesOnlyAFolder()",
+      "keepingMakesAWorkWhoseOneRevisionIsTheFileAsObserved()",
+      "membershipByTimeOnALiveRead()",
+      "theHomeFolderAndSystemFoldersAreNotWalked()",
+      "theSyntheticHomesCapturePhase()"
+    ],
+    "issues_by_file": {
+      "CatalogTests.swift": 1,
+      "BundleTests.swift": 6,
+      "ObservationTests.swift": 14,
+      "ReviewTests.swift": 1,
+      "KeepTests.swift": 1,
+      "ProjectTests.swift": 2
+    }
+  },
+  "candidate_full_suite_before_two_test_expectation_repairs": {
+    "tests": 342,
+    "suites": 29,
+    "duration_seconds": 6.793,
+    "issues": 27,
+    "failed_tests": 20,
+    "passed_tests": 322,
+    "failed_test_names": [
+      "aBuiltAppIsObservedAsOneEntry()",
+      "aDataAnalysisWithCSVFiguresAndANotebook()",
+      "aFileNamedInAnotherSpellingIsObservedUnderItsDeliveredName()",
+      "aFolderDeliveredTwiceListsItsFilesAtEachDelivery()",
+      "aFolderIsSkippedHoweverItIsSpelled()",
+      "aFolderUnderPrivateIsOneProjectWithWhatItsAgentDelivered()",
+      "aFolderUnderPrivateVarIsOneProjectWithItsFilesThereOrGone()",
+      "aHandedOverFileKeepsItsDeliveryWithItsObservationBeside()",
+      "aLaterSessionEditingAFileAddsItsOwnObservation()",
+      "aLibraryThatCantBeOpenedToReadSaysToOpenGleaner()",
+      "aMediaPipelineHandsOverItsSegmentsButNeverItsHiddenFiles()",
+      "aReportWithMarkdownPDFAndCharts()",
+      "aRewriteInPlaceThatPutsTheDatesBackIsNotAsShown()",
+      "aVideoSeriesWhoseReplyNamesOnlyAFolder()",
+      "keepingMakesAWorkWhoseOneRevisionIsTheFileAsObserved()",
+      "mcpRefusesAsTheCommandDoes()",
+      "membershipByTimeOnALiveRead()",
+      "progressiveRefusalsCarryTheSameEvidenceAcrossAdapters()",
+      "theHomeFolderAndSystemFoldersAreNotWalked()",
+      "theSyntheticHomesCapturePhase()"
+    ],
+    "issues_by_file": {
+      "ProgressiveTests.swift": 1,
+      "MCPTests.swift": 1,
+      "ProjectTests.swift": 2,
+      "BundleTests.swift": 6,
+      "ObservationTests.swift": 14,
+      "KeepTests.swift": 1,
+      "CatalogTests.swift": 1,
+      "ReviewTests.swift": 1
+    }
+  },
+  "native_exclusions": [
+    "GleanerApp/GleanerUI and their test targets",
+    "LogWatcher.swift and LogWatcherTests.swift (FSEvents)",
+    "MarkdownBlocks.swift and MarkdownBlockTests.swift (Foundation attributed Markdown presentation)"
+  ],
+  "notes": [
+    "Baseline and candidate use the identical portability patch; no source inspection is counted as executed testing.",
+    "The candidate full suite includes two command test expectation failures subsequently repaired and rechecked separately; this record retains the actual full-run result.",
+    "18 baseline test failures / 25 issues remain from missing birth time, case sensitivity, macOS path aliases/system folders, and SQLite read-only WAL behavior.",
+    "No native macOS app, UI, FSEvents, Foundation Markdown presentation, signing, packaging, or release check executed."
+  ]
+}

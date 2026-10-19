@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(SQLite3)
 import SQLite3
+#else
+import CSQLite
+#endif
 
 /// A small SQLite connection: execute statements, run parameterized writes, read rows.
 /// Opened in serialized mode; callers keep writes on one queue.

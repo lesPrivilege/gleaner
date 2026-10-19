@@ -421,7 +421,7 @@ import Testing
         #expect(Set(observed.map(\.path)) == Set(files + [locked, large.path]))
         #expect(observed.first { $0.path == large.path }?.size == 742 << 20)
         for path in files + [large.path] {
-            var info = Darwin.stat()
+            var info = SystemStat()
             #expect(lstat(path, &info) == 0)
             #expect(info.st_atimespec.tv_sec == Int(accessed.timeIntervalSince1970), "\(path) was read")
         }
@@ -538,7 +538,7 @@ import Testing
         let work = try folder("Projects/film")
         // Its dates fall in the session, but the copy, made now, set them.
         let copy = try file("render.mp4", in: work, created: minutes(-560), modified: minutes(-550))
-        var info = Darwin.stat()
+        var info = SystemStat()
         #expect(lstat(copy, &info) == 0 && info.st_ctimespec.tv_sec > Int(minutes(-540).timeIntervalSince1970))
         let log = try session("film", in: work, from: minutes(-600), to: minutes(-540), reply: "Rendered.", title: "Film")
         _ = try indexer.run()

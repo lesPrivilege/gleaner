@@ -33,7 +33,12 @@ import Testing
     // MARK: helpers
 
     /// The `gleaner` built beside this test bundle.
+    #if os(Linux)
+    // A Linux test executable is a file in the products folder, not a macOS .xctest bundle.
+    static let command = Bundle(for: Marker.self).bundleURL.appendingPathComponent("gleaner")
+    #else
     static let command = Bundle(for: Marker.self).bundleURL.deletingLastPathComponent().appendingPathComponent("gleaner")
+    #endif
     private final class Marker {}
 
     var support: URL { home.appendingPathComponent("Library/Application Support/Gleaner") }

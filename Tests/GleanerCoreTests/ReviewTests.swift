@@ -1,4 +1,8 @@
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 import Foundation
 import Testing
 @testable import GleanerCore
@@ -348,7 +352,7 @@ import Testing
         #expect(organization.toReview(try reviews()) { present($0.latest.path) }.first?.works.count == 2)
         for work in organization.works(in: unit.key) { _ = try verdict(work, present(work.latest.path)) }
         for path in [video, cover] {
-            var info = Darwin.stat()
+            var info = SystemStat()
             #expect(lstat(path, &info) == 0)
             #expect(info.st_atimespec.tv_sec == Int(accessed.timeIntervalSince1970), "\(path) was read")
         }

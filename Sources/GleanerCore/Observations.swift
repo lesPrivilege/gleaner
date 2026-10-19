@@ -1,6 +1,8 @@
 import Foundation
 import Synchronization
+#if canImport(UniformTypeIdentifiers)
 import UniformTypeIdentifiers
+#endif
 
 /// A file found on the disk whose dates fall in a session's span, in the session's workspace
 /// (docs/design/capture.md). It shows that the file appeared or changed while the session was
@@ -277,7 +279,13 @@ public enum Workspace {
         let ext = (name as NSString).pathExtension.lowercased()
         guard !ext.isEmpty else { return false }
         if let known = packages.withLock({ $0[ext] }) { return known }
+        #if canImport(UniformTypeIdentifiers)
         let package = UTType(filenameExtension: ext, conformingTo: .directory)?.conforms(to: .package) == true
+        #else
+        // Linux cannot consult LaunchServices. Keep common native packages opaque so a
+        // portable walk cannot mistake their internals for independent delivered objects.
+        let package = ["app", "bundle", "xcodeproj", "xcworkspace", "rtfd", "pages", "key", "numbers"].contains(ext)
+        #endif
         packages.withLock { $0[ext] = package }
         return package
     }
@@ -294,7 +302,7 @@ public enum Workspace {
     /// own (`isRepository`), another project, is left out whole and named in `repositories`.
     static func walk(_ root: String, limit: Int = limit, entersRepositories: Bool = true) -> Walk {
         var walk = Walk(), seen = 0
-        var info = Darwin.stat()
+        var info = SystemStat()
         // stat(2), following a linked root, by the name `Locator.stat` uses: the struct's name hides the function's.
         guard fstatat(AT_FDCWD, root, &info, 0) == 0 else {
             walk.problems.append("\(root): \(String(cString: strerror(errno)))")
@@ -346,12 +354,12 @@ public enum Workspace {
     /// The regular file at `path` itself (not what a link leads to), by its metadata; nil for
     /// anything else, or nothing.
     static func file(at path: String) -> File? {
-        var info = Darwin.stat()
+        var info = SystemStat()
         guard lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
         return file(path, info)
     }
 
-    private static func file(_ path: String, _ info: Darwin.stat) -> File {
+    private static func file(_ path: String, _ info: SystemStat) -> File {
         func date(_ time: timespec) -> Date { Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_nsec) / 1e9) }
         // A volume without creation dates reports none, as zero.
         let born = info.st_birthtimespec
@@ -474,7 +482,7 @@ struct FileIdentity: Hashable {
 
     /// The regular file at `path`, links followed; nil when there is none.
     init?(_ path: String) {
-        var info = Darwin.stat()
+        var info = SystemStat()
         guard fstatat(AT_FDCWD, path, &info, 0) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
         self.init(device: Int64(info.st_dev), inode: Int64(bitPattern: UInt64(info.st_ino)))
     }

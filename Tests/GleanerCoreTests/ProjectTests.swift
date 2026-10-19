@@ -180,7 +180,7 @@ import Testing
         // for what Foundation calls /var/folders/…. Its reply links a file there, one not yet
         // written, and one outside git.
         let atlas = try repository("Atlas")
-        let cwd = LogWatcher.resolved(atlas)
+        let cwd = Workspace.resolved(atlas)
         try #require(cwd.hasPrefix("/private/") && !atlas.hasPrefix("/private/"))
         try FileManager.default.createDirectory(atPath: atlas + "/out", withIntermediateDirectories: true)
         try "r1".write(toFile: atlas + "/out/report.md", atomically: true, encoding: .utf8)

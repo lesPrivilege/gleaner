@@ -1,0 +1,619 @@
+diff --git a/Package.resolved b/Package.resolved
+index c501d49..bd7b4cb 100644
+--- a/Package.resolved
++++ b/Package.resolved
+@@ -1,5 +1,5 @@
+ {
+-  "originHash" : "b3a88acc2ed41ad7107a650e1980206d75e2d7c5356bd0971677a8c0818d832f",
++  "originHash" : "c829c8b9cf158124903a4cfe7f178acfad20eb907000743f9d2254ca064679c4",
+   "pins" : [
+     {
+       "identity" : "eventsource",
+@@ -19,6 +19,15 @@
+         "version" : "1.8.2"
+       }
+     },
++    {
++      "identity" : "swift-asn1",
++      "kind" : "remoteSourceControl",
++      "location" : "https://github.com/apple/swift-asn1.git",
++      "state" : {
++        "revision" : "3b6410f7dee09eb33cdd26260c5fd47fda19b0e2",
++        "version" : "1.7.3"
++      }
++    },
+     {
+       "identity" : "swift-atomics",
+       "kind" : "remoteSourceControl",
+@@ -37,6 +46,15 @@
+         "version" : "1.7.3"
+       }
+     },
++    {
++      "identity" : "swift-crypto",
++      "kind" : "remoteSourceControl",
++      "location" : "https://github.com/apple/swift-crypto.git",
++      "state" : {
++        "revision" : "95ba0316a9b733e92bb6b071255ff46263bbe7dc",
++        "version" : "3.15.1"
++      }
++    },
+     {
+       "identity" : "swift-log",
+       "kind" : "remoteSourceControl",
+diff --git a/Package.swift b/Package.swift
+index 95125c9..20ae660 100644
+--- a/Package.swift
++++ b/Package.swift
+@@ -1,6 +1,37 @@
+ // swift-tools-version: 6.0
+ import PackageDescription
+ 
++#if os(Linux)
++let nativeProducts: [Product] = []
++let nativeTargets: [Target] = []
++let coreExcludes = ["LogWatcher.swift", "MarkdownBlocks.swift"]
++let coreTestExcludes = ["LogWatcherTests.swift", "MarkdownBlockTests.swift"]
++let portableDependencies: [Package.Dependency] = [
++    .package(url: "https://github.com/apple/swift-crypto.git", from: "3.0.0"),
++]
++let portableTargets: [Target] = [
++    .systemLibrary(name: "CSQLite", pkgConfig: "sqlite3", providers: [.apt(["libsqlite3-dev"])]),
++]
++let portableCoreDependencies: [Target.Dependency] = [
++    "CSQLite", .product(name: "Crypto", package: "swift-crypto"),
++]
++let portableCryptoDependencies: [Target.Dependency] = [.product(name: "Crypto", package: "swift-crypto")]
++#else
++let nativeProducts: [Product] = [.executable(name: "GleanerApp", targets: ["Gleaner"])]
++let nativeTargets: [Target] = [
++    .target(name: "GleanerUI"),
++    .executableTarget(name: "Gleaner", dependencies: ["GleanerCore", "GleanerUI"]),
++    .testTarget(name: "GleanerUITests", dependencies: ["GleanerUI"]),
++    .testTarget(name: "GleanerTests", dependencies: ["Gleaner", "GleanerCore", "GleanerUI"]),
++]
++let coreExcludes: [String] = []
++let coreTestExcludes: [String] = []
++let portableDependencies: [Package.Dependency] = []
++let portableTargets: [Target] = []
++let portableCoreDependencies: [Target.Dependency] = []
++let portableCryptoDependencies: [Target.Dependency] = []
++#endif
++
+ let package = Package(
+     name: "Gleaner",
+     platforms: [.macOS(.v15)],
+@@ -10,17 +41,15 @@ let package = Package(
+         .executable(name: "gleaner-spike", targets: ["gleaner-spike"]),
+         // A development tool: indexes a synthetic home without the window. Never bundled.
+         .executable(name: "gleaner-index", targets: ["gleaner-index"]),
+-        // Not "Gleaner": on a case-insensitive disk it would be the same file as the `gleaner` command.
+-        .executable(name: "GleanerApp", targets: ["Gleaner"]),
+-    ],
++    ] + nativeProducts,
+     dependencies: [
+         .package(url: "https://github.com/apple/swift-argument-parser", from: "1.8.2"),
+         .package(url: "https://github.com/modelcontextprotocol/swift-sdk", from: "0.12.1"),
+         // Logging, which the SDK's Transport names, by the URL the SDK gives, so that the two resolve as one.
+         .package(url: "https://github.com/apple/swift-log.git", from: "1.16.1"),
+-    ],
++    ] + portableDependencies,
+     targets: [
+-        .target(name: "GleanerCore"),
++        .target(name: "GleanerCore", dependencies: portableCoreDependencies, exclude: coreExcludes),
+         .executableTarget(
+             name: "gleaner-cli",
+             dependencies: [
+@@ -30,22 +59,17 @@ let package = Package(
+                 .product(name: "Logging", package: "swift-log"),
+             ]
+         ),
+-        // Gleaner's components: marks, status, surfaces, controls, motion. SwiftUI and AppKit only;
+-        // the app binds them to its library (docs/design/components.md).
+-        .target(name: "GleanerUI"),
+-        .executableTarget(name: "gleaner-spike", dependencies: ["GleanerCore"]),
++        .executableTarget(name: "gleaner-spike", dependencies: [.target(name: "GleanerCore")] + portableCryptoDependencies),
+         .executableTarget(
+             name: "gleaner-index",
+             dependencies: ["GleanerCore", .product(name: "ArgumentParser", package: "swift-argument-parser")]
+         ),
+-        .executableTarget(name: "Gleaner", dependencies: ["GleanerCore", "GleanerUI"]),
+         .testTarget(
+             name: "GleanerCoreTests",
+-            dependencies: ["GleanerCore"],
++            dependencies: [.target(name: "GleanerCore")] + portableCryptoDependencies,
++            exclude: coreTestExcludes,
+             resources: [.copy("Fixtures")]
+         ),
+-        .testTarget(name: "GleanerUITests", dependencies: ["GleanerUI"]),
+-        .testTarget(name: "GleanerTests", dependencies: ["Gleaner", "GleanerCore", "GleanerUI"]),
+         .testTarget(name: "GleanerCommandTests", dependencies: ["GleanerCore"]),
+-    ]
++    ] + nativeTargets + portableTargets
+ )
+diff --git a/Sources/GleanerCore/Bundles.swift b/Sources/GleanerCore/Bundles.swift
+index f474210..1d3c9bc 100644
+--- a/Sources/GleanerCore/Bundles.swift
++++ b/Sources/GleanerCore/Bundles.swift
+@@ -1,4 +1,8 @@
++#if canImport(CryptoKit)
+ import CryptoKit
++#else
++import Crypto
++#endif
+ import Foundation
+ 
+ /// How a file came with a delivered folder (SPEC §5.4). A reply that names a folder names what is
+@@ -184,7 +188,7 @@ extension Indexer {
+     /// as the disk has them, as `Workspace.skipped` compares.
+     func listability(_ folder: Registry.PendingFolder) -> Listability {
+         guard folder.deliveredAt != nil else { return .never("named by a reply without a time") }
+-        var info = Darwin.stat()
++        var info = SystemStat()
+         if lstat(folder.path, &info) == 0, info.st_mode & S_IFMT == S_IFLNK { return .never("a link") }
+         switch Locator.stat(folder.path).kind {
+         case .directory: break
+@@ -197,7 +201,7 @@ extension Indexer {
+         let homes = Set([home, NSHomeDirectory()].map(Workspace.resolved))
+ 
+         func device(_ path: String) -> dev_t? {
+-            var info = Darwin.stat()
++            var info = SystemStat()
+             return fstatat(AT_FDCWD, path, &info, 0) == 0 ? info.st_dev : nil
+         }
+         /// What a folder is when it holds a person's things, as the home does.
+diff --git a/Sources/GleanerCore/Comparison.swift b/Sources/GleanerCore/Comparison.swift
+index 45b01ca..b4ec7bf 100644
+--- a/Sources/GleanerCore/Comparison.swift
++++ b/Sources/GleanerCore/Comparison.swift
+@@ -1,4 +1,8 @@
++#if canImport(CryptoKit)
+ import CryptoKit
++#else
++import Crypto
++#endif
+ import Foundation
+ 
+ /// Two exact versions of one artifact, compared read-only. Each end names its bytes and their
+diff --git a/Sources/GleanerCore/ContentStore.swift b/Sources/GleanerCore/ContentStore.swift
+index e4de374..290901f 100644
+--- a/Sources/GleanerCore/ContentStore.swift
++++ b/Sources/GleanerCore/ContentStore.swift
+@@ -105,11 +105,11 @@ public struct ContentStore: Sendable {
+     /// app can set back, and replacing it gives the path another inode: while this is the same, the
+     /// file holds the bytes it held when this was read.
+     struct Identity: Sendable, Equatable {
+-        var device: Int32, inode: UInt64, size: Int64
++        var device: dev_t, inode: ino_t, size: off_t
+         var modified: Int, modifiedNanos: Int, changed: Int, changedNanos: Int
+ 
+         init?(_ url: URL) {
+-            var info = stat()
++            var info = SystemStat()
+             guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+             device = info.st_dev
+             inode = info.st_ino
+diff --git a/Sources/GleanerCore/Database.swift b/Sources/GleanerCore/Database.swift
+index 4f89f51..71a4c9a 100644
+--- a/Sources/GleanerCore/Database.swift
++++ b/Sources/GleanerCore/Database.swift
+@@ -1,5 +1,9 @@
+ import Foundation
++#if canImport(SQLite3)
+ import SQLite3
++#else
++import CSQLite
++#endif
+ 
+ /// A small SQLite connection: execute statements, run parameterized writes, read rows.
+ /// Opened in serialized mode; callers keep writes on one queue.
+diff --git a/Sources/GleanerCore/Indexer.swift b/Sources/GleanerCore/Indexer.swift
+index a837328..553c224 100644
+--- a/Sources/GleanerCore/Indexer.swift
++++ b/Sources/GleanerCore/Indexer.swift
+@@ -1,4 +1,8 @@
++#if canImport(CryptoKit)
+ import CryptoKit
++#else
++import Crypto
++#endif
+ import Foundation
+ 
+ /// Where the agents keep their logs.
+diff --git a/Sources/GleanerCore/Keeping.swift b/Sources/GleanerCore/Keeping.swift
+index 9b30f75..2a21e4a 100644
+--- a/Sources/GleanerCore/Keeping.swift
++++ b/Sources/GleanerCore/Keeping.swift
+@@ -1,4 +1,8 @@
++#if canImport(CryptoKit)
+ import CryptoKit
++#else
++import Crypto
++#endif
+ import Foundation
+ 
+ /// How a file observed during a session came into the library: the person kept it
+diff --git a/Sources/GleanerCore/Library.swift b/Sources/GleanerCore/Library.swift
+index 20542ff..9d37a3d 100644
+--- a/Sources/GleanerCore/Library.swift
++++ b/Sources/GleanerCore/Library.swift
+@@ -1,6 +1,8 @@
+ import Foundation
+ import Synchronization
++#if canImport(UniformTypeIdentifiers)
+ import UniformTypeIdentifiers
++#endif
+ 
+ /// When Gleaner read a delivery's bytes, relative to the reply that handed them over (SPEC §5.1).
+ public enum Provenance: String, Sendable, Codable {
+@@ -225,6 +227,7 @@ public struct Artifact: Sendable, Identifiable {
+     /// Checks run from specific to general: source code and JSON are also text, so they are
+     /// matched before documents.
+     private static func typed(_ ext: String) -> Kind {
++        #if canImport(UniformTypeIdentifiers)
+         guard !ext.isEmpty, let type = UTType(filenameExtension: ext) else { return .other }
+         let checks: [(UTType, Kind)] = [
+             (.html, .web), (.audiovisualContent, .media), (.image, .image), (.threeDContent, .model),
+@@ -234,6 +237,20 @@ public struct Artifact: Sendable, Identifiable {
+             (.pdf, .document), (.presentation, .document), (.text, .document), (.compositeContent, .document),
+         ]
+         return checks.first { type.conforms(to: $0.0) }?.1 ?? .other
++        #else
++        // Portable validation has no LaunchServices type registry. This conservative list
++        // covers common formats only; unknown types stay unknown. macOS still uses UTType.
++        let groups: [(Kind, Set<String>)] = [
++            (.web, ["html", "htm"]),
++            (.media, ["mp4", "mov", "m4a", "wav", "mp3", "aac", "aiff", "flac", "ogg", "webm"]),
++            (.image, ["png", "jpg", "jpeg", "svg", "heic", "gif", "tif", "tiff", "webp", "bmp", "ico"]),
++            (.code, ["swift", "py", "js", "sh", "bash", "c", "h", "cpp", "hpp", "m", "mm", "java", "rb", "pl"]),
++            (.data, ["json", "csv", "tsv", "xlsx", "xls", "xml", "db"]),
++            (.build, ["dmg", "zip", "tar", "gz", "bz2", "xz", "7z", "exe"]),
++            (.document, ["pdf", "txt", "rtf", "rtfd", "doc", "docx", "ppt", "pptx", "odt"]),
++        ]
++        return groups.first { $0.1.contains(ext) }?.0 ?? .other
++        #endif
+     }
+ 
+     /// Formats the system doesn't type, or types too generally to place.
+diff --git a/Sources/GleanerCore/Locator.swift b/Sources/GleanerCore/Locator.swift
+index 0e3940b..4ecac9e 100644
+--- a/Sources/GleanerCore/Locator.swift
++++ b/Sources/GleanerCore/Locator.swift
+@@ -1,4 +1,8 @@
++#if canImport(CryptoKit)
+ import CryptoKit
++#else
++import Crypto
++#endif
+ import Foundation
+ 
+ public enum GitState: String, Sendable {
+@@ -77,7 +81,7 @@ public enum Locator {
+     /// asking git. Missing only when nothing is there (a link to nothing included); any other
+     /// failure, such as a folder on the way that can't be searched, is unreadable.
+     public static func stat(_ path: String) -> (kind: LocatorState.Kind, size: Int64?, modifiedAt: Date?) {
+-        var info = Darwin.stat()
++        var info = SystemStat()
+         // stat(2), by another name because this function's hides it. It follows links.
+         guard fstatat(AT_FDCWD, path, &info, 0) == 0 else {
+             return (errno == ENOENT || errno == ENOTDIR ? .missing : .unreadable, nil, nil)
+diff --git a/Sources/GleanerCore/Observations.swift b/Sources/GleanerCore/Observations.swift
+index 0c649ee..89ede7c 100644
+--- a/Sources/GleanerCore/Observations.swift
++++ b/Sources/GleanerCore/Observations.swift
+@@ -1,6 +1,8 @@
+ import Foundation
+ import Synchronization
++#if canImport(UniformTypeIdentifiers)
+ import UniformTypeIdentifiers
++#endif
+ 
+ /// A file found on the disk whose dates fall in a session's span, in the session's workspace
+ /// (docs/design/capture.md). It shows that the file appeared or changed while the session was
+@@ -277,7 +279,13 @@ public enum Workspace {
+         let ext = (name as NSString).pathExtension.lowercased()
+         guard !ext.isEmpty else { return false }
+         if let known = packages.withLock({ $0[ext] }) { return known }
++        #if canImport(UniformTypeIdentifiers)
+         let package = UTType(filenameExtension: ext, conformingTo: .directory)?.conforms(to: .package) == true
++        #else
++        // Linux cannot consult LaunchServices. Keep common native packages opaque so a
++        // portable walk cannot mistake their internals for independent delivered objects.
++        let package = ["app", "bundle", "xcodeproj", "xcworkspace", "rtfd", "pages", "key", "numbers"].contains(ext)
++        #endif
+         packages.withLock { $0[ext] = package }
+         return package
+     }
+@@ -294,7 +302,7 @@ public enum Workspace {
+     /// own (`isRepository`), another project, is left out whole and named in `repositories`.
+     static func walk(_ root: String, limit: Int = limit, entersRepositories: Bool = true) -> Walk {
+         var walk = Walk(), seen = 0
+-        var info = Darwin.stat()
++        var info = SystemStat()
+         // stat(2), following a linked root, by the name `Locator.stat` uses: the struct's name hides the function's.
+         guard fstatat(AT_FDCWD, root, &info, 0) == 0 else {
+             walk.problems.append("\(root): \(String(cString: strerror(errno)))")
+@@ -346,12 +354,12 @@ public enum Workspace {
+     /// The regular file at `path` itself (not what a link leads to), by its metadata; nil for
+     /// anything else, or nothing.
+     static func file(at path: String) -> File? {
+-        var info = Darwin.stat()
++        var info = SystemStat()
+         guard lstat(path, &info) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+         return file(path, info)
+     }
+ 
+-    private static func file(_ path: String, _ info: Darwin.stat) -> File {
++    private static func file(_ path: String, _ info: SystemStat) -> File {
+         func date(_ time: timespec) -> Date { Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_nsec) / 1e9) }
+         // A volume without creation dates reports none, as zero.
+         let born = info.st_birthtimespec
+@@ -474,7 +482,7 @@ struct FileIdentity: Hashable {
+ 
+     /// The regular file at `path`, links followed; nil when there is none.
+     init?(_ path: String) {
+-        var info = Darwin.stat()
++        var info = SystemStat()
+         guard fstatat(AT_FDCWD, path, &info, 0) == 0, info.st_mode & S_IFMT == S_IFREG else { return nil }
+         self.init(device: Int64(info.st_dev), inode: Int64(bitPattern: UInt64(info.st_ino)))
+     }
+diff --git a/Sources/GleanerCore/Organization.swift b/Sources/GleanerCore/Organization.swift
+index 7a301c2..0e7cd8f 100644
+--- a/Sources/GleanerCore/Organization.swift
++++ b/Sources/GleanerCore/Organization.swift
+@@ -245,7 +245,7 @@ public struct Organization: Sendable {
+ 
+         // Projects: each derived folder by its name, told apart from another of the same name. A
+         // project holding a unit is listed with it, works or not.
+-        let derived = Set((works.map(\.project) + combine.keys + live.values.map(\.project)).filter { !yours.contains($0) })
++        let derived = Set((works.map(\.project) + Array(combine.keys) + live.values.map(\.project)).filter { !yours.contains($0) })
+         derivedNames = Projects.names(derived)
+         let inRepository = Set(artifacts.filter(\.inRepository).map(\.projectFolder))
+         var projects: [Project] = []
+diff --git a/Sources/GleanerCore/Review.swift b/Sources/GleanerCore/Review.swift
+index b9c49b7..1a1c5f3 100644
+--- a/Sources/GleanerCore/Review.swift
++++ b/Sources/GleanerCore/Review.swift
+@@ -27,7 +27,7 @@ public struct FileStat: Sendable, Equatable {
+     /// (SPEC §6); nil for anything else, for a file it may not read, or for nothing. Reads no bytes:
+     /// `stat` needs no permission to read, so whether it has one is asked on its own (A20).
+     public init?(_ path: String) {
+-        var info = Darwin.stat()
++        var info = SystemStat()
+         // stat(2), following a link, by the name `Locator.stat` uses: the struct's name hides the function's.
+         guard fstatat(AT_FDCWD, path, &info, 0) == 0, info.st_mode & S_IFMT == S_IFREG, access(path, R_OK) == 0 else { return nil }
+         func date(_ time: timespec) -> Date { Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_nsec) / 1e9) }
+diff --git a/Sources/gleaner-spike/main.swift b/Sources/gleaner-spike/main.swift
+index 476084f..83e4c4b 100644
+--- a/Sources/gleaner-spike/main.swift
++++ b/Sources/gleaner-spike/main.swift
+@@ -1,7 +1,11 @@
+ // Spike A: read-only delivery extraction over local agent logs.
+ // Writes a labeling sheet, a recall sample, and a summary. See docs/SPEC.md §12–13.
+ 
++#if canImport(CryptoKit)
+ import CryptoKit
++#else
++import Crypto
++#endif
+ import Foundation
+ import GleanerCore
+ 
+diff --git a/Tests/GleanerCommandTests/CommandTests.swift b/Tests/GleanerCommandTests/CommandTests.swift
+index 84c0e56..b42ff83 100644
+--- a/Tests/GleanerCommandTests/CommandTests.swift
++++ b/Tests/GleanerCommandTests/CommandTests.swift
+@@ -33,7 +33,12 @@ import Testing
+     // MARK: helpers
+ 
+     /// The `gleaner` built beside this test bundle.
++    #if os(Linux)
++    // A Linux test executable is a file in the products folder, not a macOS .xctest bundle.
++    static let command = Bundle(for: Marker.self).bundleURL.appendingPathComponent("gleaner")
++    #else
+     static let command = Bundle(for: Marker.self).bundleURL.deletingLastPathComponent().appendingPathComponent("gleaner")
++    #endif
+     private final class Marker {}
+ 
+     var support: URL { home.appendingPathComponent("Library/Application Support/Gleaner") }
+diff --git a/Tests/GleanerCoreTests/BundleTests.swift b/Tests/GleanerCoreTests/BundleTests.swift
+index 3032445..b613f86 100644
+--- a/Tests/GleanerCoreTests/BundleTests.swift
++++ b/Tests/GleanerCoreTests/BundleTests.swift
+@@ -763,7 +763,7 @@ import Testing
+         #expect(names(listed.map(\.path)) == ["clip-0.mov", "clip-1.mov", "clip-2.mov", "clip-3.mov", "locked.wav", "render.mp4"])
+         #expect(listed.first { $0.path == large.path }?.latest.capture?.size == 742 << 20)
+         for path in clips + [large.path] {
+-            var info = Darwin.stat()
++            var info = SystemStat()
+             #expect(lstat(path, &info) == 0)
+             #expect(info.st_atimespec.tv_sec == Int(accessed.timeIntervalSince1970), "\(path) was read")
+         }
+diff --git a/Tests/GleanerCoreTests/CatalogTests.swift b/Tests/GleanerCoreTests/CatalogTests.swift
+index 410187a..fbb4373 100644
+--- a/Tests/GleanerCoreTests/CatalogTests.swift
++++ b/Tests/GleanerCoreTests/CatalogTests.swift
+@@ -149,7 +149,9 @@ import Testing
+         // Another SQLite client, closing it last, folded the write-ahead log into the library and
+         // removed it; or the library was copied without the files beside it.
+         try Database(path: library).execute("PRAGMA wal_checkpoint(TRUNCATE)")
+-        for sidecar in ["-wal", "-shm"] { try FileManager.default.removeItem(atPath: library + sidecar) }
++        for sidecar in ["-wal", "-shm"] where FileManager.default.fileExists(atPath: library + sidecar) {
++            try FileManager.default.removeItem(atPath: library + sidecar)
++        }
+         let before = try bytes(library)
+ 
+         #expect { try Catalog(home: home) } throws: { error in
+@@ -345,7 +347,7 @@ import Testing
+         #expect(try catalog.find([], project: "praxis").total == 4)
+         #expect(try catalog.find([], project: project.path).total == 4)
+         // The folder as an agent working in it records it: under /private, with a slash at the end.
+-        #expect(try catalog.find([], project: LogWatcher.resolved(project.path) + "/").total == 4)
++        #expect(try catalog.find([], project: Workspace.resolved(project.path) + "/").total == 4)
+         #expect(try catalog.find([], project: "Courtwork").total == 0)
+         #expect(throws: Catalog.Failure.self) { try catalog.find([], limit: 0) }
+     }
+diff --git a/Tests/GleanerCoreTests/KeepTests.swift b/Tests/GleanerCoreTests/KeepTests.swift
+index 48a0d95..a985dfb 100644
+--- a/Tests/GleanerCoreTests/KeepTests.swift
++++ b/Tests/GleanerCoreTests/KeepTests.swift
+@@ -1,4 +1,8 @@
++#if canImport(CryptoKit)
+ import CryptoKit
++#else
++import Crypto
++#endif
+ import Foundation
+ import Testing
+ @testable import GleanerCore
+@@ -191,7 +195,7 @@ import Testing
+         try keep(cover)
+         _ = try organization()
+         _ = try indexer.run()
+-        var info = Darwin.stat()
++        var info = SystemStat()
+         #expect(lstat(cover, &info) == 0)
+         #expect(info.st_atimespec.tv_sec == Int(accessed.timeIntervalSince1970))
+         #expect(!indexer.store.has(sha256("cover")))
+diff --git a/Tests/GleanerCoreTests/LocatorTests.swift b/Tests/GleanerCoreTests/LocatorTests.swift
+index acc233d..05599ac 100644
+--- a/Tests/GleanerCoreTests/LocatorTests.swift
++++ b/Tests/GleanerCoreTests/LocatorTests.swift
+@@ -240,7 +240,11 @@ import Testing
+ 
+     @Test func aReadErrorIsNoHashNotTheHashOfWhatWasRead() {
+         // An unconnected socket opens and then fails to read: that is not an empty file.
++        #if os(Linux)
++        let socket = Glibc.socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
++        #else
+         let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
++        #endif
+         defer { close(socket) }
+         #expect(Locator.sha256("/dev/fd/\(socket)") == nil)
+     }
+diff --git a/Tests/GleanerCoreTests/ObservationTests.swift b/Tests/GleanerCoreTests/ObservationTests.swift
+index 5482eac..5e3dfcc 100644
+--- a/Tests/GleanerCoreTests/ObservationTests.swift
++++ b/Tests/GleanerCoreTests/ObservationTests.swift
+@@ -421,7 +421,7 @@ import Testing
+         #expect(Set(observed.map(\.path)) == Set(files + [locked, large.path]))
+         #expect(observed.first { $0.path == large.path }?.size == 742 << 20)
+         for path in files + [large.path] {
+-            var info = Darwin.stat()
++            var info = SystemStat()
+             #expect(lstat(path, &info) == 0)
+             #expect(info.st_atimespec.tv_sec == Int(accessed.timeIntervalSince1970), "\(path) was read")
+         }
+@@ -538,7 +538,7 @@ import Testing
+         let work = try folder("Projects/film")
+         // Its dates fall in the session, but the copy, made now, set them.
+         let copy = try file("render.mp4", in: work, created: minutes(-560), modified: minutes(-550))
+-        var info = Darwin.stat()
++        var info = SystemStat()
+         #expect(lstat(copy, &info) == 0 && info.st_ctimespec.tv_sec > Int(minutes(-540).timeIntervalSince1970))
+         let log = try session("film", in: work, from: minutes(-600), to: minutes(-540), reply: "Rendered.", title: "Film")
+         _ = try indexer.run()
+diff --git a/Tests/GleanerCoreTests/ProjectTests.swift b/Tests/GleanerCoreTests/ProjectTests.swift
+index 404c2cd..623de88 100644
+--- a/Tests/GleanerCoreTests/ProjectTests.swift
++++ b/Tests/GleanerCoreTests/ProjectTests.swift
+@@ -180,7 +180,7 @@ import Testing
+         // for what Foundation calls /var/folders/…. Its reply links a file there, one not yet
+         // written, and one outside git.
+         let atlas = try repository("Atlas")
+-        let cwd = LogWatcher.resolved(atlas)
++        let cwd = Workspace.resolved(atlas)
+         try #require(cwd.hasPrefix("/private/") && !atlas.hasPrefix("/private/"))
+         try FileManager.default.createDirectory(atPath: atlas + "/out", withIntermediateDirectories: true)
+         try "r1".write(toFile: atlas + "/out/report.md", atomically: true, encoding: .utf8)
+diff --git a/Tests/GleanerCoreTests/ReviewTests.swift b/Tests/GleanerCoreTests/ReviewTests.swift
+index 11c09ec..20da599 100644
+--- a/Tests/GleanerCoreTests/ReviewTests.swift
++++ b/Tests/GleanerCoreTests/ReviewTests.swift
+@@ -1,4 +1,8 @@
++#if canImport(CryptoKit)
+ import CryptoKit
++#else
++import Crypto
++#endif
+ import Foundation
+ import Testing
+ @testable import GleanerCore
+@@ -348,7 +352,7 @@ import Testing
+         #expect(organization.toReview(try reviews()) { present($0.latest.path) }.first?.works.count == 2)
+         for work in organization.works(in: unit.key) { _ = try verdict(work, present(work.latest.path)) }
+         for path in [video, cover] {
+-            var info = Darwin.stat()
++            var info = SystemStat()
+             #expect(lstat(path, &info) == 0)
+             #expect(info.st_atimespec.tv_sec == Int(accessed.timeIntervalSince1970), "\(path) was read")
+         }
+diff --git a/Sources/CSQLite/module.modulemap b/Sources/CSQLite/module.modulemap
+new file mode 100644
+index 0000000..0a291b5
+--- /dev/null
++++ b/Sources/CSQLite/module.modulemap
+@@ -0,0 +1,5 @@
++module CSQLite [system] {
++    header "shim.h"
++    link "sqlite3"
++    export *
++}
+diff --git a/Sources/CSQLite/shim.h b/Sources/CSQLite/shim.h
+new file mode 100644
+index 0000000..f52e1f0
+--- /dev/null
++++ b/Sources/CSQLite/shim.h
+@@ -0,0 +1 @@
++#include <sqlite3.h>
+diff --git a/Sources/GleanerCore/Platform.swift b/Sources/GleanerCore/Platform.swift
+new file mode 100644
+index 0000000..6c8d0e6
+--- /dev/null
++++ b/Sources/GleanerCore/Platform.swift
+@@ -0,0 +1,34 @@
++import Foundation
++
++#if os(Linux)
++import Glibc
++
++typealias SystemStat = Glibc.stat
++
++extension Glibc.stat {
++    // Linux's portable stat interface has no birth time. Unknown stays unknown; ctime is
++    // metadata change time and must never stand in for creation time.
++    var st_birthtimespec: timespec { timespec(tv_sec: 0, tv_nsec: 0) }
++    var st_atimespec: timespec { st_atim }
++    var st_mtimespec: timespec { st_mtim }
++    var st_ctimespec: timespec { st_ctim }
++}
++
++// swift-corelibs-foundation uses Swift ownership instead of Objective-C autorelease pools.
++func autoreleasepool<Result>(invoking body: () throws -> Result) rethrows -> Result {
++    try body()
++}
++
++extension NSString {
++    var abbreviatingWithTildeInPath: String {
++        let path = self as String
++        let home = NSHomeDirectory()
++        if path == home { return "~" }
++        return path.hasPrefix(home + "/") ? "~" + path.dropFirst(home.count) : path
++    }
++}
++#else
++import Darwin
++
++typealias SystemStat = Darwin.stat
++#endif
+diff --git a/Tests/GleanerCoreTests/PortableSupport.swift b/Tests/GleanerCoreTests/PortableSupport.swift
+new file mode 100644
+index 0000000..70e17e1
+--- /dev/null
++++ b/Tests/GleanerCoreTests/PortableSupport.swift
+@@ -0,0 +1,5 @@
++#if os(Linux)
++// glibc's integer-expression macro is not imported by Swift. POSIX utimensat uses
++// this nanosecond sentinel to leave modification time untouched in access-time tests.
++let UTIME_OMIT = (1 << 30) - 2
++#endif

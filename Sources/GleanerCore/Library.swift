@@ -1,6 +1,8 @@
 import Foundation
 import Synchronization
+#if canImport(UniformTypeIdentifiers)
 import UniformTypeIdentifiers
+#endif
 
 /// When Gleaner read a delivery's bytes, relative to the reply that handed them over (SPEC §5.1).
 public enum Provenance: String, Sendable, Codable {
@@ -225,6 +227,7 @@ public struct Artifact: Sendable, Identifiable {
     /// Checks run from specific to general: source code and JSON are also text, so they are
     /// matched before documents.
     private static func typed(_ ext: String) -> Kind {
+        #if canImport(UniformTypeIdentifiers)
         guard !ext.isEmpty, let type = UTType(filenameExtension: ext) else { return .other }
         let checks: [(UTType, Kind)] = [
             (.html, .web), (.audiovisualContent, .media), (.image, .image), (.threeDContent, .model),
@@ -234,6 +237,20 @@ public struct Artifact: Sendable, Identifiable {
             (.pdf, .document), (.presentation, .document), (.text, .document), (.compositeContent, .document),
         ]
         return checks.first { type.conforms(to: $0.0) }?.1 ?? .other
+        #else
+        // Portable validation has no LaunchServices type registry. This conservative list
+        // covers common formats only; unknown types stay unknown. macOS still uses UTType.
+        let groups: [(Kind, Set<String>)] = [
+            (.web, ["html", "htm"]),
+            (.media, ["mp4", "mov", "m4a", "wav", "mp3", "aac", "aiff", "flac", "ogg", "webm"]),
+            (.image, ["png", "jpg", "jpeg", "svg", "heic", "gif", "tif", "tiff", "webp", "bmp", "ico"]),
+            (.code, ["swift", "py", "js", "sh", "bash", "c", "h", "cpp", "hpp", "m", "mm", "java", "rb", "pl"]),
+            (.data, ["json", "csv", "tsv", "xlsx", "xls", "xml", "db"]),
+            (.build, ["dmg", "zip", "tar", "gz", "bz2", "xz", "7z", "exe"]),
+            (.document, ["pdf", "txt", "rtf", "rtfd", "doc", "docx", "ppt", "pptx", "odt"]),
+        ]
+        return groups.first { $0.1.contains(ext) }?.0 ?? .other
+        #endif
     }
 
     /// Formats the system doesn't type, or types too generally to place.

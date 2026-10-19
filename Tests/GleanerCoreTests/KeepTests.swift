@@ -1,4 +1,8 @@
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 import Foundation
 import Testing
 @testable import GleanerCore
@@ -191,7 +195,7 @@ import Testing
         try keep(cover)
         _ = try organization()
         _ = try indexer.run()
-        var info = Darwin.stat()
+        var info = SystemStat()
         #expect(lstat(cover, &info) == 0)
         #expect(info.st_atimespec.tv_sec == Int(accessed.timeIntervalSince1970))
         #expect(!indexer.store.has(sha256("cover")))

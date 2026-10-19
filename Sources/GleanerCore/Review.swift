@@ -27,7 +27,7 @@ public struct FileStat: Sendable, Equatable {
     /// (SPEC §6); nil for anything else, for a file it may not read, or for nothing. Reads no bytes:
     /// `stat` needs no permission to read, so whether it has one is asked on its own (A20).
     public init?(_ path: String) {
-        var info = Darwin.stat()
+        var info = SystemStat()
         // stat(2), following a link, by the name `Locator.stat` uses: the struct's name hides the function's.
         guard fstatat(AT_FDCWD, path, &info, 0) == 0, info.st_mode & S_IFMT == S_IFREG, access(path, R_OK) == 0 else { return nil }
         func date(_ time: timespec) -> Date { Date(timeIntervalSince1970: TimeInterval(time.tv_sec) + TimeInterval(time.tv_nsec) / 1e9) }

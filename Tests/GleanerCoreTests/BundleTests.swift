@@ -763,7 +763,7 @@ import Testing
         #expect(names(listed.map(\.path)) == ["clip-0.mov", "clip-1.mov", "clip-2.mov", "clip-3.mov", "locked.wav", "render.mp4"])
         #expect(listed.first { $0.path == large.path }?.latest.capture?.size == 742 << 20)
         for path in clips + [large.path] {
-            var info = Darwin.stat()
+            var info = SystemStat()
             #expect(lstat(path, &info) == 0)
             #expect(info.st_atimespec.tv_sec == Int(accessed.timeIntervalSince1970), "\(path) was read")
         }

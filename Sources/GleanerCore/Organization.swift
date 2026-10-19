@@ -245,7 +245,7 @@ public struct Organization: Sendable {
 
         // Projects: each derived folder by its name, told apart from another of the same name. A
         // project holding a unit is listed with it, works or not.
-        let derived = Set((works.map(\.project) + combine.keys + live.values.map(\.project)).filter { !yours.contains($0) })
+        let derived = Set((works.map(\.project) + Array(combine.keys) + live.values.map(\.project)).filter { !yours.contains($0) })
         derivedNames = Projects.names(derived)
         let inRepository = Set(artifacts.filter(\.inRepository).map(\.projectFolder))
         var projects: [Project] = []

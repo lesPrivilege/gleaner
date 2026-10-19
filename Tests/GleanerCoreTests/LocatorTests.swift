@@ -240,7 +240,11 @@ import Testing
 
     @Test func aReadErrorIsNoHashNotTheHashOfWhatWasRead() {
         // An unconnected socket opens and then fails to read: that is not an empty file.
+        #if os(Linux)
+        let socket = Glibc.socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+        #else
         let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        #endif
         defer { close(socket) }
         #expect(Locator.sha256("/dev/fd/\(socket)") == nil)
     }
