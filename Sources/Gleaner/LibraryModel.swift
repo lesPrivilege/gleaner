@@ -86,8 +86,20 @@ final class LibraryModel {
     private(set) var userProjects: [UserProject] = []
     /// The work units the person made, as made; `organization` shows them as named last.
     private(set) var units: [WorkUnit] = []
+    /// Every verdict and published mark, by the file each was made on.
+    private(set) var reviews = Reviews([])
     /// Why the last correction couldn't be recorded.
     private(set) var correctionFailure: String?
+    /// Why the last verdict or mark couldn't be made.
+    private(set) var reviewFailure: String?
+    /// The size, dates and inode of each file a review state is shown for (the current file of each
+    /// work in a unit or with a verdict or mark), nil when no regular file is there: taken with each
+    /// organization, never by reading bytes, so the review states never touch the disk while they
+    /// are drawn.
+    private var listed: [String: FileStat?] = [:]
+    /// The bytes read of a file this session, on select or for a verdict, with the file as it was
+    /// then: they stand for the file while it is still so.
+    private var reads: [String: (sha256: String, file: FileStat)] = [:]
     /// Paths not on disk, checked once per load and refreshed when a file is observed, so list
     /// rows never touch the disk while drawing.
     private(set) var missing: Set<String> = []
@@ -181,6 +193,7 @@ final class LibraryModel {
         corrections = (try? indexer.registry.corrections()) ?? []
         userProjects = (try? indexer.registry.userProjects()) ?? []
         units = (try? indexer.registry.units()) ?? []
+        reviews = Reviews((try? indexer.registry.reviews()) ?? [])
         sourcesOff = (try? indexer.registry.sourcesOff()) ?? []
         if loads {
             observed = Candidate.files((try? indexer.registry.observations()) ?? [])
@@ -288,6 +301,7 @@ final class LibraryModel {
         organization = Organization(artifacts: artifacts, observed: observed, corrections: corrections,
                                     projects: userProjects, units: units, missing: missing)
         organizationVersion += 1
+        statReviewed()
         if indexed { updateStatus() }
     }
 
@@ -938,6 +952,173 @@ final class LibraryModel {
             ?? units.first { $0.key == key }?.name ?? ""
     }
 
+    // MARK: Work units, keeping and review (docs/design/review.md)
+
+    /// Makes a work unit in the project `project`, or inside the unit `parent`; Edit › Undo takes
+    /// it back. Nil when it couldn't be made, with why in `correctionFailure`.
+    @discardableResult
+    func newUnit(named name: String, in project: String, inside parent: String? = nil) async -> WorkUnit? {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { return nil }
+        guard let unit = await correcting({ try $0.addUnit(named: name, in: project, inside: parent, at: Date()) }) else { return nil }
+        undoManager?.registerUndo(withTarget: self) { model in Task { await model.unmake(unit) } }
+        undoManager?.setActionName("New Collection")
+        said("Made \(name)")
+        return unit
+    }
+
+    /// Takes back making the unit: it goes with what was decided about it.
+    func unmake(_ unit: WorkUnit) async {
+        let key = unit.key
+        await correcting { try $0.removeUnit(key) }
+        said("Undone")
+    }
+
+    func rename(_ unit: WorkUnit, to name: String) async {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines), key = unit.key, made = Set(corrections.map(\.id))
+        guard !name.isEmpty, name != organization.unitName(key) else { return }
+        await correcting { try $0.correct(.unitName, subject: key, target: name, at: Date()) }
+        undoable("Rename", since: made)
+        said("Renamed \(unit.name) to \(name)")
+    }
+
+    /// Deletes the unit and the units inside it: their works go back to the project. Edit › Undo,
+    /// or Undo in Sources › Corrections, brings them back as they were.
+    func delete(_ unit: WorkUnit) async {
+        let key = unit.key, made = Set(corrections.map(\.id))
+        await correcting { try $0.correct(.unitDeleted, subject: key, target: "", at: Date()) }
+        undoable("Delete", since: made)
+        said("Deleted \(unit.name)")
+    }
+
+    /// Puts the works, every file of each, in the unit; a work shown in another project is moved
+    /// to the unit's with it, as one decision.
+    func add(_ works: [Work], to unit: WorkUnit) async {
+        let decisions = works.flatMap { work in
+            work.files.map { (kind: Correction.Kind.unit, subject: $0.path, target: unit.key) }
+                + (work.project == unit.project ? [] : work.files.map { (kind: .project, subject: $0.path, target: unit.project) })
+        }
+        await decide(decisions, as: "Add to Collection", saying: "Added \(names(works.map(\.name))) to \(unit.name)")
+    }
+
+    /// Keeps the observed files and puts them in the unit, as one decision.
+    func add(_ candidates: [Candidate], to unit: WorkUnit) async {
+        let decisions = candidates.flatMap { candidate in
+            [(kind: Correction.Kind.kept, subject: candidate.path, target: candidate.latest.logPath),
+             (kind: .unit, subject: candidate.path, target: unit.key)]
+                + (candidate.project == unit.project ? [] : [(kind: .project, subject: candidate.path, target: unit.project)])
+        }
+        await decide(decisions, as: "Add to Collection", saying: "Added \(names(candidates.map(\.name))) to \(unit.name)")
+    }
+
+    func remove(_ works: [Work], from unit: WorkUnit) async {
+        let decisions = works.flatMap { $0.files.map { (kind: Correction.Kind.outOfUnit, subject: $0.path, target: unit.key) } }
+        await decide(decisions, as: "Remove from Collection", saying: "Removed \(names(works.map(\.name))) from \(unit.name)")
+    }
+
+    /// Keeps the observed file: a work whose one revision is the file as its latest session saw it.
+    func keep(_ candidate: Candidate) async {
+        await decide([(.kept, candidate.path, candidate.latest.logPath)], as: "Keep",
+                     saying: "Kept \(candidate.name), observed during \(Wording.session(candidate.latest.sessionTitle))")
+    }
+
+    /// Records decisions made as one, puts them on Edit › Undo as `name`, and says `text`.
+    private func decide(_ decisions: [(kind: Correction.Kind, subject: String, target: String)], as name: String, saying text: String) async {
+        guard !decisions.isEmpty else { return }
+        let made = Set(corrections.map(\.id))
+        await correcting { try $0.correct(decisions, at: Date()) }
+        undoable(name, since: made)
+        said(text)
+    }
+
+    private func names(_ names: [String]) -> String {
+        names.count == 1 ? names[0] : Wording.count(names.count, "work")
+    }
+
+    /// Makes a verdict or a published mark on each work's current file, on the bytes there now,
+    /// read then. `shown` holds each file as the person was shown it, by path: a file no longer so
+    /// is left, since they may not have judged those bytes. Edit › Undo takes back all of them.
+    @discardableResult
+    func review(_ works: [Work], as kind: Review.Kind, note: String? = nil, shown: [String: FileStat] = [:]) async -> [Review] {
+        let indexer = indexer, paths = works.map(\.latest.path), date = Date()
+        let outcomes = await Task.detached(priority: .userInitiated) {
+            paths.map { path in (path, Result { try indexer.review(path, as: kind, note: note, shown: shown[path], at: date) }) }
+        }.value
+        let made = outcomes.compactMap { try? $0.1.get() }
+        reviewFailure = outcomes.lazy.compactMap { path, outcome in
+            if case .failure(let error) = outcome { Wording.reviewFailed(error, name: (path as NSString).lastPathComponent) } else { nil }
+        }.first
+        for review in made { noteRead(review.path, sha256: review.sha256, file: review.file) }
+        reviews = Reviews((try? indexer.registry.reviews()) ?? [])
+        // The read may have completed a listed capture: its file's revisions are read again.
+        for path in Set(made.map(\.path)) { await reread(path) }
+        if !made.isEmpty, let undoManager {
+            undoManager.registerUndo(withTarget: self) { model in Task { await model.undo(made) } }
+            undoManager.setActionName(Wording.reviewAction(kind))
+        }
+        announce(reviewFailure ?? Wording.reviewed(kind, count: made.count))
+        return made
+    }
+
+    /// Takes back verdicts and marks; those made before or after them stay.
+    func undo(_ reviews: [Review]) async {
+        let ids = reviews.map(\.id), indexer = indexer
+        let outcome = await Task.detached { Result { try indexer.registry.undoReviews(ids); return try indexer.registry.reviews() } }.value
+        switch outcome {
+        case .success(let all):
+            self.reviews = Reviews(all)
+            reviewFailure = nil
+            announce("Undone")
+        case .failure(let error):
+            reviewFailure = "Couldn’t undo that: \(error.localizedDescription)"
+        }
+    }
+
+    /// What is at the work's current file now, from this session's read of it while the file is
+    /// still as read, else its size and dates when the library was organized. Reads nothing.
+    func present(_ work: Work) -> Present {
+        let path = work.latest.path
+        guard let entry = listed[path], let file = entry else { return .absent }
+        if let read = reads[path], read.file == file { return .read(read.sha256) }
+        return .listed(file)
+    }
+
+    /// The Reviewed state of the work's current file.
+    func verdict(of work: Work) -> Standing {
+        Review.standing(reviews.verdicts(of: work), now: present(work))
+    }
+
+    /// The Published state of the work's current file.
+    func published(of work: Work) -> Standing {
+        Review.standing(reviews.published(of: work), now: present(work))
+    }
+
+    /// What waits on the person's review, grouped by unit (`Organization.toReview`).
+    var toReview: [Organization.ReviewGroup] {
+        organization.toReview(reviews, present: present)
+    }
+
+    /// Takes the size and dates of each file a review state is shown for: the current file of each
+    /// work in a unit or with a verdict or mark. Metadata only.
+    private func statReviewed() {
+        listed = [:]
+        for work in organization.works where work.unit != nil || reviews.any(work) {
+            listed[work.latest.path] = .some(FileStat(work.latest.path))
+        }
+    }
+
+    /// Records a read of the file at `path` this session: its bytes stand for the file while it is
+    /// still as `file`. Without bytes or a file, the read stands for nothing.
+    private func noteRead(_ path: String, sha256: String?, file: FileStat?) {
+        if let sha256, let file {
+            reads[path] = (sha256, file)
+            listed[path] = .some(file)
+        } else {
+            reads[path] = nil
+            if listed[path] != nil { listed[path] = .some(FileStat(path)) }
+        }
+    }
+
     /// How to go back to the conversation that made `delivery`, checked now.
     func resume(_ delivery: Delivery) -> Resume {
         delivery.resume { path, kind in Locator.stat(path).kind == kind }
@@ -1282,12 +1463,14 @@ final class LibraryModel {
     func observe(_ artifact: Artifact) async {
         let path = artifact.path, checkout = artifact.checkout, versions = Set(artifact.deliveries.compactMap(\.sha256))
         let indexer = indexer
-        let (state, held, completed) = await Task.detached(priority: .userInitiated) {
-            let state = Locator.observe(path, checkout: checkout), held = versions.filter(indexer.store.has)
+        let (state, held, completed, file) = await Task.detached(priority: .userInitiated) {
+            let before = FileStat(path), state = Locator.observe(path, checkout: checkout), held = versions.filter(indexer.store.has)
+            let file = FileStat(path)
             let completed = (try? indexer.completeCaptures(of: path, now: Date())) == true
-            return (state, held, completed ? try? indexer.registry.artifact(at: path) : nil)
+            return (state, held, completed ? try? indexer.registry.artifact(at: path) : nil, before == file ? file : nil)
         }.value
         observations[path] = FileObservation(state: state, checkedAt: Date())
+        noteRead(path, sha256: state.kind == .file ? state.sha256 : nil, file: file)
         saved.subtract(versions)
         saved.formUnion(held)
         if let completed { replace(completed) }

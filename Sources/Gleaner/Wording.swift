@@ -492,6 +492,42 @@ enum Wording {
     /// What Gleaner reads of the folders conversations worked in.
     private static let workspaces = ("Workspaces", "Names, sizes and dates of the files that appeared or changed during a conversation, never their contents")
 
+    // MARK: Review
+
+    /// The name of a verdict or a mark on Edit › Undo, as its control names it.
+    static func reviewAction(_ kind: Review.Kind) -> String {
+        switch kind {
+        case .approved: "Approve"
+        case .changesRequested: "Request Changes"
+        case .rejected: "Reject"
+        case .published: "Mark Published"
+        }
+    }
+
+    /// What making verdicts or marks did, for VoiceOver.
+    static func reviewed(_ kind: Review.Kind, count n: Int) -> String {
+        let what = switch kind {
+        case .approved: "Approved"
+        case .changesRequested: "Requested changes to"
+        case .rejected: "Rejected"
+        case .published: "Marked published"
+        }
+        return "\(what) \(count(n, "work"))"
+    }
+
+    /// Why a verdict or a mark wasn't made on the file `name`. Unreadable is never said as gone.
+    static func reviewFailed(_ error: Error, name: String) -> String {
+        switch error {
+        case Review.Failure.notAFile(.missing): "\(name) isn’t on this Mac, so there are no bytes to judge."
+        case Review.Failure.notAFile(.directory): "\(name) is a folder, which has no bytes of its own to judge."
+        case Review.Failure.notAFile(.special): "\(name) isn’t a regular file, so Gleaner doesn’t read it."
+        case Review.Failure.notAFile: "\(name) can’t be read, so Gleaner can’t tell which bytes you judged."
+        case Review.Failure.changedSinceShown: "\(name) changed since it was shown. Look at it again, then decide."
+        case Review.Failure.changedWhileRead: "\(name) changed while Gleaner read it. Look at it again, then decide."
+        default: "Couldn’t record that for \(name): \(error.localizedDescription)"
+        }
+    }
+
     // MARK: Observations
 
     /// A conversation as an observation names it.
