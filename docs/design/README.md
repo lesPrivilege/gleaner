@@ -6,7 +6,7 @@
 
 **Capture from the session (2026-10-19):** [capture](capture.md) takes what every session gives (its requests and replies, its workspace and time span) and finds on the disk what appeared or changed during it, kept as observations beside the deliveries, never as deliveries. Layered: observations, the window, live capture, written-by evidence, acceptance.
 
-**Reviewing (2026-10-19):** [review](review.md) is capture's layer 3: work units the person makes (collections in the window, a series and its episodes), keeping a file observed during a session, verdicts and published marks bound to the exact bytes they were made on, the four states kept apart, and To Review, the queue drawn from the person's own acts.
+**Reviewing (2026-10-19):** [review](review.md) is capture's layer 3: work units the person makes (collections in the window, a series and its episodes), keeping a file observed during a session, verdicts and published marks bound to the exact bytes they were made on, the four states kept apart, and To Review, the queue drawn from the person's own acts. The window shows them: To Review and each project's collections in the sidebar, a collection's review page with each work played, heard and shown in place, Observed in a project's outline, and a work's Review section.
 
 Draft reference for Opus, grounded in public source at [`79d724d1228a4b748572958dcbdd22aa6b7da142`](https://github.com/lesPrivilege/gleaner/tree/79d724d1228a4b748572958dcbdd22aa6b7da142), 2026-10-17. These are alternatives for improving an already useful small product, not an adopted architecture or implementation plan.
 

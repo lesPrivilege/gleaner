@@ -20,7 +20,7 @@ Gleaner 0.1.0 需要 macOS 15 或更高版本。这是早期版本：哪些文�
 
 输入记得的词：当初的要求、回复里的话、文件名或项目名。所有词都出现在同一次交付里才算匹配，分属两次对话的词不会拼成一个结果。结果打开在自身文字（你的要求、回复、会话标题）匹配到的最新一次交付上；只有文件名或项目名匹配时，打开最新一次交付。显示的也是那次交付的日期。改动搜索词后，你切换到别的交付的结果会回到匹配的那一次。随文件夹交付的文件，按它的文件名、所在文件夹和项目找到；回复里的话找到的是那个文件夹。
 
-侧栏列出 All Deliveries、每个项目和 Sources。项目指存放该文件的 git 仓库，同一仓库的各个 worktree 无论放在哪里都归在一起；不在 git 里的，取 agent 工作时所在的文件夹，用文件夹标记而不是仓库标记表示。两个项目同名时还会显示上级文件夹；文件在 worktree 里时，标出是哪个 worktree。在项目里搜索，只搜这个项目。结果上方的菜单按类型筛选，共十种：Documents、Images、Video & Audio、Web Pages、Code、Data、3D & CAD、Builds & Archives、Folders、Other。界面目前只有英文，本文提到界面文字时照录原文。
+侧栏列出 All Deliveries、To Review、每个项目及其中的合集，以及 Sources。项目指存放该文件的 git 仓库，同一仓库的各个 worktree 无论放在哪里都归在一起；不在 git 里的，取 agent 工作时所在的文件夹，用文件夹标记而不是仓库标记表示。两个项目同名时还会显示上级文件夹；文件在 worktree 里时，标出是哪个 worktree。在项目里搜索，只搜这个项目。结果上方的菜单按类型筛选，共十种：Documents、Images、Video & Audio、Web Pages、Code、Data、3D & CAD、Builds & Archives、Folders、Other。界面目前只有英文，本文提到界面文字时照录原文。
 
 详情栏仿照 Finder 的预览栏：最上面是文件本身，带着它自己的图标，可以拖出或打开；一行说明它带的是哪份字节、Gleaner 是否核验过；然后是预览；再是 **Information**：你的要求、交付这个文件的那次回复、agent（用它自己的标志）和会话、时间、磁盘上的现状，以及位置。Markdown 直接在应用内渲染，其他格式多数用 Quick Look 预览。**Versions** 列出同一路径的每次交付，一次一行；选中一行，文件、预览和转交一起切换。一切如常的状态只显示一个标记；需要留意的用一两个词说明，完整的句子在 ⓘ 后面。**More Info** 保留路径、哈希和会话日志。**Compare** 显示两次交付之间，或某次交付与磁盘上当前文件之间的差异：文本逐行对比，图片并排显示，其他格式比较大小和哈希。两个版本只差换行符或末尾换行时，Compare 会如实说明。
 
@@ -31,6 +31,14 @@ Gleaner 0.1.0 需要 macOS 15 或更高版本。这是早期版本：哪些文�
 作品详情里的 **Project** 说明它为什么归在这个项目（文件所在的仓库、agent 工作时所在的仓库，或 git 之外的文件夹），并提供 **Move to Project…**（移到另一个项目，或你新建的项目）和 **Join With Another File…**。侧栏里项目的菜单可以把一个推导出的项目显示在另一个项目之内。这些决定只改变 Gleaner 的呈现方式，不改动任何文件、交付或状态；重新读取日志也会保留。**Sources → Corrections** 逐条列出，每条可 Undo，也可 Undo All。
 
 会话旁边的 **Copy Resume Command** 复制 `claude --resume <id>` 或 `codex resume <id>`，连同进入会话起始文件夹的 `cd`，在终端里继续那次会话。只在会话日志和那个文件夹都还在时提供；否则它会说明为什么无法继续。**Delivered With** 能到达那次回复提到的每个文件。
+
+## 审阅
+
+**合集**（collection）按你心里的样子把作品归在一起，比如一个系列和它的各集；合集里还可以再放合集，只能嵌套一层。用 **New Collection**（⇧⌘N，或侧栏里项目的菜单）新建，直接在原处命名，然后把列表里的行拖到它上面，或者在行的菜单里选 **Add to Collection**，一次选多行也可以。文件留在原处；Rename、Delete 以及其他每个决定都可以用 Edit › Undo 撤销，并列在 Sources → Corrections 里。
+
+合集的**审阅页**把其中每件作品都直接从磁盘上的文件呈现出来：视频就地播放，音频在一行播放条里播放，图片按各自的比例并排，文档直接渲染，程序读取的文件收在 Other Files 里。同一文件夹里同名主干的文件放在一起。每件作品带四个各自独立的状态：它怎么来的（回复点名、随文件夹交付，或你保留的）、是否在这台 Mac 上、你的审阅结论，以及你是否标记为已发布。**Review** 可以通过、要求修改或拒绝，并附一句说明；**Mark Published…** 记下发布在哪里。结论只对你作出它时 Gleaner 哈希过的那份字节有效：文件变了，结论留在历史里，作品会先说它可能已变，读过之后再说已变。**To Review** 列出还剩下什么：合集里还没有针对当前字节作出结论的作品，以及结论针对的是别的字节的作品。
+
+会话工作期间出现或改动、但没有任何回复交付的文件，按会话列在项目概览末尾的 **Observed** 下。**Keep** 按你看到的样子把它收进资料库；**Add to Collection** 把它收进某个合集；**Not From This Session** 把它从这个会话名下移开。
 
 ## 状态
 
@@ -160,7 +168,7 @@ swift test                      # fixture 测试
 
 - `Sources/GleanerCore`：各 agent 的日志适配器（Claude Code、Codex）、提及抽取、文件定位、脱敏、索引库（SQLite）、内容库（存档副本与核验过的转交副本）、索引器、对每个会话工作区的观察（`Observations.swift`）、所交付文件夹里的文件（`Bundles.swift`）、这些列表的排序（`Listing.swift`）、合集、保留的文件与审阅（`WorkUnits.swift`、`Keeping.swift`、`Review.swift`）、日志监视，以及状态判断（`Library.swift`）。
 - `Sources/GleanerUI`：窗口所用的组件库：标记、状态、表面、控件与动效，依 [docs/design/components.md](docs/design/components.md)。只依赖 SwiftUI 与 AppKit。
-- `Sources/Gleaner`：macOS 应用（SwiftUI、AppKit、Quick Look）。
+- `Sources/Gleaner`：macOS 应用（SwiftUI、AppKit、Quick Look、AVKit）。
 - `Sources/gleaner-spike`：Spike A，只读地抽取本地日志，输出一份标注表。
 - `Tests/GleanerCoreTests`：用脱敏后的日志记录结构写成的 fixture 测试，整个流程的测试（并发编辑、删除 worktree、回滚、补读旧日志、核验后转交），几类工作中的观察和所交付的文件夹，以及合集、保留的文件和绑定在字节上的审阅结论。
 - `Tests/GleanerUITests`：标记、设计令牌，以及画出每个组件的图库（`GLEANER_GALLERY=<文件夹> swift test --filter GalleryTests`）。

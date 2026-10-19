@@ -140,10 +140,83 @@ Built on `feat/review`, 2026-10-19. [SPEC §5.5](../SPEC.md) is the contract. Wh
 - **Undo All Corrections** removes units and kept files with the other corrections, and leaves verdicts and published marks, which judge bytes, not how the library is organized.
 - **A work of several files** keeps a verdict made on bytes any of its files had. Files the person hasn't joined share no verdict, even with the same bytes (§5.2).
 - **Reading.** The model takes the size, dates and inode of each work in a unit or with a verdict when it organizes the library, and remembers the bytes read this session, on select or by a verdict, while the file is still as read. To Review and each work's states draw from these and read nothing.
-- **The window** is the next layer: nothing here is listed or drawn yet, though Sources › Corrections words every new decision.
+- **The window** came next: [The window, as built](#the-window-as-built).
 
 Checked: `swift test`.
 - `WorkUnitTests`: nesting one level, natural order, membership by the latest decision and undo back to the one before, a work of several files, a work from another project moved with it and out again, rename, delete and undo, taking back a made unit, Undo All, a removed project, a unit following its project shown inside another, another connection to the library.
 - `KeepTests`: a kept file's one revision as observed and undone back to a candidate; its first read while as observed, at delivery and first seen later, and not when changed since; adding an observed file to a unit; a reply naming it later; a reread and a relaunch; no bytes read by keeping.
 - `ReviewTests`: a verdict on the bytes read; a rewrite, a rollback to approved bytes, a change of dates alone, a copy keeping size and dates (A16, A18); not as shown, gone, a folder and unreadable (A17, A20); history and undo; a work of several files; the four states as a matrix (A22); To Review's contents and grouping; no bytes read but for a verdict; another connection, a reread and Undo All.
 - `ReviewingTests`: the model's decisions and their words in Sources › Corrections, verdicts and To Review through a relaunch and a selection, a file changed since shown, and every decision through a reread and a relaunch.
+
+## The window, as built
+
+Built on `feat/review`, 2026-10-19, over the core. [SPEC §5.5](../SPEC.md) gains how it is shown. Where the window settles what this chapter left open, or departs from it:
+
+**Sidebar**
+- **To Review** sits under All Deliveries, counted as Mail counts unread mail.
+- **A project with collections** opens on them by disclosure, and each collection on those inside it. A collection's badge counts its works and those inside it.
+- **New Collection** is named in place, in the sidebar, as Finder names a new folder: Return or leaving the field keeps the name, Escape and an empty name make nothing. It is in a project's menu, in a collection's (inside it; beside it for one already inside another, since collections nest one level deep), and in the File menu (⇧⌘N). Made for rows the person chose, it takes them; made for nothing, it opens.
+- **Dropping rows.** A row carries its work, for a collection, as a type only Gleaner reads (`app.gleaner.work`, declared by the app bundle), beside what it hands another app. A row with nothing to hand over now starts a drag too: another app is offered nothing, so no drop there fails. Dragging one of several chosen rows brings all of them, as Finder does.
+
+**Choosing several.** Lists take ⌘- and ⇧-clicks. The detail then says how many, with Add to Collection and Remove from Collection; Open, Quick Look and ⌘C act on the one shown.
+
+**A collection's content column**
+- **Its head** is a row of its own, naming it, its counts, what waits, and where it is (the collection it is inside, its project). The head's row shows the review page; so does a row of a collection inside it, while the window stays where it is. A work's row shows the work's detail.
+- **Keys.** Return opens a collection chosen inside, and Delete takes the chosen works out.
+- **Empty**, it offers Add Works…, the project's works in no collection.
+
+**The review page**
+- **What it shows.** The collection's own works. The collections inside it are rows at the top, each showing its own page, so Review All acts only on what the page drew.
+- **Review All** gives each work drawn a verdict on the bytes there now: those already given that verdict on these bytes are skipped, as are folders and files gone. Other Files count once opened.
+- **The forms**, all the platform's:
+  - video: AVKit's player, its floating controls, at its own aspect up to 420 points tall;
+  - audio: the same player with its inline controls, as a row;
+  - images: ImageIO, at their own aspects, 220 points tall, side by side and wrapping; AppKit reads what ImageIO doesn't (SVG);
+  - Markdown and text: as the preview pane draws them, from the file; anything else a person opens, Quick Look;
+  - models, builds and folders: the file's own icon.
+- **Same stem.** The file drawn is the first a person looks at: a video before an image, an image before a document, a document before audio, else the first in list order. The others are named beside it, each with its own states and actions, and audio beside it plays in its own row. A file a program reads goes under Other Files even when it shares the stem (`ep01.inputs.json`): the page is for looking, and Other Files is where the design puts what a program reads.
+- **Marks.** Generated is the agent's mark for a reply or a folder, the observed mark for a kept file. On this Mac shows nothing while the file is there. Reviewed is the check, the open arrow or the crossed circle alone; "To review" in the accent, and "May have changed since review" or "Changed since review" in amber. Published is the tray alone, with words only when its bytes may have changed or did. Each has its sentence in the help tag, and all four are read to VoiceOver with the name.
+- **As shown (A17).** Each item takes its file's size, dates and inode as it is drawn, and a verdict binds only to the file still so. A refusal is said at the top of the page, with Look Again, which draws every item again from disk.
+
+**A work's detail** has its Review section after Information:
+- its collection, with Remove, or Add to Collection;
+- Reviewed, once it is in a collection or has a verdict, and Published, once it has a mark: a state as it should be says nothing;
+- every verdict and mark on any of its files, newest first, each with its file, time, hash, note or place, and Undo.
+
+Review and Mark Published act only while the detail shows the file's current bytes: the newest delivery, still on disk, or the current file chosen to hand over. A verdict binds to the bytes shown.
+
+**To Review** lists what waits by collection, named with the one it is inside and its project, then by project; each name leads there. A work reviewed there stays shown until the person moves on, as Mail keeps a message read in Unread.
+
+**Observed** sits after a project's folders, in a project something was handed over in: one whose sessions were only observed isn't listed yet, as the core lists projects. Each file is under the session it was last observed during (a file two sessions observed, under the newer), folded as Listing folds them; a session opens where works open, so it is closed in a repository. A row says Appeared or Changed and its folder: the session is said once, by its group, and each session's full sentence is in the help tag. It has Keep, and a menu with Add to Collection and Not From This Session; a folded row keeps or adds all of its files.
+
+**A kept file** is named as kept wherever a delivery would be named: "Kept file", "Kept by you, observed during …", "Seen as observed", "Kept, not read". No label calls it a delivery, or listed with a folder.
+
+**Corrections** lists an observed file kept to go in a collection as one line: "Kept and added cover.png to Episode 3, observed during Series covers". Collection decisions carry the collection's mark there.
+
+**Undo and VoiceOver.** Every decision goes on Edit › Undo under its name, and is announced in the words Corrections lists it by. A collection made for chosen rows is two steps on Edit › Undo: the adding, then the making.
+
+**Checked**
+- **`swift test`:** 343 tests pass; the gallery and the three tours run only with a folder for their pictures.
+  - `WordingTests` says each new state as itself and never as another: the Reviewed states in a collection and out of one, the Published states, what waits, On this Mac with unreadable never gone (A20), how a file came, a kept revision never a delivery, collections' counts and names, and a refused verdict's reasons.
+  - `ReviewingTests` adds: a collection as a place with its page, its works and those inside it, deleted while shown; naming in place, with what was chosen; several rows chosen, added and dragged together; Observed by session, detached and kept; what waits and where each work is, To Review keeping the work shown, and a file gone after its verdict (A22).
+- **The tour.** `GLEANER_TOUR=<folder> swift test --filter TourTests/walkTheReviewOfASeries` writes real videos, builds a synthetic series of three episodes and a compilation (`scripts/acceptance-home.py <home> review`, then `review-revise`), and draws fifteen pictures:
+  - the outline, whole, with Observed;
+  - the series' list and page, naming a collection in place, two works chosen;
+  - episode 1's page in the window and whole, before and after its verdicts;
+  - To Review after the recut, and with the recut chosen;
+  - the recut's detail and the script's, with their Review sections and history;
+  - the note sheet, Corrections, and episode 2's page in dark.
+
+  **What the pictures showed, and what changed:**
+  - Corrections said a keep and an add made together twice, file by file; they are now one line.
+  - Every work's detail said None, Not reviewed and Not published; nothing is said now until something is decided.
+  - An observed file's row ran its other sessions together until they were cut off; they moved to its help tag.
+  - A collection chosen in a list wasn't selected in it: the list's selection now names the collection whose page is shown.
+- **Not checked:**
+  - a video's frames, and the players' glass: drawn off screen, a video is black and AVKit's glass capsule is white;
+  - a real drag onto the sidebar, and its highlight;
+  - naming in place from the keyboard;
+  - VoiceOver listening, and full keyboard access through a page;
+  - Increase Contrast and large text.
+
+  These need a person at the window.

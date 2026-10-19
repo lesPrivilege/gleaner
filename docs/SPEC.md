@@ -38,7 +38,7 @@ In v0.1:
 - Observations of what appeared or changed in each session's workspace during its span, kept beside the deliveries, never as deliveries (§5.3).
 - The files of a delivered folder, each delivered by the reply that named the folder, listed by metadata and read when the person acts on one (§5.4).
 - Content-addressed snapshots under a size policy.
-- What only the person adds (§5.5): work units, files they keep from what a session was observed doing, and verdicts and published marks bound to the bytes they were made on, with the queue of what is left to review. The window lists them in the next layer.
+- What only the person adds (§5.5): work units, files they keep from what a session was observed doing, and verdicts and published marks bound to the bytes they were made on, with the queue of what is left to review, each listed in the window.
 - Library window: projects and the works in each, search, preview (Quick Look, text, Markdown), compare versions, reveal in Finder, copy path, drag out, and a Sources page for what Gleaner reads, the person's corrections and what it keeps (§5.1a).
 
 Deferred: comments, timecoded notes, MCP or `artifact://` resolvers, agent-initiated submission, remote-agent handoff, cross-device sync, cloud deliveries (ChatGPT, claude.ai), automatic HTML dependency bundling, Claude Code hooks as a capture path, runtime extensions and model reasoning (§14), release groups (§15).
@@ -150,6 +150,7 @@ What only the person can add (`docs/design/review.md`): which works go together,
 - **Four states, kept apart.** Generated (named in a reply, handed over in a folder, or kept, observed during a session), On this Mac (the locator, §5), Reviewed and Published, each shown for a work's current file. None completes another: not a delivery, a version, a saved copy, a push, a file played to its end, nor an agent's claim (§6.2). A published file need not be reviewed, a reviewed one need not be on this Mac, and a delivered one need not be reviewed.
 - **To Review.** The works in units with no verdict on their current bytes, and the works anywhere whose newest verdict was made on other bytes or may have been, grouped by unit in the order the sidebar lists them, then by project. A work nobody put in a unit and nobody reviewed is never in it, nor a folder, which has no bytes to judge.
 - **Reading.** Units, To Review and each work's states come from sizes and dates, and from bytes read this session while the file is still as read. Bytes are read only when a verdict or mark is made, and when a file is selected, as before (§7).
+- **Shown** (`docs/design/review.md`, The window): To Review with its count, and each project's units under it, in the sidebar. A unit lists the units inside it, then its works; its review page shows each of its works in place, played and rendered from the file on disk, with the four states, and a verdict made there binds only to a file still as it was drawn. A project's outline lists the files that appeared or changed while sessions worked, and that no reply handed over, under Observed, by session, to keep, add to a unit or detach. A work's detail has its verdicts and marks, newest first, each to undo; it makes one only while it shows the file's current bytes. A kept revision is named as kept, never as a delivery.
 
 ## 6. Snapshots and storage
 
