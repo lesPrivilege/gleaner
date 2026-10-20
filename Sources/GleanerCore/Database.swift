@@ -83,6 +83,25 @@ public final class Database: @unchecked Sendable {
         }
     }
 
+    private let reading = NSRecursiveLock()
+    private var snapshots = 0
+
+    /// Runs `body` in one read transaction, so every read in it sees the database as it was at its
+    /// first: a write another connection commits meanwhile is seen by the next call, not halfway
+    /// through this one. A call inside `body` joins it; another thread's waits for it to end.
+    public func snapshot<T>(_ body: () throws -> T) throws -> T {
+        reading.lock()
+        defer { reading.unlock() }
+        guard snapshots == 0 else { return try body() }
+        try execute("BEGIN DEFERRED")
+        snapshots += 1
+        defer {
+            snapshots -= 1
+            try? execute("COMMIT")
+        }
+        return try body()
+    }
+
     private func prepare(_ sql: String, _ arguments: [Any?]) throws -> OpaquePointer? {
         var statement: OpaquePointer?
         guard sqlite3_prepare_v2(handle, sql, -1, &statement, nil) == SQLITE_OK else { throw failure() }

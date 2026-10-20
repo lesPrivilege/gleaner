@@ -55,47 +55,52 @@ extension Catalog {
     /// Gleaner found a file in, by its folder or name, finds it too, wherever the person put it.
     public func find(_ terms: [String], project: String? = nil, kind: Artifact.Kind? = nil, limit: Int = 20) throws -> Found {
         guard limit > 0 else { throw Failure.usage("The limit must be at least 1.") }
-        let tokens = Search.tokens(terms.joined(separator: " "))
-        let folder = project.flatMap { $0.hasPrefix("/") ? Paths.standard($0) : nil }
-        let index = try registry.index()
-        let organization = try organize(try shown().artifacts)
-        func place(_ work: Work) -> Project {
-            organization.project(work.project).map { Project(name: $0.name, folder: $0.folder) }
-                ?? Project(name: work.latest.project, folder: work.latest.projectFolder)
+        // One moment of the library, so the scope the answer reports is the one its results were drawn from.
+        return try registry.reading {
+            let tokens = Search.tokens(terms.joined(separator: " "))
+            let folder = project.flatMap { $0.hasPrefix("/") ? Paths.standard($0) : nil }
+            let index = try registry.index()
+            let organization = try organize(try shown().artifacts)
+            func place(_ work: Work) -> Project {
+                organization.project(work.project).map { Project(name: $0.name, folder: $0.folder) }
+                    ?? Project(name: work.latest.project, folder: work.latest.projectFolder)
+            }
+            let matches = organization.search(tokens, kind: kind) { work in
+                guard let project else { return true }
+                let shown = place(work)
+                if let folder, folder == shown.folder || work.files.contains(where: { $0.projectFolder == folder }) { return true }
+                return ([shown.name] + work.files.flatMap { [organization.projectName($0.projectFolder), $0.project] })
+                    .contains { $0.caseInsensitiveCompare(project) == .orderedSame }
+            }
+            let results = matches.prefix(limit).map { work, delivery in
+                let artifact = work.file(of: delivery)
+                return Hit(reference: reference(delivery, of: artifact, now: check(artifact), library: index.library),
+                           project: place(work), kind: artifact.kind,
+                           deliveredAt: delivery.deliveredAt, request: Self.excerpt(delivery.request))
+            }
+            return Found(index: index, total: matches.count, truncated: matches.count > limit, results: Array(results))
         }
-        let matches = organization.search(tokens, kind: kind) { work in
-            guard let project else { return true }
-            let shown = place(work)
-            if let folder, folder == shown.folder || work.files.contains(where: { $0.projectFolder == folder }) { return true }
-            return ([shown.name] + work.files.flatMap { [organization.projectName($0.projectFolder), $0.project] })
-                .contains { $0.caseInsensitiveCompare(project) == .orderedSame }
-        }
-        let results = matches.prefix(limit).map { work, delivery in
-            let artifact = work.file(of: delivery)
-            return Hit(reference: reference(delivery, of: artifact, now: check(artifact), library: index.library),
-                       project: place(work), kind: artifact.kind,
-                       deliveredAt: delivery.deliveredAt, request: Self.excerpt(delivery.request))
-        }
-        return Found(index: index, total: matches.count, truncated: matches.count > limit, results: Array(results))
     }
 
     /// The delivery `id` with every delivery of its file, the file on disk now, what handing it on
     /// would give, and the request and reply that made it.
     public func show(_ id: String) throws -> Shown {
-        let (artifacts, artifact, delivery) = try lookup(id)
-        let index = try registry.index()
-        let now = check(artifact)
-        return Shown(
-            index: index, reference: reference(delivery, of: artifact, now: now, library: index.library),
-            number: delivery.number, deliveredAt: delivery.deliveredAt, request: delivery.request,
-            reply: delivery.evidence.first?.excerpt,
-            handoff: Plan(artifact.handoff(delivery, now: now, hasSaved: store.has), in: artifact, now: now),
-            project: project(of: artifact, in: try organize(artifacts)), kind: artifact.kind,
-            deliveries: artifact.deliveries.map {
-                Version(reference: reference($0, of: artifact, now: now, library: index.library),
-                        number: $0.number, deliveredAt: $0.deliveredAt)
-            },
-            onDisk: Disk(kind: now.state.kind, sha256: now.state.sha256, checkedAt: now.checkedAt))
+        try registry.reading {
+            let (artifacts, artifact, delivery) = try lookup(id)
+            let index = try registry.index()
+            let now = check(artifact)
+            return Shown(
+                index: index, reference: reference(delivery, of: artifact, now: now, library: index.library),
+                number: delivery.number, deliveredAt: delivery.deliveredAt, request: delivery.request,
+                reply: delivery.evidence.first?.excerpt,
+                handoff: Plan(artifact.handoff(delivery, now: now, hasSaved: store.has), in: artifact, now: now),
+                project: project(of: artifact, in: try organize(artifacts)), kind: artifact.kind,
+                deliveries: artifact.deliveries.map {
+                    Version(reference: reference($0, of: artifact, now: now, library: index.library),
+                            number: $0.number, deliveredAt: $0.deliveredAt)
+                },
+                onDisk: Disk(kind: now.state.kind, sha256: now.state.sha256, checkedAt: now.checkedAt))
+        }
     }
 
     /// The text of the delivery's exact bytes: its saved copy, or the original only while it hashes
@@ -112,8 +117,7 @@ extension Catalog {
             break
         }
         guard max > 0 else { throw Failure.usage("The most to read must be at least 1 byte.") }
-        let (_, artifact, delivery) = try lookup(id)
-        let index = try registry.index()
+        let (_, artifact, delivery, index) = try select(id)
         let now = check(artifact)
         guard case .ready(let sha, _, _) = artifact.handoff(delivery, now: now, hasSaved: store.has) else {
             throw Failure.unavailable(reason(delivery))
@@ -179,16 +183,14 @@ extension Catalog {
 
     /// The delivery's reference, as the app's Copy Reference copies it.
     public func resolve(_ id: String) throws -> Resolved {
-        let (_, artifact, delivery) = try lookup(id)
-        let index = try registry.index()
+        let (_, artifact, delivery, index) = try select(id)
         return Resolved(index: index, reference: reference(delivery, of: artifact, now: check(artifact), library: index.library))
     }
 
     /// Stages a verified, read-only copy of the delivery's exact bytes in Gleaner's hand-off folder
     /// (`ContentStore.stage`): from its saved copy, or from the original while it still holds them.
     public func handoff(_ id: String) throws -> HandedOff {
-        let (_, artifact, delivery) = try lookup(id)
-        let index = try registry.index()
+        let (_, artifact, delivery, index) = try select(id)
         let now = check(artifact)
         guard case .ready(let sha, _, _) = artifact.handoff(delivery, now: now, hasSaved: store.has) else {
             throw Failure.unavailable(reason(delivery))
@@ -206,8 +208,7 @@ extension Catalog {
     /// the delivery's bytes; its reference says where they are from the same hashes. Neither means
     /// there are no bytes for that version now: the answer says why (exit 1).
     public func verify(_ id: String) throws -> Verified {
-        let (_, artifact, delivery) = try lookup(id)
-        let index = try registry.index()
+        let (_, artifact, delivery, index) = try select(id)
         let now = check(artifact)
         let original = delivery.sha256 != nil && now.state.sha256 == delivery.sha256
         let savedCopy = delivery.sha256.map { Locator.sha256(store.objectURL($0).path) == $0 } ?? false
@@ -223,6 +224,14 @@ extension Catalog {
     public func verify(_ kept: Kept) throws -> Verified {
         guard kept.library == (try registry.index().library) else { throw Failure.otherLibrary(kept.library) }
         return try verify(kept.delivery)
+    }
+
+    /// The artifact holding the delivery `id`, and the index, read as one moment of the library.
+    private func select(_ id: String) throws -> (artifacts: [Artifact], artifact: Artifact, delivery: Delivery, index: Index) {
+        try registry.reading {
+                let (artifacts, artifact, delivery) = try lookup(id)
+                return (artifacts, artifact, delivery, try registry.index())
+        }
     }
 
     /// Every artifact shown, and the one holding the delivery `id`. A delivery of an agent turned

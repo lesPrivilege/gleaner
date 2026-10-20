@@ -622,6 +622,22 @@ import Testing
         #expect(try catalog.read(notes, span: .lines(2, 2)).text == "line two\n")
     }
 
+    @Test func oneAnswerReadsOneMomentOfTheLibrary() throws {
+        try index(at: delivered.addingTimeInterval(20))
+        let catalog = try catalog()
+        let writer = try Registry(path: catalog.registry.path)
+        // A source turned off between an answer's reads changes neither the scope it reports nor
+        // the results it draws; the next answer sees it.
+        let (scope, shown) = try catalog.registry.reading {
+            let scope = try catalog.registry.index().sources[Provider.claudeCode.rawValue]?.state
+            try writer.setSource(.claudeCode, on: false, at: Date())
+            return (scope, try catalog.registry.sourcesOff())
+        }
+        #expect(scope != .off && shown.isEmpty)
+        #expect(try catalog.registry.sourcesOff() == [.claudeCode])
+        #expect(try catalog.find(["notes"]).results.isEmpty)
+    }
+
     @Test func aReferenceFromAnotherLibraryIsNotVerifiedHere() throws {
         try index(at: delivered.addingTimeInterval(20))
         let catalog = try catalog()

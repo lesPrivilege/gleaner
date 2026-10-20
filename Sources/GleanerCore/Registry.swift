@@ -61,6 +61,8 @@ public final class Registry: @unchecked Sendable {
     /// person's correction take turns, so a correction waits for the log being read, not for every
     /// log after it, and two connections never meet SQLite's busy timeout.
     let gate: DispatchSemaphore
+    /// Opened by `init(readingAt:)`: every write through it is refused.
+    let readsOnly: Bool
 
     private static let gates = Gates()
 
@@ -116,6 +118,7 @@ public final class Registry: @unchecked Sendable {
 
     public init(path: String) throws {
         self.path = path
+        readsOnly = false
         gate = Self.gates.gate(URL(fileURLWithPath: path).standardizedFileURL.path)
         db = try Database(path: path)
         // Before anything is written: setting the version back would have this Gleaner reread a
@@ -335,6 +338,7 @@ public final class Registry: @unchecked Sendable {
     /// that lost its write-ahead log, say to another SQLite client that removed it on closing, can't be read until Gleaner opens it to write and makes the log again.
     public init(readingAt path: String) throws {
         self.path = path
+        readsOnly = true
         gate = Self.gates.gate(URL(fileURLWithPath: path).standardizedFileURL.path)
         guard FileManager.default.fileExists(atPath: path) else { throw Catalog.Failure.noLibrary(path) }
         let version: Int64
@@ -354,6 +358,13 @@ public final class Registry: @unchecked Sendable {
 
     @discardableResult
     public func transaction<T>(_ body: () throws -> T) throws -> T { try writing { try db.transaction(body) } }
+
+    /// Runs `body`'s reads as one moment of the library (`Database.snapshot`), so an answer made of
+    /// several reads agrees with itself. Only a library opened to read is read so: one open to write
+    /// carries this process's own writes, which a read transaction would hold or roll back.
+    public func reading<T>(_ body: () throws -> T) throws -> T {
+        readsOnly ? try db.snapshot(body) : try body()
+    }
 
     /// Records a completed run of the indexer: one more generation, when it finished, how the logs
     /// of each agent it read read, and the agents it didn't read because they are turned off (`off`).
