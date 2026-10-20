@@ -32,4 +32,11 @@ import Testing
     @Test func aLateFirstLookIsFirstSeenLaterEvenIfUnmodified() throws {
         #expect(try provenance(modified: -30, capturedAfter: 601) == .firstSeenAfterDelivery)
     }
+
+    @Test func aReplyDatedAfterTheLookIsNotTheDelivery() throws {
+        // A clock moved, or a log carries a wrong time: a look a day before the reply proves nothing.
+        #expect(try provenance(modified: -86_430, capturedAfter: -86_400) == .firstSeenAfterDelivery)
+        // Within the tolerance, the writers' clocks merely disagree.
+        #expect(try provenance(modified: -30, capturedAfter: -1) == .atDelivery)
+    }
 }

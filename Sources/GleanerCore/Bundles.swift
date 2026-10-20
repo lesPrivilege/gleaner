@@ -132,7 +132,7 @@ extension Indexer {
                 unpacking.repositories = walk.repositories.map { String($0.dropFirst(folder.path.count + 1)) }
                 // A package is captured as a delivered folder is: seen at delivery when listed within
                 // the live window of a reply that came after its last write (SPEC §5.1).
-                let live = now.timeIntervalSince(deliveredAt) <= liveWindow
+                let live = isLive(now, after: deliveredAt)
                 members = walk.files.compactMap { file in
                     guard Membership.handedOver(file, deliveredAt: deliveredAt, grace: clockTolerance) else { return nil }
                     var file = file
@@ -259,7 +259,7 @@ extension Indexer {
         for member in try registry.listedMembers(of: path, as: file) {
             let live = member.deliveredAt.map { reply in
                 let by = reply.addingTimeInterval(clockTolerance)
-                return read.observedAt.timeIntervalSince(reply) <= liveWindow && file.modifiedAt <= by && file.changedAt <= by
+                return isLive(read.observedAt, after: reply) && file.modifiedAt <= by && file.changedAt <= by
             } ?? false
             try registry.complete(member: member.folder, path: path, with: read, provenance: live ? .atDelivery : .firstSeenAfterDelivery)
         }

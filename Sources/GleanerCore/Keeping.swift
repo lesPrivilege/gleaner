@@ -118,7 +118,7 @@ extension Indexer {
     func completeKept(of path: String, with read: Capture, file: Workspace.File) throws {
         for kept in try registry.listedKept(of: path, as: file) {
             let by = kept.modifiedAt.addingTimeInterval(clockTolerance)
-            let live = read.observedAt.timeIntervalSince(kept.modifiedAt) <= liveWindow && file.modifiedAt <= by && file.changedAt <= by
+            let live = isLive(read.observedAt, after: kept.modifiedAt) && file.modifiedAt <= by && file.changedAt <= by
             try registry.complete(kept: path, logPath: kept.logPath, with: read, provenance: live ? .atDelivery : .firstSeenAfterDelivery)
         }
     }

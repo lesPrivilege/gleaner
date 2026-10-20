@@ -206,6 +206,14 @@ public final class Indexer: @unchecked Sendable {
     public var liveWindow: TimeInterval = 600
     /// Log and file timestamps come from different writers; this absorbs their granularity only.
     public var clockTolerance: TimeInterval = 2
+
+    /// Whether Gleaner looking at `observed` is within the live window after `reply`. A reply dated
+    /// after the look, beyond the clock tolerance, is not: a clock moved or a log carries a wrong
+    /// time, and nothing then shows the file was there at the reply.
+    func isLive(_ observed: Date, after reply: Date) -> Bool {
+        let lag = observed.timeIntervalSince(reply)
+        return lag >= -clockTolerance && lag <= liveWindow
+    }
     /// The folder taken for the person's home. A session working in it, or in a system folder, has
     /// no workspace walked; the real home never is, whatever this says (docs/design/capture.md).
     public var home = NSHomeDirectory()
@@ -484,7 +492,7 @@ public final class Indexer: @unchecked Sendable {
     public func capture(_ path: String, deliveredAt: Date?, now: Date) -> Capture {
         let info = Locator.stat(path)
         let live = deliveredAt.map { delivered in
-            now.timeIntervalSince(delivered) <= liveWindow
+            isLive(now, after: delivered)
                 && (info.modifiedAt.map { $0 <= delivered.addingTimeInterval(clockTolerance) } ?? false)
         } ?? false
         let provenance: Provenance = live ? .atDelivery : .firstSeenAfterDelivery

@@ -11,8 +11,9 @@ import Testing
     let root: URL
     let film: URL
     let indexer: Indexer
-    /// Twenty minutes ago: the reply, at `minutes(60)`, comes after every file is written.
-    let t0 = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 - 20 * 60).rounded(.down))
+    /// An hour before the reply, at `minutes(60)`, which comes within a second of now: after every
+    /// file is written, and before Gleaner first looks at them, as a real reply does.
+    let t0 = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 - 60 * 60 + 1).rounded(.down))
 
     /// A film's folder handed over with thirty frames, a cut and its edit list, beside a brief and
     /// fourteen notes the reply named one by one.

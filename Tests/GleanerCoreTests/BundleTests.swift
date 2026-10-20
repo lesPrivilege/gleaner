@@ -638,8 +638,8 @@ import Testing
         // is completed with those bytes, at delivery, since they were read within the live window
         // and the file hasn't changed since the reply.
         try session("film", in: project, asked: t0, replied: minutes(60), reply: "Everything is in [out](out/).",
-                    more: [(minutes(70), minutes(75), "The [cut](out/cut.mp4) again.")])
-        _ = try indexer.run()
+                    more: [(minutes(62), minutes(64), "The [cut](out/cut.mp4) again.")])
+        _ = try indexer.run(now: { self.minutes(65) })
         let artifact = try artifact(cut)
         #expect(artifact.deliveries.map(\.number) == [2, 1] && artifact.deliveries.map { $0.member != nil } == [false, true])
         #expect(artifact.deliveries[1].sha256 == artifact.deliveries[0].sha256 && artifact.deliveries[1].sha256 != nil)
