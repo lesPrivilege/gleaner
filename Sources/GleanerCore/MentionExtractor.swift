@@ -138,34 +138,52 @@ public enum MentionExtractor {
         return fileExtension.firstMatch(in: last as String, range: NSRange(location: 0, length: last.length)) != nil
     }
 
-    /// Fenced code blocks as CommonMark reads them: a line of three or more backticks or tildes
-    /// opens one, and only a line of the same character at least as long, with nothing after it,
-    /// closes it. An unclosed fence runs to the end of the reply. Indentation is not limited to
-    /// three spaces, because a fence inside a list item is indented from the item, not the margin.
+    /// Fenced code blocks as CommonMark reads them (`Fences`). An unclosed fence runs to the end of
+    /// the reply.
     static func fences(in text: NSString) -> [NSRange] {
         var ranges: [NSRange] = []
-        var open: (start: Int, mark: Character, length: Int)?
+        var fences = Fences(), start = 0
         var location = 0
         while location < text.length {
             let line = text.lineRange(for: NSRange(location: location, length: 0))
             location = NSMaxRange(line)
-            let trimmed = text.substring(with: line).trimmingCharacters(in: .whitespacesAndNewlines)
-            guard let mark = trimmed.first, mark == "`" || mark == "~" else { continue }
+            let wasOpen = fences.isOpen
+            fences.read(text.substring(with: line))
+            if !wasOpen, fences.isOpen { start = line.location }
+            if wasOpen, !fences.isOpen { ranges.append(NSRange(location: start, length: location - start)) }
+        }
+        if fences.isOpen { ranges.append(NSRange(location: start, length: text.length - start)) }
+        return ranges
+    }
+
+    /// The fence rule, read one line at a time: a line of three or more backticks or tildes opens a
+    /// fenced code block, and only a line of the same character at least as long, with nothing after
+    /// it, closes it. Indentation is not limited to three spaces, because a fence inside a list item
+    /// is indented from the item, not the margin. The outline of a report reads lines by this rule too.
+    struct Fences {
+        private var open: (mark: Character, length: Int)?
+
+        var isOpen: Bool { open != nil }
+
+        /// Reads the next line, and says whether it is part of a fenced block: the line that opens
+        /// one, a line inside, or the line that closes it.
+        @discardableResult
+        mutating func read(_ line: some StringProtocol) -> Bool {
+            let wasOpen = isOpen
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard let mark = trimmed.first, mark == "`" || mark == "~" else { return wasOpen }
             let length = trimmed.prefix { $0 == mark }.count
-            guard length >= 3 else { continue }
+            guard length >= 3 else { return wasOpen }
             let rest = trimmed.dropFirst(length)
             if let fence = open {
-                if mark == fence.mark, length >= fence.length, rest.isEmpty {
-                    ranges.append(NSRange(location: fence.start, length: location - fence.start))
-                    open = nil
-                }
-            } else if mark == "~" || !rest.contains("`") {
-                // Backticks after a backtick run make it inline code, not a fence.
-                open = (line.location, mark, length)
+                if mark == fence.mark, length >= fence.length, rest.isEmpty { open = nil }
+                return true
             }
+            // Backticks after a backtick run make it inline code, not a fence.
+            guard mark == "~" || !rest.contains("`") else { return false }
+            open = (mark, length)
+            return true
         }
-        if let fence = open { ranges.append(NSRange(location: fence.start, length: text.length - fence.start)) }
-        return ranges
     }
 
     static func contains(_ outer: NSRange, _ inner: NSRange) -> Bool {

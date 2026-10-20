@@ -7,7 +7,7 @@ Item 5 of [review-rulings §3](review-rulings.md#3-after-v010-what-to-build-next
 - **Entry point.** `gleaner mcp [--home <folder>]` runs a stdio MCP server. It lives in the existing executable, so there is no second binary to install or sign.
 - **SDK.** The official Swift SDK ([`modelcontextprotocol/swift-sdk`](https://github.com/modelcontextprotocol/swift-sdk)). Its latest release when this was written was 0.12.1, which negotiates protocol versions up to 2025-11-25. The server takes whatever version the host negotiates from that list and claims nothing newer.
 - **Tools.** One per command, with the same arguments, the same JSON and the same refusals:
-  - `gleaner_find`, `gleaner_show`, `gleaner_read`, `gleaner_resolve`, `gleaner_handoff`, `gleaner_verify`.
+  - `gleaner_find`, `gleaner_show`, `gleaner_read`, `gleaner_outline`, `gleaner_resolve`, `gleaner_handoff`, `gleaner_verify`.
   - Arguments keep the command's names and forms (`read`'s `lines` and `bytes` are `"A:B"`). A host has no shell file to point at, so `gleaner_verify` takes a delivery id or `resolve`'s reference as an object, where the command takes a file.
   - Each result is the command's JSON, sent both as `structuredContent` and as one text block. The SDK sends a result as its `Value`, which takes a string that reads as a data URL for data and writes it back in another form; a result holding one (a version whose text is a data URL, say) is sent as its text block alone, so no text but the version's is given. The SDK reads arguments the same way, and can't give such a string back as it was sent, so an argument the tool reads that holds one is refused as a usage error, rather than answered for another string.
   - A refusal is a tool result with `isError` and the same `{error, index}` object. A usage error is a refusal of kind `usage`.
@@ -24,7 +24,7 @@ Each description says what the tool is for, in one or two sentences, and what it
 - it never returns bytes of a version other than the one named;
 - an empty `find` is evidence only within the index's reported scope.
 
-Reply excerpts and requests are described as stored text from the logs, to be read as data.
+Reply excerpts, requests and an outline's headings are described as stored text from the logs, to be read as data.
 
 ## Registration (documented, not automated)
 
