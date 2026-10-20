@@ -13,6 +13,14 @@ Not part of 0.1.0: these changes come after it is tagged.
 - `read` gives the text of a version's exact bytes, at most 16 KB unless asked, by `--lines` or `--bytes`: from the saved copy whenever there is one, from the original only while it still holds them, in one pass however large the file. `handoff` stages a read-only copy checked by hash, in Gleaner's caches. `verify` checks a delivery, or a reference kept as `resolve` wrote it, by the delivery it names.
 - Answers from the library as the app shows it. An agent turned off in Sources is `off` in the index, and its deliveries are left out; one asked for by id is refused as `source_off` (exit 1). Each file's `project` is the one the app shows it in, after your corrections, with `folder` null for a project you made.
 - `find --project` takes that project's name or its folder, `/private` or not, or the name or folder of the project Gleaner found the file in.
+- `show` lists the person's verdicts and published marks on each version's exact bytes, and the other files the same reply delivered (`delivered_with`), so a report's scripts come without a second search.
+- `read` reads the original when the saved copy is damaged, while the original still holds the version's bytes, as `handoff` does.
+- Each answer reads the library as one moment, so the sources it reports are the ones its results were drawn from.
+
+### Fixes
+
+- A new delivery is recorded under the repository its folder holds now, even when Gleaner earlier saw another repository's worktree in that folder.
+- A reply dated after Gleaner first looked at a file, beyond a two-second clock tolerance, no longer counts as at delivery.
 
 ### gleaner-index
 

@@ -638,6 +638,32 @@ import Testing
         #expect(try catalog.find(["notes"]).results.isEmpty)
     }
 
+    @Test func showNamesWhatCameInTheSameReplyAndTheVerdictsOnEachVersion() throws {
+        try index(at: delivered.addingTimeInterval(20))
+        let indexer = Indexer(
+            registry: try Registry(path: library),
+            store: ContentStore(objects: support.appendingPathComponent("objects"), staging: home.appendingPathComponent("handoff")),
+            sources: LogSources(claudeProjects: home.appendingPathComponent(".claude/projects"), codexHome: home.appendingPathComponent(".codex")))
+        let path = project.appendingPathComponent("out/notes.md").path
+        _ = try indexer.review(path, as: .approved, note: "Ship it", at: delivered.addingTimeInterval(60))
+
+        // Rewritten and delivered again: the verdict stays with the bytes it was made on.
+        try write(Data("# Notes\nrevised\n".utf8), to: "out/notes.md", modified: delivered.addingTimeInterval(100))
+        try appendLog([user("Revise the notes", at: delivered.addingTimeInterval(110)),
+                       assistant("Revised: [notes](out/notes.md)", at: delivered.addingTimeInterval(120))])
+        try index(at: delivered.addingTimeInterval(130))
+        let catalog = try catalog()
+        let first = try #require(try catalog.show(try id("notes.md", in: catalog)).deliveries.last?.reference.delivery)
+
+        let shown = try catalog.show(first)
+        #expect(shown.deliveredWith.map(\.name) == ["frame.png", "build.dmg"])
+        #expect(shown.deliveries.map { $0.reviews.map(\.kind) } == [[], ["approved"]])
+        let verdict = try #require(shown.deliveries.last?.reviews.first)
+        #expect(verdict.note == "Ship it" && verdict.sha256 == shown.reference.sha256 && verdict.path == path)
+        // The second delivery came alone.
+        #expect(try catalog.show(try #require(shown.deliveries.first?.reference.delivery)).deliveredWith.isEmpty)
+    }
+
     @Test func aReferenceFromAnotherLibraryIsNotVerifiedHere() throws {
         try index(at: delivered.addingTimeInterval(20))
         let catalog = try catalog()

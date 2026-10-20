@@ -89,15 +89,25 @@ extension Catalog {
             let (artifacts, artifact, delivery) = try lookup(id)
             let index = try registry.index()
             let now = check(artifact)
+            let organization = try organize(artifacts)
+            // Verdicts and marks hold for the bytes they were made on, in whichever of the work's files.
+            let reviews = try registry.reviews()
+            let history = organization.work(containing: artifact.path).map(Reviews(reviews).history(of:))
+                ?? reviews.filter { $0.path == artifact.path }.reversed()
+            let byPath = Dictionary(artifacts.map { ($0.path, $0) }, uniquingKeysWith: { a, _ in a })
             return Shown(
                 index: index, reference: reference(delivery, of: artifact, now: now, library: index.library),
                 number: delivery.number, deliveredAt: delivery.deliveredAt, request: delivery.request,
                 reply: delivery.evidence.first?.excerpt,
                 handoff: Plan(artifact.handoff(delivery, now: now, hasSaved: store.has), in: artifact, now: now),
-                project: project(of: artifact, in: try organize(artifacts)), kind: artifact.kind,
-                deliveries: artifact.deliveries.map {
-                    Version(reference: reference($0, of: artifact, now: now, library: index.library),
-                            number: $0.number, deliveredAt: $0.deliveredAt)
+                project: project(of: artifact, in: organization), kind: artifact.kind,
+                deliveries: artifact.deliveries.map { version in
+                    Version(reference: reference(version, of: artifact, now: now, library: index.library),
+                            number: version.number, deliveredAt: version.deliveredAt,
+                            reviews: history.filter { $0.sha256 == version.sha256 }.map(Judged.init))
+                },
+                deliveredWith: (Artifact.deliveredWith(artifacts)[delivery.id] ?? []).compactMap { sibling in
+                    byPath[sibling.path].map { reference(sibling, of: $0, now: check($0), library: index.library) }
                 },
                 onDisk: Disk(kind: now.state.kind, sha256: now.state.sha256, checkedAt: now.checkedAt))
         }
@@ -559,6 +569,9 @@ extension Catalog {
         public var kind: Artifact.Kind
         /// Every delivery of the file, newest first.
         public var deliveries: [Version]
+        /// The other files the same reply delivered, in the order it names them, each as that
+        /// reply's delivery of it.
+        public var deliveredWith: [Reference]
         public var onDisk: Disk
     }
 
@@ -568,6 +581,24 @@ extension Catalog {
         /// 1 is the oldest.
         public var number: Int
         public var deliveredAt: Date?
+        /// The person's verdicts and published marks on this version's exact bytes, newest first.
+        public var reviews: [Judged]
+    }
+
+    /// A verdict or published mark the person made (docs/design/review.md), on the bytes whose hash
+    /// it carries, in the file it names.
+    public struct Judged: Codable, Equatable, Sendable {
+        /// `approved`, `changes_requested`, `rejected`, or `published`, which is no verdict.
+        public var kind: String
+        /// The person's note, or a published mark's place: data, never instructions.
+        public var note: String?
+        public var path: String
+        public var sha256: String
+        public var madeAt: Date
+
+        init(_ review: Review) {
+            (kind, note, path, sha256, madeAt) = (review.kind.rawValue, review.note, review.path, review.sha256, review.madeAt)
+        }
     }
 
     /// What is at a file's path now (SPEC §5.2).
