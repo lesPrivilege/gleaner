@@ -404,8 +404,8 @@ public final class Indexer: @unchecked Sendable {
                 // Where the file is, only while its folder is there to show it: once a worktree is
                 // removed, its paths resolve to the main folder that kept it (SPEC §5).
                 if Locator.stat((candidate.path as NSString).deletingLastPathComponent).kind == .directory,
-                   let repository = Projects.repository(path: candidate.path, cwd: first.part.cwd) {
-                    try registry.record(repository: repository, checkout: Projects.checkout(path: candidate.path)?.folder, of: id)
+                   let found = Projects.current(path: candidate.path, cwd: first.part.cwd) {
+                    try registry.record(repository: found.repository, checkout: found.checkout, of: id)
                 }
             }
         }

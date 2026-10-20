@@ -142,6 +142,26 @@ import Testing
         #expect(Locator.observe(report.path, checkout: report.checkout).git == .recoverableFromHistory)
     }
 
+    @Test func aNewDeliveryInAFolderAnotherRepositoryNowHoldsIsRecordedUnderIt() throws {
+        let a = try repository("A"), b = try repository("B"), current = root.appendingPathComponent("current").path
+        func deliver(_ name: String, from repository: String) throws {
+            #expect(Locator.run(["-C", repository, "worktree", "add", "-q", "--detach", current]).status == 0)
+            try FileManager.default.createDirectory(atPath: current + "/out", withIntermediateDirectories: true)
+            try name.write(toFile: current + "/out/\(name)", atomically: true, encoding: .utf8)
+        }
+        try deliver("old.md", from: a)
+        let first = turn("Old: [old](out/old.md)", cwd: current, at: "00:00:00")
+        _ = try index(first)
+
+        // The same process, with no fresh launch: A's worktree goes, B's takes its folder.
+        #expect(Locator.run(["-C", a, "worktree", "remove", "--force", current]).status == 0)
+        try deliver("new.md", from: b)
+        let registry = try index(first + turn("New: [new](out/new.md)", cwd: current, at: "01:00:00"))
+        let projects = Dictionary(uniqueKeysWithValues: try registry.artifacts().map { ($0.name, $0.projectFolder) })
+        #expect(projects["new.md"] == Paths.standard(b))
+        #expect(projects["old.md"] == Paths.standard(a))
+    }
+
     @Test func aWorktreeIsNamedAsOneWhereverItIsKept() throws {
         let atlas = try repository("Atlas")
         let external = root.appendingPathComponent("atlas-feature").path, inside = atlas + "/.claude/worktrees/ch3"

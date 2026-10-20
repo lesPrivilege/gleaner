@@ -51,6 +51,20 @@ public enum Projects {
         return checkout
     }
 
+    /// The repository holding the file at `path` as the disk has it now, with the checkout that
+    /// holds it; else the repository the agent worked in, with no checkout. Read again, never taken
+    /// from what a folder held earlier, and remembered for later lookups: a delivery is recorded
+    /// under it, and a folder can hold another repository's worktree once the first is removed.
+    public static func current(path: String, cwd: String?) -> (repository: String, checkout: String?)? {
+        func fresh(_ directory: String) -> Checkout? {
+            let checkout = resolve(directory)
+            lock.withLock { checkouts[directory] = checkout }
+            return checkout
+        }
+        if let checkout = fresh((path as NSString).deletingLastPathComponent) { return (checkout.repository, checkout.folder) }
+        return cwd.map(Paths.standard).flatMap(fresh).map { ($0.repository, nil) }
+    }
+
     /// A project folder's name: a bare repository's without its `.git`.
     public static func name(_ folder: String) -> String {
         let name = (folder as NSString).lastPathComponent
