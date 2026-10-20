@@ -8,7 +8,7 @@ Opus, 2026-10-18, on the window of [projects-and-works.md](projects-and-works.md
 
 The yardstick is airy, clean and clear, after first-party Mac apps and Magpie.
 
-This is the library's outline: projects, works and revisions. A file's own headings are a different outline, the one [structure.md](structure.md) calls Outline and PR #4 builds. Where the two meet, that one is called Contents.
+This is the library's outline: projects, works and revisions. A file's own headings are a different outline, the one [structure.md](structure.md) calls Outline. Where the two meet, that one is called Contents.
 
 ## Levels
 
@@ -128,8 +128,7 @@ The outline teaches itself the same way:
 
 ## Not in this chapter
 
-- **Contents:** a file's own headings (structure.md, PR #4).
-- **The project timeline.**
+- **Contents** and **the project timeline**, since built ([structure.md](structure.md#built-on-the-current-window)).
 - **Choosing another order.** Newest first is the rule, within a folder of the outline after what a person opens comes first (SPEC §5.3). A name order waits for a case where scanning by name fails.
 - **Keeping what is open across launches.** Selection isn't kept either.
 - **Moving several works at once.**

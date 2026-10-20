@@ -95,6 +95,8 @@ public struct Delivery: Sendable, Identifiable {
     public var unpacking: Unpacking? = nil
 
     public var sha256: String? { capture?.sha256 }
+    /// The reply it came in: every file one reply named shares it. Nil without a reply line.
+    public var replyKey: String? { replyLine.map { "\(logPath)|\($0)" } }
     /// Bytes Gleaner can vouch for as this delivery's.
     public var isTrusted: Bool { capture?.provenance == .atDelivery }
 }
@@ -388,8 +390,8 @@ extension Artifact {
         var byReply: [String: [Delivery]] = [:]
         for artifact in artifacts {
             for d in artifact.deliveries where d.member == nil {
-                guard let line = d.replyLine else { continue }
-                byReply["\(d.logPath)|\(line)", default: []].append(d)
+                guard let key = d.replyKey else { continue }
+                byReply[key, default: []].append(d)
             }
         }
         var result: [Delivery.ID: [Delivery]] = [:]

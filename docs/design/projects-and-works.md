@@ -5,7 +5,7 @@ Opus, 2026-10-18, after an independent completion review of main `3a89888`. The 
 This chapter is the contract the app now keeps. It supersedes, where they differ:
 - rulings §2's deferral of reassigning projects, its project menu beside the kind filter, §6's "no customization beyond filters" and §7a's menu placement: projects are a sidebar, and the person can move work, make projects and join files;
 - review-rulings C4, "the project label is not editable": a project the person made has the name they give it, and a derived one keeps its folder's;
-- structure.md's "Inferred lineage" and "manual groups" stays: Gleaner still never infers lineage, but it may now *suggest* a join with its reason, which only the person can make; projects of one's own are the one manual grouping, chosen because the review asked for correctable associations. This is the "person's explicit link" that structure.md left cross-path lineage waiting for. Its project timeline was placed on the project menu, and review-rulings C12 moved it to the List menu; with the menu gone, it belongs in the project's outline when PR #4 is rebased.
+- structure.md's "Inferred lineage" and "manual groups" stays: Gleaner still never infers lineage, but it may now *suggest* a join with its reason, which only the person can make; projects of one's own are the one manual grouping, chosen because the review asked for correctable associations. This is the "person's explicit link" that structure.md left cross-path lineage waiting for. Its project timeline was placed on the project menu, and review-rulings C12 moved it to the List menu; with the menu gone, a project shows its outline or its timeline ([structure.md](structure.md#built-on-the-current-window)).
 
 ## The objects the person sees
 
@@ -70,7 +70,7 @@ Dogfooding the window on a synthetic home under `/var/folders` showed one folder
 - Suggestions from a model, or from similarity of content.
 - Adding or changing a source folder. (Pausing one, and the agent → provider → model line, came after: [sources-plane.md](sources-plane.md).)
 - Fork or delegation views.
-- PR #4's Thread and project Timeline, which stay for after the tag.
+- PR #4's Thread and project Timeline, which stayed for after the tag and are now built (structure.md).
 
 ## Verification
 

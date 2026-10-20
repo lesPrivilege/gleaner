@@ -269,6 +269,10 @@ import Testing
         #expect(library[notes.latest.id]?.map(\.path) == [summary.path, chart.path])
         #expect(library[summary.latest.id]?.map(\.path) == [notes.path, chart.path])
         #expect(library[chart.latest.id]?.map(\.path) == [summary.path, notes.path])
+        // The timeline and the thread hold it as one handover, dated by its first record.
+        let handover = try #require(Handovers.all(try indexer.registry.artifacts()).first { $0.request == "Write it up" })
+        #expect(handover.items.map(\.artifact.path) == [summary.path, notes.path, chart.path])
+        #expect(handover.deliveredAt == later)
     }
 
     @Test func backfillIsNeverCalledTheDeliveredVersion() throws {

@@ -58,6 +58,10 @@ struct GleanerApp: App {
                 .keyboardShortcut("c", modifiers: [.command, .shift])
                 .disabled(model?.selected == nil)
             }
+            CommandGroup(before: .toolbar) {
+                if let model { ArrangementMenu().environment(model) }
+                Divider()
+            }
             CommandGroup(after: .toolbar) {
                 Button("Quick Look") { model?.toggleQuickLook() }
                     .keyboardShortcut("y")
@@ -71,6 +75,21 @@ struct GleanerApp: App {
                 Button("Gleaner Help") { NSWorkspace.shared.open(URL(string: "https://github.com/lesPrivilege/gleaner#readme")!) }
             }
         }
+    }
+}
+
+/// The View menu's choice of what a list of works shows, as Finder's View menu offers its views.
+struct ArrangementMenu: View {
+    @Environment(LibraryModel.self) private var model
+
+    var body: some View {
+        @Bindable var model = model
+        Picker("Show", selection: $model.arrangement) {
+            Text("as Works").tag(Arrangement.works)
+            Text("as Timeline").tag(Arrangement.timeline)
+        }
+        .pickerStyle(.inline)
+        .disabled(!model.offersTimeline)
     }
 }
 

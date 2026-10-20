@@ -116,6 +116,17 @@ import Testing
         let first = try work("revenue.png")
         try await show(first, delivery: first.deliveries.last)
         try await shot("chart-first-delivery-siblings")
+        // The conversation it came from, reply by reply, opened from its name.
+        model.openThread(try #require(first.deliveries.last))
+        try await tall("chart-first-delivery-thread")
+        // The board's replies, newest first and by day, and every project's.
+        model.select(try #require(first.deliveries.last))
+        model.arrangement = .timeline
+        try await shot("board-timeline")
+        model.place = .all
+        try await shot("all-deliveries-timeline")
+        model.arrangement = .works
+        model.place = .project(board.key)
 
         let fixtures = try #require(model.projects.first { $0.name == "fixtures" })
         model.place = .project(fixtures.key)

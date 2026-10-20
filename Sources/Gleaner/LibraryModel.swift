@@ -60,6 +60,18 @@ enum Place: Hashable {
     case sources
 }
 
+/// What a list of works shows: the works, or the replies that handed them over, newest first and
+/// by day (docs/design/structure.md, Project timeline).
+enum Arrangement: String {
+    case works, timeline
+}
+
+/// A conversation shown in place of the detail: its log, and the delivery it was opened from.
+struct ThreadPage: Equatable {
+    var logPath: String
+    var focus: Delivery.ID?
+}
+
 /// A collection being named in place in the sidebar: a new one, in a project or inside another
 /// collection, to hold the works or observed files at `adding` once named; or one being renamed.
 enum Naming: Equatable {
@@ -207,6 +219,7 @@ final class LibraryModel {
             guard place != oldValue else { return }
             if case .project = place { kind = nil }
             alsoSelected = []
+            thread = nil
             reviewRefusal = nil
             // A collection opens on its review page; elsewhere no collection's page is shown.
             if case .unit(let key) = place {
@@ -221,12 +234,16 @@ final class LibraryModel {
     /// The work shown: its id, or any of its files' paths.
     var selection: Work.ID? {
         didSet {
-            if selection != oldValue { chosenDelivery = nil; comparison = nil; alsoSelected = []; reviewRefusal = nil }
+            if selection != oldValue { chosenDelivery = nil; comparison = nil; alsoSelected = []; reviewRefusal = nil; thread = nil }
             if selection != nil { shownUnit = nil }
         }
     }
     /// The collection whose review page the detail shows, when its row is chosen rather than a work.
     var shownUnit: String?
+    /// Shown in place of the detail while set.
+    var thread: ThreadPage?
+    /// Chosen for every list that offers the timeline (`offersTimeline`).
+    var arrangement: Arrangement = .works
     /// The rows chosen with the selected one (⌘-click, ⇧-click), for decisions on several works at
     /// once; the detail then says how many.
     var alsoSelected: Set<OutlineRow> = []
@@ -485,6 +502,27 @@ final class LibraryModel {
         if !results.contains(where: { $0.id == work.id }) { clearFilters() }
         selection = work.id
         chosenDelivery = delivery.id
+        thread = nil
+    }
+
+    /// Every delivery and a project list their works or their timeline; the other places list
+    /// what they hold.
+    var offersTimeline: Bool {
+        switch place {
+        case .all, .project: true
+        case .toReview, .unit, .sources: false
+        }
+    }
+
+    var showsTimeline: Bool { arrangement == .timeline && offersTimeline }
+
+    /// The replies that handed over the files listed, newest first, by day: following the place,
+    /// the kind and the search, as the list of works does.
+    var timeline: [HandoverDay] { Handovers.timeline(results.flatMap(\.work.files)) }
+
+    /// Shows the conversation `delivery` came from, at that reply.
+    func openThread(_ delivery: Delivery) {
+        thread = ThreadPage(logPath: delivery.logPath, focus: delivery.id)
     }
 
     /// Why the last `gleaner://` link showed nothing, until the person dismisses it.

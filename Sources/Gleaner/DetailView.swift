@@ -246,6 +246,8 @@ struct PreviewPane: View {
     var plan: Handoff?
     var staging: Staging
     @State private var textHeight: CGFloat = 0
+    /// The Markdown block scrolled to the top, when Contents chose one.
+    @State private var block: Int?
 
     static let tallest: CGFloat = 480
 
@@ -258,10 +260,12 @@ struct PreviewPane: View {
         let text = plan == .folder ? nil : model.preparedText(for: staging.sha)
         Group {
             if let url, let text {
+                let blocks = ["md", "markdown"].contains(url.pathExtension.lowercased()) ? MarkdownBlock.parse(text.text) : nil
+                let headings = blocks.map(MarkdownBlock.headings) ?? []
                 ScrollView {
                     Group {
-                        if ["md", "markdown"].contains(url.pathExtension.lowercased()) {
-                            MarkdownPreview(text.text)
+                        if let blocks {
+                            MarkdownPreview(blocks: blocks)
                         } else {
                             Text(text.text).font(.system(.callout, design: .monospaced)).textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -271,7 +275,16 @@ struct PreviewPane: View {
                     .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { textHeight = $0 }
                 }
                 .scrollDisabled(textHeight <= Self.tallest)
+                .scrollPosition(id: $block, anchor: .top)
                 .frame(height: min(max(textHeight, 96), Self.tallest))
+                .overlay(alignment: .topTrailing) {
+                    // A page that scrolls lists its own headings, when it has more than one.
+                    if headings.count > 1, textHeight > Self.tallest {
+                        ContentsMenu(headings: headings) { block = $0 }
+                            .padding(Space.s)
+                    }
+                }
+                .onChange(of: text.text) { block = nil }
                 .overlay(alignment: .bottomTrailing) {
                     if text.truncated {
                         Text("First 64 KB").font(.caption).foregroundStyle(.secondary)
@@ -299,6 +312,28 @@ struct PreviewPane: View {
 
     /// Installers and apps are never opened, mounted or previewed by selection.
     static let neverPreviewed: Set<String> = ["dmg", "pkg", "app", "ipa"]
+}
+
+/// A Markdown file's own headings, as written and indented by level: choosing one scrolls the
+/// page to it (docs/design/structure.md, Outline; called Contents beside the library's outline).
+struct ContentsMenu: View {
+    var headings: [MarkdownHeading]
+    var scroll: (Int) -> Void
+
+    var body: some View {
+        let top = headings.map(\.level).min() ?? 1
+        Menu("Contents") {
+            ForEach(headings) { heading in
+                Button(String(repeating: "\u{2003}", count: min(heading.level - top, 3)) + heading.title) { scroll(heading.block) }
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .font(.caption)
+        .padding(.horizontal, Space.s).padding(.vertical, 2)
+        .surface(.floating, in: Capsule())
+        .help("Go to a heading of this file")
+    }
 }
 
 /// Quick Look's compact view leaves plain text and Markdown blank, so those are shown directly.
@@ -388,7 +423,11 @@ struct InformationSection: View {
                 InfoRow(label: "Agent") {
                     HStack(spacing: Space.s) {
                         AgentMark(provider: delivery.provider, size: 16, color: true)
-                        Text(delivery.sessionTitle ?? "Untitled conversation").lineLimit(1).truncationMode(.tail)
+                        if delivery.kept == nil {
+                            ConversationLink(title: delivery.sessionTitle, delivery: delivery)
+                        } else {
+                            Text(delivery.sessionTitle ?? "Untitled conversation").lineLimit(1).truncationMode(.tail)
+                        }
                         resume
                     }
                 }

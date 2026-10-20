@@ -45,7 +45,7 @@ These defects were not in the review. Each one breaks a promise SPEC, the ruling
 | A5 | Blocks | When two ends hash differently but no line differs, Compare says that only line endings or the final newline differ, never "No changes". |
 | A6 | Blocks | Redact reply excerpts **before** cutting them to length (SPEC §11). Bump `extractorVersion` so that rereading refreshes the stored excerpts. A1 keeps their captures. |
 | A7 | Fix now | Wherever the app advises checking again, a Check Again action re-observes the selected file and restages it, reusing N2's restage. |
-| A8 | Fix now | "Delivered with" groups by reply (the turn), not by the timestamp of each path's first record, and lists siblings in reply order. A multi-record Claude reply stays one group. PR #4's `Handovers` adopts the same key when it is rebased. |
+| A8 | Fix now | "Delivered with" groups by reply (the turn), not by the timestamp of each path's first record, and lists siblings in reply order. A multi-record Claude reply stays one group. `Handovers` uses the same key (`Delivery.replyKey`). |
 | A9, A10 | Fix now | Every label that names a delivery number keeps "first seen later" (rulings §9), including the hand-off header, the tile's accessibility label and the deliveries list. List rows mark *not on disk* and *first seen later* from stored data, and mark *changed* only for files already checked this session (C7), with no disk access while drawing rows. |
 | A11 | Fix now | Worktrees of a bare repository fold into that repository (SPEC §5). |
 | A12–A15 | Fix now | The release-notes command in `release.md` §4 publishes the whole 0.1.0 section. `release.md` gains a step to reconcile the signing text, marks the tag as an owner step and cites SPEC §14 for Sparkle. CHANGELOG lists the fixes in §1 and §2. README.md and README.zh-CN.md say the same thing and match the code: SPEC §10 wording, every status the app shows, the heading-anchor rule, and Spike A's outputs. |
@@ -70,7 +70,7 @@ These defects were not in the review. Each one breaks a promise SPEC, the ruling
 - C9: never_observed is a capture without a hash.
 - C10: Reindex is the only reset of derived data.
 
-C11 is fixed with the CLI work: `diff-and-references.md` declines session-analytics helpers, not the ruled CLI. C12 is settled before PR #4 merges: `structure.md` supersedes rulings §1 and §6 for orders and the timeline after v0.1, and its placement moves to the List menu.
+C11 is fixed with the CLI work: `diff-and-references.md` declines session-analytics helpers, not the ruled CLI. C12 is settled in [structure.md](structure.md#built-on-the-current-window) (2026-10-20): it supersedes rulings §1 for the timeline and the thread; §6's newest-first order stands, with outline.md, so Activity and Name aren't built; and with the List menu gone, the timeline is chosen beside the kind filter and under View.
 
 **Owner decisions before the tag:**
 - The binary's architecture. Recommended: universal (arm64 and x86_64), built by `bundle-app.sh` and checked with `lipo`.

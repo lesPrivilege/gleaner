@@ -8,6 +8,11 @@ enum Wording {
         date?.formatted(date: .abbreviated, time: .shortened) ?? "Unknown time"
     }
 
+    /// A day of the timeline, in full: "Monday, 19 October 2026".
+    static func day(_ day: Date?) -> String {
+        day?.formatted(.dateTime.weekday(.wide).day().month(.wide).year()) ?? "Unknown Date"
+    }
+
     /// A list's date, as Mail writes it: the time today, "Yesterday", the day this year, the
     /// full date before.
     static func shortDate(_ date: Date?, now: Date = Date()) -> String {

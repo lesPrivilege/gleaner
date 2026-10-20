@@ -166,8 +166,9 @@ struct FolderHeader: View {
 struct SectionHeader<Leading: View>: View {
     var title: String
     var count: Int
-    /// What it counts, for VoiceOver.
+    /// What it counts, for VoiceOver, and its plural when not the noun with an s.
     var noun: String
+    var plural: String? = nil
     @ViewBuilder var leading: Leading
 
     var body: some View {
@@ -178,13 +179,13 @@ struct SectionHeader<Leading: View>: View {
             Text("\(count)").monospacedDigit().foregroundStyle(.secondary)
         }
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title), \(Wording.count(count, noun))")
+        .accessibilityLabel("\(title), \(Wording.count(count, noun, plural ?? noun + "s"))")
     }
 }
 
 extension SectionHeader where Leading == EmptyView {
-    init(title: String, count: Int, noun: String) {
-        self.init(title: title, count: count, noun: noun) { EmptyView() }
+    init(title: String, count: Int, noun: String, plural: String? = nil) {
+        self.init(title: title, count: count, noun: noun, plural: plural) { EmptyView() }
     }
 }
 

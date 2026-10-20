@@ -9,7 +9,7 @@ The test for every choice is Gleaner's product contract (SPEC §2): find an old 
 **Adopted:** keep list/detail and reduce what each level shows ([composition](control-panel-explorations.md#three-convergence-options), option A).
 
 **Not adopted:**
-- **Handover groups (B) as a mode.** The selected output's detail lists the other files named in the same reply ("Delivered with …"). That gives the co-delivery context without a second navigation system. It derives from evidence already stored.
+- **Handover groups (B) as a mode.** Superseded for the timeline and the thread by [structure.md](structure.md#built-on-the-current-window) (review rulings C12). The selected output's detail lists the other files named in the same reply ("Delivered with …"). That gives the co-delivery context without a second navigation system. It derives from evidence already stored.
 - **Personal review selection (C).** No observed task needs it yet.
 - **Work brief and topic dossiers** ([editorial](project-knowledge-explorations.md)). They make Gleaner an authoring tool, which is outside the product boundary (SPEC §1.1). The delivery shelf is option A.
 

@@ -17,6 +17,12 @@ Not part of 0.1.0: these changes come after it is tagged.
 - `read` reads the original when the saved copy is damaged, while the original still holds the version's bytes, as `handoff` does.
 - Each answer reads the library as one moment, so the sources it reports are the ones its results were drawn from.
 
+### The window
+
+- A conversation's name, on a delivery's Agent line, opens its thread: each reply in the order the log holds them, with what you asked, the files it handed over and its words. Choosing a file shows that delivery; Esc goes back.
+- Every delivery and a project can show their timeline (Works | Timeline beside the kind filter, or View › as Timeline): the replies that handed over the listed files, newest first and by day, across conversations and agents.
+- A long Markdown preview with more than one heading offers Contents, which scrolls to the heading chosen.
+
 ### Fixes
 
 - A new delivery is recorded under the repository its folder holds now, even when Gleaner earlier saw another repository's worktree in that folder.

@@ -247,6 +247,45 @@ import UniformTypeIdentifiers
         #expect(model.selected.map(model.delivery(in:))?.id == sibling.id)
     }
 
+    // MARK: Thread and timeline (structure.md)
+
+    @Test func aThreadOpensFromADeliveryAndAFileInItShowsThatDelivery() throws {
+        let model = LibraryModel(indexer: indexer)
+        let video = try artifact(model, "demo.mp4"), notes = try artifact(model, "notes.md")
+        model.selection = video.path
+        model.openThread(video.latest)
+        let thread = Handovers.thread(logPath: try #require(model.thread).logPath, in: model.artifacts)
+        // The conversation's three replies in log order, the first handing over the video and the notes.
+        #expect(thread.map(\.request) == ["Make the demo video", "Render it again", "Make it shorter"])
+        #expect(thread[0].items.map(\.artifact.name) == ["demo.mp4", "notes.md"])
+
+        // Choosing the notes in the thread shows that delivery, in place of the thread.
+        model.select(try #require(thread[0].items.last).delivery)
+        #expect(model.thread == nil)
+        #expect(model.selected.map(model.file(in:))?.path == notes.path)
+
+        // Going elsewhere closes a thread too.
+        model.openThread(notes.latest)
+        model.place = .project(try #require(model.organization.work(containing: notes.path)).project)
+        #expect(model.thread == nil)
+    }
+
+    @Test func theTimelineIsOfferedForEveryDeliveryAndAProjectAndFollowsTheKind() throws {
+        let model = LibraryModel(indexer: indexer)
+        model.arrangement = .timeline
+        #expect(model.showsTimeline)
+        #expect(model.timeline.flatMap(\.handovers).map(\.request) == ["Make it shorter", "Render it again", "Make the demo video"])
+        // The kind chosen keeps only its files in each reply.
+        model.kind = .document
+        #expect(model.timeline.flatMap(\.handovers).map { $0.items.map(\.artifact.name) } == [["notes.md"]])
+        model.kind = nil
+        model.place = .project(try #require(model.organization.works.first).project)
+        #expect(model.showsTimeline)
+        model.place = .toReview
+        #expect(!model.showsTimeline)
+        #expect(model.arrangement == .timeline)
+    }
+
     // MARK: Row drags (A4)
 
     /// What the app a drag is dropped on receives: the path of its own copy, and the file's text or

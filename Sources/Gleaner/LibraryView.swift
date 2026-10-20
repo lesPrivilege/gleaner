@@ -12,6 +12,7 @@ struct LibraryView: View {
     @SceneStorage("query") private var savedQuery = ""
     @SceneStorage("kind") private var savedKind = ""
     @SceneStorage("place") private var savedPlace = ""
+    @SceneStorage("arrangement") private var savedArrangement = ""
     @State private var columns = NavigationSplitViewVisibility.automatic
 
     var body: some View {
@@ -37,6 +38,7 @@ struct LibraryView: View {
         .onChange(of: model.query) { savedQuery = model.query }
         .onChange(of: model.kind) { savedKind = model.kind?.rawValue ?? "" }
         .onChange(of: model.place) { savedPlace = Self.encode(model.place) }
+        .onChange(of: model.arrangement) { savedArrangement = model.arrangement.rawValue }
         .alert("Gleaner couldn’t open this link",
                isPresented: Binding(get: { model.linkFailure != nil }, set: { if !$0 { model.linkFailure = nil } })) {
         } message: {
@@ -67,6 +69,7 @@ struct LibraryView: View {
         case let place: model.place = place
         }
         model.kind = kind
+        model.arrangement = Arrangement(rawValue: savedArrangement) ?? .works
     }
 
     static func encode(_ place: Place) -> String {
@@ -209,11 +212,19 @@ struct Sidebar: View {
 }
 
 /// What the place holds: search results, what waits on review, a project's outline, a
-/// collection's works, or the sources.
+/// collection's works, or the sources; or, for every delivery and a project, their timeline.
 struct ContentColumn: View {
     @Environment(LibraryModel.self) private var model
 
     var body: some View {
+        if model.showsTimeline {
+            TimelineList()
+        } else {
+            places
+        }
+    }
+
+    @ViewBuilder var places: some View {
         switch model.place {
         case .sources:
             SourcesList()
@@ -237,13 +248,15 @@ struct ContentColumn: View {
     }
 }
 
-/// The selected work, a collection's review page, or the next step.
+/// The selected work, a conversation opened from it, a collection's review page, or the next step.
 struct DetailColumn: View {
     @Environment(LibraryModel.self) private var model
 
     var body: some View {
         if model.place == .sources {
             SourcePageView()
+        } else if let thread = model.thread {
+            ThreadView(page: thread).id(thread.logPath)
         } else if model.selectedWorks.count > 1 {
             SeveralSelected(works: model.selectedWorks)
         } else if let result = model.selected {
@@ -326,13 +339,18 @@ struct ResultsList: View {
             }
             .modifier(ListHandoff())
             .modifier(FollowsSelection())
-            .overlay { emptyState(results) }
+            .overlay { if results.isEmpty { ResultsEmptyState() } }
             TroubleBar()
         }
     }
+}
 
-    @ViewBuilder
-    func emptyState(_ results: [SearchResult]) -> some View {
+/// What an empty list of works says: the logs still being read or not found, nothing of the kind
+/// chosen, or no results, each with its next step.
+struct ResultsEmptyState: View {
+    @Environment(LibraryModel.self) private var model
+
+    var body: some View {
         if model.artifacts.isEmpty {
             if !model.indexed {
                 EmptyState(title: "Reading Agent Logs…", glyph: .running)
@@ -360,9 +378,9 @@ struct ResultsList: View {
                     Button("Sources") { model.place = .sources }
                 }
             }
-        } else if results.isEmpty && model.query.isEmpty {
+        } else if model.query.isEmpty {
             NoKind()
-        } else if results.isEmpty {
+        } else {
             ContentUnavailableView {
                 Label("No Results", systemImage: "magnifyingglass")
             } actions: {
@@ -405,6 +423,16 @@ struct FilterBar: View {
                     .font(.callout.weight(.semibold)).lineLimit(1)
             }
             Spacer(minLength: 0)
+            if model.offersTimeline {
+                Picker("Show", selection: $model.arrangement) {
+                    Text("Works").tag(Arrangement.works)
+                    Text("Timeline").tag(Arrangement.timeline)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .fixedSize()
+                .help("Show the works, or the replies that handed them over, by day")
+            }
             Picker("Kind", selection: $model.kind) {
                 Text("All Kinds").tag(Artifact.Kind?.none)
                 Divider()

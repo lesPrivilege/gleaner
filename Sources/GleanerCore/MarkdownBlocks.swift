@@ -98,3 +98,21 @@ public enum MarkdownBlock: Equatable, Sendable {
         return blocks
     }
 }
+
+/// A heading the document actually has, pointing at its block: an entry of its Contents.
+public struct MarkdownHeading: Equatable, Sendable, Identifiable {
+    public var block: Int
+    public var level: Int
+    public var title: String
+    public var id: Int { block }
+}
+
+extension MarkdownBlock {
+    public static func headings(_ blocks: [MarkdownBlock]) -> [MarkdownHeading] {
+        blocks.enumerated().compactMap { index, block in
+            guard case .heading(let level, let text) = block else { return nil }
+            let title = String(text.characters).trimmingCharacters(in: .whitespacesAndNewlines)
+            return title.isEmpty ? nil : MarkdownHeading(block: index, level: level, title: title)
+        }
+    }
+}

@@ -62,3 +62,22 @@ v0.1 ships with the library, versions and Compare; the release work comes first.
 3. **Project timeline** with the activity order, as the project menu's second mode.
 
 Cross-path lineage waits for evidence-backed links (a reply that names both files) or a person's explicit link, and is designed then.
+
+## Built on the current window
+
+Opus, 2026-10-20: PR #4 built all three on the window before projects and works; they were ported onto main rather than rebased (retrieval rulings §3, step 4). This settles review rulings C12.
+
+**What supersedes what.**
+- This chapter supersedes rulings §1 for the timeline and the thread: they are views of handovers over the same records, not a second navigation system, so §1's "Handover groups (B) as a mode" no longer stands.
+- Orders: rulings §6 ("newest delivery first") stands, with [outline.md](outline.md) ("Order, said once"). The Activity and Name orders above are not built. The timeline shows where work is happening now, and a name order waits for a case where scanning by name fails (outline.md).
+- Placement: the List menu C12 named is gone, and with it the project menu. Every delivery and a project show their works or their timeline, chosen beside the kind filter (Works | Timeline) and under View (as Works, as Timeline), as Finder offers its views. To Review and a collection keep their own lists.
+
+**Handover.** One log and one reply line, however many records the reply took (review rulings §2, A8), the key "Delivered With" uses. Its files are in the order the reply named them, and it is dated by its earliest record. A delivery read before Gleaner recorded reply lines is a handover of its own. A delivered folder's files come with their folder, and a file the person kept was handed over by no reply, so neither is a handover.
+
+**Thread.** The conversation's name, on a delivery's Agent line or a timeline row, opens it in place of the detail: its replies in the order the log holds them, each with its request, its files and the agent's words, laid out as Information. The reply it was opened from is scrolled to and its file set in semibold. Choosing a file shows that delivery; Back and Esc return to the file.
+
+**Timeline.** The listed works' handovers, newest first and grouped by day, with undated ones last under Unknown Date. It follows the place, the kind and the search, and keeps only the listed files in each handover. Its first row is the project's head, or the count of replies across every project, so the first day's header starts below the filter band.
+
+**Contents.** A Markdown preview that scrolls and has more than one heading offers Contents at its top right, listing the headings it has, indented by level. Choosing one scrolls the page to it. It is a menu, not a column beside the text: the preview is a page inside the detail, and a column would crowd it.
+
+Grouping lives in `Sources/GleanerCore/Handovers.swift` and `MarkdownBlock.headings`. `HandoverTests` covers one reply across records, two replies at one time, folders' and kept files, thread order, and timelines of one undated delivery, only undated deliveries and none. `LibraryModelTests` covers opening and leaving a thread and where the timeline is offered; the tour draws the thread and both timelines. Not checked: clicking, the View menu, Esc, and Contents scrolling, which need a person at the window.

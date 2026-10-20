@@ -2,13 +2,17 @@ import GleanerCore
 import GleanerUI
 import SwiftUI
 
-/// Renders `MarkdownBlock`s at their full height; whoever shows them decides whether they scroll.
-/// Links open only when clicked.
+/// Renders `MarkdownBlock`s at their full height; whoever shows them decides whether they scroll,
+/// and may scroll to a block by its index. Links open only when clicked.
 struct MarkdownPreview: View {
     let blocks: [MarkdownBlock]
 
     init(_ source: String) {
         blocks = MarkdownBlock.parse(source)
+    }
+
+    init(blocks: [MarkdownBlock]) {
+        self.blocks = blocks
     }
 
     var body: some View {
@@ -17,6 +21,7 @@ struct MarkdownPreview: View {
                 view(block)
             }
         }
+        .scrollTargetLayout()
         .textSelection(.enabled)
         .frame(maxWidth: .infinity, alignment: .leading)
     }
