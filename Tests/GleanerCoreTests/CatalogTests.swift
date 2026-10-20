@@ -609,6 +609,19 @@ import Testing
         #expect(verified.reference.availability == Catalog.Availability(state: .unavailable, reason: .savedCopyMissing))
     }
 
+    @Test func aDamagedSavedCopyFallsBackToAnOriginalThatStillHoldsTheVersion() throws {
+        try index(at: delivered.addingTimeInterval(20))
+        let catalog = try catalog()
+        let notes = try id("notes.md", in: catalog)
+        let copy = catalog.store.objectURL(try #require(try catalog.resolve(notes).reference.sha256)).path
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: copy)
+        try Data("damaged".utf8).write(to: URL(fileURLWithPath: copy))
+
+        #expect(try catalog.verify(notes).original)
+        #expect(try catalog.read(notes).text == "# Notes\nline two\nline three: café\n")
+        #expect(try catalog.read(notes, span: .lines(2, 2)).text == "line two\n")
+    }
+
     @Test func aReferenceFromAnotherLibraryIsNotVerifiedHere() throws {
         try index(at: delivered.addingTimeInterval(20))
         let catalog = try catalog()

@@ -119,39 +119,43 @@ extension Catalog {
             throw Failure.unavailable(reason(delivery))
         }
         // The saved copy whenever there is one, as a hand-off copy is made: unlike the original, no
-        // one rewrites it while it is read.
-        let saved = store.has(sha)
-        let end = Comparison.End(title: artifact.name, source: saved ? "saved copy" : "file on disk", sha: sha,
-                                 url: saved ? store.objectURL(sha) : URL(fileURLWithPath: artifact.path))
-        // One pass, and the version is never held whole: all of it is hashed and checked to be text,
-        // while the selection's ends are found and only the bytes from its start that the answer
-        // can hold are kept, with a few more to end it between characters.
-        var lower: Int? = 0, upper: Int?, newlines = 0, offset = 0, kept = Data(), text = Comparison.TextCheck()
-        switch span {
-        case .lines(let first, _)?: lower = first == 1 ? 0 : nil
-        case .bytes(let start, let end)?: (lower, upper) = (start, end)
-        case nil: break
-        }
+        // one rewrites it while it is read. A saved copy damaged on disk falls back to the original
+        // while that still hashes to the version, as handing it on does.
+        let ends = (store.has(sha) ? [Comparison.End(title: artifact.name, source: "saved copy", sha: sha, url: store.objectURL(sha))] : [])
+            + [Comparison.End(title: artifact.name, source: "file on disk", sha: sha, url: URL(fileURLWithPath: artifact.path))]
+        // One pass per end, and the version is never held whole: all of it is hashed and checked to
+        // be text, while the selection's ends are found and only the bytes from its start that the
+        // answer can hold are kept, with a few more to end it between characters.
+        var lower: Int?, upper: Int?, newlines = 0, offset = 0, kept = Data(), text = Comparison.TextCheck()
         let room = Swift.min(max, Int.max - 8) + 8
-        let read = Comparison.read(end) { piece in
-            text.add(piece)
-            if case .lines(let first, let last)? = span, upper == nil {
-                var from = piece.startIndex
-                while upper == nil, let newline = piece[from...].firstIndex(of: UInt8(ascii: "\n")) {
-                    newlines += 1
-                    let after = offset + (newline - piece.startIndex) + 1
-                    if newlines == first - 1 { lower = after }
-                    if newlines == last { upper = after }
-                    from = newline + 1
+        func pass(_ end: Comparison.End) -> Int64? {
+            (lower, upper, newlines, offset, kept, text) = (0, nil, 0, 0, Data(), Comparison.TextCheck())
+            switch span {
+            case .lines(let first, _)?: lower = first == 1 ? 0 : nil
+            case .bytes(let start, let end)?: (lower, upper) = (start, end)
+            case nil: break
+            }
+            let read = Comparison.read(end) { piece in
+                text.add(piece)
+                if case .lines(let first, let last)? = span, upper == nil {
+                    var from = piece.startIndex
+                    while upper == nil, let newline = piece[from...].firstIndex(of: UInt8(ascii: "\n")) {
+                        newlines += 1
+                        let after = offset + (newline - piece.startIndex) + 1
+                        if newlines == first - 1 { lower = after }
+                        if newlines == last { upper = after }
+                        from = newline + 1
+                    }
                 }
+                if let lower, kept.count < room, lower < offset + piece.count {
+                    let start = piece.startIndex + Swift.max(lower - offset, 0)
+                    kept.append(piece[start...].prefix(room - kept.count))
+                }
+                offset += piece.count
             }
-            if let lower, kept.count < room, lower < offset + piece.count {
-                let start = piece.startIndex + Swift.max(lower - offset, 0)
-                kept.append(piece[start...].prefix(room - kept.count))
-            }
-            offset += piece.count
+            return try? read.get()
         }
-        guard case .success(let length) = read else { throw Failure.changed }
+        guard let length = ends.lazy.compactMap(pass).first else { throw Failure.changed }
         guard text.isText else { throw Failure.notText }
 
         let size = Int(length)
