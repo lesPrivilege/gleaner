@@ -17,7 +17,7 @@ struct Gleaner: AsyncParsableCommand {
             the message on stderr too. Exit codes: 0 success; 1 not found, no bytes for that version, \
             or another failure; 2 usage; 3 no library, or the wrong version (open Gleaner).
             """,
-        subcommands: [Find.self, Show.self, Read.self, Resolve.self, Handoff.self, Verify.self, Serve.self])
+        subcommands: [Find.self, Show.self, Read.self, Outline.self, Resolve.self, Handoff.self, Verify.self, Serve.self])
 
     /// Runs the command as `AsyncParsableCommand.main` does, with the contract's exit codes: a
     /// failure exits with its own, and a usage error with 2, where ArgumentParser would give 64. A
@@ -110,6 +110,28 @@ extension Gleaner {
 
         func run() throws {
             try write(library.answer { try $0.read(delivery, span: Bounds.span(lines: lines, bytes: bytes), max: max) })
+        }
+    }
+
+    struct Outline: ParsableCommand {
+        static let configuration = CommandConfiguration(
+            abstract: "List the headings of a delivery's exact bytes, each with its section's bytes and lines, to read only the one you need.",
+            discussion: """
+                A term in the form of an ID (R1, F-3, 2.1) selects only headings starting with that whole ID, never \
+                R10; any other term, headings whose text contains it. When more than one heading matches, the \
+                answer is ambiguous and lists each.
+                """)
+
+        @Argument(help: "The delivery's id.")
+        var delivery: String
+        @Argument(help: "Only headings every term matches.")
+        var terms: [String] = []
+        @Option(help: "The most headings to list, up to \(Catalog.outlineMost).")
+        var limit = Catalog.outlineLimit
+        @OptionGroup var library: Library
+
+        func run() throws {
+            try write(library.answer { try $0.outline(delivery, terms: terms, limit: limit) })
         }
     }
 

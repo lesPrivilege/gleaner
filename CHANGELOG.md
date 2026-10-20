@@ -16,6 +16,7 @@ Not part of 0.1.0: these changes come after it is tagged.
 - `show` lists the person's verdicts and published marks on each version's exact bytes, and the other files the same reply delivered (`delivered_with`), so a report's scripts come without a second search.
 - `read` reads the original when the saved copy is damaged, while the original still holds the version's bytes, as `handoff` does.
 - Each answer reads the library as one moment, so the sources it reports are the ones its results were drawn from.
+- Adds `outline`, the headings of a delivery's exact bytes, so an agent continuing earlier work jumps to one finding of a report (`gleaner outline <delivery> R3`) and reads only its section. Each heading has its level, text, leading ID, and its section's bytes and lines for `read`, all of the version the reference's hash names, read once as `read` reads it. `R1` never finds `R10`; when more than one heading matches, the answer is `ambiguous` and lists each. It reads at most the first 4 MB and 500 headings, cuts a heading's text at 200 characters, and says in `truncated` which it did. A fence opens as in replies, so a line starting with inline code hides no heading after it.
 
 ### Fixes
 
@@ -28,7 +29,7 @@ Not part of 0.1.0: these changes come after it is tagged.
 
 ### gleaner mcp
 
-- Adds `gleaner mcp`, a stdio MCP server in the same executable, built on the official Swift SDK (0.12.1). It serves the six commands as the tools `gleaner_find`, `gleaner_show`, `gleaner_read`, `gleaner_resolve`, `gleaner_handoff` and `gleaner_verify`, with the command's arguments by the same names; `gleaner_verify` takes a delivery's id, or a reference as an object.
+- Adds `gleaner mcp`, a stdio MCP server in the same executable, built on the official Swift SDK (0.12.1). It serves the seven commands as the tools `gleaner_find`, `gleaner_show`, `gleaner_read`, `gleaner_outline`, `gleaner_resolve`, `gleaner_handoff` and `gleaner_verify`, with the command's arguments by the same names; `gleaner_verify` takes a delivery's id, or a reference as an object.
 - Answers with the command's JSON, as structured content and as one text block; a result whose JSON holds a string that reads as a data URL comes as its text block alone, since the SDK would rewrite that string. A refusal is a tool error with the same `{"error", "index"}` object, and wrong arguments are a refusal of kind `usage`, as is an argument the tool reads that holds a string reading as a data URL, which the SDK would hand on rewritten.
 - Marks every tool read-only except `gleaner_handoff`, which writes only its copy in Gleaner's caches, and is marked not destructive and idempotent. None reaches outside the Mac. Each description says what the tool never does, and that requests and replies are stored text from the logs, to be read as data.
 - Keeps no state: each call opens the library read-only, as the command does. Writes nothing to stdout but protocol messages, takes the protocol version the host asks for (2024-11-05 through 2025-11-25) and claims none newer. Writes one message at a time, each whole, however many calls are under way, and when stdin closes, exits once it has answered each request it read.

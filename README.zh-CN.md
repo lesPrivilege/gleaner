@@ -141,6 +141,7 @@ ln -s "$PWD/.build/release/gleaner" /usr/local/bin/gleaner
 | `gleaner find <terms…> [--project P] [--kind K] [--limit N]` | 所有词都匹配的文件，从新到旧，各按匹配到的那次交付列出，并附总数 |
 | `gleaner show <delivery>` | 这次交付及其文件的每次交付、磁盘上的现状、转交时会交出什么，以及交付它的那次要求和回复 |
 | `gleaner read <delivery> [--lines A:B \| --bytes A:B] [--max N]` | 这一版原样字节的文本，不另行指定时最多 16 KB；绝不拿当前文件的字节顶替 |
+| `gleaner outline <delivery> [terms…] [--limit N]` | 这一版原样字节里的标题，各带其小节的字节和行范围，只读报告里的某一条发现；`R1` 绝不会找到 `R10`，两个都匹配的标题会一并列出 |
 | `gleaner resolve <delivery>` | 它的引用：资料库、交付的 id、哈希和路径、提到它的日志行、Gleaner 第一次怎样读到它，以及它的字节现在在哪里 |
 | `gleaner handoff <delivery>` | Gleaner 缓存里这一版的一份只读副本的路径，已按哈希核对 |
 | `gleaner verify <delivery or reference file>` | 原文件、Gleaner 的存档副本，是两者都有、只有其一，还是都没有引用里的字节 |
@@ -149,7 +150,7 @@ ln -s "$PWD/.build/release/gleaner" /usr/local/bin/gleaner
 
 命令从不建索引，以只读方式打开资料库：它按应用最近一次读到的内容回答。每个回答，以及资料库打开之后的每次失败，都带着这份 `index`（资料库、运行过几次、最近一次何时结束、各 agent 的日志读得怎样，或已关闭），所以过时或不完整的索引给出的空结果，不会被当成什么都没交付的证据。打开 Gleaner 就能更新它。它按应用呈现的样子回答：在 Sources 里关掉的 agent 在这份索引里记为 `off`，它的交付不在回答里；每个文件归在应用显示它的那个项目里，你做过的更正都算数。命令从不写入资料库或项目文件夹；`handoff` 只写它的副本，放在 Gleaner 的缓存里。
 
-**给 agent 的宿主用。** `gleaner mcp` 通过 stdio，把同样的六个调用作为 MCP 工具提供：`gleaner_find`、`gleaner_show`、`gleaner_read`、`gleaner_resolve`、`gleaner_handoff` 和 `gleaner_verify`。参数与命令同名（`lines` 和 `bytes` 写成 `"A:B"`；命令接收引用文件的地方，`gleaner_verify` 接收交付的 id，或以对象形式给出的引用），回答是同样的 JSON，既作为结构化内容，也作为文本。失败时是一个工具错误，带着同样的 `{"error", "index"}` 对象。服务端不保留状态：每次调用都以只读方式打开资料库，stdout 上只写协议消息。Gleaner 从不自行注册到任何宿主。要把它加到 Claude Code，范围由你选定（默认是 local；`--scope user` 用于你的所有项目，`--scope project` 通过项目的 `.mcp.json` 共享）：
+**给 agent 的宿主用。** `gleaner mcp` 通过 stdio，把同样的七个调用作为 MCP 工具提供：`gleaner_find`、`gleaner_show`、`gleaner_read`、`gleaner_outline`、`gleaner_resolve`、`gleaner_handoff` 和 `gleaner_verify`。参数与命令同名（`lines` 和 `bytes` 写成 `"A:B"`；命令接收引用文件的地方，`gleaner_verify` 接收交付的 id，或以对象形式给出的引用），回答是同样的 JSON，既作为结构化内容，也作为文本。失败时是一个工具错误，带着同样的 `{"error", "index"}` 对象。服务端不保留状态：每次调用都以只读方式打开资料库，stdout 上只写协议消息。Gleaner 从不自行注册到任何宿主。要把它加到 Claude Code，范围由你选定（默认是 local；`--scope user` 用于你的所有项目，`--scope project` 通过项目的 `.mcp.json` 共享）：
 
 ```bash
 claude mcp add gleaner -- <path to gleaner> mcp

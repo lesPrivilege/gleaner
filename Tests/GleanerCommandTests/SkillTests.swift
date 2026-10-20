@@ -46,7 +46,7 @@ extension CommandTests {
     @Test func everyCommandTheSkillShowsParses() throws {
         try index()
         let shown = Self.invocations(in: try String(contentsOf: Self.skill.appendingPathComponent("SKILL.md"), encoding: .utf8))
-        #expect(Set(shown.map { Self.words($0)[1] }) == ["find", "show", "read", "resolve", "handoff", "verify"])
+        #expect(Set(shown.map { Self.words($0)[1] }) == ["find", "show", "read", "outline", "resolve", "handoff", "verify"])
         for invocation in shown {
             let words = Self.words(invocation)
             if invocation.contains("<") || invocation.contains("[") {

@@ -248,19 +248,20 @@ extension CommandTests {
         }
     }
 
-    @Test func mcpListsTheSixCommandsAsTools() throws {
+    @Test func mcpListsTheSevenCommandsAsTools() throws {
         let host = try Host(home: home)
         try host.initialize()
         let listed = try #require((try host.request("tools/list")["result"] as? [String: Any])?["tools"] as? [[String: Any]])
         try host.close()
         let tools = Dictionary(uniqueKeysWithValues: listed.map { ($0["name"] as? String ?? "", $0) })
-        #expect(listed.map { $0["name"] as? String } == ["gleaner_find", "gleaner_show", "gleaner_read", "gleaner_resolve", "gleaner_handoff", "gleaner_verify"])
+        #expect(listed.map { $0["name"] as? String } == ["gleaner_find", "gleaner_show", "gleaner_read", "gleaner_outline", "gleaner_resolve", "gleaner_handoff", "gleaner_verify"])
 
         // The command's arguments, by its names.
         let arguments: [String: (all: Set<String>, required: [String])] = [
             "gleaner_find": (["terms", "project", "kind", "limit"], ["terms"]),
             "gleaner_show": (["delivery"], ["delivery"]),
             "gleaner_read": (["delivery", "lines", "bytes", "max"], ["delivery"]),
+            "gleaner_outline": (["delivery", "terms", "limit"], ["delivery"]),
             "gleaner_resolve": (["delivery"], ["delivery"]),
             "gleaner_handoff": (["delivery"], ["delivery"]),
             "gleaner_verify": (["reference"], ["reference"]),
@@ -278,6 +279,8 @@ extension CommandTests {
         #expect(property("gleaner_find", "terms")?["type"] as? String == "array")
         #expect(property("gleaner_find", "limit")?["default"] as? Int == 20)
         #expect(property("gleaner_read", "max")?["default"] as? Int == 16 << 10)
+        #expect(property("gleaner_outline", "terms")?["type"] as? String == "array")
+        #expect(property("gleaner_outline", "limit")?["default"] as? Int == 50 && property("gleaner_outline", "limit")?["maximum"] as? Int == 500)
         for range in ["lines", "bytes"] {
             #expect(property("gleaner_read", range)?["type"] as? String == "string")
             #expect((property("gleaner_read", range)?["description"] as? String)?.contains("\"A:B\"") == true)
@@ -314,10 +317,12 @@ extension CommandTests {
         // another form, so its answer comes as its text block alone.
         let inline = "data:,café au lait\n"
         try deliver(Data(inline.utf8), as: "inline.txt")
+        // A line starting with inline code opens no fence, and R1 is not R10.
+        try deliver(Data("# Review\n```inline```\n## R1\nfirst\n## R10\nsecond\n".utf8), as: "review.md")
         try index()
         let before = try bytes(library), files = try projectFiles()
 
-        let notes = try id("notes.md"), draft = try id("draft.md"), text = try id("inline.txt")
+        let notes = try id("notes.md"), draft = try id("draft.md"), text = try id("inline.txt"), review = try id("review.md")
         let resolved = try command(["resolve", notes]).json
         let kept = home.appendingPathComponent("notes-reference.json"), bare = home.appendingPathComponent("notes-bare.json")
         try JSONSerialization.data(withJSONObject: resolved).write(to: kept)
@@ -337,6 +342,10 @@ extension CommandTests {
             ("gleaner_read", ["delivery": notes, "max": 7], ["read", notes, "--max", "7"]),
             ("gleaner_read", ["delivery": draft], ["read", draft]),
             ("gleaner_read", ["delivery": text], ["read", text]),
+            ("gleaner_outline", ["delivery": review], ["outline", review]),
+            ("gleaner_outline", ["delivery": review, "terms": ["R1"]], ["outline", review, "R1"]),
+            ("gleaner_outline", ["delivery": review, "terms": ["review", "R1"], "limit": 1], ["outline", review, "review", "R1", "--limit", "1"]),
+            ("gleaner_outline", ["delivery": notes, "limit": 1], ["outline", notes, "--limit", "1"]),
             ("gleaner_resolve", ["delivery": notes], ["resolve", notes]),
             ("gleaner_handoff", ["delivery": notes], ["handoff", notes]),
             ("gleaner_verify", ["reference": notes], ["verify", notes]),
@@ -357,6 +366,9 @@ extension CommandTests {
             #expect(result.structured == (arguments["delivery"] as? String != text), "\(tool) \(arguments)")
         }
         #expect(try call(host, "gleaner_read", ["delivery": text]).json["text"] as? String == inline)
+        let r1 = try call(host, "gleaner_outline", ["delivery": review, "terms": ["R1"]]).json
+        #expect((r1["headings"] as? [[String: Any]])?.map { $0["leading_id"] as? String } == ["R1"] && r1["ambiguous"] as? Bool == false)
+        #expect((r1["headings"] as? [[String: Any]])?.first?["range"] as? [Int] == [22, 34])
         try host.close()
 
         // As the command, no tool writes the library or the project.
@@ -383,6 +395,9 @@ extension CommandTests {
             ("gleaner_find", ["terms": ["notes"], "limit": 0], ["find", "notes", "--limit", "0"]),
             ("gleaner_read", ["delivery": notes, "lines": "0:2"], ["read", notes, "--lines", "0:2"]),
             ("gleaner_read", ["delivery": notes, "max": 0], ["read", notes, "--max", "0"]),
+            ("gleaner_outline", ["delivery": notes, "limit": 0], ["outline", notes, "--limit", "0"]),
+            ("gleaner_outline", ["delivery": try id("frame.png")], ["outline", try id("frame.png")]),
+            ("gleaner_outline", ["delivery": summary], ["outline", summary]),
         ]
         let host = try Host(home: home)
         try host.initialize()
@@ -406,6 +421,8 @@ extension CommandTests {
             ("gleaner_show", ["delivery": 7]),
             ("gleaner_read", ["delivery": notes, "lines": "two"]),
             ("gleaner_read", ["delivery": notes, "lines": "1:2", "bytes": "0:3"]),
+            ("gleaner_outline", ["delivery": notes, "terms": "R1"]),
+            ("gleaner_outline", ["delivery": notes, "limit": "all"]),
             ("gleaner_verify", ["reference": ["name": "notes.md"]]),
             ("gleaner_verify", ["reference": 3]),
             // A string that reads as a data URL, which the SDK hands on rewritten: the tool would
@@ -424,7 +441,7 @@ extension CommandTests {
         }
 
         // A tool that isn't one is the protocol's error, not a refusal.
-        let unknown = try host.request("tools/call", ["name": "gleaner_outline", "arguments": [:]])
+        let unknown = try host.request("tools/call", ["name": "gleaner_search", "arguments": [:]])
         #expect((unknown["error"] as? [String: Any])?["code"] as? Int == -32602)
         try host.close()
     }
