@@ -453,16 +453,7 @@ enum Wording {
 
     // MARK: Projects, works and corrections
 
-    /// A project's origin as a mark: a repository, a folder outside git, or the person's own.
-    static func projectGlyph(_ origin: Organization.Project.Origin) -> Glyph {
-        switch origin {
-        case .repository: .repository
-        case .folder: .folder
-        case .yours: .person
-        }
-    }
-
-    /// What a project is, in words, for VoiceOver and anywhere its mark stands alone.
+    /// What a project is, in words: in its help tag and for VoiceOver, never as a mark.
     static func projectOrigin(_ origin: Organization.Project.Origin) -> String {
         switch origin {
         case .repository: "Git repository"

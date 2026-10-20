@@ -21,12 +21,7 @@ struct WorkSection: View {
             Button("Move to Project…") { moving = true }.controlRole(.inline)
         } content: {
             HStack(alignment: .firstTextBaseline, spacing: Space.s) {
-                Label {
-                    // The mark says the project's origin; the name needs no words for it.
-                    Text(organization.projectName(work.project)).fontWeight(.semibold)
-                } icon: {
-                    GlyphView(glyph: Wording.projectGlyph(project?.origin ?? .folder), size: 16).foregroundStyle(Palette.mark)
-                }
+                Text(organization.projectName(work.project)).fontWeight(.semibold)
                 .help(Wording.projectOrigin(project?.origin ?? .folder))
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel("\(organization.projectName(work.project)), \(Wording.projectOrigin(project?.origin ?? .folder).lowercased())")
@@ -163,7 +158,7 @@ struct MoveSheet: View {
                 .font(.callout).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             List(selection: $target) {
                 ForEach(others) { project in
-                    GlyphLabel(title: project.name, glyph: Wording.projectGlyph(project.origin), size: 16).tag(Optional(project.key))
+                    Text(project.name).tag(Optional(project.key))
                 }
             }
             .frame(minHeight: 180)

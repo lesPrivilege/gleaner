@@ -16,11 +16,11 @@ struct UnitSidebarRow: View {
             NamingField(initial: unit.name)
         } else {
             let works = model.organization.works(in: unit.key, inner: true).count
-            Label { Text(unit.name).lineLimit(1).truncationMode(.middle) } icon: { RowGlyph(glyph: .collection) }
-                .badge(works)
+            // Under its project, as the indent shows; its works are counted in the help tag.
+            Text(unit.name).lineLimit(1).truncationMode(.middle)
                 .tag(Place.unit(unit.key))
                 .accessibilityLabel("\(unit.name), collection, \(Wording.count(works, "work"))")
-                .help(Wording.unitPath(unit, in: model.organization))
+                .help("\(Wording.unitPath(unit, in: model.organization)) · \(Wording.count(works, "work"))")
                 .contextMenu { UnitCommands(unit: unit) }
                 .onDrop(of: [.gleanerWork], isTargeted: nil) { providers in
                     UnitDrop.accept(providers, into: unit, model: model)
@@ -58,14 +58,10 @@ struct NamingField: View {
     @FocusState private var focused: Bool
 
     var body: some View {
-        Label {
-            TextField("Collection Name", text: $name, prompt: Text("New Collection"))
-                .focused($focused)
-                .onSubmit(commit)
-                .onExitCommand { model.naming = nil }
-        } icon: {
-            RowGlyph(glyph: .collection)
-        }
+        TextField("Collection Name", text: $name, prompt: Text("New Collection"))
+            .focused($focused)
+            .onSubmit(commit)
+            .onExitCommand { model.naming = nil }
         .onAppear {
             name = initial
             // After the row is in the list, which takes the first responder as it appears.
@@ -248,7 +244,6 @@ struct UnitHeader: View {
         let project = organization.project(unit.project)
         VStack(alignment: .leading, spacing: Space.xs) {
             HStack(alignment: .center, spacing: Space.s) {
-                GlyphView(glyph: .collection, size: 20).foregroundStyle(Palette.mark)
                 Text(unit.name).font(.title3.weight(.semibold)).lineLimit(1).truncationMode(.middle)
             }
             HStack(spacing: Space.s) {
@@ -259,11 +254,9 @@ struct UnitHeader: View {
             .font(.callout)
             HStack(spacing: 3) {
                 if let parent = unit.parent, let above = organization.unit(parent) {
-                    GlyphView(glyph: .collection, size: 11)
                     LinkButton(title: above.name) { model.place = .unit(above.key) }
                     Text("in").foregroundStyle(.secondary)
                 }
-                GlyphView(glyph: Wording.projectGlyph(project?.origin ?? .folder), size: 11)
                 LinkButton(title: organization.projectName(unit.project)) { model.place = .project(unit.project) }
             }
             .font(.caption)
@@ -401,12 +394,10 @@ struct QueueHeader: View {
         let organization = model.organization
         HStack(alignment: .firstTextBaseline, spacing: Space.xs + 2) {
             if let key = group.unit, let unit = organization.unit(key) {
-                GlyphView(glyph: .collection, size: 12)
                 LinkButton(title: Wording.unitPath(unit, in: organization)) { model.place = .unit(key) }
                     .lineLimit(1)
                 Text(organization.projectName(group.project)).foregroundStyle(.secondary).lineLimit(1)
             } else {
-                GlyphView(glyph: Wording.projectGlyph(organization.project(group.project)?.origin ?? .folder), size: 12)
                 LinkButton(title: organization.projectName(group.project)) { model.place = .project(group.project) }
                     .lineLimit(1)
             }

@@ -169,11 +169,10 @@ struct Sidebar: View {
     }
 
     func projectRow(_ project: Organization.Project) -> some View {
-        Label { Text(project.name).lineLimit(1).truncationMode(.middle) } icon: {
-            RowGlyph(glyph: Wording.projectGlyph(project.origin))
-        }
+        // The name alone: what a project is made of is metadata, behind the help tag. Its works are
+        // counted there too, never as a badge, which counts only what waits (To Review).
+        Text(project.name).lineLimit(1).truncationMode(.middle)
         .accessibilityLabel("\(project.name), \(Wording.projectOrigin(project.origin)), \(Wording.count(project.works.count, "work"))")
-        .badge(project.works.count)
         .tag(Place.project(project.key))
         .help("\(Wording.projectOrigin(project.origin)) · \(Wording.projectCounts(project))")
         .contextMenu { menu(project) }
@@ -419,8 +418,8 @@ struct FilterBar: View {
         @Bindable var model = model
         HStack(spacing: 8) {
             if named, let project = model.currentProject {
-                GlyphLabel(title: project.name, glyph: Wording.projectGlyph(project.origin), size: 14)
-                    .font(.callout.weight(.semibold)).lineLimit(1)
+                Text(project.name).font(.callout.weight(.semibold)).lineLimit(1)
+                    .help(Wording.projectOrigin(project.origin))
             }
             Spacer(minLength: 0)
             if model.offersTimeline {
@@ -539,21 +538,11 @@ struct ResultRow: View {
                     HStack(spacing: Space.s) {
                         if let waiting { StatusLabel(mark: waiting.0, text: waiting.1, size: 11) }
                         if let mark = status.mark { StatusLabel(mark: mark.0, text: mark.1, size: 11) }
-                        if let named {
-                            HStack(spacing: 3) {
-                                GlyphView(glyph: .collection, size: 11)
-                                Text(named).lineLimit(1)
-                            }
-                            .foregroundStyle(.secondary)
-                        }
-                        // A project is named by its mark and name, wherever it is named.
-                        if let project {
-                            HStack(spacing: 3) {
-                                GlyphView(glyph: Wording.projectGlyph(project.origin), size: 11)
-                                Text(project.name).lineLimit(1)
-                            }
-                            .foregroundStyle(.secondary)
-                            .help(Wording.projectOrigin(project.origin))
+                        // Where it is, by name alone: the project, then its collection, as a path.
+                        let place = [project?.name, named].compactMap { $0 }
+                        if !place.isEmpty {
+                            Text(place.joined(separator: " › ")).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                                .help(project.map { Wording.projectOrigin($0.origin) } ?? "")
                         }
                         if !context.isEmpty {
                             Text(context.joined(separator: " · ")).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)

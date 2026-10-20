@@ -310,17 +310,12 @@ struct WorkPicker: View {
         }
     }
 
-    /// Where the work is and when it last arrived: its project by mark and name, its folder, the date.
+    /// Where the work is and when it last arrived: its project by name, its folder, the date.
     func caption(_ work: Work) -> some View {
         let project = model.organization.project(work.project)
-        return HStack(spacing: 3) {
-            if let project {
-                GlyphView(glyph: Wording.projectGlyph(project.origin), size: 11)
-                    .help(Wording.projectOrigin(project.origin))
-            }
-            Text([project?.name ?? model.projectName(work), Wording.folder(work.latest.folder),
-                  Wording.shortDate(work.deliveries[0].deliveredAt)].joined(separator: " · "))
-        }
-        .font(.caption).foregroundStyle(.secondary).lineLimit(1)
+        return Text([project?.name ?? model.projectName(work), Wording.folder(work.latest.folder),
+                     Wording.shortDate(work.deliveries[0].deliveredAt)].joined(separator: " · "))
+            .help(project.map { Wording.projectOrigin($0.origin) } ?? "")
+            .font(.caption).foregroundStyle(.secondary).lineLimit(1)
     }
 }

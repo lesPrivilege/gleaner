@@ -78,10 +78,7 @@ struct TimelineRow: View {
                 ConversationLink(title: handover.sessionTitle, delivery: handover.first)
                 Spacer(minLength: Space.xs)
                 if let project {
-                    HStack(spacing: 3) {
-                        GlyphView(glyph: Wording.projectGlyph(project.origin), size: 11)
-                        Text(project.name).lineLimit(1)
-                    }
+                    Text(project.name).lineLimit(1)
                     .foregroundStyle(.secondary)
                     .help(Wording.projectOrigin(project.origin))
                 }

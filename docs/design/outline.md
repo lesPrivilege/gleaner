@@ -41,7 +41,7 @@ A work and its revisions read as one group. There is no rule under an open work'
 ## Conventions at every level
 
 **Naming.** Each level is named one way, wherever it appears.
-- **A project:** its folder's name, or the name you gave it. Two folders with one name carry their parent's (`client-a/app`). Its origin is drawn as its mark beside the name, never as words such as "outside git". The words stay in the help tag and for VoiceOver, and in sheets and menus that draw no mark.
+- **A project:** its folder's name, or the name you gave it. Two folders with one name carry their parent's (`client-a/app`). It is drawn by its name alone. What it is made of (a git repository, a folder outside git, a project you made) is metadata: it stays in the help tag, for VoiceOver and in Sources, never as a mark beside the name. A collection is likewise its name alone, under its project, as the indent shows; where a row names both, they read as a path (`Praxis › Covers`).
 - **A folder:** its path inside the project (`charts`, `atlas-feature › docs`). The project's own folder is "Top level". A folder outside the project is named as one ("Outside the repository: ~/…").
 - **A work:** its newest file's name.
 - **A revision:** "Delivery N", with "(first seen later)" when that applies. N is numbered per file (SPEC §5.2), so a renamed work starts again at 1 under its new name. When the work has several files, the revision's row names its file.
@@ -54,7 +54,7 @@ Because the rule is the same everywhere, no list states it, and no row repeats i
 
 **Counts.**
 - A count says how many of the level below there are. It sits at the trailing end in secondary digits, and is said once.
-- **The sidebar's badge:** a project's works.
+- **The sidebar's badge:** only what waits on the person, as Mail counts only what is unread: To Review. A project's and a collection's works are counted in their help tags and on their own pages, never as a badge, which would read as something waiting.
 - **A folder's header:** the works listed in it.
 - **A work's row:** its revisions, when there is more than one, as Mail counts a conversation's messages.
 - **The project's head:** the totals (works, deliveries, latest).
@@ -62,7 +62,7 @@ Because the rule is the same everywhere, no list states it, and no row repeats i
 
 **Said once.** These repeated words were removed:
 - the project's name in the bar above its own outline, where its head already names it;
-- "· outside git" beside a project's mark;
+- "· outside git", and then the mark that replaced it: the name is the project's identity;
 - the request, the agent's mark and the date on an open work's row, since its revisions each carry their own;
 - "showing report.md" and the delivery's number on an open work's row, since the selected revision's row says both.
 

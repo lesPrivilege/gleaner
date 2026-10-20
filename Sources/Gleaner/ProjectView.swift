@@ -38,9 +38,7 @@ struct ProjectOutline: View {
                         }
                     } header: {
                         SectionHeader(title: "Collections", count: model.organization.units.filter { $0.project == project.key }.count,
-                                      noun: "collection") {
-                            GlyphView(glyph: .collection, size: 12).foregroundStyle(.secondary)
-                        }
+                                      noun: "collection")
                     }
                 }
                 if !suggestions.isEmpty {
@@ -141,9 +139,8 @@ struct ProjectHeader: View {
     var body: some View {
         VStack(alignment: .leading, spacing: Space.xs) {
             HStack(alignment: .center, spacing: Space.s) {
-                GlyphView(glyph: Wording.projectGlyph(project.origin), size: 20).foregroundStyle(Palette.mark)
-                    .help(Wording.projectOrigin(project.origin))
                 Text(project.name).font(.title3.weight(.semibold)).lineLimit(1).truncationMode(.middle)
+                    .help(Wording.projectOrigin(project.origin))
                 Spacer(minLength: Space.s)
                 if let folder = project.folder, Locator.stat(folder).kind == .directory {
                     Button { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: folder)]) } label: {
