@@ -224,9 +224,10 @@ import Testing
         #expect(try spike.read("summary.txt").contains("changed since sampled: 1  gone since sampled: 1"))
     }
 
-    /// A person's recall file that can't be opened, or read as a sheet with its columns, stops the run
-    /// before it writes anything, and it says so without the file's text.
-    @Test(arguments: ["replies.tsv can't be opened", "replies.tsv has no fingerprint", "misses.tsv has no path"])
+    /// A person's recall file that can't be opened, read as a sheet with its columns, or read whole, row
+    /// by row, stops the run before it writes anything, and it says so without the file's text.
+    @Test(arguments: ["replies.tsv can't be opened", "replies.tsv has no fingerprint", "misses.tsv has no path",
+                      "replies.tsv has a row with a cell more", "misses.tsv has a row with a cell more"])
     func aReviewThatCannotBeReadStopsTheRun(_ damage: String) throws {
         let spike = try Spike(Self.reply)
         try spike.run()
@@ -234,10 +235,17 @@ import Testing
         var sample = try Sheet(spike.read("recall/replies.tsv"))
         sample.rows[0]["note"] = "PRIVATE-7f3a"
         let columns = damage == "replies.tsv has no fingerprint" ? sample.header.filter { $0 != "fingerprint" } : sample.header
-        try sample.text(order: columns).write(to: replies, atomically: true, encoding: .utf8)
+        var text = sample.text(order: columns)
+        if damage == "replies.tsv has a row with a cell more" {
+            text = text.replacingOccurrences(of: "\tPRIVATE-7f3a\t", with: "\tPRIVATE-7f3a\tsee the plan\t")
+        }
+        try text.write(to: replies, atomically: true, encoding: .utf8)
+        let misses = spike.out.appendingPathComponent("recall/misses.tsv"), id = sample.rows[0]["reply"]!
         if damage == "misses.tsv has no path" {
-            try "reply\tnote\n\(sample.rows[0]["reply"]!)\tPRIVATE-7f3a\n"
-                .write(to: spike.out.appendingPathComponent("recall/misses.tsv"), atomically: true, encoding: .utf8)
+            try "reply\tnote\n\(id)\tPRIVATE-7f3a\n".write(to: misses, atomically: true, encoding: .utf8)
+        }
+        if damage == "misses.tsv has a row with a cell more" {
+            try "reply\tpath\tnote\n\(id)\tout/chart.png\tPRIVATE-7f3a\tsee the plan\n".write(to: misses, atomically: true, encoding: .utf8)
         }
         let outputs = try spike.outputs()
         if damage == "replies.tsv can't be opened" {

@@ -246,7 +246,8 @@ do {
 let previous = previousSheet.flatMap(Entered.init)
 
 /// A file only a person writes once it exists, or nil when it isn't there. One that is there but can't
-/// be opened, or isn't a sheet with `columns`, stops the run: it may hold a person's work.
+/// be opened, isn't a sheet with `columns`, or has a row of the wrong width stops the run: it may hold
+/// a person's work, and a row read wrongly would misreport it.
 func personTable(_ url: URL, _ columns: [String]) -> Table? {
     let data: Data
     do {
@@ -258,6 +259,10 @@ func personTable(_ url: URL, _ columns: [String]) -> Table? {
     }
     guard let table = Table(data), columns.allSatisfy(table.header.contains) else {
         stop("\(url.path) isn't a sheet with the columns \(columns.joined(separator: ", ")).")
+    }
+    let uneven = table.rows.indices.filter { table.rows[$0].count != table.header.count }.map { String($0 + 1) }
+    guard uneven.isEmpty else {
+        stop("in \(url.path), rows \(uneven.joined(separator: ", ")) under the header have a cell too many or too few.")
     }
     return table
 }
@@ -464,11 +469,9 @@ if previousSheet != nil, previous == nil { summary += "; the previous candidates
 if let kept { summary += "; the sheet it replaced is kept as \(kept)" }
 let sampled = Set(sample.compactMap { $0["reply"] })
 let outside = missRows.filter { !sampled.contains($0["reply"] ?? "") }.count
-let broken = [frozen, misses].compactMap { $0 }.reduce(0) { $0 + $1.rows.count - $1.records.count }
 summary += "\nrecall sample (recall/): replies: \(sample.count)\(frozen == nil ? "  drawn now, seed \(options.seed)" : "")"
 summary += "  reviewed: \(reviewed)  changed since sampled: \(changed)  gone since sampled: \(gone)  misses: \(missRows.count - outside)"
 if outside > 0 { summary += "  misses for replies outside the sample: \(outside)" }
-if broken > 0 { summary += "  rows with a cell too many or too few: \(broken)" }
 summary += "\n\n"
 for provider in Provider.allCases {
     let providerLogs = logs.filter { $0.session.provider == provider }
