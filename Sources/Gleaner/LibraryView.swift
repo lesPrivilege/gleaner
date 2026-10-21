@@ -409,42 +409,67 @@ struct FoundLine: View {
 }
 
 /// The project shown, and the kind filter, above a list. A project's outline names its project in
-/// its own head, so the bar leaves it out there.
+/// its own head, so the bar leaves it out there. A name too long to sit whole beside the filters goes
+/// above them: it says where a search looks.
 struct FilterBar: View {
     @Environment(LibraryModel.self) private var model
     var named = true
 
     var body: some View {
-        @Bindable var model = model
-        HStack(spacing: 8) {
+        Group {
             if named, let project = model.currentProject {
-                Text(project.name).font(.callout.weight(.semibold)).lineLimit(1)
-                    .help(Wording.projectOrigin(project.origin))
-            }
-            Spacer(minLength: 0)
-            if model.offersTimeline {
-                Picker("Show", selection: $model.arrangement) {
-                    Text("Works").tag(Arrangement.works)
-                    Text("Timeline").tag(Arrangement.timeline)
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        name(project)
+                        Spacer(minLength: 0)
+                        filters
+                    }
+                    VStack(alignment: .leading, spacing: Space.xs) {
+                        name(project)
+                        HStack(spacing: 8) {
+                            Spacer(minLength: 0)
+                            filters
+                        }
+                    }
                 }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .help("Show the works, or the replies that handed them over, by day")
-            }
-            Picker("Kind", selection: $model.kind) {
-                Text("All Kinds").tag(Artifact.Kind?.none)
-                Divider()
-                ForEach(Artifact.Kind.allCases, id: \.self) { kind in
-                    Text(Wording.kindName(kind)).tag(Artifact.Kind?.some(kind))
+            } else {
+                HStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    filters
                 }
             }
-            .pickerStyle(.menu)
-            .labelsHidden()
-            .fixedSize()
         }
         .padding(.horizontal, Space.m)
         .padding(.vertical, Space.s)
+    }
+
+    func name(_ project: Organization.Project) -> some View {
+        Text(project.name).font(.callout.weight(.semibold)).lineLimit(1).truncationMode(.middle)
+            .help(Wording.projectOrigin(project.origin))
+    }
+
+    @ViewBuilder var filters: some View {
+        @Bindable var model = model
+        if model.offersTimeline {
+            Picker("Show", selection: $model.arrangement) {
+                Text("Works").tag(Arrangement.works)
+                Text("Timeline").tag(Arrangement.timeline)
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .help("Show the works, or the replies that handed them over, by day")
+        }
+        Picker("Kind", selection: $model.kind) {
+            Text("All Kinds").tag(Artifact.Kind?.none)
+            Divider()
+            ForEach(Artifact.Kind.allCases, id: \.self) { kind in
+                Text(Wording.kindName(kind)).tag(Artifact.Kind?.some(kind))
+            }
+        }
+        .pickerStyle(.menu)
+        .labelsHidden()
+        .fixedSize()
     }
 }
 

@@ -64,9 +64,9 @@ struct DetailView: View {
 }
 
 /// The file, as the thing you drag: its own icon and name, which bytes they are, and whether
-/// Gleaner vouches for them. Open and Show in Finder sit beside it; the rest, Show in Log and Copy
-/// Reference among it, is in the menu. When the version can't be handed over, the reason and what
-/// can be done instead follow.
+/// Gleaner vouches for them. Open and Show in Finder sit beside it, or below it when the pane is too
+/// narrow to show both whole; the rest, Show in Log and Copy Reference among it, is in the menu. When
+/// the version can't be handed over, the reason and what can be done instead follow.
 struct DetailHeader: View {
     @Environment(LibraryModel.self) private var model
     var artifact: Artifact
@@ -78,24 +78,18 @@ struct DetailHeader: View {
     var body: some View {
         let statement = plan.map { Wording.handoff($0, delivery: delivery, in: artifact, now: observation!.state, large: model.isLarge(delivery)) }
         VStack(alignment: .leading, spacing: Space.m) {
-            HStack(alignment: .center, spacing: Space.m) {
-                tile(statement)
-                Spacer(minLength: Space.s)
-                Button("Open") { model.openSelected() }
-                    .disabled(openURL == nil)
-                    .help("Open the verified copy (⌘O)")
-                Button("Show in Finder") { model.reveal(artifact) }
-                    .help(sourceExists ? "Show the original in Finder (⇧⌘R)" : "The file is gone; show its folder")
-                Menu {
-                    menu
-                } label: {
-                    Image(systemName: "ellipsis.circle")
+            // Which version the file is matters most when the window sits beside the app it goes to:
+            // the buttons give way rather than cut the name and version short.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .center, spacing: Space.m) {
+                    tile(statement)
+                    Spacer(minLength: Space.s)
+                    controls
                 }
-                .menuStyle(.borderlessButton)
-                .menuIndicator(.hidden)
-                .fixedSize()
-                .help("More")
-                .accessibilityLabel("More")
+                VStack(alignment: .leading, spacing: Space.s) {
+                    tile(statement)
+                    HStack(spacing: Space.m) { controls }
+                }
             }
             if let statement, let plan, showsPanel(statement, plan) {
                 StatusPanel(statement: statement) { actions(plan) }
@@ -109,6 +103,25 @@ struct DetailHeader: View {
                 StatusLabel(mark: .attention, text: failure).font(.callout)
             }
         }
+    }
+
+    /// Open, Show in Finder and the menu.
+    @ViewBuilder var controls: some View {
+        Button("Open") { model.openSelected() }
+            .disabled(openURL == nil)
+            .help("Open the verified copy (⌘O)")
+        Button("Show in Finder") { model.reveal(artifact) }
+            .help(sourceExists ? "Show the original in Finder (⇧⌘R)" : "The file is gone; show its folder")
+        Menu {
+            menu
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("More")
+        .accessibilityLabel("More")
     }
 
     /// The thing you drag, labeled with the exact version it carries.
