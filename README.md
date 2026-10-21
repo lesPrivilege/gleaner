@@ -257,15 +257,15 @@ swift build -c release && .build/release/gleaner-spike
 
 Reads `~/.claude/projects` and `~/.codex` read-only, checks each named file with the same read-only git commands as the app (`git status`, `git rev-parse`, `git log`), and writes under `out/`:
 
-- `candidates.tsv`: one row per candidate, admitted or not, with the request, the evidence, what was found at the path, whether the delivery rule admits it (`admitted`, yes or no), empty `label` and `note` columns to fill in, and a `fingerprint` of the path and the reply. A rerun gives each label back to the row with its id and fingerprint, however the sheet was saved. Paths start with `~`, and text is redacted.
+- `candidates.tsv`: one row per candidate, admitted or not, with the request, the evidence, what was found at the path, whether the delivery rule admits it (`admitted`, yes or no), empty `label` and `note` columns to fill in, the `reply` it is in, and a `fingerprint` of the path and the reply. A rerun gives each label back to the row with its id and fingerprint, however the sheet was saved. Paths start with `~`, and text is redacted.
 - `labels-not-carried.tsv`: the labels a rerun couldn't give back, each with why: `changed` (the reply or the path is not the one labeled, or the row has no fingerprint), `gone` (no such candidate now) or `unreadable` (a row with the wrong number of cells, no id, or an id on two labeled rows). `replaced/` keeps, byte for byte, any sheet a rerun replaced that held something it couldn't carry. A rerun that can't open the sheet, or finds a copy there that doesn't hold the sheet's bytes, stops before it replaces anything.
-- `recall-sample.md`: a random sample of final replies with the candidates found in each, for marking misses.
+- `recall/`: the recall sample. The first run draws `--sample` final replies at random into `recall/replies.tsv`, in the order drawn, and starts an empty `recall/misses.tsv`. No run writes either again, so your review stays yours; move `recall/` aside to draw a new sample. `recall/replies.md`, rewritten on every run, shows each sampled reply with its candidates and the misses you recorded, and says when a reply changed or is gone since it was drawn.
 - `summary.txt`: counts per agent, unknown record types, and what was found at the named paths.
 - `locators.internal.tsv`: each candidate's full log path, log lines and file path, for your own checks; never share it.
 
 `out/` holds log excerpts and is git-ignored.
 
-Options: `--claude-root DIR`, `--codex-home DIR`, `--out DIR`, `--sample N`, `--seed N`.
+Options: `--claude-root DIR`, `--codex-home DIR`, `--out DIR`, and `--sample N` (50) and `--seed N` (42), which draw the recall sample when `recall/replies.tsv` is absent.
 
 Label the rows you check `delivery`, `not_delivery` or `uncertain`, and leave the rest empty. Then count the labels against the rule:
 
@@ -274,3 +274,5 @@ python3 scripts/score-candidates.py out/candidates.tsv
 ```
 
 It prints JSON: how many rows have each outcome, the rule's precision and its recall among the rows labeled `delivery` or `not_delivery`, and the ids of the deliveries it rejected and the non-deliveries it admitted. The rates hold only for the rows labeled, and the recall is not Gate 1's: a delivery the extractor missed is not in the sheet. It reads only the sheet, never writes it, and prints none of its text but the ids. A sheet it can't read whole gets no report: stderr says which lines are wrong, and it exits 2. Its tests: `python3 -m unittest discover -s scripts/tests`.
+
+To measure recall, review the sampled replies from the top of `recall/replies.md`: label each of the reply's candidates in `candidates.tsv`, add a row to `recall/misses.tsv` (`reply`, `path`, `note`) for each file it delivered that isn't among them, and write `yes` under `reviewed` in `recall/replies.tsv`. Reviewing from the top keeps the reviewed replies a random sample. A run that can't open either file, or read it as a sheet with its columns, stops before writing anything. No script counts recall from them yet.

@@ -21,7 +21,7 @@ struct Options {
             case "--claude-root": claudeRoot = URL(fileURLWithPath: (value as NSString).expandingTildeInPath)
             case "--codex-home": codexRoot = URL(fileURLWithPath: (value as NSString).expandingTildeInPath)
             case "--out": out = URL(fileURLWithPath: value)
-            case "--sample": guard let n = Int(value) else { usage() }; sample = n
+            case "--sample": guard let n = Int(value), n >= 0 else { usage() }; sample = n
             case "--seed": guard let n = UInt64(value) else { usage() }; seed = n
             default: usage()
             }
@@ -52,8 +52,16 @@ struct Candidate {
     /// Stable across reruns; with `fingerprint`, how a label finds its row again.
     var id: String { hex12(Data("\(session.logPath)\n\(first.part.line)\n\(path)".utf8)) }
 
+    /// The reply it is in, as the recall sample names it.
+    var reply: String { replyID(session, turn) }
+
     /// What a label judges: this reply naming this path. A rerun carries a label only while it holds.
     var fingerprint: String { hex12(Data("\(path)\n\(turn.reply)".utf8)) }
+}
+
+/// A final reply's id, from its log's path and first line.
+func replyID(_ session: SessionInfo, _ turn: Turn) -> String {
+    hex12(Data("\(session.logPath)\n\(turn.parts.first?.line ?? 0)".utf8))
 }
 
 /// Deterministic sampling so a labeled sheet can be regenerated.
@@ -167,12 +175,10 @@ func share(_ text: String?) -> String {
     return Redactor.redact(text.replacingOccurrences(of: home, with: "~"))
 }
 
-/// What a person entered on a previous sheet, read by column name from LF, CRLF or CR lines: the rows
-/// that hold a label or note, and those that can't be read. Nil when the sheet isn't UTF-8, repeats a
-/// column name, or has no id, label or note column.
-struct Entered {
+/// A sheet as a person may have saved it: UTF-8, a header row, a row per LF, CRLF or CR line, cells
+/// split by tabs. Nil when it isn't UTF-8 or its header repeats a column name.
+struct Table {
     var header: [String]
-    var id: Int, label: Int, note: Int, fingerprint: Int?
     var rows: [[String]]
 
     init?(_ data: Data) {
@@ -180,18 +186,41 @@ struct Entered {
         if text.first == "\u{FEFF}" { text.removeFirst() }
         let lines = text.split { $0 == "\n" || $0 == "\r\n" || $0 == "\r" }
             .map { $0.split(separator: "\t", omittingEmptySubsequences: false).map(String.init) }
-        guard let header = lines.first, Set(header).count == header.count, let id = header.firstIndex(of: "id"),
-              let label = header.firstIndex(of: "label"), let note = header.firstIndex(of: "note") else { return nil }
-        (self.header, self.id, self.label, self.note) = (header, id, label, note)
-        fingerprint = header.firstIndex(of: "fingerprint")
-        rows = lines.dropFirst().filter { $0.count != header.count || !$0[label].isEmpty || !$0[note].isEmpty }
+        guard let header = lines.first, Set(header).count == header.count else { return nil }
+        (self.header, rows) = (header, Array(lines.dropFirst()))
+    }
+
+    /// The rows with a cell for each column, by column name.
+    var records: [[String: String]] {
+        rows.filter { $0.count == header.count }.map { Dictionary(uniqueKeysWithValues: zip(header, $0)) }
+    }
+}
+
+/// `rows` as a sheet with `columns`.
+func sheet(_ columns: [String], _ rows: [[String: String]]) -> String {
+    ([columns] + rows.map { row in columns.map { cell(row[$0]) } }).map { $0.joined(separator: "\t") + "\n" }.joined()
+}
+
+/// What a person entered on a previous sheet, read by column name: the rows that hold a label or
+/// note, and those that can't be read. Nil when it isn't a sheet with id, label and note columns.
+struct Entered {
+    var header: [String]
+    var id: Int, label: Int, note: Int, fingerprint: Int?
+    var rows: [[String]]
+
+    init?(_ data: Data) {
+        guard let table = Table(data), let id = table.header.firstIndex(of: "id"),
+              let label = table.header.firstIndex(of: "label"), let note = table.header.firstIndex(of: "note") else { return nil }
+        (header, self.id, self.label, self.note) = (table.header, id, label, note)
+        fingerprint = table.header.firstIndex(of: "fingerprint")
+        rows = table.rows.filter { $0.count != table.header.count || !$0[label].isEmpty || !$0[note].isEmpty }
     }
 }
 
 let header = [
     "id", "label", "note", "admitted", "provider", "project", "session_title", "delivered_at", "syntax", "anchors",
     "raw_targets", "path", "kind", "size", "sha256_12", "git", "occurrences", "replies_naming_path",
-    "request", "evidence", "session_id", "fingerprint",
+    "request", "evidence", "session_id", "reply", "fingerprint",
 ]
 
 // A label carries to the candidate it was given for: the same id, with the same fingerprint. Any
@@ -215,6 +244,39 @@ do {
     stop("can't open \(candidatesURL.path) to keep its labels: \(error.localizedDescription)")
 }
 let previous = previousSheet.flatMap(Entered.init)
+
+/// A file only a person writes once it exists, or nil when it isn't there. One that is there but can't
+/// be opened, or isn't a sheet with `columns`, stops the run: it may hold a person's work.
+func personTable(_ url: URL, _ columns: [String]) -> Table? {
+    let data: Data
+    do {
+        data = try Data(contentsOf: url)
+    } catch CocoaError.fileReadNoSuchFile {
+        return nil
+    } catch {
+        stop("can't open \(url.path): \(error.localizedDescription)")
+    }
+    guard let table = Table(data), columns.allSatisfy(table.header.contains) else {
+        stop("\(url.path) isn't a sheet with the columns \(columns.joined(separator: ", ")).")
+    }
+    return table
+}
+
+// The recall sample: replies drawn once and frozen in recall/replies.tsv, a person's misses in
+// recall/misses.tsv. No run writes either again; recall/replies.md, rewritten every run, shows them.
+let recall = options.out.appendingPathComponent("recall")
+let repliesURL = recall.appendingPathComponent("replies.tsv"), missesURL = recall.appendingPathComponent("misses.tsv")
+let sampleColumns = ["reply", "reviewed", "note", "provider", "project", "session_title", "delivered_at", "session_id", "fingerprint"]
+let missColumns = ["reply", "path", "note"]
+let frozen = personTable(repliesURL, ["reply", "reviewed", "note", "fingerprint"])
+let misses = personTable(missesURL, missColumns)
+let allTurns = logs.flatMap { log in log.turns.map { (session: log.session, turn: $0) } }
+var rng = SplitMix64(state: options.seed)
+let sample = frozen?.records ?? allTurns.shuffled(using: &rng).prefix(options.sample).map { session, turn in
+    ["reply": replyID(session, turn), "provider": session.provider.rawValue, "project": projectName(turn.cwd ?? session.cwd),
+     "session_title": share(session.title), "delivered_at": turn.deliveredAt.map { $0.formatted(dateFormat) } ?? "",
+     "session_id": session.id, "fingerprint": hex12(Data(turn.reply.utf8))]
+}
 var carried: [String: (label: String, note: String)] = [:]
 var setAside: [[String]] = []  // why, then the row as it was
 if let previous {
@@ -260,6 +322,24 @@ if let previousSheet, previous?.header != header || !setAside.isEmpty {
     kept = "replaced/" + name
 }
 
+/// Writes a new file whole or not at all, and never over one already there.
+func create(_ text: String, at url: URL) throws {
+    let draft = url.deletingLastPathComponent().appendingPathComponent(".\(url.lastPathComponent)-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: draft) }
+    try Data(text.utf8).write(to: draft)
+    try FileManager.default.linkItem(at: draft, to: url)
+}
+
+if frozen == nil || misses == nil {
+    do {
+        try FileManager.default.createDirectory(at: recall, withIntermediateDirectories: true)
+        if frozen == nil { try create(sheet(sampleColumns, sample), at: repliesURL) }
+        if misses == nil { try create(sheet(missColumns, []), at: missesURL) }
+    } catch {
+        stop("can't start the recall sample in \(recall.path): \(error.localizedDescription)")
+    }
+}
+
 var tsv = header.joined(separator: "\t") + "\n"
 var locatorRows = ["id", "log", "lines", "path"].joined(separator: "\t") + "\n"
 for candidate in candidates {
@@ -287,6 +367,7 @@ for candidate in candidates {
         share(clip(candidate.turn.request, 300)),
         share(evidence.map(\.mention.excerpt).joined(separator: " ‖ ")),
         candidate.session.id,
+        candidate.reply,
         candidate.fingerprint,
     ]
     tsv += row.map(cell).joined(separator: "\t") + "\n"
@@ -298,45 +379,80 @@ try ([["why"] + (previous?.header ?? header)] + setAside).map { $0.joined(separa
     .write(to: options.out.appendingPathComponent("labels-not-carried.tsv"), atomically: true, encoding: .utf8)
 try locatorRows.write(to: options.out.appendingPathComponent("locators.internal.tsv"), atomically: true, encoding: .utf8)
 
-var rng = SplitMix64(state: options.seed)
-let allTurns = logs.flatMap { log in log.turns.map { (log.session, $0) } }
-let sample = allTurns.shuffled(using: &rng).prefix(options.sample)
-    .sorted { ($0.1.deliveredAt ?? .distantPast) < ($1.1.deliveredAt ?? .distantPast) }
-var recall = """
+// The sample as the logs hold it now: each reply, its candidates and the misses recorded for it.
+let replies = Dictionary(allTurns.map { (replyID($0.session, $0.turn), $0) }, uniquingKeysWith: { first, _ in first })
+let candidatesInReply = Dictionary(grouping: candidates, by: \.reply)
+let missRows = misses?.records ?? []
+let missesInReply = Dictionary(grouping: missRows, by: { $0["reply"] ?? "" })
+var reviewed = 0, changed = 0, gone = 0
+var view = """
     # Recall sample
 
-    \(sample.count) final replies drawn at random (seed \(options.seed)) from \(allTurns.count).
-    For each reply, list any delivered artifact that is missing from "Extracted", and strike extracted
-    items that are not deliveries.
+    \(sample.count) final replies, frozen in recall/replies.tsv in the order they were drawn. Review them from
+    the top: read the reply, label each of its candidates in candidates.tsv, add a row to recall/misses.tsv
+    for each file it delivered that isn't among them, and write `yes` under `reviewed` in recall/replies.tsv.
+    This page is rewritten on every run, so nothing typed here is kept.
 
 
     """
-for (index, (session, turn)) in sample.enumerated() {
-    let extracted = MentionExtractor.candidates(in: turn)
-    recall += """
+for (index, row) in sample.enumerated() {
+    let id = row["reply"] ?? "", now = replies[id]
+    if row["reviewed"] == "yes" { reviewed += 1 }
+    let state: String
+    if let now {
+        if hex12(Data(now.turn.reply.utf8)) == row["fingerprint"] {
+            state = "as sampled"
+        } else {
+            changed += 1
+            state = "changed since it was sampled, so its review no longer counts"
+        }
+    } else {
+        gone += 1
+        state = "gone from the logs"
+    }
+    let title = row["session_title"] ?? "", mark = row["reviewed"] ?? ""
+    view += """
         ---
 
-        ## \(index + 1). \(share(session.title ?? "(untitled)"))
+        ## \(index + 1). \(title.isEmpty ? "(untitled)" : title)
 
-        - provider: \(session.provider.rawValue) · project: \(projectName(turn.cwd ?? session.cwd)) · \(turn.deliveredAt.map { $0.formatted(dateFormat) } ?? "?")
-        - log: `\(share(session.logPath)):\(turn.parts.map { String($0.line) }.joined(separator: ","))`
-        - request: \(share(turn.request).replacingOccurrences(of: "\n", with: " "))
+        - reply `\(id)` · reviewed: \(mark.isEmpty ? "not yet" : mark) · \(state)
+        - \(row["provider"] ?? "") · project: \(row["project"] ?? "") · \(row["delivered_at"] ?? "")
 
-        <details><summary>Reply (\(turn.reply.count) chars)</summary>
+        """
+    if let now {
+        let found = (candidatesInReply[id] ?? []).map { c in
+            let label = carried[c.id]?.label ?? ""
+            return "- `\(share(c.path))` · `\(c.id)` · admitted \(Admission.admits(c.delivery) ? "yes" : "no") · \(label.isEmpty ? "unlabeled" : label)"
+        }
+        view += """
+            - log: `\(share(now.session.logPath)):\(now.turn.parts.map { String($0.line) }.joined(separator: ","))`
+            - request: \(share(now.turn.request).replacingOccurrences(of: "\n", with: " "))
 
-        \(share(turn.reply))
+            <details><summary>Reply (\(now.turn.reply.count) chars)</summary>
 
-        </details>
+            \(share(now.turn.reply))
 
-        Extracted:
-        \(extracted.isEmpty ? "- (none)" : extracted.map { c in "- `\(share(c.path))` × \(c.evidence.count) [\(Set(c.evidence.map(\.mention.syntax.rawValue)).sorted().joined(separator: ","))] — \(states[c.path]?.kind.rawValue ?? "?")" }.joined(separator: "\n"))
+            </details>
 
-        Missed:
+            Candidates:
+            \(found.isEmpty ? "- (none)" : found.joined(separator: "\n"))
+
+            """
+    }
+    let missed = (missesInReply[id] ?? []).map { miss in
+        let note = miss["note"] ?? ""
+        return "- `\(miss["path"] ?? "")`" + (note.isEmpty ? "" : " · \(note)")
+    }
+    view += """
+
+        Missed, in recall/misses.tsv:
+        \(missed.isEmpty ? "- (none)" : missed.joined(separator: "\n"))
 
 
         """
 }
-try recall.write(to: options.out.appendingPathComponent("recall-sample.md"), atomically: true, encoding: .utf8)
+try view.write(to: recall.appendingPathComponent("replies.md"), atomically: true, encoding: .utf8)
 
 var summary = "Gleaner Spike A — \(Date().formatted(dateFormat))\n\n"
 summary += "labels: \(carried.count) carried"
@@ -346,6 +462,13 @@ if !setAside.isEmpty {
 }
 if previousSheet != nil, previous == nil { summary += "; the previous candidates.tsv couldn't be read as a sheet" }
 if let kept { summary += "; the sheet it replaced is kept as \(kept)" }
+let sampled = Set(sample.compactMap { $0["reply"] })
+let outside = missRows.filter { !sampled.contains($0["reply"] ?? "") }.count
+let broken = [frozen, misses].compactMap { $0 }.reduce(0) { $0 + $1.rows.count - $1.records.count }
+summary += "\nrecall sample (recall/): replies: \(sample.count)\(frozen == nil ? "  drawn now, seed \(options.seed)" : "")"
+summary += "  reviewed: \(reviewed)  changed since sampled: \(changed)  gone since sampled: \(gone)  misses: \(missRows.count - outside)"
+if outside > 0 { summary += "  misses for replies outside the sample: \(outside)" }
+if broken > 0 { summary += "  rows with a cell too many or too few: \(broken)" }
 summary += "\n\n"
 for provider in Provider.allCases {
     let providerLogs = logs.filter { $0.session.provider == provider }
@@ -376,4 +499,4 @@ for provider in Provider.allCases {
 }
 try summary.write(to: options.out.appendingPathComponent("summary.txt"), atomically: true, encoding: .utf8)
 print(summary)
-print("wrote \(options.out.path)/{candidates.tsv,labels-not-carried.tsv,recall-sample.md,summary.txt}")
+print("wrote \(options.out.path)/{candidates.tsv,labels-not-carried.tsv,recall/replies.md,summary.txt}")

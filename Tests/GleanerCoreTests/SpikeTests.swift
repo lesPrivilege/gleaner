@@ -157,6 +157,103 @@ import Testing
             #expect(try spike.outputs() == outputs)
         }
     }
+
+    // MARK: The recall sample
+
+    /// The first run draws the recall sample into recall/replies.tsv, a row per reply with the id
+    /// candidates.tsv gives its candidates, and starts an empty recall/misses.tsv. Moving `recall/`
+    /// aside draws a new sample, of the size asked for.
+    @Test func theFirstRunDrawsTheRecallSample() throws {
+        let spike = try Spike(Self.reply)
+        try spike.write("Saved the [chart](out/chart.png).", to: "s2")
+        try spike.write("Nothing to hand over.", to: "s3")
+        let sheet = try spike.run()
+        let sample = try Sheet(spike.read("recall/replies.tsv"))
+        #expect(sample.header == ["reply", "reviewed", "note", "provider", "project", "session_title", "delivered_at", "session_id", "fingerprint"])
+        #expect(sample.rows.count == 3)
+        #expect(sample.rows.allSatisfy { $0["reviewed"] == "" && $0["note"] == "" && $0["fingerprint"]?.count == 12 })
+        let replies = Set(sheet.rows.compactMap { $0["reply"] })
+        #expect(replies.count == 2 && replies.isSubset(of: sample.rows.compactMap { $0["reply"] }))
+        #expect(try spike.read("recall/misses.tsv") == "reply\tpath\tnote\n")
+        #expect(try spike.read("summary.txt").contains("recall sample (recall/): replies: 3  drawn now, seed 42  reviewed: 0"))
+        #expect(!FileManager.default.fileExists(atPath: spike.out.appendingPathComponent("recall-sample.md").path))
+
+        try FileManager.default.moveItem(at: spike.out.appendingPathComponent("recall"), to: spike.out.appendingPathComponent("recall-1"))
+        try spike.run(["--sample", "1"])
+        #expect(try Sheet(spike.read("recall/replies.tsv")).rows.count == 1)
+    }
+
+    /// No run writes the sample or the misses again: a person's review survives reruns, a new reply
+    /// stays out of the sample, and the page shows the review.
+    @Test func aRerunLeavesTheSampleAndTheReviewAlone() throws {
+        let spike = try Spike(Self.reply)
+        try spike.run()
+        var sample = try Sheet(spike.read("recall/replies.tsv"))
+        sample.rows[0]["reviewed"] = "yes"
+        sample.rows[0]["note"] = "checked"
+        let id = sample.rows[0]["reply"]!
+        try sample.text().write(to: spike.out.appendingPathComponent("recall/replies.tsv"), atomically: true, encoding: .utf8)
+        try "reply\tpath\tnote\n\(id)\tout/chart.png\tnamed in prose\n"
+            .write(to: spike.out.appendingPathComponent("recall/misses.tsv"), atomically: true, encoding: .utf8)
+        let review = try [spike.read("recall/replies.tsv"), spike.read("recall/misses.tsv")]
+        try spike.write("Saved the [chart](out/chart.png).", to: "s2")
+
+        try spike.run()
+        #expect(try [spike.read("recall/replies.tsv"), spike.read("recall/misses.tsv")] == review)
+        let view = try spike.read("recall/replies.md")
+        #expect(view.contains("- reply `\(id)` · reviewed: yes · as sampled"))
+        #expect(view.contains("- `out/chart.png` · named in prose"))
+        #expect(view.components(separatedBy: "\n## ").count == 2)
+        #expect(try spike.read("summary.txt").contains("replies: 1  reviewed: 1  changed since sampled: 0  gone since sampled: 0  misses: 1\n"))
+    }
+
+    /// The page says which sampled replies changed or went since they were drawn; the sample stays as drawn.
+    @Test func theSampleSaysWhichRepliesChangedOrWent() throws {
+        let spike = try Spike(Self.reply)
+        try spike.write("Saved the [chart](out/chart.png).", to: "s2")
+        try spike.run()
+        let sample = try spike.read("recall/replies.tsv")
+        try spike.write("The [report](out/report.md) is out of date.")
+        try FileManager.default.removeItem(at: spike.root.appendingPathComponent("claude/-p/s2.jsonl"))
+
+        try spike.run()
+        #expect(try spike.read("recall/replies.tsv") == sample)
+        let view = try spike.read("recall/replies.md")
+        #expect(view.contains("changed since it was sampled, so its review no longer counts"))
+        #expect(view.contains("gone from the logs"))
+        #expect(try spike.read("summary.txt").contains("changed since sampled: 1  gone since sampled: 1"))
+    }
+
+    /// A person's recall file that can't be opened, or read as a sheet with its columns, stops the run
+    /// before it writes anything, and it says so without the file's text.
+    @Test(arguments: ["replies.tsv can't be opened", "replies.tsv has no fingerprint", "misses.tsv has no path"])
+    func aReviewThatCannotBeReadStopsTheRun(_ damage: String) throws {
+        let spike = try Spike(Self.reply)
+        try spike.run()
+        let replies = spike.out.appendingPathComponent("recall/replies.tsv")
+        var sample = try Sheet(spike.read("recall/replies.tsv"))
+        sample.rows[0]["note"] = "PRIVATE-7f3a"
+        let columns = damage == "replies.tsv has no fingerprint" ? sample.header.filter { $0 != "fingerprint" } : sample.header
+        try sample.text(order: columns).write(to: replies, atomically: true, encoding: .utf8)
+        if damage == "misses.tsv has no path" {
+            try "reply\tnote\n\(sample.rows[0]["reply"]!)\tPRIVATE-7f3a\n"
+                .write(to: spike.out.appendingPathComponent("recall/misses.tsv"), atomically: true, encoding: .utf8)
+        }
+        let outputs = try spike.outputs()
+        if damage == "replies.tsv can't be opened" {
+            try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: replies.path)
+            let denied = try #require(throws: CocoaError.self) { try Data(contentsOf: replies) }
+            try #require(denied.code == .fileReadNoPermission)
+        }
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: replies.path) }
+
+        let run = try spike.launch()
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: replies.path)
+        #expect(run.status != 0)
+        #expect(run.stderr.contains(String(damage.prefix { $0 != " " })))
+        #expect(!run.stderr.contains("PRIVATE-7f3a"))
+        #expect(try spike.outputs() == outputs)
+    }
 }
 
 /// A synthetic home with Claude Code logs of one reply each, for `gleaner-spike` to read.
@@ -182,19 +279,19 @@ struct Spike {
     }
 
     /// Runs `gleaner-spike` on the home; the sheet it writes.
-    @discardableResult func run() throws -> Sheet {
-        #expect(try launch().status == 0)
+    @discardableResult func run(_ options: [String] = []) throws -> Sheet {
+        #expect(try launch(options).status == 0)
         return Sheet(try read("candidates.tsv"))
     }
 
     /// Runs `gleaner-spike` on the home: how it exited, and what it said on stderr.
-    func launch() throws -> (status: Int32, stderr: String) {
+    func launch(_ options: [String] = []) throws -> (status: Int32, stderr: String) {
         let spike = Bundle.module.bundleURL.deletingLastPathComponent().appendingPathComponent("gleaner-spike")
         try #require(FileManager.default.isExecutableFile(atPath: spike.path), "build gleaner-spike first")
         let process = Process(), errors = Pipe()
         process.executableURL = spike
         process.arguments = ["--claude-root", root.appendingPathComponent("claude").path,
-                             "--codex-home", root.appendingPathComponent("codex").path, "--out", out.path]
+                             "--codex-home", root.appendingPathComponent("codex").path, "--out", out.path] + options
         process.standardOutput = FileHandle.nullDevice
         process.standardError = errors
         try process.run()
