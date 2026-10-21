@@ -298,8 +298,8 @@ Ratified direction. None of this blocks the v0.1 release.
 **Three layers.** The core is narrow, the connections are thin, and distribution is broad.
 
 1. **Gleaner Core** — evidence, registry, snapshots, library, native drag. It runs on its own.
-2. **Stable local API / CLI** — the only surface extensions use. It is the `gleaner` command ([query-core](design/query-core.md)): `find`, `show`, `read`, `resolve`, `handoff` and `verify` as JSON over the app's library, which it opens read-only and never indexes. Every answer, and every failure once the library is open, carries the index it is evidence of.
-3. **Extensions** — one per ecosystem, built on whatever entry point it actually exposes (plugin, skill, MCP, CLI, deep link). Do not assume every ecosystem has a plugin system. For MCP, `gleaner mcp` ([mcp-adapter](design/mcp-adapter.md)) serves the command's six calls as stdio tools, from the same executable. Claude Code, Codex and the DeepSeek Harness read the same skill format, so one skill, `extensions/gleaner` ([extensions](design/extensions.md)), serves all three.
+2. **Stable local API / CLI** — the only surface extensions use. It is the `gleaner` command ([query-core](design/query-core.md)): `find`, `show`, `read`, `outline`, `resolve`, `handoff` and `verify` as JSON over the app's library, which it opens read-only and never indexes. Every answer, and every failure once the library is open, carries the index it is evidence of.
+3. **Extensions** — one per ecosystem, built on whatever entry point it actually exposes (plugin, skill, MCP, CLI, deep link). Do not assume every ecosystem has a plugin system. For MCP, `gleaner mcp` ([mcp-adapter](design/mcp-adapter.md)) serves the command's seven calls as stdio tools, from the same executable. Claude Code, Codex and the DeepSeek Harness read the same skill format, so one skill, `extensions/gleaner` ([extensions](design/extensions.md)), serves all three.
 
 **Source adapter ≠ extension.** An adapter reads a runtime's history into Gleaner. An extension lets that runtime's users call Gleaner. They evolve separately.
 
