@@ -144,7 +144,7 @@ struct Sidebar: View {
                     }
                 }
             } header: {
-                Text("Projects").padding(.leading, Self.inset)
+                ProjectsHeading()
             }
             Section {
                 // A source that needs a look shows the triangle at the row's end, as Mail marks a
@@ -216,6 +216,39 @@ struct Sidebar: View {
             Button("Rename…") { newName = project.name; renaming = project }
             Button("Delete Project…") { removing = project }
         }
+    }
+}
+
+/// The Projects heading, whose plus, shown under the pointer, makes a collection where New
+/// Collection (⇧⌘N) would: in the collection or project shown, else the chosen work's project.
+struct ProjectsHeading: View {
+    @Environment(LibraryModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var hovering = false
+
+    var body: some View {
+        HStack(spacing: Space.xs) {
+            Text("Projects")
+            Spacer(minLength: Space.xs)
+            Button(action: model.startNewUnitHere) {
+                Image(systemName: "plus")
+            }
+            .buttonStyle(.borderless)
+            .disabled(model.newUnitPlace == nil)
+            .opacity(hovering ? 1 : 0)
+            .help(help)
+            // A shortcut for the pointer: the keyboard and VoiceOver have File › New Collection.
+            .accessibilityHidden(true)
+        }
+        .padding(.leading, Sidebar.inset)
+        .contentShape(Rectangle())
+        .onHover { hovering in withAnimation(Motion.feedback(reduceMotion)) { self.hovering = hovering } }
+    }
+
+    var help: String {
+        guard let place = model.newUnitPlace else { return "Choose a project to make a collection in it" }
+        let name = place.parent.flatMap { model.organization.unit($0)?.name } ?? model.organization.project(place.project)?.name
+        return "New Collection in \(name ?? "this project") (⇧⌘N)"
     }
 }
 

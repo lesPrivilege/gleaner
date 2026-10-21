@@ -101,9 +101,7 @@ struct CollectionMenu: View {
     var body: some View {
         let works = model.selectedWorks
         let unit = model.currentUnit
-        Button("New Collection") {
-            if let place = model.newUnitPlace { model.startNewUnit(in: place.project, inside: place.parent) }
-        }
+        Button("New Collection") { model.startNewUnitHere() }
         .keyboardShortcut("n", modifiers: [.command, .shift])
         .disabled(model.newUnitPlace == nil)
         Menu(Wording.collectionCommand(works)) {

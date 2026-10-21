@@ -1658,6 +1658,12 @@ final class LibraryModel {
         return selectedWorks.first.map { ($0.project, nil) }
     }
 
+    /// New Collection where the window is, as the File menu's command and the Projects heading's
+    /// plus make one.
+    func startNewUnitHere() {
+        if let place = newUnitPlace { startNewUnit(in: place.project, inside: place.parent) }
+    }
+
     /// Starts naming a new collection in place in the sidebar; once named, `adding` (works' or
     /// observed files' paths) go in it, as one step on Edit › Undo named `command`.
     func startNewUnit(in project: String, inside parent: String? = nil, adding: [String] = [], as command: String = "New Collection") {

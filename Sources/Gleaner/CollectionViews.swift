@@ -19,13 +19,13 @@ struct UnitSidebarRow: View {
             // Under its project, as the indent shows; its works are counted in the help tag.
             Text(unit.name).lineLimit(1).truncationMode(.middle)
                 .padding(.leading, Sidebar.inset)
+                // The whole row takes a dropped work, not only its name.
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .modifier(UnitDropTarget(unit: unit))
                 .tag(Place.unit(unit.key))
                 .accessibilityLabel("\(unit.name), collection, \(Wording.count(works, "work"))")
                 .help("\(Wording.unitPath(unit, in: model.organization)) · \(Wording.count(works, "work"))")
                 .contextMenu { UnitCommands(unit: unit) }
-                .onDrop(of: [.gleanerWork], isTargeted: nil) { providers in
-                    UnitDrop.accept(providers, into: unit, model: model)
-                }
         }
     }
 }
@@ -47,6 +47,29 @@ enum UnitDrop {
             }
         }
         return true
+    }
+}
+
+/// A collection that takes a work dragged onto it, lit in the accent while the work is over it,
+/// as Finder lights the folder a file will go into.
+struct UnitDropTarget: ViewModifier {
+    @Environment(LibraryModel.self) private var model
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
+    var unit: WorkUnit
+    @State private var targeted = false
+
+    func body(content: Content) -> some View {
+        content
+            .contentShape(Rectangle())
+            .background {
+                RoundedRectangle(cornerRadius: Radius.row)
+                    .fill(Color.accentColor.opacity(targeted ? (contrast == .increased ? 0.3 : 0.16) : 0))
+                    .strokeBorder(Color.accentColor.opacity(targeted ? 1 : 0), lineWidth: 1.5)
+                    .padding(-Space.xs)
+            }
+            .onDrop(of: [.gleanerWork], isTargeted: $targeted) { UnitDrop.accept($0, into: unit, model: model) }
+            .animation(Motion.feedback(reduceMotion), value: targeted)
     }
 }
 
@@ -300,10 +323,10 @@ struct UnitRow: View {
             }
         }
         .padding(.vertical, Space.xs)
+        .modifier(UnitDropTarget(unit: unit))
         .padding(.leading, inside ? Space.xl : 0)
         .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
         .contextMenu { UnitCommands(unit: unit) }
-        .onDrop(of: [.gleanerWork], isTargeted: nil) { UnitDrop.accept($0, into: unit, model: model) }
         .help(Wording.unitPath(unit, in: model.organization))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(unit.name), collection, \(Wording.count(works, "work"))" + (waiting > 0 ? ", \(Wording.toReview(waiting))" : ""))
