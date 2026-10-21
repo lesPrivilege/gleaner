@@ -198,7 +198,22 @@ let header = [
 // other is set aside with why. A sheet whose replacement would lose anything a person entered, a label
 // set aside or a column of its own, is kept first.
 let candidatesURL = options.out.appendingPathComponent("candidates.tsv")
-let previousSheet = try? Data(contentsOf: candidatesURL)
+
+/// Ends the run before it replaces anything, for a sheet whose labels it can't keep.
+func stop(_ message: String) -> Never {
+    FileHandle.standardError.write(Data("gleaner-spike: \(message) Nothing was replaced.\n".utf8))
+    exit(1)
+}
+
+// Only a sheet that isn't there is no sheet: one that can't be opened may hold labels.
+let previousSheet: Data?
+do {
+    previousSheet = try Data(contentsOf: candidatesURL)
+} catch CocoaError.fileReadNoSuchFile {
+    previousSheet = nil
+} catch {
+    stop("can't open \(candidatesURL.path) to keep its labels: \(error.localizedDescription)")
+}
 let previous = previousSheet.flatMap(Entered.init)
 var carried: [String: (label: String, note: String)] = [:]
 var setAside: [[String]] = []  // why, then the row as it was
@@ -225,9 +240,22 @@ if let previous {
 var kept: String?
 if let previousSheet, previous?.header != header || !setAside.isEmpty {
     let folder = options.out.appendingPathComponent("replaced"), name = "candidates-\(hex12(previousSheet)).tsv"
-    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-    if !FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path) {
-        try previousSheet.write(to: folder.appendingPathComponent(name))
+    let copy = folder.appendingPathComponent(name)
+    // A copy already there stands for the sheet only if it holds the sheet's bytes: an earlier run
+    // may have stopped while writing it. A new copy appears whole or not at all.
+    do {
+        guard try Data(contentsOf: copy) == previousSheet else {
+            stop("\(copy.path) doesn't hold the sheet's bytes; move it aside and run again.")
+        }
+    } catch CocoaError.fileReadNoSuchFile {
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try previousSheet.write(to: copy, options: .atomic)
+        } catch {
+            stop("can't keep the sheet as \(copy.path): \(error.localizedDescription)")
+        }
+    } catch {
+        stop("can't check \(copy.path): \(error.localizedDescription)")
     }
     kept = "replaced/" + name
 }
@@ -316,7 +344,7 @@ if !setAside.isEmpty {
     let whys = Dictionary(grouping: setAside, by: { $0[0] }).map { "\($0.value.count) \($0.key)" }.sorted()
     summary += ", \(setAside.count) set aside in labels-not-carried.tsv (\(whys.joined(separator: ", ")))"
 }
-if previousSheet != nil, previous == nil { summary += "; the previous candidates.tsv couldn't be read" }
+if previousSheet != nil, previous == nil { summary += "; the previous candidates.tsv couldn't be read as a sheet" }
 if let kept { summary += "; the sheet it replaced is kept as \(kept)" }
 summary += "\n\n"
 for provider in Provider.allCases {

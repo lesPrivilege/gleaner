@@ -101,7 +101,7 @@ import Testing
     }
 
     /// A sheet that isn't UTF-8 is kept as it was, and none of its labels is guessed at.
-    @Test func aSheetThatCannotBeReadIsKept() throws {
+    @Test func aSheetThatIsNotUTF8IsKept() throws {
         let spike = try Spike(Self.reply)
         var bytes = Data(try spike.run().labeled { _ in "" }.text().utf8)
         bytes.append(0xFF)
@@ -109,7 +109,53 @@ import Testing
 
         #expect(try spike.run().rows.allSatisfy { $0["label"] == "" })
         #expect(try Data(contentsOf: spike.out.appendingPathComponent("replaced/candidates-\(hex12(bytes)).tsv")) == bytes)
-        #expect(try spike.read("summary.txt").contains("labels: 0 carried; the previous candidates.tsv couldn't be read; the sheet it replaced is kept"))
+        #expect(try spike.read("summary.txt").contains("labels: 0 carried; the previous candidates.tsv couldn't be read as a sheet; the sheet it replaced is kept"))
+    }
+
+    /// A sheet that is there but can't be opened may hold labels: the run stops before it replaces
+    /// anything, and says so without its text.
+    @Test func aSheetThatCannotBeOpenedStopsTheRun() throws {
+        let spike = try Spike(Self.reply)
+        try spike.run().labeled { _ in "PRIVATE-7f3a" }.text().write(to: spike.sheet, atomically: true, encoding: .utf8)
+        let outputs = try spike.outputs()
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: spike.sheet.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: spike.sheet.path) }
+        let denied = try #require(throws: CocoaError.self) { try Data(contentsOf: spike.sheet) }
+        try #require(denied.code == .fileReadNoPermission)
+
+        let run = try spike.launch()
+        try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: spike.sheet.path)
+        #expect(run.status != 0)
+        #expect(run.stderr.contains("can't open"))
+        #expect(!run.stderr.contains("PRIVATE-7f3a"))
+        #expect(try spike.outputs() == outputs)
+    }
+
+    /// A copy already in `replaced/` stands for the sheet only if it holds the sheet's bytes, since an
+    /// earlier run may have stopped while writing it. A short one stops the run before it replaces
+    /// anything; the exact one lets the labels be set aside as usual.
+    @Test(arguments: [false, true]) func aCopyInReplacedMustHoldTheSheet(exact: Bool) throws {
+        let spike = try Spike(Self.reply)
+        let text = try spike.run().labeled { _ in "PRIVATE-7f3a" }.text()
+        try text.write(to: spike.sheet, atomically: true, encoding: .utf8)
+        let name = "replaced/candidates-\(hex12(Data(text.utf8))).tsv", copy = Data((exact ? text : String(text.prefix(text.count / 2))).utf8)
+        try FileManager.default.createDirectory(at: spike.out.appendingPathComponent("replaced"), withIntermediateDirectories: true)
+        try copy.write(to: spike.out.appendingPathComponent(name))
+        // Neither label can be carried now, so the sheet has to be kept before it is replaced.
+        try spike.write("The [report](out/report.md) is out of date.")
+        let outputs = try spike.outputs()
+
+        let run = try spike.launch()
+        #expect(!run.stderr.contains("PRIVATE-7f3a"))
+        #expect(try Data(contentsOf: spike.out.appendingPathComponent(name)) == copy)
+        if exact {
+            #expect(run.status == 0)
+            #expect(try Sheet(spike.read("labels-not-carried.tsv")).rows.map { $0["why"] } == ["changed", "gone"])
+        } else {
+            #expect(run.status != 0)
+            #expect(run.stderr.contains("doesn't hold the sheet's bytes"))
+            #expect(try spike.outputs() == outputs)
+        }
     }
 }
 
@@ -137,22 +183,38 @@ struct Spike {
 
     /// Runs `gleaner-spike` on the home; the sheet it writes.
     @discardableResult func run() throws -> Sheet {
+        #expect(try launch().status == 0)
+        return Sheet(try read("candidates.tsv"))
+    }
+
+    /// Runs `gleaner-spike` on the home: how it exited, and what it said on stderr.
+    func launch() throws -> (status: Int32, stderr: String) {
         let spike = Bundle.module.bundleURL.deletingLastPathComponent().appendingPathComponent("gleaner-spike")
         try #require(FileManager.default.isExecutableFile(atPath: spike.path), "build gleaner-spike first")
-        let process = Process()
+        let process = Process(), errors = Pipe()
         process.executableURL = spike
         process.arguments = ["--claude-root", root.appendingPathComponent("claude").path,
                              "--codex-home", root.appendingPathComponent("codex").path, "--out", out.path]
         process.standardOutput = FileHandle.nullDevice
-        process.standardError = FileHandle.nullDevice
+        process.standardError = errors
         try process.run()
+        let said = errors.fileHandleForReading.readDataToEndOfFile()
         process.waitUntilExit()
-        #expect(process.terminationStatus == 0)
-        return Sheet(try read("candidates.tsv"))
+        return (process.terminationStatus, String(decoding: said, as: UTF8.self))
     }
 
     /// A file `gleaner-spike` wrote under `out/`.
     func read(_ name: String) throws -> String { try String(contentsOf: out.appendingPathComponent(name), encoding: .utf8) }
+
+    /// Every file under `out/`, by its path there, with its bytes.
+    func outputs() throws -> [String: Data] {
+        var files: [String: Data] = [:]
+        for name in FileManager.default.subpaths(atPath: out.path) ?? [] {
+            let url = out.appendingPathComponent(name)
+            if try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true { files[name] = try Data(contentsOf: url) }
+        }
+        return files
+    }
 }
 
 /// A sheet in gleaner-spike's format: its header, and each row by column name.
