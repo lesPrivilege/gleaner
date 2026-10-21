@@ -257,7 +257,7 @@ swift build -c release && .build/release/gleaner-spike
 
 Reads `~/.claude/projects` and `~/.codex` read-only, checks each named file with the same read-only git commands as the app (`git status`, `git rev-parse`, `git log`), and writes under `out/`:
 
-- `candidates.tsv`: one row per candidate, admitted or not, with the request, the evidence, what was found at the path, whether the delivery rule admits it (`admitted`, yes or no), and empty `label` and `note` columns to fill in. A rerun keeps the labels already entered. Paths start with `~`, and text is redacted.
+- `candidates.tsv`: one row per candidate, admitted or not, with the request, the evidence, what was found at the path, whether the delivery rule admits it (`admitted`, yes or no), and empty `label` and `note` columns to fill in. A rerun keeps the labels already entered for each row it writes again, read from the second and third columns, so keep the columns in place and the lines ending in LF. Paths start with `~`, and text is redacted.
 - `recall-sample.md`: a random sample of final replies with the candidates found in each, for marking misses.
 - `summary.txt`: counts per agent, unknown record types, and what was found at the named paths.
 - `locators.internal.tsv`: each candidate's full log path, log lines and file path, for your own checks; never share it.
@@ -265,3 +265,11 @@ Reads `~/.claude/projects` and `~/.codex` read-only, checks each named file with
 `out/` holds log excerpts and is git-ignored.
 
 Options: `--claude-root DIR`, `--codex-home DIR`, `--out DIR`, `--sample N`, `--seed N`.
+
+Label the rows you check `delivery`, `not_delivery` or `uncertain`, and leave the rest empty. Then count the labels against the rule:
+
+```bash
+python3 scripts/score-candidates.py out/candidates.tsv
+```
+
+It prints JSON: how many rows have each outcome, the rule's precision and its recall among the rows labeled `delivery` or `not_delivery`, and the ids of the deliveries it rejected and the non-deliveries it admitted. The rates hold only for the rows labeled, and the recall is not Gate 1's: a delivery the extractor missed is not in the sheet. It reads only the sheet, never writes it, and prints none of its text but the ids. A sheet it can't read whole gets no report: stderr says which lines are wrong, and it exits 2. Its tests: `python3 -m unittest discover -s scripts/tests`.

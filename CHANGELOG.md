@@ -33,6 +33,10 @@ Not part of 0.1.0: these changes come after it is tagged.
 
 - Adds `gleaner-index --home <folder>`, a development tool, never bundled: it indexes a synthetic home once, as the app does with `-GleanerHome`, without the window, so an agent can measure what Gleaner finds through `gleaner` and `gleaner mcp`. It prints the library's index and what the run read and added as JSON, and `--now` pins its clock. It refuses no `--home`, your own home folder, and a library a later Gleaner opened. The app and the tool set up the indexer in one place (`Indexer(folders:)`).
 
+### Spike A
+
+- Adds `scripts/score-candidates.py`, which counts a labeled `candidates.tsv` against the delivery rule: the rows with each outcome, the rule's precision and its recall among the rows labeled `delivery` or `not_delivery`, and the ids where label and rule disagree, as JSON with the sheet's sha256. It reads only the sheet and prints none of its text but the ids; a sheet it can't read whole, such as one from before the `admitted` column, gets no report and the lines that are wrong (exit 2).
+
 ### gleaner mcp
 
 - Adds `gleaner mcp`, a stdio MCP server in the same executable, built on the official Swift SDK (0.12.1). It serves the seven commands as the tools `gleaner_find`, `gleaner_show`, `gleaner_read`, `gleaner_outline`, `gleaner_resolve`, `gleaner_handoff` and `gleaner_verify`, with the command's arguments by the same names; `gleaner_verify` takes a delivery's id, or a reference as an object.

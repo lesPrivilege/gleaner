@@ -287,6 +287,8 @@ After both gates: visual polish, incremental indexing performance, cache cleanup
 
 The sheet lists every candidate, admitted or not, so the §9 rule can be measured against the labels after release.
 
+A person labels the rows they check `delivery`, `not_delivery` or `uncertain`. `scripts/score-candidates.py` counts the rows labeled `delivery` or `not_delivery` against `admitted`, and gives the rule's precision, its recall among those rows, and the ids where label and rule disagree. That recall is not Gate 1's: a delivery the extractor never offered is not in the sheet, and the recall sample measures those. The rates hold for the labeled rows alone, which need not represent the rest unless they were drawn at random.
+
 `out/` contains log excerpts and is never committed.
 
 ## 14. Beyond v0.1: connections and reasoning (direction, not scheduled)
