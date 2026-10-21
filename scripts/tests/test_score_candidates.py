@@ -124,11 +124,13 @@ class ScoreCandidatesTests(unittest.TestCase):
             'no id column': (self.without('id'), 'no id column'),
             'no label column': (self.without('label'), 'no label column'),
             'a column twice': (self.sheet([row + '\tx' for row in self.rows], header=self.header + '\tnote'),
-                               "the header repeats 'note'"),
+                               'the header gives columns 3, 22 the same name'),
             'a row short of a cell': (self.sheet([first.rsplit('\t', 1)[0], *self.rows[1:]]), 'line 2: 20 cells'),
             'a row with a cell more': (self.sheet([first + '\textra', *self.rows[1:]]), 'line 2: 22 cells'),
             'a blank line': (self.sheet([first, '', *self.rows[1:]]), 'line 3: 1 cell,'),
             'an empty id': (self.sheet([self.edited(first, id=''), *self.rows[1:]]), 'line 2: no id'),
+            'an id gleaner-spike never writes': (self.sheet([self.edited(first, id='00000000000A'), *self.rows[1:]]),
+                                                 'line 2: an id other than'),
             'an id twice': (self.sheet([first, self.edited(second, id=self.cell(first, 'id')), *self.rows[2:]]),
                             'line 3: repeats the id of line 2'),
             'a label in capitals': (self.sheet([self.edited(first, label='Delivery'), *self.rows[1:]]), 'line 2: a label'),
@@ -159,27 +161,34 @@ class ScoreCandidatesTests(unittest.TestCase):
         self.assertEqual([line.split(': ')[1] for line in err.splitlines()], ['line 3', 'line 6'])
 
     def test_lists_twenty_problems_and_counts_the_rest(self):
-        rows = [self.edited(self.rows[0], id=f'r{n}', label='?') for n in range(25)]
+        rows = [self.edited(self.rows[0], id=f'{n:012x}', label='?') for n in range(25)]
         lines = self.refusal(self.sheet(rows)).splitlines()
         self.assertEqual(len(lines), 21)
         self.assertTrue(lines[-1].endswith('and 5 more'))
 
-    def test_prints_nothing_from_the_other_cells(self):
+    def test_prints_nothing_from_the_sheet_but_ids(self):
         secret = 'PRIVATE-7f3a'
         others = [name for name in self.names if name not in ('id', 'label', 'admitted')]
-        rows = [self.edited(row, **{name: f'{secret} {name}' for name in others}) for row in self.rows]
+        rows = [self.edited(row, **dict.fromkeys(others, secret)) for row in self.rows]
         status, out, err = self.run_on(self.sheet(rows))
         self.assertEqual(status, 0)
         self.assertNotIn(secret, out + err)
+        names = list(self.names)
+        i, j = names.index('id'), names.index('request')
+        names[i], names[j] = names[j], names[i]
         refused = {
             'a label that is private text': self.sheet([self.edited(rows[0], label=secret), *rows[1:]]),
+            'an id that is private text': self.sheet([self.edited(rows[0], id=secret), *rows[1:]]),
+            'a header that calls the request column id': self.sheet(rows, header='\t'.join(names)),
+            'a header that repeats private text': self.sheet([row + '\tx\tx' for row in rows],
+                                                             header=f'{self.header}\t{secret}\t{secret}'),
+            'a header joined to the first row': self.sheet(rows[1:], header=self.header + '\t' + rows[0]),
             'a sheet whose header was deleted': self.sheet(rows[1:], header=rows[0]),
             'a row with a cell more': self.sheet([rows[0] + f'\t{secret}', *rows[1:]]),
         }
         for case, data in refused.items():
             with self.subTest(case):
                 self.assertNotIn(secret, self.refusal(data))
-
 
 if __name__ == '__main__':
     unittest.main()

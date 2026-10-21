@@ -24,11 +24,11 @@ is not the recall Gate 1 asks for (SPEC §12); the recall sample measures that.
 
 The sheet is read once and never written. Its format is the one gleaner-spike writes: UTF-8, a
 header row, LF line endings, cells split by tabs and no quoting, so a quote is an ordinary
-character. Columns are found by name. A sheet that doesn't read whole gets no report: stderr says
-what is wrong, by line, and the exit status is 2. Nothing from the sheet's cells is printed but
-the ids.
+character. Columns are found by name, and each id must be the 12 hex digits gleaner-spike writes.
+A sheet that doesn't read whole gets no report: stderr says what is wrong, by line or column, and
+the exit status is 2. Nothing from the sheet is printed but those ids.
 """
-import argparse, hashlib, json, sys
+import argparse, hashlib, json, re, sys
 
 LABELS = ('delivery', 'not_delivery', 'uncertain', '')
 # Every label and admission pair, and the outcome it counts as.
@@ -42,6 +42,7 @@ NOTE = ('The rates count only rows labeled delivery or not_delivery, which need 
         'rest unless drawn at random. Deliveries the extractor never offered are not in the sheet, '
         "so admission_recall is not Gate 1's recall (SPEC section 12).")
 SHOWN = 20  # problems listed before the rest are counted
+ID = re.compile('[0-9a-f]{12}')  # the only text from the sheet a report prints
 
 
 class Refused(Exception):
@@ -66,9 +67,10 @@ def rows(data):
     missing = [name for name in ('id', 'label', 'admitted') if name not in header]
     if missing:
         raise Refused([f"no {', '.join(missing)} column{'s' if len(missing) > 1 else ''} in the header"])
-    repeated = sorted({name for name in header if header.count(name) > 1})
+    # A header cell may be text from a row, so a repeated name is told by its columns alone.
+    repeated = [str(column) for column, name in enumerate(header, start=1) if header.count(name) > 1]
     if repeated:
-        raise Refused(['the header repeats ' + ', '.join(map(repr, repeated))])
+        raise Refused(['the header gives columns ' + ', '.join(repeated) + ' the same name'])
 
     at = {name: header.index(name) for name in ('id', 'label', 'admitted')}
     found, problems, first = [], [], {}
@@ -80,6 +82,8 @@ def rows(data):
         row_id, label, admitted = cells[at['id']], cells[at['label']], cells[at['admitted']]
         if not row_id:
             problems.append(f'line {number}: no id')
+        elif not ID.fullmatch(row_id):
+            problems.append(f'line {number}: an id other than the 12 hex digits gleaner-spike writes')
         elif row_id in first:
             problems.append(f'line {number}: repeats the id of line {first[row_id]}')
         else:
