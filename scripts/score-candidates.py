@@ -22,9 +22,9 @@ Both rates hold for the labeled rows alone, which need not represent the rest un
 drawn at random. A delivery the extractor never offered is not in the sheet, so admission_recall
 is not the recall Gate 1 asks for (SPEC §12); the recall sample measures that.
 
-The sheet is read once and never written. Its format is the one gleaner-spike writes: UTF-8, a
-header row, LF line endings, cells split by tabs and no quoting, so a quote is an ordinary
-character. Columns are found by name, and each id must be the 12 hex digits gleaner-spike writes.
+The sheet is read once and never written. Its format is the one gleaner-spike writes and reads back:
+UTF-8, a header row, a row per line (LF, CRLF or CR), cells split by tabs and no quoting, so a quote
+is an ordinary character. Columns are found by name, and each id must be the 12 hex digits gleaner-spike writes.
 A sheet that doesn't read whole gets no report: stderr says what is wrong, by line or column, and
 the exit status is 2. Nothing from the sheet is printed but those ids.
 """
@@ -56,11 +56,7 @@ def rows(data):
     except UnicodeDecodeError as error:
         line = data.count(b'\n', 0, error.start) + 1
         raise Refused([f'line {line}: not UTF-8'])
-    if '\r' in text:
-        # gleaner-spike reads its labels back from LF lines only, so a rerun would drop them all.
-        line = text.count('\n', 0, text.index('\r')) + 1
-        raise Refused([f'line {line}: a carriage return; save the sheet with LF line endings, as gleaner-spike writes it'])
-    lines = text.split('\n')
+    lines = text.replace('\r\n', '\n').replace('\r', '\n').split('\n')
     if lines[-1] == '':
         lines.pop()
     header = lines[0].split('\t') if lines else []

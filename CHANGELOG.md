@@ -36,6 +36,7 @@ Not part of 0.1.0: these changes come after it is tagged.
 ### Spike A
 
 - Adds `scripts/score-candidates.py`, which counts a labeled `candidates.tsv` against the delivery rule: the rows with each outcome, the rule's precision and its recall among the rows labeled `delivery` or `not_delivery`, and the ids where label and rule disagree, as JSON with the sheet's sha256. It reads only the sheet and prints none of its text but the ids; a sheet it can't read whole, such as one from before the `admitted` column, gets no report and the lines that are wrong (exit 2).
+- A rerun of `gleaner-spike` gives a label back only to the candidate it was given for: the same id, and the same `fingerprint` of the path and the reply's text. It finds labels by column name, from LF, CRLF or CR lines. A label it can't give back goes to `labels-not-carried.tsv` with why (`changed`, `gone` or `unreadable`), and a sheet whose replacement would lose anything a person entered is kept in `out/replaced/` first. Before, a sheet saved with CRLF lost every label, moved columns scrambled them, a candidate that disappeared took its label with it, and a reply rewritten in place kept the labels given to its old text.
 
 ### gleaner mcp
 

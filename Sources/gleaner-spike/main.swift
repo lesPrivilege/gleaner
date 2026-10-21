@@ -1,5 +1,6 @@
 // Spike A: read-only delivery extraction over local agent logs.
-// Writes a labeling sheet, a recall sample, and a summary. See docs/SPEC.md §12–13.
+// Writes a labeling sheet, whose labels a rerun carries over, a recall sample, and a summary.
+// See docs/SPEC.md §12–13.
 
 import CryptoKit
 import Foundation
@@ -34,6 +35,11 @@ struct Options {
     }
 }
 
+/// The first 12 hex digits of the SHA-256 of `data`.
+func hex12(_ data: Data) -> String {
+    SHA256.hash(data: data).prefix(6).map { String(format: "%02x", $0) }.joined()
+}
+
 /// One labeling row: a path named in one reply, with every place the reply names it.
 struct Candidate {
     var session: SessionInfo
@@ -43,11 +49,11 @@ struct Candidate {
     var first: (part: ReplyPart, mention: Mention) { delivery.evidence[0] }
     var path: String { delivery.path }
 
-    /// Stable across reruns, so labels survive regeneration.
-    var id: String {
-        let key = "\(session.logPath)\n\(first.part.line)\n\(path)"
-        return SHA256.hash(data: Data(key.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
-    }
+    /// Stable across reruns; with `fingerprint`, how a label finds its row again.
+    var id: String { hex12(Data("\(session.logPath)\n\(first.part.line)\n\(path)".utf8)) }
+
+    /// What a label judges: this reply naming this path. A rerun carries a label only while it holds.
+    var fingerprint: String { hex12(Data("\(path)\n\(turn.reply)".utf8)) }
 }
 
 /// Deterministic sampling so a labeled sheet can be regenerated.
@@ -161,33 +167,79 @@ func share(_ text: String?) -> String {
     return Redactor.redact(text.replacingOccurrences(of: home, with: "~"))
 }
 
-/// Labels already entered in a previous candidates.tsv, by row id.
-func previousLabels(_ url: URL) -> [String: (label: String, note: String)] {
-    guard let text = try? String(contentsOf: url, encoding: .utf8) else { return [:] }
-    var labels: [String: (String, String)] = [:]
-    for line in text.split(separator: "\n").dropFirst() {
-        let fields = line.split(separator: "\t", omittingEmptySubsequences: false).map(String.init)
-        if fields.count > 2, !(fields[1].isEmpty && fields[2].isEmpty) { labels[fields[0]] = (fields[1], fields[2]) }
-    }
-    return labels
-}
+/// What a person entered on a previous sheet, read by column name from LF, CRLF or CR lines: the rows
+/// that hold a label or note, and those that can't be read. Nil when the sheet isn't UTF-8, repeats a
+/// column name, or has no id, label or note column.
+struct Entered {
+    var header: [String]
+    var id: Int, label: Int, note: Int, fingerprint: Int?
+    var rows: [[String]]
 
-let candidatesURL = options.out.appendingPathComponent("candidates.tsv")
-let labels = previousLabels(candidatesURL)
+    init?(_ data: Data) {
+        guard var text = String(data: data, encoding: .utf8) else { return nil }
+        if text.first == "\u{FEFF}" { text.removeFirst() }
+        let lines = text.split { $0 == "\n" || $0 == "\r\n" || $0 == "\r" }
+            .map { $0.split(separator: "\t", omittingEmptySubsequences: false).map(String.init) }
+        guard let header = lines.first, Set(header).count == header.count, let id = header.firstIndex(of: "id"),
+              let label = header.firstIndex(of: "label"), let note = header.firstIndex(of: "note") else { return nil }
+        (self.header, self.id, self.label, self.note) = (header, id, label, note)
+        fingerprint = header.firstIndex(of: "fingerprint")
+        rows = lines.dropFirst().filter { $0.count != header.count || !$0[label].isEmpty || !$0[note].isEmpty }
+    }
+}
 
 let header = [
     "id", "label", "note", "admitted", "provider", "project", "session_title", "delivered_at", "syntax", "anchors",
     "raw_targets", "path", "kind", "size", "sha256_12", "git", "occurrences", "replies_naming_path",
-    "request", "evidence", "session_id",
+    "request", "evidence", "session_id", "fingerprint",
 ]
+
+// A label carries to the candidate it was given for: the same id, with the same fingerprint. Any
+// other is set aside with why. A sheet whose replacement would lose anything a person entered, a label
+// set aside or a column of its own, is kept first.
+let candidatesURL = options.out.appendingPathComponent("candidates.tsv")
+let previousSheet = try? Data(contentsOf: candidatesURL)
+let previous = previousSheet.flatMap(Entered.init)
+var carried: [String: (label: String, note: String)] = [:]
+var setAside: [[String]] = []  // why, then the row as it was
+if let previous {
+    let now = Dictionary(candidates.map { ($0.id, $0.fingerprint) }, uniquingKeysWith: { first, _ in first })
+    let rowsWithID = Dictionary(previous.rows.filter { $0.count == previous.header.count }.map { ($0[previous.id], 1) },
+                                uniquingKeysWith: +)
+    for row in previous.rows {
+        let why: String
+        if row.count != previous.header.count || row[previous.id].isEmpty || rowsWithID[row[previous.id]] != 1 {
+            why = "unreadable"
+        } else if let fingerprint = now[row[previous.id]] {
+            if let column = previous.fingerprint, row[column] == fingerprint {
+                carried[row[previous.id]] = (row[previous.label], row[previous.note])
+                continue
+            }
+            why = "changed"
+        } else {
+            why = "gone"
+        }
+        setAside.append([why] + row)
+    }
+}
+var kept: String?
+if let previousSheet, previous?.header != header || !setAside.isEmpty {
+    let folder = options.out.appendingPathComponent("replaced"), name = "candidates-\(hex12(previousSheet)).tsv"
+    try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+    if !FileManager.default.fileExists(atPath: folder.appendingPathComponent(name).path) {
+        try previousSheet.write(to: folder.appendingPathComponent(name))
+    }
+    kept = "replaced/" + name
+}
+
 var tsv = header.joined(separator: "\t") + "\n"
 var locatorRows = ["id", "log", "lines", "path"].joined(separator: "\t") + "\n"
 for candidate in candidates {
     let state = states[candidate.path]
     let evidence = candidate.delivery.evidence
-    let previous = labels[candidate.id]
+    let labeled = carried[candidate.id]
     let row: [String?] = [
-        candidate.id, previous?.label, previous?.note,
+        candidate.id, labeled?.label, labeled?.note,
         // What the §9 rule decides, next to the label it is measured against.
         Admission.admits(candidate.delivery) ? "yes" : "no",
         candidate.session.provider.rawValue,
@@ -207,12 +259,15 @@ for candidate in candidates {
         share(clip(candidate.turn.request, 300)),
         share(evidence.map(\.mention.excerpt).joined(separator: " ‖ ")),
         candidate.session.id,
+        candidate.fingerprint,
     ]
     tsv += row.map(cell).joined(separator: "\t") + "\n"
     locatorRows += [candidate.id, candidate.session.logPath, evidence.map { String($0.part.line) }.joined(separator: ","), candidate.path]
         .map(cell).joined(separator: "\t") + "\n"
 }
 try tsv.write(to: candidatesURL, atomically: true, encoding: .utf8)
+try ([["why"] + (previous?.header ?? header)] + setAside).map { $0.joined(separator: "\t") + "\n" }.joined()
+    .write(to: options.out.appendingPathComponent("labels-not-carried.tsv"), atomically: true, encoding: .utf8)
 try locatorRows.write(to: options.out.appendingPathComponent("locators.internal.tsv"), atomically: true, encoding: .utf8)
 
 var rng = SplitMix64(state: options.seed)
@@ -256,6 +311,14 @@ for (index, (session, turn)) in sample.enumerated() {
 try recall.write(to: options.out.appendingPathComponent("recall-sample.md"), atomically: true, encoding: .utf8)
 
 var summary = "Gleaner Spike A — \(Date().formatted(dateFormat))\n\n"
+summary += "labels: \(carried.count) carried"
+if !setAside.isEmpty {
+    let whys = Dictionary(grouping: setAside, by: { $0[0] }).map { "\($0.value.count) \($0.key)" }.sorted()
+    summary += ", \(setAside.count) set aside in labels-not-carried.tsv (\(whys.joined(separator: ", ")))"
+}
+if previousSheet != nil, previous == nil { summary += "; the previous candidates.tsv couldn't be read" }
+if let kept { summary += "; the sheet it replaced is kept as \(kept)" }
+summary += "\n\n"
 for provider in Provider.allCases {
     let providerLogs = logs.filter { $0.session.provider == provider }
     let turns = providerLogs.flatMap(\.turns)
@@ -285,4 +348,4 @@ for provider in Provider.allCases {
 }
 try summary.write(to: options.out.appendingPathComponent("summary.txt"), atomically: true, encoding: .utf8)
 print(summary)
-print("wrote \(options.out.path)/{candidates.tsv,recall-sample.md,summary.txt}")
+print("wrote \(options.out.path)/{candidates.tsv,labels-not-carried.tsv,recall-sample.md,summary.txt}")

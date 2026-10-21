@@ -280,7 +280,8 @@ After both gates: visual polish, incremental indexing performance, cache cleanup
 
 `swift run gleaner-spike` (see `README.md`) runs the adapters and extractor read-only over the local logs and writes, under `out/`:
 
-- `candidates.tsv` — one row per candidate with request, evidence, resolution, whether the §9 rule admits it (`admitted`, yes or no), and empty `label` / `note` columns.
+- `candidates.tsv` — one row per candidate with request, evidence, resolution, whether the §9 rule admits it (`admitted`, yes or no), empty `label` / `note` columns, and a `fingerprint` of the path and the reply's text.
+- `labels-not-carried.tsv` — the labels a rerun couldn't carry, each with why; `replaced/` keeps, byte for byte, a sheet whose replacement would lose anything a person entered.
 - `recall-sample.md` — a random sample of final replies with the candidates found in each, for marking misses.
 - `summary.txt` — counts per provider, unknown record types, resolution stats.
 - `locators.internal.tsv` — full local paths for the owner's checks; never shared.
@@ -288,6 +289,8 @@ After both gates: visual polish, incremental indexing performance, cache cleanup
 The sheet lists every candidate, admitted or not, so the §9 rule can be measured against the labels after release.
 
 A person labels the rows they check `delivery`, `not_delivery` or `uncertain`. `scripts/score-candidates.py` counts the rows labeled `delivery` or `not_delivery` against `admitted`, and gives the rule's precision, its recall among those rows, and the ids where label and rule disagree. That recall is not Gate 1's: a delivery the extractor never offered is not in the sheet, and the recall sample measures those. The rates hold for the labeled rows alone, which need not represent the rest unless they were drawn at random.
+
+A rerun carries a label only to the same candidate judged on the same text: the row with its id whose fingerprint (the SHA-256 of the path and the reply's text) is unchanged. Labels are found by column name, from LF, CRLF or CR lines. Any other label is set aside with why: `changed` when the reply or the path differs or the row has no fingerprint, `gone` when no candidate has its id, `unreadable` when its row has the wrong number of cells, no id, or an id on two labeled rows. So a rerun never drops a label, and never gives one to text it wasn't given for.
 
 `out/` contains log excerpts and is never committed.
 

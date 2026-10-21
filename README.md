@@ -257,7 +257,8 @@ swift build -c release && .build/release/gleaner-spike
 
 Reads `~/.claude/projects` and `~/.codex` read-only, checks each named file with the same read-only git commands as the app (`git status`, `git rev-parse`, `git log`), and writes under `out/`:
 
-- `candidates.tsv`: one row per candidate, admitted or not, with the request, the evidence, what was found at the path, whether the delivery rule admits it (`admitted`, yes or no), and empty `label` and `note` columns to fill in. A rerun keeps the labels already entered for each row it writes again, read from the second and third columns, so keep the columns in place and the lines ending in LF. Paths start with `~`, and text is redacted.
+- `candidates.tsv`: one row per candidate, admitted or not, with the request, the evidence, what was found at the path, whether the delivery rule admits it (`admitted`, yes or no), empty `label` and `note` columns to fill in, and a `fingerprint` of the path and the reply. A rerun gives each label back to the row with its id and fingerprint, however the sheet was saved. Paths start with `~`, and text is redacted.
+- `labels-not-carried.tsv`: the labels a rerun couldn't give back, each with why: `changed` (the reply or the path is not the one labeled, or the row has no fingerprint), `gone` (no such candidate now) or `unreadable` (a row with the wrong number of cells, no id, or an id on two labeled rows). `replaced/` keeps, byte for byte, any sheet a rerun replaced that held something it couldn't carry.
 - `recall-sample.md`: a random sample of final replies with the candidates found in each, for marking misses.
 - `summary.txt`: counts per agent, unknown record types, and what was found at the named paths.
 - `locators.internal.tsv`: each candidate's full log path, log lines and file path, for your own checks; never share it.

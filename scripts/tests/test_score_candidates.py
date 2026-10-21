@@ -107,6 +107,8 @@ class ScoreCandidatesTests(unittest.TestCase):
             'another note': self.sheet([self.edited(self.rows[0], note='synthetic: another note'), *self.rows[1:]]),
             'a byte order mark': b'\xef\xbb\xbf' + data,
             'no newline after the last row': data.rstrip(b'\n'),
+            'CR LF line endings': data.replace(b'\n', b'\r\n'),
+            'CR line endings': data.replace(b'\n', b'\r'),
         }
         for case, variant in variants.items():
             with self.subTest(case):
@@ -124,9 +126,9 @@ class ScoreCandidatesTests(unittest.TestCase):
             'no id column': (self.without('id'), 'no id column'),
             'no label column': (self.without('label'), 'no label column'),
             'a column twice': (self.sheet([row + '\tx' for row in self.rows], header=self.header + '\tnote'),
-                               'the header gives columns 3, 22 the same name'),
-            'a row short of a cell': (self.sheet([first.rsplit('\t', 1)[0], *self.rows[1:]]), 'line 2: 20 cells'),
-            'a row with a cell more': (self.sheet([first + '\textra', *self.rows[1:]]), 'line 2: 22 cells'),
+                               'the header gives columns 3, 23 the same name'),
+            'a row short of a cell': (self.sheet([first.rsplit('\t', 1)[0], *self.rows[1:]]), 'line 2: 21 cells'),
+            'a row with a cell more': (self.sheet([first + '\textra', *self.rows[1:]]), 'line 2: 23 cells'),
             'a blank line': (self.sheet([first, '', *self.rows[1:]]), 'line 3: 1 cell,'),
             'an empty id': (self.sheet([self.edited(first, id=''), *self.rows[1:]]), 'line 2: no id'),
             'an id gleaner-spike never writes': (self.sheet([self.edited(first, id='00000000000A'), *self.rows[1:]]),
@@ -139,7 +141,6 @@ class ScoreCandidatesTests(unittest.TestCase):
             'yes as a label': (self.sheet([self.edited(first, label='yes'), *self.rows[1:]]), 'line 2: a label'),
             'admitted in capitals': (self.sheet([self.edited(first, admitted='Yes'), *self.rows[1:]]), 'line 2: admitted'),
             'admitted empty': (self.sheet([self.edited(first, admitted=''), *self.rows[1:]]), 'line 2: admitted'),
-            'CR LF line endings': (data.replace(b'\n', b'\r\n'), 'line 1: a carriage return'),
             'not UTF-8': (data.replace(b'synthetic: the chart', b'synthetic: the \xff chart'), 'line 5: not UTF-8'),
             'an empty file': (b'', 'no id, label, admitted columns in the header'),
         }
