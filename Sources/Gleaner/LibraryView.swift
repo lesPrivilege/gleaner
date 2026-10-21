@@ -95,6 +95,10 @@ struct LibraryView: View {
 /// Every delivery, what waits on the person's review, each project with its collections, and the
 /// sources Gleaner reads.
 struct Sidebar: View {
+    /// Where a heading and a name begin: on the icons' edge, as in the rows with icons, rather than
+    /// against the selection's edge. A collection keeps the outline's indent beneath its project.
+    static let inset = Space.s
+
     @Environment(LibraryModel.self) private var model
     @State private var renaming: Organization.Project?
     @State private var newName = ""
@@ -112,7 +116,7 @@ struct Sidebar: View {
                 .tag(Place.toReview)
                 .accessibilityLabel("To Review, \(Wording.toReview(waiting))")
                 .help(Wording.toReview(waiting))
-            Section("Projects") {
+            Section {
                 ForEach(model.projects) { project in
                     let units = model.organization.units(in: project.key)
                     if units.isEmpty && !naming(project.key, inside: nil) {
@@ -139,8 +143,10 @@ struct Sidebar: View {
                         }
                     }
                 }
+            } header: {
+                Text("Projects").padding(.leading, Self.inset)
             }
-            Section("Library") {
+            Section {
                 // A source that needs a look shows the triangle at the row's end, as Mail marks a
                 // mailbox it couldn't read; the agent's mark stays the agent's.
                 HStack {
@@ -154,6 +160,8 @@ struct Sidebar: View {
                 .accessibilityValue(model.logTrouble.map { "Needs a look: " + $0 } ?? "")
                 .tag(Place.sources)
                 .help(model.logTrouble ?? "Agent logs, your corrections, and storage")
+            } header: {
+                Text("Library").padding(.leading, Self.inset)
             }
         }
         .alert("Rename Project", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
@@ -172,6 +180,7 @@ struct Sidebar: View {
         // The name alone: what a project is made of is metadata, behind the help tag. Its works are
         // counted there too, never as a badge, which counts only what waits (To Review).
         Text(project.name).lineLimit(1).truncationMode(.middle)
+        .padding(.leading, Self.inset)
         .accessibilityLabel("\(project.name), \(Wording.projectOrigin(project.origin)), \(Wording.count(project.works.count, "work"))")
         .tag(Place.project(project.key))
         .help("\(Wording.projectOrigin(project.origin)) · \(Wording.projectCounts(project))")

@@ -18,6 +18,7 @@ struct UnitSidebarRow: View {
             let works = model.organization.works(in: unit.key, inner: true).count
             // Under its project, as the indent shows; its works are counted in the help tag.
             Text(unit.name).lineLimit(1).truncationMode(.middle)
+                .padding(.leading, Sidebar.inset)
                 .tag(Place.unit(unit.key))
                 .accessibilityLabel("\(unit.name), collection, \(Wording.count(works, "work"))")
                 .help("\(Wording.unitPath(unit, in: model.organization)) · \(Wording.count(works, "work"))")
@@ -59,6 +60,7 @@ struct NamingField: View {
 
     var body: some View {
         TextField("Collection Name", text: $name, prompt: Text("New Collection"))
+            .padding(.leading, Sidebar.inset)
             .focused($focused)
             .onSubmit(commit)
             .onExitCommand { model.naming = nil }
