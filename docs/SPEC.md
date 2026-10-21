@@ -280,9 +280,9 @@ After both gates: visual polish, incremental indexing performance, cache cleanup
 
 `swift run gleaner-spike` (see `README.md`) runs the adapters and extractor read-only over the local logs and writes, under `out/`:
 
-- `candidates.tsv` — one row per candidate with request, evidence, resolution, whether the §9 rule admits it (`admitted`, yes or no), empty `label` / `note` columns, and a `fingerprint` of the path and the reply's text.
+- `candidates.tsv` — one row per candidate with request, evidence, resolution, whether the §9 rule admits it (`admitted`, yes or no), empty `label` / `note` columns, the `reply` it is in, and a `fingerprint` of the path and the reply's text.
 - `labels-not-carried.tsv` — the labels a rerun couldn't carry, each with why; `replaced/` keeps, byte for byte, a sheet whose replacement would lose anything a person entered.
-- `recall-sample.md` — a random sample of final replies with the candidates found in each, for marking misses.
+- `recall/` — the recall sample (below): `replies.tsv`, the sampled final replies, and `misses.tsv`, a person's record of the files they delivered that are not candidates; `replies.md` shows each sampled reply with its candidates and misses, for reading.
 - `summary.txt` — counts per provider, unknown record types, resolution stats.
 - `locators.internal.tsv` — full local paths for the owner's checks; never shared.
 
@@ -291,6 +291,10 @@ The sheet lists every candidate, admitted or not, so the §9 rule can be measure
 A person labels the rows they check `delivery`, `not_delivery` or `uncertain`. `scripts/score-candidates.py` counts the rows labeled `delivery` or `not_delivery` against `admitted`, and gives the rule's precision, its recall among those rows, and the ids where label and rule disagree. That recall is not Gate 1's: a delivery the extractor never offered is not in the sheet, and the recall sample measures those. The rates hold for the labeled rows alone, which need not represent the rest unless they were drawn at random.
 
 A rerun carries a label only to the same candidate judged on the same text: the row with its id whose fingerprint (the SHA-256 of the path and the reply's text) is unchanged. Labels are found by column name, from LF, CRLF or CR lines. Any other label is set aside with why: `changed` when the reply or the path differs or the row has no fingerprint, `gone` when no candidate has its id, `unreadable` when its row has the wrong number of cells, no id, or an id on two labeled rows. So a rerun never drops a label, and never gives one to text it wasn't given for. When it can't open the sheet, or a copy already in `replaced/` doesn't hold the sheet's bytes, it stops (exit 1) before replacing anything.
+
+**The recall sample.** When `recall/replies.tsv` is absent, a run draws `--sample` final replies at random (`--seed`) and writes them there in the order drawn, one row per reply: its `reply` id (from its log's path and first line; `candidates.tsv` gives its candidates the same `reply`), empty `reviewed` and `note` columns, where it came from, and the `fingerprint` of its text. It creates `recall/misses.tsv`, with the columns `reply`, `path` and `note`, the same way. No run writes either file again, and each appears whole or not at all, so the sample stays frozen and a person's review stays theirs; moving `recall/` aside draws a new sample. `recall/replies.md` is rewritten on every run and holds nothing a person typed. A run that can't open either file, or read it as a sheet with those columns, stops before writing anything.
+
+To review a reply, a person labels each of its candidates in `candidates.tsv`, adds a row to `misses.tsv` for each file it delivered that is not among them (`path` as the reply names it), and writes `yes` in `reviewed`. Reviewing from the top keeps the reviewed replies a random sample. A reply counts toward recall while it is reviewed, its text still has its fingerprint, and each of its candidates is labeled `delivery` or `not_delivery`. Its deliveries are those candidates labeled `delivery` and its rows in `misses.tsv`: extraction recall is the share of them that are candidates, and admission recall the share the rule admits. No script counts this yet.
 
 `out/` contains log excerpts and is never committed.
 
