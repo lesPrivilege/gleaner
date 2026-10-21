@@ -40,10 +40,11 @@ In v0.1:
 - Content-addressed snapshots under a size policy.
 - What only the person adds (§5.5): work units, files they keep from what a session was observed doing, and verdicts and published marks bound to the bytes they were made on, with the queue of what is left to review, each listed in the window.
 - Library window: projects and the works in each, search, preview (Quick Look, text, Markdown), compare versions, reveal in Finder, copy path, drag out, and a Sources page for what Gleaner reads, the person's corrections and what it keeps (§5.1a).
+- The `gleaner` command and `gleaner mcp`, which answer read-only from the app's library, and the one skill Claude Code, Codex and the DeepSeek Harness read (§14). The release zip holds the app; the command is built from source.
 
-Deferred: comments, timecoded notes, MCP or `artifact://` resolvers, agent-initiated submission, remote-agent handoff, cross-device sync, cloud deliveries (ChatGPT, claude.ai), automatic HTML dependency bundling, Claude Code hooks as a capture path, runtime extensions and model reasoning (§14), release groups (§15).
+Deferred: comments, timecoded notes, `artifact://` resolvers, agent-initiated submission, remote-agent handoff, cross-device sync, cloud deliveries (ChatGPT, claude.ai), automatic HTML dependency bundling, Claude Code hooks as a capture path, model reasoning (§14), release groups (§15).
 
-The core is a library (`GleanerCore`), not logic inside the UI, so that the Spike A CLI today and extensions later (§14) use the same API as the app.
+The core is a library (`GleanerCore`), not logic inside the UI: the app, Spike A, the `gleaner` command and `gleaner mcp` all use it, and extensions go through the command (§14).
 
 ## 4. Platform
 
@@ -274,7 +275,7 @@ Library work was meant to start only once these numbers are acceptable. At the u
 
 **Gate 2 — Artifact usability (Spike B).** With fixed MP4, PDF, Markdown, and HTML-bundle samples: find, preview, detect source change, restore from snapshot, and drag into Finder, Claude Desktop, Codex, and a browser upload field. Show correctly which versions remain available after a worktree is removed.
 
-After both gates: visual polish, incremental indexing performance, cache cleanup, packaging.
+Polish and packaging don't wait for the gates. The release candidate is the library's one task (§2) finished and walked natively, Gate 2's drops included, as `docs/release.md` sets out, saying which destinations weren't checked; Gate 1 is measured after release. Performance or cleanup work starts from a problem seen in use.
 
 ## 13. Spike A tool
 
@@ -292,7 +293,7 @@ A person labels the rows they check `delivery`, `not_delivery` or `uncertain`. `
 
 A rerun carries a label only to the same candidate judged on the same text: the row with its id whose fingerprint (the SHA-256 of the path and the reply's text) is unchanged. Labels are found by column name, from LF, CRLF or CR lines. Any other label is set aside with why: `changed` when the reply or the path differs or the row has no fingerprint, `gone` when no candidate has its id, `unreadable` when its row has the wrong number of cells, no id, or an id on two labeled rows. So a rerun never drops a label, and never gives one to text it wasn't given for. When it can't open the sheet, or a copy already in `replaced/` doesn't hold the sheet's bytes, it stops (exit 1) before replacing anything.
 
-**The recall sample.** When `recall/replies.tsv` is absent, a run draws `--sample` final replies at random (`--seed`) and writes them there in the order drawn, one row per reply: its `reply` id (from its log's path and first line; `candidates.tsv` gives its candidates the same `reply`), empty `reviewed` and `note` columns, where it came from, and the `fingerprint` of its text. It creates `recall/misses.tsv`, with the columns `reply`, `path` and `note`, the same way. No run writes either file again, and each appears whole or not at all, so the sample stays frozen and a person's review stays theirs; moving `recall/` aside draws a new sample. `recall/replies.md` is rewritten on every run and holds nothing a person typed. A run that can't open either file, or read it as a sheet with those columns, stops before writing anything.
+**The recall sample.** When `recall/replies.tsv` is absent, a run draws `--sample` final replies at random (`--seed`) and writes them there in the order drawn, one row per reply: its `reply` id (from its log's path and first line; `candidates.tsv` gives its candidates the same `reply`), empty `reviewed` and `note` columns, where it came from, and the `fingerprint` of its text. It creates `recall/misses.tsv`, with the columns `reply`, `path` and `note`, the same way. No run writes either file again, and each appears whole or not at all, so the sample stays frozen and a person's review stays theirs; moving `recall/` aside draws a new sample. `recall/replies.md` is rewritten on every run and holds nothing a person typed. A run that can't open either file, read it as a sheet with those columns, or read each of its rows whole, stops before writing anything.
 
 To review a reply, a person labels each of its candidates in `candidates.tsv`, adds a row to `misses.tsv` for each file it delivered that is not among them (`path` as the reply names it), and writes `yes` in `reviewed`. Reviewing from the top keeps the reviewed replies a random sample. A reply counts toward recall while it is reviewed, its text still has its fingerprint, and each of its candidates is labeled `delivery` or `not_delivery`. Its deliveries are those candidates labeled `delivery` and its rows in `misses.tsv`: extraction recall is the share of them that are candidates, and admission recall the share the rule admits. No script counts this yet.
 

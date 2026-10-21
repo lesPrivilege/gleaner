@@ -2,6 +2,8 @@
 
 **Ruled:** see [rulings](rulings.md) for the alternatives adopted, deferred and declined, and the order of work.
 
+**Release candidate (2026-10-21):** the library's one task (SPEC §2): find a delivery, see its version, confirm its bytes, take them into another app. Main is polished for it and walked natively as [release.md](../release.md) sets out. Spike A's labeling tools (SPEC §13) wait for broader use after release.
+
 **Built after the completion review (2026-10-18):** [projects, works and sources](projects-and-works.md), the contract the window now keeps for logical work, corrections, opening actions and source management. The window draws with [GleanerUI](components.md), its own component library, with a gallery of every component in light, dark and Increase Contrast. [The outline](outline.md) sets its levels, the conventions each keeps, and the empty states that show the next step.
 
 **Capture from the session (2026-10-19):** [capture](capture.md) takes what every session gives (its requests and replies, its workspace and time span) and finds on the disk what appeared or changed during it, kept as observations beside the deliveries, never as deliveries. Layered: observations, the window, live capture, written-by evidence, acceptance.
@@ -43,6 +45,6 @@ The native library now implements registry/captures, saved regular-file copies, 
 
 **No rendered visual audit was possible:** the cloud browser control tool was unavailable, the HTML prototype references absent `support.js`, and cloud Linux cannot validate native macOS behavior. No working-UI screenshots or substitute reconstruction were produced.
 
-**Two checks wait for after release:** extractor precision and recall are measured on broader feedback after release (SPEC §12, Gate 1), so admission remains provisional; drops into Finder, Claude Desktop, Codex and browser upload are checked in post-release use. Public source and fixture tests do not close those gates. No private logs or `out/` data are part of this package.
+**Two checks waited for after release:** extractor precision and recall are measured on broader feedback after release (SPEC §12, Gate 1), so admission remains provisional; drops into Finder, Claude Desktop, Codex and browser upload were to be checked in post-release use, and are now checked on the release candidate (SPEC §12, [release.md](../release.md)). Public source and fixture tests do not close those gates. No private logs or `out/` data are part of this package.
 
 For Opus: **first choose information organization, then walk real retrieval/review/takeaway tasks, then refine visual and motion polish.** Compare alternatives using the same tasks; observe unnecessary expansion, lost place and mistaken-version selection. Validate native interaction before judging density, focus, typography and motion. Preserve meaningful differences between proposals and keep only customization that earns its cost. Final choices remain with Opus.

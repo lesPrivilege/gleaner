@@ -1,6 +1,6 @@
 # Query core and the `gleaner` command
 
-The contract for items 1–4 of [review-rulings §3](review-rulings.md#3-after-v010-what-to-build-next). It is built on `feat/query-core` and merges after v0.1.0 is tagged.
+The contract for items 1–4 of [review-rulings §3](review-rulings.md#3-after-v010-what-to-build-next). It was built on `feat/query-core`, which was to merge after v0.1.0 was tagged; it merged before the tag instead (`ad697a5`), so the release candidate carries it.
 
 ## Job and boundary
 

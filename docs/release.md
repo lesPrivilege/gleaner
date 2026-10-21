@@ -21,7 +21,7 @@ The path from a green `main` to a downloadable, notarized `Gleaner-0.1.0.zip`. S
   - each ⓘ opens its sentence by click and by keyboard; the sidebar's marks turn white on a focused selection and follow the sidebar icon size; the file at the top of the detail shows the grab pointer and drags;
   - VoiceOver reads a result row, a version row and the file at the top of the detail as one sentence each, and the agents' marks by name;
   - quit and relaunch: search and filters come back.
-- [ ] `CHANGELOG.md`: give 0.1.0 its date.
+- [ ] `CHANGELOG.md`: give 0.1.0 its date. Its `## 0.1.0` section must cover everything the tagged commit builds: `publish.sh` takes the release notes from that section alone.
 
 ## 2. Tag (**owner**)
 
@@ -71,6 +71,6 @@ Before a Gleaner updates a library an earlier version left, it copies `registry.
 
 A Homebrew cask and in-app updates (Sparkle) come after the first release (SPEC §14, Distribution).
 
-## What is not in 0.1.0
+## What the candidate holds
 
-The limits users meet are listed in the README. A project's outline, the page a project opens on, is in 0.1.0. Queued after release (`docs/design/structure.md`): Thread, a Markdown file's Contents (the headings it has), and Project timeline.
+The candidate is built from main and holds all of it: a project's outline, and Thread, a Markdown file's Contents and Project timeline, which `docs/design/structure.md` once queued for after release. The zip holds the app; the `gleaner` command and `gleaner mcp` are built from source (README). The limits users meet are listed in the README.

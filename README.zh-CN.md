@@ -257,11 +257,22 @@ swift build -c release && .build/release/gleaner-spike
 
 只读地扫描 `~/.claude/projects` 和 `~/.codex`，用与应用相同的只读 git 命令（`git status`、`git rev-parse`、`git log`）核查提到的每个文件，在 `out/` 下输出：
 
-- `candidates.tsv`：每个候选一行，收录与否都列出，带当初的要求、证据、路径上找到了什么、交付规则是否收录（`admitted`，yes 或 no），以及留待填写的空 `label` 和 `note` 列。重新运行时保留已填的标注。路径以 `~` 开头，文字经过抹除。
-- `recall-sample.md`：随机抽取的最终回复，附上每条回复里找到的候选，用来标出漏收。
+- `candidates.tsv`：每个候选一行，收录与否都列出，带当初的要求、证据、路径上找到了什么、交付规则是否收录（`admitted`，yes 或 no）、留待填写的空 `label` 和 `note` 列、它所在的回复 `reply`，以及路径与回复的指纹 `fingerprint`。重新运行时，标注按 id 与指纹回到原来那一行，不论表格是怎样保存的。路径以 `~` 开头，文字经过抹除。
+- `labels-not-carried.tsv`：重新运行时没能带回的标注，各附原因：`changed`（回复或路径已不是当初标注的那个，或该行没有指纹）、`gone`（现在没有这个候选）或 `unreadable`（该行格数不对、没有 id，或同一 id 出现在两行已标注的行上）。`replaced/` 原样保存被重新运行替换、却有内容没能带回的表格。若打不开表格，或 `replaced/` 里已有的副本与表格的字节不符，重新运行会在替换任何东西之前停下。
+- `recall/`：召回样本。第一次运行从最终回复里随机抽取 `--sample` 条，按抽取顺序写入 `recall/replies.tsv`，并建立空的 `recall/misses.tsv`。之后的运行不再改写这两个文件，你的审阅始终是你的；要重新抽样，把 `recall/` 移开即可。`recall/replies.md` 每次运行都会重写，列出每条抽中的回复、其中的候选和你记下的漏收，并注明哪条回复在抽取后变了或已不在日志里。
 - `summary.txt`：各 agent 的计数、未知的记录类型，以及提到的路径上找到了什么。
 - `locators.internal.tsv`：每个候选完整的日志路径、日志行号和文件路径，供你自己核对；不要外传。
 
 `out/` 含日志摘录，已列入 git 忽略。
 
-参数：`--claude-root DIR`、`--codex-home DIR`、`--out DIR`、`--sample N`、`--seed N`。
+参数：`--claude-root DIR`、`--codex-home DIR`、`--out DIR`，以及 `--sample N`（50）和 `--seed N`（42），二者在 `recall/replies.tsv` 不存在时用来抽取召回样本。
+
+把检查过的行标为 `delivery`、`not_delivery` 或 `uncertain`，其余留空。然后用规则核对这些标注：
+
+```bash
+python3 scripts/score-candidates.py out/candidates.tsv
+```
+
+它输出 JSON：各种结果各有多少行；在标为 `delivery` 或 `not_delivery` 的行里，规则的精确率与召回率；以及被规则拒收的交付、被规则收录的非交付的 id。这些比率只对已标注的行成立，其中的召回率也不是 Gate 1 的召回率：抽取器漏掉的交付不在表里。它只读这份表，从不写它，除 id 外不输出表中的任何文字。不能完整读出的表得不到报告：stderr 指出哪些行有问题，退出码为 2。它的测试：`python3 -m unittest discover -s scripts/tests`。
+
+要测召回率，从 `recall/replies.md` 的顶部开始审阅抽中的回复：在 `candidates.tsv` 里标注这条回复的每个候选，为它交付了却不在其中的每个文件在 `recall/misses.tsv` 加一行（`reply`、`path`、`note`），再在 `recall/replies.tsv` 的 `reviewed` 下写 `yes`。从顶部开始审阅，审过的回复就仍是一份随机样本。若打不开这两个文件之一、不能按其列读成表格，或其中某行格数不对，运行会在写入任何东西之前停下。目前还没有脚本据此计算召回率。
