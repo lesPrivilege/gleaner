@@ -10,6 +10,8 @@
 
 **Reviewing (2026-10-19):** [review](review.md) is capture's layer 3: work units the person makes (collections in the window, a series and its episodes), keeping a file observed during a session, verdicts and published marks bound to the exact bytes they were made on, the four states kept apart, and To Review, the queue drawn from the person's own acts. The window shows them: To Review and each project's collections in the sidebar, a collection's review page with each work played, heard and shown in place, Observed in a project's outline, and a work's Review section.
 
+**Questions and acceptance (2026-10-22):** [questions](questions.md) defines what Gleaner is for as the eight questions a person asks on returning to earlier work, maps each to its level of structure, to the window and to the agent catalog on main, and sets one acceptance task per question with gold and two baselines: Finder for a person, E0's raw recipe for an agent. The gaps are a browse level for a thread and a project stream, and CedarSearch as a frozen home; review's place in the catalog is the owner's ruling.
+
 Draft reference for Opus, grounded in public source at [`79d724d1228a4b748572958dcbdd22aa6b7da142`](https://github.com/lesPrivilege/gleaner/tree/79d724d1228a4b748572958dcbdd22aa6b7da142), 2026-10-17. These are alternatives for improving an already useful small product, not an adopted architecture or implementation plan.
 
 **Project is the primary affiliation. The next round should reduce presentation burden and make movement between levels coherent.** Several agents, conversations, repositories and worktrees can contribute to one project. Global results retain that context; storage entities do not each need a navigation destination. People should reach original evidence and exact selected bytes without reading process noise or moving originals. Keep ordinary interface words stable and any provider integrations thin around the independent local core.
@@ -25,6 +27,7 @@ Draft reference for Opus, grounded in public source at [`79d724d1228a4b748572958
 | What makes the small native app coherent in daily use? | [Native interaction](native-interaction.md): access recovery, keyboard/menu behavior, lifecycle, exact action targets and validation scenarios |
 | What does current code establish? | [Source-based review](design-review-evidence.md): numbered flow assessment, exact file/line evidence, resolved findings and remaining composition risks |
 | Which precedents inform the alternatives? | [Source index](source-index.md), with [pinned architecture mechanisms](architecture-precedents.md); transferable lessons and limits |
+| What is Gleaner for, and how is each part accepted? | [Questions, levels and acceptance](questions.md): eight questions, their levels, the catalog's bounds, one task per question with gold and baselines |
 | How were claims checked? | [Verification appendix](review-verification.md): revision comparison and reproducible probes |
 
 ## Compare alternatives without accumulating modes
