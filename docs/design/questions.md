@@ -86,6 +86,18 @@ Each question becomes a task with a known answer on a frozen corpus, measured tw
 
 Budgets for a person's walk are set when the walk is first recorded, not here: the first recording is the baseline, and the budget is what beat Finder.
 
+## The owner's second statement: dogfooding
+
+Owner, 2026-10-22, later the same day, verbatim:
+
+> 一个很显著的 dogfooding 问题，如果通过 agent UI 或 finder，找到 Q7 等工单会比较繁琐，如果 Gleaner 能够完成对这类 review 需求的便捷触达，会很有益，session-log 中可能会有这些信息，但不一定能够指到，那么 Gleaner 其实可以在后续以类似 grep 或引入 system one 模型的形式完成，甚至接入一个小的高吞吐模型，因为知识找到和管理，并不需要额外的智能。
+
+Read against the table above:
+
+- **Finding a work order is Q2 at two widths.** A work order is a handover: a request and the file a reply named. Reaching it is Q2 when the person remembers the words, and Q4 when they remember only the project and roughly when. Q4 is the browse-level gap, so the tedium the owner names is that gap, not a missing feature of another kind.
+- **"The log may hold it but can't point at it" is the admission rule.** Only a file a final reply named is a delivery. A work order pasted into a request, or written by an agent that never named it in its reply, is at best an observation (Q8): capture lists it under its session, and keeping it is the person's click. Nothing in this needs a model.
+- **grep-shaped before a model.** Review rulings §3 registers a cheap high-throughput model as research, writing derived records only. The owner's premise sharpens its order: finding and organizing knowledge needs throughput, not intelligence. So the research runs grep-shaped first (file name, stem, heading, the request's words, bounded as the catalog is), and a small model is tried only on the labeled cases where that fails. A model never admits a file, names a version or records a verdict.
+
 ## What this fixes, and what it leaves
 
 - **Expectation**: the eight questions. A proposal that answers none of them is out of scope, whatever a precedent does.
